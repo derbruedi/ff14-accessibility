@@ -1,0 +1,15 @@
+Rolle: Du bist ein Experte für C# und die Entwicklung von Dalamud-Plugins für Final Fantasy XIV.
+Ziel: Wir müssen ein Barrierefreiheits-Plugin (Accessibility) für blinde Spieler entwickeln, das sämtliche UI-Menüs, Fenster und Popups im Spiel ausliest und über Text-to-Speech (TTS) vorliest. Bisherige Tools lesen oft nur den Chat, aber keine nativen Menüs (wie Inventar, Charakterfenster, Bestätigungs-Dialoge).
+Technische Anforderungen & Workflow:
+1. 
+Projekt-Setup: Nutze deine lokalen Rechte, um ein neues Dalamud-Plugin-Projekt (C# .NET) in diesem Verzeichnis zu initiieren. Erstelle die .csproj-Datei mit den aktuellen Dalamud-Referenzen.
+2. 
+UI-Interaktion (FFXIVClientStructs): Um die Menüs auszulesen, musst du auf die UI-Engine des Spiels zugreifen. Nutze dafür FFXIVClientStructs. Der Kernpunkt ist der Zugriff auf AtkUnitBase und das Iterieren durch die UI-Nodes, um speziell die AtkTextNode-Elemente zu finden und deren Textinhalte als Strings zu extrahieren.
+3. 
+Event-Triggering (IAddonLifecycle): Das Plugin darf nicht jeden Frame (via Framework.Update) blind alles vorlesen, sonst überlappt sich der Ton. Nutze den Dalamud-Service IAddonLifecycle. Hänge dich an Events wie AddonSetup oder AddonUpdate, um zu erkennen, wenn ein neues Fenster (ein "Addon") geöffnet wird oder sich der Inhalt ändert.
+4. 
+Text-to-Speech über TOLK: Dies ist sehr wichtig: Nutze nicht die Standard-Windows-Sprachausgabe. Das Plugin soll mit der Tolk-Bibliothek (Tolk Screen Reader Abstraction) kommunizieren, um den Text direkt an Screenreader wie NVDA, JAWS oder Narrator zu senden. Du musst den C#-Wrapper für Tolk integrieren. Denke daran, Tolk beim Start des Plugins zu initialisieren (Tolk.Load()) und beim Beenden sauber zu schließen (Tolk.Unload()). Nutze die Funktion zur Textausgabe (z.B. Tolk.Output()), um die ausgelesenen UI-Texte weiterzuleiten.
+5. 
+Debouncing / Filter: Baue eine Logik ein, die sich merkt, welcher Text gerade an Tolk gesendet wurde, damit ein Menü, das sich intern jede Sekunde updatet, nicht unendlich oft neu vorgelesen wird.
+Deine ersten Schritte:
+Bitte bestätige, dass du den Ansatz verstanden hast. Erstelle im ersten Schritt die grundlegende Dateistruktur und die Hauptklasse (IDalamudPlugin), registriere die nötigen Services (wie IGameGui, IAddonLifecycle, IPluginLog). Richte außerdem die Basis für die Tolk-Integration ein (weise mich darauf hin, wenn ich bestimmte .dll-Dateien für Tolk in das Projektverzeichnis legen muss) und schreibe eine Dummy-Funktion, die testweise den Namen eines beliebigen gerade geöffneten UI-Addons an Tolk sendet. Lass mich wissen, sobald du das Setup generiert hast, damit wir es kompilieren und im Spiel testen können.

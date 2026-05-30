@@ -1,0 +1,12 @@
+{
+  "Author": "FF14 Accessibility Project",
+  "Name": "FF14 Accessibility",
+  "Punchline": "FF14 für blinde Spieler via NVDA und Tastatur zugänglich machen.",
+  "Description": "Macht FF14 für blinde Spieler zugänglich via NVDA/TOLK Integration, Audio-Navigation und vollständiger Tastatursteuerung.",
+  "InternalName": "FF14Accessibility",
+  "AssemblyVersion": "1.0.0.0",
+  "RepoUrl": "",
+  "ApplicableVersion": "any",
+  "Tags": ["accessibility", "blind", "screenreader", "nvda"],
+  "DalamudApiLevel": 15
+}

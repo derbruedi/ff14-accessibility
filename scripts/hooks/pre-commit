@@ -1,0 +1,64 @@
+#!/bin/sh
+# Pre-commit hook: Blocks commits containing decompiled game code.
+# Catches accidental staging of decompiler output (ILSpy, dnSpy, dotPeek, IL2CPP dumps).
+#
+# Install: Run scripts/Install-GitHooks.ps1
+# Bypass (emergency only): git commit --no-verify
+
+FOUND_ISSUES=0
+
+# Clean up temp file from any previous interrupted run
+rm -f ".git/pre-commit-flagged"
+
+# --- Check 1: Files in decompiled/ directory ---
+DECOMPILED_FILES=$(git diff --cached --name-only | grep -i "^decompiled/")
+if [ -n "$DECOMPILED_FILES" ]; then
+    echo "BLOCKED: Staged files from decompiled/ directory:"
+    echo "$DECOMPILED_FILES" | while read -r f; do echo "  - $f"; done
+    echo ""
+    echo "These files should never be committed. Unstage them with:"
+    echo "  git reset HEAD decompiled/"
+    FOUND_ISSUES=1
+fi
+
+# --- Check 2: Decompiler headers in staged .cs files ---
+# Only checks the first 15 lines of each file (decompiler headers are always at the top).
+# This avoids false positives from comments that merely mention decompilation.
+STAGED_CS=$(git diff --cached --name-only --diff-filter=ACM | grep -i '\.cs$')
+
+if [ -n "$STAGED_CS" ]; then
+    echo "$STAGED_CS" | while read -r FILE; do
+        # Skip files that don't exist on disk (shouldn't happen with ACM filter)
+        [ -f "$FILE" ] || continue
+
+        HEAD=$(head -15 "$FILE")
+
+        # ILSpy, dnSpy, dotPeek, JetBrains decompiler, IL2CPP dumpers
+        if echo "$HEAD" | grep -qiE \
+            "Decompiled with (ICSharpCode|JetBrains|dnSpy|dotPeek)|Il2CppDumper|Cpp2ILInjected|// RVA: 0x[0-9A-Fa-f]|// TypeDefIndex:"; then
+            echo "  DECOMPILED: $FILE"
+            # Signal to outer shell via temp file (subshell can't set parent vars)
+            echo "$FILE" >> ".git/pre-commit-flagged"
+        fi
+    done
+
+    if [ -f ".git/pre-commit-flagged" ]; then
+        echo ""
+        echo "BLOCKED: Decompiled code detected in staged files (see above)."
+        echo "Decompiled game code must not be committed (copyright/legal risk)."
+        echo ""
+        echo "Options:"
+        echo "  - Move these files to decompiled/ (which is gitignored)"
+        echo "  - Or unstage them: git reset HEAD <file>"
+        rm -f ".git/pre-commit-flagged"
+        FOUND_ISSUES=1
+    fi
+fi
+
+if [ $FOUND_ISSUES -ne 0 ]; then
+    echo ""
+    echo "To bypass this check (emergency only): git commit --no-verify"
+    exit 1
+fi
+
+exit 0
