@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>FF14AccessibilityInstaller</AssemblyName>
+    <!-- Barrierefreiheit: reine Konsolen-App. NVDA liest die Textausgabe im
+         Terminal automatisch mit; es gibt bewusst KEINE ImGui/GUI-Oberflaeche. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Self-contained Single-File, damit Nutzer KEIN .NET installieren muessen:
+         dotnet publish -c Release -r win-x64 erzeugt eine einzelne EXE. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Newtonsoft mit denselben Semantiken, die Dalamud fuer dalamudConfig.json
+         nutzt ($type / TypeNameHandling). JObject bewahrt Property-Reihenfolge und
+         die $type-Felder beim Round-Trip - System.Text.Json wuerde die Struktur
+         gefaehrden. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>

@@ -2,16 +2,28 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <DalamudApiLevel>15</DalamudApiLevel>
+    <!-- Plugin-Version für die Distribution. Dalamud vergleicht die AssemblyVersion,
+         um Updates im Custom-Repo zu erkennen - bei JEDEM Release erhöhen, sonst
+         zieht der Plugin-Installer keine neue Version. MUSS mit der PluginVersion-
+         Konstante in Plugin.cs synchron bleiben (dort speist sie die Sprachansage). -->
+    <Version>4.58.0</Version>
+    <AssemblyVersion>4.58.0.0</AssemblyVersion>
+    <FileVersion>4.58.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
     <NoWarn>1705</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Klassenbibliotheken kopieren NuGet-DLLs (NAudio) sonst NICHT in den
+         Output - Dalamud lädt Abhängigkeiten aber aus dem Plugin-Verzeichnis. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DalamudPackager" Version="15.0.0" />
+    <!-- Audio-Beacon (Gehhilfe): erzeugter Sinuston mit Panning/Pitch -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
   <!-- Native DLLs für Screenreader - müssen neben der Plugin-DLL liegen -->
@@ -24,10 +36,61 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="DeployToDevFolder" AfterTargets="Build">
-    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
-          DestinationFolder="$(DALAMUD_HOME)/../dev/"
-          SkipUnchangedFiles="false" />
+  <PropertyGroup>
+    <AppDataRoot>$([System.Environment]::GetFolderPath(System.Environment+SpecialFolder.ApplicationData))</AppDataRoot>
+    <XIVLauncherRoot>$([System.IO.Path]::Combine('$(AppDataRoot)', 'XIVLauncher'))</XIVLauncherRoot>
+    <DevPluginsRoot>$([System.IO.Path]::Combine('$(XIVLauncherRoot)', 'devPlugins'))</DevPluginsRoot>
+    <DevPluginTargetDir>$([System.IO.Path]::Combine('$(DevPluginsRoot)', 'FF14Accessibility'))</DevPluginTargetDir>
+  </PropertyGroup>
+
+  <Target Name="DeployToDevFolder" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <!-- $(OutDir) wird erst von den SDK-Targets gesetzt (nach dem Projektrumpf).
+         Deshalb MUSS ResolvedOutDir hier im Target berechnet werden, nicht in einer
+         statischen PropertyGroup - dort ist $(OutDir) leer und der Deploy kopiert nichts. -->
+    <PropertyGroup>
+      <ResolvedOutDir>$([MSBuild]::EnsureTrailingSlash('$(OutDir)'))</ResolvedOutDir>
+    </PropertyGroup>
+
+    <Error Condition="Exists('$(XIVLauncherRoot)') and !Exists('$(ResolvedOutDir)$(AssemblyName).dll')"
+           Text="Debug-Deploy: Build-Output '$(ResolvedOutDir)$(AssemblyName).dll' nicht gefunden - Deploy abgebrochen." />
+
+    <ItemGroup Condition="Exists('$(XIVLauncherRoot)')">
+      <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).dll" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).dll')" />
+      <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).pdb" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).pdb')" />
+      <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).json" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).json')" />
+      <!-- NAudio-Laufzeit-DLLs müssen neben der Plugin-DLL liegen -->
+      <DevPluginFiles Include="$(ResolvedOutDir)NAudio*.dll" />
+    </ItemGroup>
+
+    <Warning Condition="!Exists('$(XIVLauncherRoot)')"
+             Text="XIVLauncher-Verzeichnis nicht gefunden unter $(XIVLauncherRoot). Debug-Deploy nach devPlugins wird übersprungen." />
+
+    <MakeDir Directories="$(DevPluginTargetDir)"
+             Condition="Exists('$(XIVLauncherRoot)') and !Exists('$(DevPluginTargetDir)')" />
+
+    <Copy SourceFiles="@(DevPluginFiles)"
+          DestinationFolder="$(DevPluginTargetDir)"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(XIVLauncherRoot)') and '@(DevPluginFiles)' != ''">
+      <Output TaskParameter="CopiedFiles" ItemName="DeployCopiedFiles" />
+    </Copy>
+
+    <Copy SourceFiles="$(ResolvedOutDir)Tolk.dll"
+          DestinationFiles="$(DevPluginTargetDir)\Tolk.dll"
+          Condition="Exists('$(XIVLauncherRoot)') and Exists('$(ResolvedOutDir)Tolk.dll') and !Exists('$(DevPluginTargetDir)\Tolk.dll')" />
+
+    <Copy SourceFiles="$(ResolvedOutDir)nvdaControllerClient64.dll"
+          DestinationFiles="$(DevPluginTargetDir)\nvdaControllerClient64.dll"
+          Condition="Exists('$(XIVLauncherRoot)') and Exists('$(ResolvedOutDir)nvdaControllerClient64.dll') and !Exists('$(DevPluginTargetDir)\nvdaControllerClient64.dll')" />
+
+    <!-- Erfolgsmeldung anhand der TATSAECHLICH kopierten Dateien, nicht anhand
+         der blossen Existenz einer (evtl. alten) DLL am Ziel. -->
+    <Message Importance="high"
+             Condition="'@(DeployCopiedFiles)' != ''"
+             Text="Debug-Deploy: @(DeployCopiedFiles->Count()) Datei(en) kopiert nach $(DevPluginTargetDir): @(DeployCopiedFiles->'%(Filename)%(Extension)', ', ')" />
+
+    <Error Condition="Exists('$(XIVLauncherRoot)') and '@(DeployCopiedFiles)' == ''"
+           Text="Debug-Deploy: Es wurde NICHTS kopiert - im Spiel laeuft weiterhin die alte DLL." />
   </Target>
 
   <ItemGroup>
@@ -46,6 +109,15 @@
     </Reference>
     <Reference Include="InteropGenerator.Runtime">
       <HintPath>$(DALAMUD_HOME)/InteropGenerator.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Lumina: Excel-Sheets (MapMarker fuer die Wegpunkte-Kategorie) -->
+    <Reference Include="Lumina">
+      <HintPath>$(DALAMUD_HOME)/Lumina.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DALAMUD_HOME)/Lumina.Excel.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

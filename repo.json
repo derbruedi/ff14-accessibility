@@ -1,0 +1,18 @@
+[
+  {
+    "Author": "FF14 Accessibility Project",
+    "Name": "FF14 Accessibility",
+    "InternalName": "FF14Accessibility",
+    "AssemblyVersion": "4.58.0.0",
+    "Description": "Macht FF14 für blinde Spieler zugänglich via NVDA/TOLK Integration, Audio-Navigation und vollständiger Tastatursteuerung.",
+    "Punchline": "FF14 für blinde Spieler via NVDA und Tastatur zugänglich machen.",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "RepoUrl": "https://github.com/derbruedi/ff14-accessibility",
+    "Tags": ["accessibility", "blind", "screenreader", "nvda"],
+    "AcceptsFeedback": true,
+    "DownloadLinkInstall": "https://github.com/derbruedi/ff14-accessibility/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/derbruedi/ff14-accessibility/releases/latest/download/latest.zip",
+    "DownloadLinkTesting": "https://github.com/derbruedi/ff14-accessibility/releases/latest/download/latest.zip"
+  }
+]

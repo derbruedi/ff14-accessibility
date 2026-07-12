@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -13,38 +13,78 @@ namespace FF14Accessibility.Services;
 
 public sealed class UIReaderService : IDisposable
 {
+    private enum ScreenContext
+    {
+        None,
+        Title,
+        TitleMenu,
+        ConfigSystem,
+    }
+
     private readonly IAddonLifecycle _addonLifecycle;
     private readonly IGameGui        _gameGui;
     private readonly TolkService     _tolk;
     private readonly IPluginLog      _log;
+    private readonly IObjectTable    _objectTable;
+    private readonly InventoryService _inventory;
+    private readonly List<string>    _titleMenuItems = [];
 
-    // SelectYesno
-    private string _lastYesNoText = string.Empty;
+    // SelectYesno: labels are read fresh from the dialog buttons on open -
+    // the addon is reused with different labels (Ok/Abbrechen, Ja/Nein, ...
+    // dump 2026-07-09 21:32 showed Ok/Abbrechen for "Neuen Charakter erschaffen?").
+    private string _lastYesNoText  = string.Empty;
+    private string _ynConfirmLabel = "Ja";
+    private string _ynCancelLabel  = "Nein";
 
-    // Menü-Stack: (AddonName, zuletzt gesehener SelectedItemIndex)
-    // Oberstes Element = aktuell aktives Menü
+    // Men�-Stack: (AddonName, zuletzt gesehener SelectedItemIndex)
+    // Oberstes Element = aktuell aktives Men�
     private readonly Stack<(string Name, int Index)> _menuStack = new();
 
-    // Fallback für Nicht-Listen-Addons (ReceiveEvent)
-    private string _lastFocused = "";
-
-    // Letzte fokussierte NodeId (um Fokus-Wechsel bei gleichem Text zu erkennen)
-    private uint _lastFocusedNodeId = 0;
+    // Fallback f�r Nicht-Listen-Addons (ReceiveEvent)
+    // Dedup PRO Addon: In der Charaktererstellung sind mehrere Addons gleichzeitig
+    // sichtbar (CMFSlider, CMFIcon* usw.). Mit einem globalen Zustand ueberschreiben
+    // sie sich gegenseitig und jede Ansage feuert jeden Frame erneut (Log 20:33).
+    private readonly Dictionary<string, (uint Key, string Text)> _lastFocusByAddon = [];
 
     // _TitleMenu: zuletzt angesagter Button-Text
     private string _lastTitleMenuText = string.Empty;
+    private int _lastTitleMenuIndex = -1;
+    // Gesetzt bei InputReceived � Dump wird im n�chsten PostUpdate ausgef�hrt,
+    // NACHDEM das Spiel intern den Fokus verschoben hat (nicht davor).
+    private bool _dumpOnNextTitleMenuUpdate;
+    private ScreenContext _activeScreenContext = ScreenContext.None;
+
+    // ConfigSystem state
+    private bool   _csPendingSave;
+    private bool   _dumpOnNextConfigSystemUpdate;
+    private int    _csLastTabIndex    = -1;
+    private string _csLastTabText     = string.Empty;
+    private readonly List<(uint NodeId, string Label)> _csTabs = [];
 
 
     // Performance-Cache: Addons ohne AtkComponentList nicht erneut suchen
     private readonly HashSet<string> _noListCache = [];
 
-    // Debug-Probe: Vorherige Node-Flags pro FocusTrack-Addon (addonName → nodeKey → flags)
+    // List probe state: which index field actually follows the keyboard?
+    // SelectedItemIndex demonstrably did NOT move for Journal/SystemMenu
+    // (log 2026-07-11 09:44/09:45: menus opened, zero index changes while
+    // the user navigated). AtkComponentList carries several candidates
+    // (ilspycmd 2026-07-11): SelectedItemIndex@308, HeldItemIndex@312,
+    // HoveredItemIndex@316, HoveredItemIndex2@344, HoveredItemIndex3@352
+    // plus ListItem.IsHighlighted per renderer slot. We track them ALL and
+    // announce whichever moves - the [ListProbe] log lines pin the real one.
+    private readonly Dictionary<string, (int Sel, int Hov, int Hov2, int Hov3, int Held, string Hl)> _listIndexState = [];
+
+    // Last announced list row per addon (dedup for the probe-driven announce)
+    private readonly Dictionary<string, string> _lastListAnnounce = [];
+
+    // Debug-Probe: Vorherige Node-Flags pro FocusTrack-Addon (addonName ? nodeKey ? flags)
     private readonly Dictionary<string, Dictionary<uint, ushort>> _focusTrackFlags = [];
 
-    // Addons mit eigenem PostSetup-Handler — Universal-OnOpen überspringt diese
+    // Addons mit eigenem PostSetup-Handler � Universal-OnOpen �berspringt diese
     private static readonly HashSet<string> SpecialSetupAddons =
     [
-        "Talk", "SelectYesno", "SelectString", "SelectIconString",
+        "Talk", "TalkSubtitle", "SelectYesno", "SelectString", "SelectIconString",
         "_TextError", "_WideText", "_BattleTalk", "_LocationTitle",
         "LevelUpAnnouncement", "ContentsTutorial", "_ScreenText",
         "ConfigPadCalibration",
@@ -55,17 +95,48 @@ public sealed class UIReaderService : IDisposable
         "TitleDCWorldMapBg",  // nur Hintergrund, nichts anzusagen
     ];
 
-    // Addons, bei denen Universal-Update/ReceiveEvent nicht läuft
+    // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
     private static readonly HashSet<string> SpecialUpdateAddons =
     [
-        "Talk", "SelectYesno",
+        "Talk", "TalkSubtitle", "SelectYesno",
         "_TextError", "_WideText", "_BattleTalk", "_LocationTitle",
         "LevelUpAnnouncement", "ContentsTutorial", "_ScreenText",
         "ConfigPadCalibration",
-        "LobbyScreenText",    // fires TimerTick every frame — no useful navigation
+        "LobbyScreenText",    // fires TimerTick every frame � no useful navigation
         "ConfigSystem",       // eigene Handler + FocusTrack
-        "TitleDCWorldMap",    // TimelineActiveLabelChanged feuert alle 300ms — eigener Handler
+        "TitleDCWorldMap",    // TimelineActiveLabelChanged feuert alle 300ms � eigener Handler
         "TitleDCWorldMapBg",  // nur Hintergrund
+        // Charaktererstellung Volk/Geschlecht: eigene Handler. Der generische
+        // Update-Pfad fand hier per Collision-Heuristik dauernd den "Zurueck"-
+        // Button (Key=19004) und ueberdeckte die Volk-Ansage (Log 22:17).
+        "_CharaMakeRaceGender",
+        // Volksstamm: eigene Handler, gleiche Struktur wie RaceGender.
+        "_CharaMakeTribe",
+    ];
+
+    // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
+    // weder Scanner-Ansagen noch Fokus-Ansagen, kein PushMenu. Alle Eintraege
+    // sind [Scan]-log-bewiesene Spam-Quellen (2026-07-11 10:14 + 10:35-10:40):
+    // _NaviMap/_DTR (Koordinaten, Serveruhr, vnavmesh-Status), NamePlate
+    // (Fokus wechselte alle 2s zwischen NPCs), _TargetInfo* (doppelt die
+    // [Nav]-Zielansage), ChatLog* (jede Chat-Zeile), _MiniTalk (Sprechblasen),
+    // _ParameterWidget/_Exp (HP/MP/XP-Ticks), _GetAction (Skill-Popup),
+    // JournalDetail (unsichtbare Buttons "Entfernen/Neuer Versuch/Karte";
+    // Quest-Text liest Strg+F10 dediziert), _CharaSelectTitle (Hinweistext).
+    // Chat-Vorlesen kommt spaeter sauber via IChatGui-Event, nicht UI-Scraping.
+    private static readonly HashSet<string> HudNoiseAddons =
+    [
+        "_NaviMap", "_DTR", "NamePlate", "_MiniTalk",
+        "_TargetInfo", "_TargetInfoMainTarget", "_TargetInfoBuffDebuff",
+        "ChatLog", "ChatLogPanel_0", "ChatLogPanel_1", "ChatLogPanel_2", "ChatLogPanel_3",
+        "_ParameterWidget", "_Exp", "_GetAction", "_CharaSelectTitle",
+        // Quest windows: muted in the generic path, read by the dedicated
+        // OnQuestWindowUpdate handler instead (canvas text, correct timing).
+        "JournalDetail", "JournalAccept", "JournalResult",
+        // _CastBar id=7 = eigener Zauber-Countdown ("00.63"..."00.02"), feuerte
+        // jeden Frame beim Teleportieren (Log 2026-07-11 19:52). Eigene Casts
+        // spaeter sauber via LocalPlayer.IsCasting ansagen, nicht per Text-Scan.
+        "_CastBar",
     ];
 
     // Listenlose Addons, bei denen wir per PostUpdate den Fokus tracken
@@ -84,9 +155,9 @@ public sealed class UIReaderService : IDisposable
     ];
 
     private static readonly HashSet<string> YesNoLabels =
-        ["Ja", "Nein", "Yes", "No", "はい", "いいえ", "Oui", "Non"];
+        ["Ja", "Nein", "Yes", "No", "??", "???", "Oui", "Non"];
 
-    // Plugin.cs prüft dies, um Navigationstasten nur bei aktivem Menü zu verarbeiten
+    // Plugin.cs pr�ft dies, um Navigationstasten nur bei aktivem Men� zu verarbeiten
     public bool HasActiveMenu
     {
         get
@@ -103,48 +174,64 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
         _tolk           = tolk;
         _log            = log;
+        _objectTable    = objectTable;
+        _inventory      = inventory;
         RegisterHooks();
     }
 
     private void RegisterHooks()
     {
-        // ── Universal: alle Addons ────────────────────────────────
+        // -- Universal: alle Addons --------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        OnAnyAddonOpen);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       OnAnyAddonUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, OnAnyAddonReceive);
         _addonLifecycle.RegisterListener(AddonEvent.PreFinalize,      OnAnyAddonClose);
 
-        // ── Talk ─────────────────────────────────────────────────
-        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "Talk", OnTalkOpen);
-        _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "Talk", OnTalkReceive);
+        // -- Talk / TalkSubtitle (NPC-Dialoge, Untertitel) ---------
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
 
-        // ── SelectYesno ──────────────────────────────────────────
+        // -- SelectYesno ------------------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "SelectYesno", OnYesNoReceive);
 
-        // ── SelectString / SelectIconString ──────────────────────
+        // -- Dialog-Button-Fokus (SelectYesno + JournalResult) -----
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
+
+        // -- Quest-Fenster automatisch vorlesen (Beschreibung/Ziel) -----
+        // Content is populated a few frames after PostSetup and changes on page
+        // turns, so read on PostUpdate with per-addon dedup.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
+
+        // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
             _addonLifecycle.RegisterListener(AddonEvent.PostSetup, name, OnSelectStringOpen);
 
-        // ── Titelbildschirm (Logo-Screen vor dem Menü) ──────────────
+        // -- Request (NPC-Ablieferung "GEGENSTAND ABLIEFERN") ------
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup, "Request", OnRequestOpen);
+
+        // -- Titelbildschirm (Logo-Screen vor dem Men�) --------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup, "Title", OnTitleScreenOpen);
 
-        // ── _TitleMenu (das eigentliche Menü mit Buttons) ────────────
+        // -- _TitleMenu (das eigentliche Men� mit Buttons) ------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "_TitleMenu", OnTitleMenuOpen);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_TitleMenu", OnTitleMenuReceive);
 
-        // ── Systemkonfiguration ──────────────────────────────────
+        // -- Systemkonfiguration ----------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "ConfigSystem", OnConfigSystemOpen);
         _addonLifecycle.RegisterListener(AddonEvent.PreFinalize,      "ConfigSystem", OnConfigSystemClose);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "ConfigSystem", OnConfigSystemReceive);
 
-        // ── Gamepad-Kalibrierung ─────────────────────────────────
+        // -- Gamepad-Kalibrierung ---------------------------------
 
         // -- Datenzentrum-Auswahl
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "TitleDCWorldMap", OnDCWorldMapOpen);
@@ -152,7 +239,15 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "TitleDCWorldMap", OnDCWorldMapReceive);
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup, "ConfigPadCalibration", OnPadCalibrationOpen);
 
-        // ── Benachrichtigungen ───────────────────────────────────
+        // -- Charaktererstellung: Volk & Geschlecht ---------------
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       "_CharaMakeRaceGender", OnRaceGenderUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeRaceGender", OnRaceGenderReceive);
+
+        // Charaktererstellung: Volksstamm - gleiche Struktur wie RaceGender (F5-Dump 2026-07-10)
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
+
+        // -- Benachrichtigungen -----------------------------------
         foreach (var name in NotificationAddons)
         {
             _addonLifecycle.RegisterListener(AddonEvent.PostSetup,   name, OnNotification);
@@ -160,37 +255,63 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    // ── Universal: Addon geöffnet ───────────────────────────────────
+    // -- Universal: Addon ge�ffnet -----------------------------------
 
     private unsafe void OnAnyAddonOpen(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
         _log.Info($"[Accessibility] Addon: {name}");
         if (SpecialSetupAddons.Contains(name)) return;
+        if (HudNoiseAddons.Contains(name)) return;
 
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
 
         _noListCache.Remove(name);
 
+        // Invisible at PostSetup: the game pre-creates windows on zone-in
+        // (Inventory, ContextMenu family, ...). Announcing their titles
+        // ("INVENTAR" 3x at login) and pushing them onto the menu stack
+        // (stack depth 7 without any open menu) was pure noise - log
+        // 2026-07-11. Park them in _noListCache: the PostUpdate late-list
+        // path picks them up WITH announcement once they become visible.
+        if (!addon->IsVisible)
+        {
+            _noListCache.Add(name);
+            ScanAddonTexts(name, addon, isInit: true);
+            return;
+        }
+
+        // Window title first: read from the Window component if present
+        // (real windows like inventory/settings carry their title there;
+        // dialogs without title yield an empty string and stay silent).
+        var title = ReadWindowTitle(addon);
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            _log.Info($"[Accessibility] {name} Fenstertitel: '{title}'");
+            _tolk.SpeakInterrupt(title);
+        }
+
         var list = FindListInAddon(addon);
         if (list != null)
         {
             PushMenu(name, list->SelectedItemIndex);
 
-            // Nur Anzahl + aktuell gewählten Eintrag ansagen.
-            // Alle Einträge zu iterieren kann bei langen Listen zu Crashes führen
+            // Nur Anzahl + aktuell gew�hlten Eintrag ansagen.
+            // Alle Eintr�ge zu iterieren kann bei langen Listen zu Crashes f�hren
             // (uninitialisierte Renderer bei virtuell scrollenden Listen).
-            var count = list->ListLength;
+            var count = GetListEntryCount(list);
             var sel   = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
             var msg   = sel.Length > 0
                 ? $"{sel}, {count} Einträge"
                 : $"Menü, {count} Einträge";
-            _tolk.SpeakInterrupt(msg);
+            // Queue behind the window title instead of cutting it off
+            if (string.IsNullOrWhiteSpace(title)) _tolk.SpeakInterrupt(msg);
+            else                                  _tolk.Speak(msg);
             return;
         }
 
-        // Generic text cache initialisieren — ermöglicht Änderungs-Erkennung in PostUpdate
+        // Generic text cache initialisieren � erm�glicht �nderungs-Erkennung in PostUpdate
         _noListCache.Add(name);
         ScanAddonTexts(name, addon, isInit: true);
         var text = ReadAllTexts(addon);
@@ -198,119 +319,163 @@ public sealed class UIReaderService : IDisposable
             _tolk.Speak(text);
     }
 
-    // ── Universal: Addon geschlossen ────────────────────────────────
+    // -- Universal: Addon geschlossen --------------------------------
 
     private void OnAnyAddonClose(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
         _genericTextCache.Remove(name);
+        _lastFocusByAddon.Remove(name);
+        _lastDialogTexts.Remove(name);
+        _listIndexState.Remove(name);
+        _lastListAnnounce.Remove(name);
+        _lastDialogButtonFlags.Remove(name);
+        _lastDialogButtonAnnounce.Remove(name);
 
-        // DC-Auswahl geschlossen — State zurücksetzen
+        // Reset race/gender dedup so the selection is re-announced on reopen
+        if (name == "_CharaMakeRaceGender")
+        {
+            _lastRaceGender = (string.Empty, string.Empty);
+            _lastRaceHover = string.Empty;
+            _raceGenderSymbolsLogged = false;
+            _previewObjectsLogged = false;
+        }
+
+        if (name == "_CharaMakeTribe")
+        {
+            _lastTribe = string.Empty;
+            _lastTribeHover = string.Empty;
+        }
+
+        if (name == "_TitleMenu")
+            ResetTitleMenuState();
+
+        if (name is "Title" or "_TitleMenu")
+            _activeScreenContext = GetCurrentScreenContext();
+
+        // DC-Auswahl geschlossen � State zur�cksetzen
         if (name == "TitleDCWorldMap")
         {
             IsDCMapOpen = false;
             _dcTabPanels.Clear();
             _lastDCText = string.Empty;
-            _log.Info("[Accessibility] TitleDCWorldMap geschlossen, DC-State zurückgesetzt.");
+            _log.Info("[Accessibility] TitleDCWorldMap geschlossen, DC-State zur�ckgesetzt.");
         }
 
         if (!_menuStack.Any(m => m.Name == name)) return;
 
-        // Alle Einträge bis einschließlich dem geschlossenen Addon entfernen
+        // Alle Eintr�ge bis einschlie�lich dem geschlossenen Addon entfernen
         while (_menuStack.Count > 0)
         {
             var top = _menuStack.Pop();
             if (top.Name == name) break;
         }
         _noListCache.Remove(name);
-        _log.Info($"[Accessibility] Menü geschlossen: {name}, Stack-Tiefe: {_menuStack.Count}");
+        _log.Info($"[Accessibility] Men� geschlossen: {name}, Stack-Tiefe: {_menuStack.Count}");
     }
 
-    // ── Universal: Listenfokus per PostUpdate erkennen ──────────────
+    // -- Universal: Listenfokus per PostUpdate erkennen --------------
 
     private unsafe void OnAnyAddonUpdate(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
-        // SpecialUpdateAddons überspringen, außer ConfigSystem und TitleDCWorldMap (die wir jetzt universell behandeln)
+        // SpecialUpdateAddons �berspringen, au�er ConfigSystem und TitleDCWorldMap (die wir jetzt universell behandeln)
         if (SpecialUpdateAddons.Contains(name) && name != "ConfigSystem" && name != "TitleDCWorldMap") return;
 
         var currentAddon = (AtkUnitBase*)(nint)args.Addon;
         if (currentAddon == null || !currentAddon->IsVisible) return;
 
-        // 1. Universeller Fokus-Check (funktioniert für Buttons, Tabs, etc.)
+        if (name == "_TitleMenu")
+        {
+            _activeScreenContext = ScreenContext.TitleMenu;
+            AnnounceTitleMenuFocusIfChanged(currentAddon);
+            return;
+        }
+
+        // ConfigSystem: eigene Fokus-Logik, l�uft VOR dem generischen FindFocusedText
+        if (name == "ConfigSystem")
+        {
+            AnnounceConfigSystemFocusIfChanged(currentAddon);
+            return;
+        }
+
+        // HUD-Rauschen komplett aus dem generischen Pfad (Fokus + Listen +
+        // Scanner): NamePlate-"Fokus" pendelte alle 2s zwischen NPCs und
+        // wurde jedes Mal gesprochen (Log 2026-07-11 10:35).
+        if (HudNoiseAddons.Contains(name)) return;
+
+        // 1. Universeller Fokus-Check (funktioniert f�r Buttons, Tabs, etc.)
         var res = FindFocusedText(currentAddon);
         if (!string.IsNullOrEmpty(res.Text))
         {
-            if (res.Key != _lastFocusedNodeId || res.Text != _lastFocused)
+            if (!_lastFocusByAddon.TryGetValue(name, out var last)
+                || res.Key != last.Key || res.Text != last.Text)
             {
-                _lastFocusedNodeId = res.Key;
-                _lastFocused = res.Text;
+                _lastFocusByAddon[name] = (res.Key, res.Text);
                 _log.Info($"[Accessibility] {name} Fokus: {res.Text} (Key={res.Key})");
                 
                 var announceText = res.Text;
 
                 // Spezialfall Datenzentrum: Wenn wir einen Tab fokussieren, 
-                // wollen wir die DCs dazu hören (falls vorhanden).
+                // wollen wir die DCs dazu h�ren (falls vorhanden).
                 if (name == "TitleDCWorldMap")
                 {
                     var panelMatch = _dcTabPanels.FirstOrDefault(p => p.Region.Contains(announceText, StringComparison.OrdinalIgnoreCase));
                     if (panelMatch.DCs != null && panelMatch.DCs.Count > 0)
-                        announceText = $"{announceText}: {string.Join(", ", panelMatch.DCs)}";
+                        announceText = $"{announceText}: {string.Join(", ", panelMatch.DCs.Select(d => d.Name))}";
                 }
 
                 _tolk.SpeakInterrupt(announceText);
                 
-                // Wir führen KEIN return aus, damit Listen-Navigation oder Text-Scanner
-                // für den Rest des Fensters noch laufen können.
+                // Wir f�hren KEIN return aus, damit Listen-Navigation oder Text-Scanner
+                // f�r den Rest des Fensters noch laufen k�nnen.
             }
         }
 
-        // 2. Spezial-Logik für ConfigSystem (Text-Änderungen in Checkboxen/Slidern)
-        if (name == "ConfigSystem")
-        {
-            if (_configSystemLastTexts.Count > 0)
-                ScanConfigSystemTexts(currentAddon);
-            return;
-        }
-
-        // 3. Spezial-Logik für Datenzentrum (Panel-Sichtbarkeit als Fallback)
+        // 2. Spezial-Logik f�r Datenzentrum (Panel-Sichtbarkeit als Fallback)
         if (name == "TitleDCWorldMap")
         {
             AnnounceDCFocus();
             return;
         }
 
-        // 4. Klassische Listen-Navigation (Fallback für Addons, die kein Fokus-Bit setzen)
+        // 4. Klassische Listen-Navigation: alle Index-Kandidaten beobachten
+        // (siehe _listIndexState-Kommentar; SelectedItemIndex allein war tot)
         if (_menuStack.Count > 0 && _menuStack.Peek().Name == name)
         {
             var list = FindListInAddon(currentAddon);
             if (list != null)
-            {
-                var idx = list->SelectedItemIndex;
-                if (idx != _menuStack.Peek().Index)
-                {
-                    _menuStack.Pop();
-                    _menuStack.Push((name, idx));
-                    var text = ReadListItemText(list, idx);
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        _log.Info($"[Accessibility] {name} List-Navigation: [{idx}] {text}");
-                        _tolk.SpeakInterrupt(text);
-                    }
-                }
-            }
+                TrackListIndices(name, list);
         }
 
-        // 5. Generischer Text-Scanner (für Änderungen im Addon-Inhalt)
-        if (_noListCache.Contains(name))
+        // 5. Generischer Text-Scanner (f�r �nderungen im Addon-Inhalt)
+        if (_noListCache.Contains(name) && !HudNoiseAddons.Contains(name))
         {
+            // Some menus build their list only AFTER PostSetup (SystemMenu:
+            // PostSetup found no list at 21:37:59, the dump 5s later shows
+            // List(9) with 15 entries - log 2026-07-10). As soon as the list
+            // exists, switch this addon over to list navigation.
+            var lateList = FindListInAddon(currentAddon);
+            if (lateList != null)
+            {
+                _noListCache.Remove(name);
+                PushMenu(name, lateList->SelectedItemIndex);
+                var count = GetListEntryCount(lateList);
+                var sel   = ReadListItemText(lateList, Math.Max(0, lateList->SelectedItemIndex));
+                _log.Info($"[Accessibility] {name}: Liste nach PostSetup aufgebaut ({count} Eintraege)");
+                _tolk.Speak(sel.Length > 0 ? $"{sel}, {count} Einträge" : $"Menü, {count} Einträge");
+                return;
+            }
             ScanAddonTexts(name, currentAddon, isInit: false);
         }
     }
 
-    // ── Universal: Fokus per ReceiveEvent (Fallback für Listen-lose Addons) ─
+    // -- Universal: Fokus per ReceiveEvent (Fallback f�r Listen-lose Addons) -
 
-    private static readonly HashSet<byte> IgnoredEventTypes = [3, 4, 5, 12, 14, 15, 16, 17, 23, 24];
+    // 64/65/66 = TimerTick/TimerEnd/TimerStart, 74 = TimelineActiveLabelChanged
+    // (AtkEventType, ilspycmd): pure animation/timer noise - _LimitBreak alone
+    // fired 74 three times per frame in-game and flooded the log (2026-07-10).
+    private static readonly HashSet<byte> IgnoredEventTypes = [3, 4, 5, 12, 14, 15, 16, 17, 23, 24, 64, 65, 66, 74];
 
     private unsafe void OnAnyAddonReceive(AddonEvent type, AddonArgs args)
     {
@@ -327,45 +492,224 @@ public sealed class UIReaderService : IDisposable
 
         _log.Info($"[Accessibility] {name} ReceiveEvent: type={recv.AtkEventType} param={recv.EventParam}");
 
+        // For real navigation events (MouseOver / ButtonClick) the AtkEvent
+        // pointer names the exact hovered/clicked component and takes priority.
+        // The flag-based FindFocusedText below can latch onto a stale highlight
+        // - e.g. _CharaMakeRaceGender, where every race node keeps a static
+        // collision bit, so FindFocusedText always returned the same race and
+        // the dedup silenced navigation (log 2026-07-09 21:43-21:45).
+        if ((int)recv.AtkEventType is 6 or 25
+            && TryAnnounceEventTarget(name, addon, recv.AtkEvent, interrupt: (int)recv.AtkEventType == 6))
+            return;
+
         var (focused, nodeId) = FindFocusedText(addon);
         if (!string.IsNullOrEmpty(focused))
         {
-            if (nodeId != _lastFocusedNodeId || focused != _lastFocused)
+            if (!_lastFocusByAddon.TryGetValue(name, out var last)
+                || nodeId != last.Key || focused != last.Text)
             {
-                _lastFocusedNodeId = nodeId;
-                _lastFocused = focused;
+                _lastFocusByAddon[name] = (nodeId, focused);
                 _tolk.SpeakInterrupt(focused);
             }
         }
     }
 
-    // ── Talk ────────────────────────────────────────────────────────
-
-    private unsafe void OnTalkOpen(AddonEvent type, AddonArgs args)
+    /// <summary>
+    /// Universal fallback: maps the AtkEvent pointers (Node AND Target - Node
+    /// can be null, proven on TitleDCWorldMap) to a component node inside the
+    /// addon and announces that component's first text. Event params are NOT
+    /// node ids, so only pointer comparison is reliable.
+    /// </summary>
+    /// <returns>
+    /// True if the event pointer was resolved to a component (announced or
+    /// suppressed by dedup). False when no mapping/text was found, so the
+    /// caller can fall back to the flag-based FindFocusedText.
+    /// </returns>
+    private unsafe bool TryAnnounceEventTarget(string addonName, AtkUnitBase* addon, nint atkEventPtr, bool interrupt)
     {
-        var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) return;
-        var text = ReadFirstText(addon);
-        if (!string.IsNullOrWhiteSpace(text)) _tolk.SpeakInterrupt(text);
+        // Every early exit logs its reason (lesson from the VirtualQuery bug).
+        if (atkEventPtr == 0)
+        {
+            _log.Info($"[Accessibility] {addonName}: AtkEvent pointer is null.");
+            return false;
+        }
+        var evt = (AtkEvent*)atkEventPtr;
+        if (!IsReadable(evt))
+        {
+            _log.Info($"[Accessibility] {addonName}: AtkEvent not readable: {DescribeMemory(evt)}");
+            return false;
+        }
+
+        var node   = (nint)evt->Node;
+        var target = (nint)evt->Target;
+
+        var match = FindComponentForEvent(addon, node, target);
+        if (match == 0)
+        {
+            _log.Info($"[Accessibility] {addonName}: event target not mapped: Node=0x{node:X} Target=0x{target:X}");
+            return false;
+        }
+
+        var text = ReadFirstTextInComponent((AtkResNode*)match);
+        var key  = ((AtkResNode*)match)->NodeId;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _log.Info($"[Accessibility] {addonName}: component matched (node id={key}) but has no text.");
+            return false;
+        }
+
+        if (_lastFocusByAddon.TryGetValue(addonName, out var last) && key == last.Key && text == last.Text)
+            return true; // correctly identified, just unchanged - do not fall back
+        _lastFocusByAddon[addonName] = (key, text);
+        // MouseOver interrupts (user is navigating), ButtonClick queues -
+        // a click often opens a dialog whose announcement must not be cut off.
+        if (interrupt) _tolk.SpeakInterrupt(text);
+        else           _tolk.Speak(text);
+        _log.Info($"[Accessibility] {addonName} Fokus via Event-Target: '{text}' (node id={key})");
+        return true;
     }
 
-    private unsafe void OnTalkReceive(AddonEvent type, AddonArgs args)
+    /// <summary>
+    /// Finds the component node the event pointers belong to. Searches depth-
+    /// first (deepest match wins): a component's NodeList contains its child
+    /// component NODES but not their internals, so the inner component must be
+    /// checked before the outer one claims the match.
+    /// </summary>
+    private unsafe nint FindComponentForEvent(AtkUnitBase* addon, nint node, nint target)
     {
-        var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) return;
-        var text = ReadFirstText(addon);
-        if (!string.IsNullOrWhiteSpace(text)) _tolk.SpeakInterrupt(text);
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var match = FindComponentForEventIn(addon->UldManager.NodeList[i], node, target, depth: 0);
+            if (match != 0) return match;
+        }
+        return 0;
     }
 
-    // ── SelectYesno ─────────────────────────────────────────────────
+    private unsafe nint FindComponentForEventIn(AtkResNode* candidate, nint node, nint target, int depth)
+    {
+        const int MaxDepth = 4;
+        if (candidate == null || (int)candidate->Type < 1000 || depth > MaxDepth) return 0;
+
+        var comp = ((AtkComponentNode*)candidate)->Component;
+        if (comp == null || !IsReadable(comp)) return 0;
+
+        // Inner components first - deepest match wins (e.g. list item inside list)
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var inner = FindComponentForEventIn(comp->UldManager.NodeList[i], node, target, depth + 1);
+            if (inner != 0) return inner;
+        }
+
+        var ptr = (nint)candidate;
+        if (node == ptr || target == ptr) return ptr;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var c = (nint)comp->UldManager.NodeList[i];
+            if (c != 0 && (c == node || c == target)) return ptr;
+        }
+        return 0;
+    }
+
+    // -- Talk --------------------------------------------------------
+
+    // Dedup per addon: Talk keeps its window open across dialog PAGES and
+    // sets its text only AFTER PostSetup - the old read-once-at-open handler
+    // (ReadFirstText, ids 2-12) never caught anything (user 2026-07-11:
+    // no NPC dialog was ever spoken). PostUpdate + change detection catches
+    // every page; the log line finally makes the speech output diagnosable.
+    private readonly Dictionary<string, string> _lastDialogTexts = [];
+
+    private unsafe void OnTalkUpdate(AddonEvent type, AddonArgs args)
+    {
+        var name = args.AddonName;
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->IsVisible)
+        {
+            _lastDialogTexts.Remove(name);
+            return;
+        }
+
+        // Collect per text NODE instead of one joined string: the speaker
+        // name is its own text node and comes LAST in node-list order
+        // (log-verified 2026-07-11: all 26 Talk pages ended in ". Miounne."
+        // / ". Soldat des Klageregiments."). AddonTalk only has unnamed
+        // AtkTextNode fields (ilspycmd), so the node-id probe line below is
+        // the ground truth that pins the name node id permanently.
+        var segments = new List<(uint Id, string Text)>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || node->Type != NodeType.Text) continue;
+            var t = ((AtkTextNode*)node)->NodeText.ToString();
+            if (!string.IsNullOrWhiteSpace(t) && t.Length > 1)
+                segments.Add((node->NodeId, t));
+        }
+        if (segments.Count == 0) return;
+
+        var dedupKey = string.Join("|", segments.Select(s => s.Text));
+        if (_lastDialogTexts.TryGetValue(name, out var last) && last == dedupKey) return;
+        _lastDialogTexts[name] = dedupKey;
+
+        // User wish 2026-07-11: speaker name FIRST ("Miounne: text").
+        // Probe-verified (log 2026-07-11 10:14, every Talk page): the name
+        // is node id=2, the dialog text node id=3. Pinned to id=2 so pages
+        // without a speaker and TalkSubtitle are never reordered wrongly.
+        string spoken;
+        var nameSeg = name == "Talk" ? segments.FirstOrDefault(s => s.Id == 2) : default;
+        if (nameSeg.Text != null && segments.Count >= 2)
+        {
+            var body = string.Join(". ", segments.Where(s => s.Id != 2).Select(s => s.Text));
+            spoken = $"{nameSeg.Text}: {body}";
+        }
+        else
+        {
+            spoken = string.Join(". ", segments.Select(s => s.Text));
+        }
+
+        var probe = string.Join(" ", segments.Select(s => $"[id{s.Id}]='{(s.Text.Length > 40 ? s.Text[..40] + "..." : s.Text)}'"));
+        _log.Info($"[Accessibility] {name} Dialog-Nodes: {probe}");
+        _tolk.SpeakInterrupt(spoken);
+    }
+
+    // -- SelectYesno -------------------------------------------------
 
     private unsafe void OnYesNoOpen(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
-        _lastYesNoText = "Ja";
+        (_ynConfirmLabel, _ynCancelLabel) = ReadYesNoLabels(addon);
+        _lastYesNoText = _ynConfirmLabel;
         var question = ReadYesNoQuestion(addon);
-        _tolk.SpeakInterrupt(string.IsNullOrWhiteSpace(question) ? "Ja oder Nein?" : $"{question} Ja oder Nein?");
+        var buttons  = AccessibilityStrings.DialogButtons(_ynConfirmLabel, _ynCancelLabel);
+        _log.Info($"[Accessibility] SelectYesno offen: Frage='{question}' Buttons=[{_ynConfirmLabel}|{_ynCancelLabel}]");
+        _tolk.SpeakInterrupt(string.IsNullOrWhiteSpace(question) ? buttons : $"{question} {buttons}");
+        _dialogOpenedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Reads the two button labels of a SelectYesno dialog fresh from its nodes.
+    /// Verified via dump 2026-07-09 21:32: the visible labeled buttons are the
+    /// Comp(1005) nodes id=8 ("Ok") and id=11 ("Abbrechen"); the HoldButton
+    /// variants (ids 9/12/15) are invisible duplicates. ULD node ids are static,
+    /// only the texts change per dialog.
+    /// MAPPING ASSUMPTION (test pending, see STATUS.md): id=8 = callback index 0
+    /// (confirm side), id=11 = index 1 (cancel side) - consistent with the
+    /// previously verified Ja=0/Nein=1 behavior. Falls back to Ja/Nein.
+    /// </summary>
+    private unsafe (string Confirm, string Cancel) ReadYesNoLabels(AtkUnitBase* addon)
+    {
+        string confirm = "Ja", cancel = "Nein";
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000) continue;
+            var t = ReadFirstTextInComponent(n);
+            if (string.IsNullOrWhiteSpace(t)) continue;
+            if (n->NodeId == 8)  confirm = t;
+            if (n->NodeId == 11) cancel  = t;
+        }
+        return (confirm, cancel);
     }
 
     private void OnYesNoReceive(AddonEvent type, AddonArgs args)
@@ -374,7 +718,302 @@ public sealed class UIReaderService : IDisposable
             _log.Info($"[Accessibility] SelectYesno Event: type={recv.AtkEventType} param={recv.EventParam}");
     }
 
-    // ── SelectString / SelectIconString ─────────────────────────────
+    // -- Struktur-Probe für ein einzelnes Addon ------------------------
+
+    /// <summary>
+    /// Logs all visible texts of one addon with their node ids ([Probe]
+    /// lines). Ground-truth collector: the quest tracker (_ToDoList) shows
+    /// the CURRENT OBJECTIVE of every accepted quest - the user asked for
+    /// quest descriptions in the browser (2026-07-11) and the tracker is the
+    /// game's own always-current source. Structure unknown until this probe
+    /// delivers; do NOT build a reader on guesses.
+    /// </summary>
+    public unsafe void ProbeAddonTexts(string name)
+    {
+        var ptr = _gameGui.GetAddonByName(name);
+        if (ptr.IsNull)
+        {
+            _log.Info($"[Probe] {name}: Addon existiert nicht.");
+            return;
+        }
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible)
+        {
+            _log.Info($"[Probe] {name}: unsichtbar.");
+            return;
+        }
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null) continue;
+            if (n->Type == NodeType.Text && n->IsVisible())
+            {
+                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                if (t.Length > 1) _log.Info($"[Probe] {name} id={n->NodeId}: '{t}'");
+                continue;
+            }
+            if ((int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
+                var t = ((AtkTextNode*)child)->NodeText.ToString().Trim();
+                if (t.Length > 1) _log.Info($"[Probe] {name} id={n->NodeId}/{child->NodeId} CT={(int)comp->GetComponentType()}: '{t}'");
+            }
+        }
+    }
+
+    // -- Globaler UI-Fokus (AtkInputManager.FocusedNode) --------------
+
+    // The game tracks THE keyboard/gamepad-focused UI node globally:
+    // AtkStage.Instance()->AtkInputManager->FocusedNode (@6272, ilspycmd
+    // 2026-07-11). Reading it directly covers every keyboard-navigable
+    // window (dialog buttons, options controls) without per-addon flag
+    // guessing - the user pressed left/right in Ok/Cancel dialogs several
+    // times and NEITHER our key handler NOR any node flag registered it.
+    private nint   _lastFocusedNodePtr;
+    private string _lastFocusedNodeText = string.Empty;
+    private string _lastFocusedItemName = string.Empty;
+
+    public unsafe void UpdateGlobalFocus()
+    {
+        var stage = AtkStage.Instance();
+        if (stage == null) return;
+        var input = stage->AtkInputManager;
+        if (input == null) return;
+
+        var node = input->FocusedNode;
+        if (node == null)
+        {
+            _lastFocusedNodePtr  = 0;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
+        // Item slots (inventory grid, hand-over, quest reward) show only an
+        // icon - no name. Their raw text is empty or JUST the stack quantity
+        // ("10"), so the icon->name resolution must take PRIORITY over the text
+        // (log 2026-07-12: filled slots announced "10" instead of the item).
+        // Resolve only when the focused node changes (bag/sheet lookup is not a
+        // per-frame operation); cache it so same-node frames reuse the name.
+        if ((nint)node != _lastFocusedNodePtr)
+            _lastFocusedItemName = ResolveFocusedItemName(node);
+
+        string text;
+        if (!string.IsNullOrEmpty(_lastFocusedItemName))
+        {
+            text = _lastFocusedItemName;
+        }
+        else
+        {
+            // Focus often sits on a child (collision node) of the actual
+            // control - climb up a few levels until some text resolves.
+            text = GetTextFromNodeTree(node);
+            var cur = node;
+            for (var up = 0; string.IsNullOrEmpty(text) && up < 3 && cur->ParentNode != null; up++)
+            {
+                cur  = cur->ParentNode;
+                text = GetTextFromNodeTree(cur);
+            }
+        }
+
+        if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
+        _lastFocusedNodePtr  = (nint)node;
+        _lastFocusedNodeText = text;
+        _log.Info($"[Focus] id={node->NodeId} ptr=0x{(nint)node:X} Text='{text}'");
+        // Just after a dialog opens the focus settles onto its default button;
+        // announcing it here would interrupt the opening question. Stay silent
+        // during the guard window (state is already updated, so the user's next
+        // navigation is still detected and announced).
+        if (InDialogOpenGuard) return;
+        if (!string.IsNullOrEmpty(text))
+        {
+            // The quest-completion reward summary is spoken in full when
+            // JournalResult opens (BuildRewardText). Navigating its currency
+            // cells afterwards yields only bare numbers ("400"/"103") - skip
+            // those while that window is open; buttons ("Abschließen") and item
+            // names are non-numeric and still pass through.
+            if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
+            _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
+        }
+    }
+
+    /// <summary>True for text that is only digits and separators (a currency
+    /// amount like "400" or "1.234"), i.e. carries no words.</summary>
+    private static bool IsBareNumber(string text)
+    {
+        var hasDigit = false;
+        foreach (var c in text)
+        {
+            if (char.IsDigit(c)) { hasDigit = true; continue; }
+            if (c is ' ' or '.' or ',' or '/' or '%') continue;
+            return false;
+        }
+        return hasDigit;
+    }
+
+    /// <summary>Whether a named addon currently exists and is visible.</summary>
+    private unsafe bool IsAddonVisible(string addonName)
+    {
+        var ptr = _gameGui.GetAddonByName(addonName);
+        if (ptr.IsNull) return false;
+        return ((AtkUnitBase*)(nint)ptr)->IsVisible;
+    }
+
+    /// <summary>
+    /// Name of the item the focused node belongs to, or "" if it is not an item
+    /// slot. Item slots (inventory grid, hand-over Request, quest reward) carry
+    /// an icon but no text, so we climb from the focused collision node to its
+    /// slot component, read the icon id and resolve it against the item sheets.
+    /// The same climb already resolves button labels (log confirms), so reaching
+    /// the slot component this way is proven.
+    /// </summary>
+    private unsafe string ResolveFocusedItemName(AtkResNode* node)
+    {
+        // Climb to the nearest ancestor-or-self COMPONENT node (the focus sits
+        // on the slot's collision child). Evaluate exactly that component: if it
+        // is an item slot (has an icon) resolve the name, otherwise stop - do
+        // NOT keep climbing into the addon, or a button/window could pick up an
+        // unrelated decorative icon and be mis-announced as an item.
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp == null) return string.Empty;
+
+                var icon = FindSlotIcon(comp);
+                if (icon == null || icon->IconId == 0) return string.Empty; // a real control, but not an item slot
+
+                var name = _inventory.ResolveIconName(icon->IconId);
+                if (string.IsNullOrEmpty(name)) return string.Empty;
+
+                // Prepend the stack count so the user hears "10 mal Eichenholz".
+                var qty = ReadIconQuantity(icon);
+                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}'");
+                return qty.Length > 0 ? $"{qty} mal {name}" : name;
+            }
+            cur = cur->ParentNode;
+        }
+        return string.Empty;
+    }
+
+    /// <summary>The AtkComponentIcon of a slot component: an Icon component itself,
+    /// a DragDrop's icon, or the first Icon child of a wrapper (Multipurpose).
+    /// null if the component is not an item slot.</summary>
+    private static unsafe AtkComponentIcon* FindSlotIcon(AtkComponentBase* comp)
+    {
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.Icon:
+                return (AtkComponentIcon*)comp;
+            case ComponentType.DragDrop:
+                return ((AtkComponentDragDrop*)comp)->AtkComponentIcon;
+        }
+
+        // Wrapper (Multipurpose etc.): look for a direct Icon child component.
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000) continue;
+            var c = ((AtkComponentNode*)n)->Component;
+            if (c != null && c->GetComponentType() == ComponentType.Icon)
+                return (AtkComponentIcon*)c;
+        }
+        return null;
+    }
+
+    /// <summary>Visible stack count of an item slot ("10"), read straight from the
+    /// icon's own QuantityText node (offset 256, ilspycmd-verified) - not via
+    /// GetTextFromNodeTree, which drops 1-char strings and would lose single-digit
+    /// counts. "" when the quantity node is hidden/empty or shows a single item.</summary>
+    private static unsafe string ReadIconQuantity(AtkComponentIcon* icon)
+    {
+        var qn = icon->QuantityText;
+        if (qn == null || !((AtkResNode*)qn)->IsVisible()) return string.Empty;
+        var q = qn->NodeText.ToString().Trim();
+        if (q.Length == 0 || q == "1" || !q.All(char.IsDigit)) return string.Empty;
+        return q;
+    }
+
+    // -- Dialog-Button-Fokus-Probe (SelectYesno, JournalResult) ------
+
+    // Which flag marks the keyboard-selected button of a dialog? Left/right
+    // switching was inaudible in V4.31 and the generic focus scan logged no
+    // focus-bit movement (log 2026-07-11: one focus line per dialog, then
+    // silence while the user navigated). This probe logs ALL visible button
+    // flags on every change and announces the button carrying the focus bit
+    // - reading the game state instead of mirroring it (Navigate keeps its
+    // own left=confirm model only as fallback until the probe settles this).
+    private readonly Dictionary<string, string> _lastDialogButtonFlags = [];
+    private readonly Dictionary<string, string> _lastDialogButtonAnnounce = [];
+
+    // A dialog's opening announcement (question + buttons) must not be cut off
+    // by the button-focus announcers (OnDialogButtonProbe and the global focus
+    // reader), which both fire a few ms later and would interrupt it - the user
+    // then only heard "Ok" and not what they were confirming (report
+    // 2026-07-11). For a short window after a dialog opens they keep tracking
+    // state but stay silent; navigation after the window announces normally.
+    private DateTime _dialogOpenedAt = DateTime.MinValue;
+    private bool InDialogOpenGuard => (DateTime.UtcNow - _dialogOpenedAt).TotalMilliseconds < 1000;
+
+    private unsafe void OnDialogButtonProbe(AddonEvent type, AddonArgs args)
+    {
+        var name  = args.AddonName;
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        const ushort HasFocusBit = 0x100;
+        var sb = new StringBuilder();
+        string? focused = null;
+        var focusedCount = 0;
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000 || !node->IsVisible()) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Button) continue;
+
+            var label    = ReadFirstTextInComponent(node);
+            var nf       = (ushort)node->NodeFlags;
+            var hasFocus = (nf & HasFocusBit) != 0;
+
+            sb.Append($" id{node->NodeId}'{label}'=0x{nf:X4}");
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var ch = comp->UldManager.NodeList[j];
+                if (ch == null) continue;
+                var cf = (ushort)ch->NodeFlags;
+                sb.Append($" c{ch->NodeId}=0x{cf:X4}{(ch->IsVisible() ? "V" : "")}");
+                if ((cf & HasFocusBit) != 0) hasFocus = true;
+            }
+
+            if (hasFocus && !string.IsNullOrWhiteSpace(label))
+            {
+                focused = label;
+                focusedCount++;
+            }
+        }
+
+        var snapshot = sb.ToString();
+        if (_lastDialogButtonFlags.TryGetValue(name, out var last) && last == snapshot) return;
+        _lastDialogButtonFlags[name] = snapshot;
+        _log.Info($"[BtnProbe] {name}:{snapshot}");
+
+        if (focusedCount != 1 || focused == null) return;
+        if (_lastDialogButtonAnnounce.TryGetValue(name, out var announced) && announced == focused) return;
+        _lastDialogButtonAnnounce[name] = focused;
+        // Keep the state above current, but don't cut off the just-spoken question.
+        if (InDialogOpenGuard) return;
+        _tolk.SpeakInterrupt(focused);
+    }
+
+    // -- SelectString / SelectIconString -----------------------------
 
     private unsafe void OnSelectStringOpen(AddonEvent type, AddonArgs args)
     {
@@ -395,7 +1034,7 @@ public sealed class UIReaderService : IDisposable
             if (!string.IsNullOrWhiteSpace(prompt))
                 sb.Append(prompt).Append(". ");
 
-            // Bis zu 8 Einträge vorlesen — SelectString hat selten mehr davon
+            // Bis zu 8 Eintr�ge vorlesen � SelectString hat selten mehr davon
             var maxItems = Math.Min(list->ListLength, 8);
             for (var i = 0; i < maxItems; i++)
             {
@@ -405,26 +1044,96 @@ public sealed class UIReaderService : IDisposable
             }
             if (sb.Length > 0)
                 _tolk.SpeakInterrupt(sb.ToString().Trim());
+            _dialogOpenedAt = DateTime.UtcNow;
         }
         else if (!string.IsNullOrWhiteSpace(prompt))
         {
             _tolk.SpeakInterrupt(prompt);
+            _dialogOpenedAt = DateTime.UtcNow;
         }
     }
 
-    // ── Titelbildschirm ─────────────────────────────────────────────
+    // -- Request (NPC-Ablieferung "GEGENSTAND ABLIEFERN") ------------
+    // The hand-over window carries NO item names in its nodes (icon-only
+    // slots); the eligible items live in the sibling InventoryEventGrid, also
+    // icon-only. We resolve each slot's icon id against the player's own items
+    // (InventoryService) so a blind player hears what to hand over. Reading is
+    // triggered manually (Strg+F3) because the grid fills a few frames after
+    // Request's PostSetup.
+
+    private void OnRequestOpen(AddonEvent type, AddonArgs args)
+    {
+        _tolk.SpeakInterrupt("Gegenstand abliefern. Drücke Strg F3 für die passenden Gegenstände, dann auswählen und Übergeben.");
+    }
+
+    /// <summary>
+    /// If the hand-over window (Request) is open, announces the eligible items
+    /// from the InventoryEventGrid and returns true; otherwise returns false so
+    /// the caller can fall back to reading the whole inventory.
+    /// </summary>
+    public unsafe bool TryAnnounceHandOver()
+    {
+        var reqPtr = _gameGui.GetAddonByName("Request");
+        if (reqPtr.IsNull || !((AtkUnitBase*)(nint)reqPtr)->IsVisible) return false;
+        AnnounceHandOver();
+        return true;
+    }
+
+    /// <summary>Reads the icon-only slots of the hand-over grid and speaks the resolved item names.</summary>
+    private unsafe void AnnounceHandOver()
+    {
+        var items = new List<string>();
+        var gridPtr = _gameGui.GetAddonByName("InventoryEventGrid");
+        if (!gridPtr.IsNull)
+        {
+            var grid = (AtkUnitBase*)(nint)gridPtr;
+            var iconNames = _inventory.BuildIconNameMap();
+
+            for (var i = 0; i < grid->UldManager.NodeListCount; i++)
+            {
+                var node = grid->UldManager.NodeList[i];
+                if (node == null || (int)node->Type < 1000) continue;
+
+                var comp = ((AtkComponentNode*)node)->Component;
+                if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) continue;
+
+                var icon = ((AtkComponentDragDrop*)comp)->AtkComponentIcon;
+                if (icon == null) continue;
+
+                var iconId = icon->IconId;
+                if (iconId == 0) continue; // empty slot
+
+                var name = iconNames.TryGetValue(iconId, out var n) ? n : $"Unbekannter Gegenstand, Icon {iconId}";
+                _log.Info($"[HandIn] Slot node={node->NodeId} iconId={iconId} name='{name}'");
+                items.Add(name);
+            }
+        }
+
+        var msg = items.Count switch
+        {
+            0 => "Keine passenden Gegenstände im Beutel gefunden.",
+            1 => $"Ein passender Gegenstand: {items[0]}. Auswählen und dann Übergeben drücken.",
+            _ => $"{items.Count} passende Gegenstände: {string.Join(", ", items)}. Auswählen und dann Übergeben drücken.",
+        };
+        _tolk.SpeakInterrupt(msg);
+    }
+
+    // -- Titelbildschirm ---------------------------------------------
 
     private void OnTitleScreenOpen(AddonEvent type, AddonArgs args)
     {
-        _tolk.SpeakInterrupt("Titelbildschirm. Drücke Enter um das Menü zu öffnen.");
+        ResetTitleMenuState();
+        _activeScreenContext = ScreenContext.Title;
+        _tolk.SpeakInterrupt(AccessibilityStrings.TitleScreen);
     }
 
-    // ── _TitleMenu (Hauptmenü mit Buttons) ──────────────────────────
+    // -- _TitleMenu (Hauptmen� mit Buttons) --------------------------
 
     private unsafe void OnTitleMenuOpen(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
+        _activeScreenContext = ScreenContext.TitleMenu;
 
         // Flag-Cache initialisieren (Top-Level + Children)
         var cache = new Dictionary<uint, ushort>();
@@ -445,46 +1154,47 @@ public sealed class UIReaderService : IDisposable
             }
         }
 
-        // Menü-Einträge lesen und ansagen
-        var items = ReadTitleMenuItems(addon);
-        _lastTitleMenuText = string.Empty;
-
-        if (items.Count == 0)
+        // Men�-Eintr�ge lesen und ansagen
+        var selection = GetTitleMenuSelection(addon);
+        if (selection.Count <= 0 || string.IsNullOrWhiteSpace(selection.Item))
         {
-            _tolk.SpeakInterrupt("Hauptmenü.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.MainMenu);
             return;
         }
-        var sb = new StringBuilder("Hauptmenü: ");
-        for (var i = 0; i < items.Count; i++)
-            sb.Append($"{i + 1}. {items[i]}. ");
-        _tolk.SpeakInterrupt(sb.ToString().TrimEnd());
+
+        RememberTitleMenuSelection(selection.Item, selection.Index);
+        _tolk.SpeakInterrupt($"{AccessibilityStrings.MainMenu}. {FormatTitleMenuSelection(selection.Item, selection.Index, selection.Count)}");
     }
 
-    private void OnTitleMenuReceive(AddonEvent type, AddonArgs args)
+    private unsafe void OnTitleMenuReceive(AddonEvent type, AddonArgs args)
     {
-        // Fokus-Ankündigungen laufen über OnAnyAddonUpdate (Flag-Änderung HasCollision).
-        // ReceiveEvent wird nur noch für Debug-Logging genutzt.
-        if (args is AddonReceiveEventArgs recv)
-            _log.Info($"[DEBUG] _TitleMenu ReceiveEvent: type={recv.AtkEventType} param={recv.EventParam}");
+        // Fokus-Ank�ndigungen laufen �ber OnAnyAddonUpdate (PostUpdate, jedes Frame).
+        // Bei InputReceived: Dump-Flag setzen � DumpTitleMenuButtonFlags l�uft dann im
+        // n�chsten PostUpdate, wenn das Spiel den Fokus bereits intern verschoben hat.
+        if (args is not AddonReceiveEventArgs recv) return;
+        _log.Info($"[DEBUG] _TitleMenu ReceiveEvent: type={recv.AtkEventType} param={recv.EventParam}");
+
+        if ((int)recv.AtkEventType == 12) // InputReceived
+            _dumpOnNextTitleMenuUpdate = true;
     }
 
-    // ── Systemkonfiguration (ConfigSystem) ─────────────────────────
+    // -- Systemkonfiguration (ConfigSystem) -------------------------
 
-    // Text-Cache: nodeKey → letzter gesehener Inhalt (für Änderungs-Erkennung)
+    // Text-Cache: nodeKey ? letzter gesehener Inhalt (f�r �nderungs-Erkennung)
     private readonly Dictionary<uint, string> _configSystemLastTexts = [];
 
-    // Generic text cache: addonName → (nodeKey → letzter Text) für alle nicht-listenbasierten Addons
+    // Generic text cache: addonName ? (nodeKey ? letzter Text) f�r alle nicht-listenbasierten Addons
     private readonly Dictionary<string, Dictionary<uint, string>> _genericTextCache = [];
 
     // TitleDCWorldMap: zuletzt angesagte Region (Dedup)
     private string _lastDCText = string.Empty;
 
-    // TitleDCWorldMap: Tab/Panel-Paare (befüllt in OnDCWorldMapOpen).
-    // Wir speichern den Pointer zum Panel-Node, um dessen Sichtbarkeit zu prüfen.
+    // TitleDCWorldMap: Tab/Panel-Paare (bef�llt in OnDCWorldMapOpen).
+    // Wir speichern den Pointer zum Panel-Node, um dessen Sichtbarkeit zu pr�fen.
     // Panels[i] entspricht Tab[i] nach NodeList-Reihenfolge.
-    private readonly List<(nint PanelPtr, string Region, List<string> DCs)> _dcTabPanels = [];
+    private readonly List<(nint PanelPtr, string Region, List<(nint Node, string Name, nint WorldList)> DCs)> _dcTabPanels = [];
 
-    /// <summary>True wenn TitleDCWorldMap gerade offen ist (für Plugin.cs-Navigation).</summary>
+    /// <summary>True wenn TitleDCWorldMap gerade offen ist (f�r Plugin.cs-Navigation).</summary>
     public bool IsDCMapOpen { get; private set; }
 
     private unsafe void OnConfigSystemOpen(AddonEvent type, AddonArgs args)
@@ -492,10 +1202,13 @@ public sealed class UIReaderService : IDisposable
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
 
-        var isReopen  = _configSystemLastTexts.Count > 0;
-        var newTexts  = new Dictionary<uint, string>();
+        _csPendingSave       = true;  // Default: OK = gespeichert; Escape setzt auf false
+        _activeScreenContext = ScreenContext.ConfigSystem;
+
+        // Flag-Cache + Text-Cache neu aufbauen
         var flagCache = new Dictionary<uint, ushort>();
         _focusTrackFlags["ConfigSystem"] = flagCache;
+        _configSystemLastTexts.Clear();
 
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
@@ -507,12 +1220,15 @@ public sealed class UIReaderService : IDisposable
             {
                 var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
                 if (!string.IsNullOrWhiteSpace(t))
-                    newTexts[n->NodeId] = t;
+                    _configSystemLastTexts[n->NodeId] = t;
             }
 
             if ((int)n->Type < 1000) continue;
             var comp = ((AtkComponentNode*)n)->Component;
             if (comp == null) continue;
+
+            // Diagnose: alle ComponentTypes loggen (Tab-Typ identifizieren)
+            _log.Info($"[CS-OPEN] Node[{i}] id={n->NodeId} Type={(int)n->Type} CT={(int)comp->GetComponentType()}({comp->GetComponentType()}) Vis={n->IsVisible()}");
 
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
@@ -523,53 +1239,76 @@ public sealed class UIReaderService : IDisposable
                 if (child->Type != NodeType.Text) continue;
                 var ct = ((AtkTextNode*)child)->NodeText.ToString().Trim();
                 if (!string.IsNullOrWhiteSpace(ct))
-                    newTexts[n->NodeId * 10000u + child->NodeId] = ct;
+                    _configSystemLastTexts[n->NodeId * 10000u + child->NodeId] = ct;
             }
         }
 
-        if (isReopen)
-        {
-            // Kategorie-Wechsel: geänderten Text mit 3-50 Zeichen finden → Kategorieüberschrift ansagen
-            string? categoryName = null;
-            foreach (var (key, newText) in newTexts)
-            {
-                if (newText.Length < 3 || newText.Length > 50) continue;
-                if (!_configSystemLastTexts.TryGetValue(key, out var oldText) || oldText == newText) continue;
-                if (categoryName == null || newText.Length < categoryName.Length)
-                    categoryName = newText;
-            }
-            _log.Info($"[Accessibility] ConfigSystem Kategorie: '{categoryName ?? "?"}'");
-            _tolk.SpeakInterrupt(categoryName ?? "Systemkonfiguration.");
-        }
-        else
-        {
-            _tolk.SpeakInterrupt("Systemkonfiguration.");
-        }
+        // Tab-Liste aufbauen + fokussierten Tab ermitteln
+        _csTabs.Clear();
+        _csLastTabIndex = -1;
+        _csLastTabText  = string.Empty;
+        ReadConfigSystemTabs(addon);
+        var (tabIdx, tabLabel) = GetFocusedTabInfo(addon);
+        _csLastTabIndex = tabIdx;
+        _csLastTabText  = tabLabel;
 
-        _configSystemLastTexts.Clear();
-        foreach (var (k, v) in newTexts)
-            _configSystemLastTexts[k] = v;
+        // Ansage: "Systemeinstellungen. [Tab X von N.]"
+        var sb = new StringBuilder(AccessibilityStrings.ConfigSystem);
+        if (!string.IsNullOrEmpty(tabLabel) && _csTabs.Count > 0)
+            sb.Append($". {AccessibilityStrings.TabPosition(tabLabel, tabIdx + 1, _csTabs.Count)}");
+        sb.Append(".");
+        _tolk.SpeakInterrupt(sb.ToString());
     }
 
     private void OnConfigSystemClose(AddonEvent type, AddonArgs args)
     {
         _focusTrackFlags.Remove("ConfigSystem");
-        _lastTitleMenuText = string.Empty; // Dedup zurücksetzen → fokussierter Button wird neu angesagt
-        // _configSystemLastTexts bewusst NICHT leeren — für Kategorie-Vergleich beim Wiederöffnen
+        _csTabs.Clear();
+        _csLastTabIndex = -1;
+        _csLastTabText  = string.Empty;
+        _lastTitleMenuText = string.Empty; // Dedup zur�cksetzen ? TitleMenu-Button wird neu angesagt
+
+        // Gespeichert oder verworfen?
+        var msg = _csPendingSave
+            ? AccessibilityStrings.ConfigSystemSaved
+            : AccessibilityStrings.ConfigSystemDiscarded;
+        _tolk.SpeakInterrupt(msg);
+        _csPendingSave = false;
+
+        // _configSystemLastTexts NICHT leeren � Wert-Cache bleibt f�r n�chstes �ffnen
+        _activeScreenContext = GetCurrentScreenContext();
     }
 
     private unsafe void OnConfigSystemReceive(AddonEvent type, AddonArgs args)
     {
         if (args is not AddonReceiveEventArgs recv) return;
-        if ((int)recv.AtkEventType != 12) return; // nur InputReceived
 
-        var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) return;
+        // Alle Events loggen (au�er 74 = TimelineActiveLabelChanged) � f�r Diagnose: OK/Cancel-EventType ermitteln
+        if ((int)recv.AtkEventType != 74)
+            _log.Info($"[CS-EVT] type={(int)recv.AtkEventType}({recv.AtkEventType}) param={recv.EventParam}");
 
-        ScanConfigSystemTexts(addon);
+        // CS-DIAG-Dump bei InputReceived (case 12) ENTFERNT: feuerte bei
+        // JEDEM Tastendruck einen 1400-Zeilen-Dump + Ansage "ConfigSystem
+        // Dump. 593 Nodes." (Log 2026-07-11 10:33, 40k Zeilen Flut).
+        // Struktur ist analysiert: docs/game-api.md -> "ConfigSystem".
+        // TODO: OK/Abbrechen-ButtonClick hier erkennen (_csPendingSave),
+        // sobald die Button-NodeIds aus einem Klick-Log bekannt sind.
     }
 
-    /// <summary>Scannt alle Text-Nodes in ConfigSystem und sagt echte Änderungen an.</summary>
+    private bool IsVolatileConfigText(string t)
+    {
+        if (string.IsNullOrWhiteSpace(t)) return true;
+        // FPS-Muster: "60 fps", "144 fps", "60 Bilder/Sek."
+        if (t.Contains("fps", StringComparison.OrdinalIgnoreCase)) return true;
+        if (t.Contains("Bilder/Sek", StringComparison.OrdinalIgnoreCase)) return true;
+        // Reiner Zahlenwert (oft FPS oder Latenz in der Ecke)
+        if (int.TryParse(t, out _)) return true;
+        // Muster wie "60 / 60"
+        if (t.Contains('/') && t.Split('/').All(s => int.TryParse(s.Trim(), out _))) return true;
+        return false;
+    }
+
+    /// <summary>Scannt alle Text-Nodes in ConfigSystem und sagt echte Änderungen an (gefiltert).</summary>
     private unsafe void ScanConfigSystemTexts(AtkUnitBase* addon)
     {
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
@@ -584,8 +1323,10 @@ public sealed class UIReaderService : IDisposable
                 var hasKey = _configSystemLastTexts.TryGetValue(n->NodeId, out var prev);
                 if (hasKey && prev == t) continue;
                 _configSystemLastTexts[n->NodeId] = t;
-                if (!hasKey) continue; // Ersterscheinung — nicht ansagen
-                if (n->NodeId != 169) // id=169 = Immerse-Warnung
+                if (!hasKey) continue; // Ersterscheinung ? nicht ansagen
+
+                // FPS-Filter und bekannte Ignorier-Nodes
+                if (n->NodeId != 169 && !IsVolatileConfigText(t))
                     _tolk.SpeakInterrupt(t);
                 continue;
             }
@@ -604,15 +1345,328 @@ public sealed class UIReaderService : IDisposable
                 if (hasKey && prev == t) continue;
                 _configSystemLastTexts[key] = t;
                 if (!hasKey) continue;
-                _tolk.SpeakInterrupt(t);
+                if (!IsVolatileConfigText(t))
+                    _tolk.SpeakInterrupt(t);
             }
         }
     }
 
+    // -- ConfigSystem: Fokus-Erkennung + Diagnose --------------------
+
+    // Letzte bekannte Flags pro Option-Node (f�r �nderungs-Erkennung im [CS-OPT]-Logger)
+    private readonly Dictionary<uint, ushort> _csOptionFlags = [];
+
     /// <summary>
-    /// Generischer Text-Scanner für beliebige Addons.
-    /// isInit=true: befüllt nur den Cache, sagt nichts an (beim Öffnen).
-    /// isInit=false: sagt geänderte Texte an (in PostUpdate).
+    /// Wird jeden PostUpdate-Frame f�r ConfigSystem aufgerufen (statt generischem FindFocusedText).
+    /// Pr�ft Tab-Fokus, sagt Tab-Wechsel an, scannt Wert-�nderungen.
+    /// Parallel: [CS-OPT]-Logger meldet Flag-�nderungen an Options-Nodes (Diag2).
+    /// </summary>
+    private unsafe void AnnounceConfigSystemFocusIfChanged(AtkUnitBase* addon)
+    {
+        // Diagnose-Dump im Frame nach InputReceived
+        if (_dumpOnNextConfigSystemUpdate)
+        {
+            _dumpOnNextConfigSystemUpdate = false;
+            DumpConfigSystemNodes(addon);
+        }
+
+        // Tab-Fokus pr�fen
+        var (tabIdx, tabLabel) = GetFocusedTabInfo(addon);
+        if (tabIdx != _csLastTabIndex || tabLabel != _csLastTabText)
+        {
+            _csLastTabIndex = tabIdx;
+            _csLastTabText  = tabLabel;
+
+            if (!string.IsNullOrEmpty(tabLabel) && _csTabs.Count > 0)
+            {
+                _log.Info($"[CS] Tab-Wechsel ? '{tabLabel}' [{tabIdx + 1}/{_csTabs.Count}]");
+                _tolk.SpeakInterrupt(AccessibilityStrings.TabPosition(tabLabel, tabIdx + 1, _csTabs.Count));
+            }
+
+            // Cache zur�cksetzen: neue Texte des Tabs als Ersterscheinung behandeln
+            _configSystemLastTexts.Clear();
+            _csOptionFlags.Clear();
+            ScanConfigSystemTexts(addon); // Cache bef�llen, nichts ansagen
+            LogConfigOptionFlags(addon);  // [CS-OPT] Ausgangszustand protokollieren
+            return;
+        }
+
+        // [CS-OPT] Flags-Änderungen an Option-Nodes erkennen (Diag2)
+        LogConfigOptionFlagChanges(addon);
+
+        // 2. Fokus auf Optionen (CheckBox, Slider, etc.) prüfen
+        var (focused, nodeId) = FindFocusedText(addon);
+        if (!string.IsNullOrEmpty(focused))
+        {
+            if (!_lastFocusByAddon.TryGetValue("ConfigSystem", out var last)
+                || nodeId != last.Key || focused != last.Text)
+            {
+                _lastFocusByAddon["ConfigSystem"] = (nodeId, focused);
+                _log.Info($"[CS] Fokus-Wechsel: {focused} (Key={nodeId})");
+                _tolk.SpeakInterrupt(focused);
+            }
+        }
+
+        // 3. Wert-Änderungen in Text-Nodes scannen und ansagen
+        ScanConfigSystemTexts(addon);
+    }
+
+    /// <summary>
+    /// Loggt alle CheckBox/RadioButton/Slider/DropDown-Nodes einmalig mit ihren Flags.
+    /// Aufruf: beim Tab-Wechsel (initialer Snapshot).
+    /// </summary>
+    private unsafe void LogConfigOptionFlags(AtkUnitBase* addon)
+    {
+        _csOptionFlags.Clear();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            var ct = (int)comp->GetComponentType();
+            // Nur Option-Typen: CheckBox(3), RadioButton(4), Slider(6), DropDownList(10), NumericInput(8)
+            if (ct != 3 && ct != 4 && ct != 6 && ct != 8 && ct != 10) continue;
+            var nf = (ushort)n->NodeFlags;
+            _csOptionFlags[n->NodeId] = nf;
+            var label = GetTextFromNodeTree(n, 0);
+            if (label.Length > 40) label = label[..40] + "�";
+            _log.Info($"[CS-OPT] Init id={n->NodeId} CT={comp->GetComponentType()}({ct}) F=0x{nf:X4} \"{label}\"");
+        }
+    }
+
+    /// <summary>
+    /// Vergleicht Flags aller Option-Nodes mit dem letzten Snapshot.
+    /// �ndert sich ein Flag, wird der Node mit [CS-OPT]-Pr�fix geloggt.
+    /// </summary>
+    private unsafe void LogConfigOptionFlagChanges(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            var ct = (int)comp->GetComponentType();
+            if (ct != 3 && ct != 4 && ct != 6 && ct != 8 && ct != 10) continue;
+            var nf = (ushort)n->NodeFlags;
+            if (_csOptionFlags.TryGetValue(n->NodeId, out var prev) && prev == nf) continue;
+            _csOptionFlags[n->NodeId] = nf;
+            var label = GetTextFromNodeTree(n, 0);
+            if (label.Length > 40) label = label[..40] + "�";
+            _log.Info($"[CS-OPT] Change id={n->NodeId} CT={comp->GetComponentType()}({ct}) F=0x{nf:X4} \"{label}\"");
+        }
+    }
+
+    /// <summary>Sucht alle DragDrop(17)-Komponenten in ConfigSystem und f�llt _csTabs (r�ckw�rts = visuell links?rechts).</summary>
+    private unsafe void ReadConfigSystemTabs(AtkUnitBase* addon)
+    {
+        for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            // ConfigSystem-Tabs sind CT=DragDrop(17), NICHT CT=Tab(22) � verifiziert via Dump
+            if (comp->GetComponentType() != ComponentType.DragDrop) continue;
+            // NodeIds 7�14 = Kategorie-Icons; feste NodeId-Range als Sanity-Check
+            if (n->NodeId < 7 || n->NodeId > 14) continue;
+
+            _csTabs.Add((n->NodeId, string.Empty)); // Label wird dynamisch aus Abschnitts�berschrift gelesen
+        }
+        _log.Info($"[CS] Tabs gefunden: {_csTabs.Count} (NodeIds: {string.Join(", ", _csTabs.Select(t => t.NodeId))})");
+    }
+
+    /// <summary>
+    /// Ermittelt den fokussierten Tab (Index in _csTabs + dynamisches Label).
+    /// Tab-Typ ist DragDrop(17), NodeIds 7�14 � verifiziert via Dump.
+    /// Label kommt NICHT aus dem DragDrop-Node selbst (Icon, kein Text), sondern
+    /// dynamisch aus der ersten sichtbaren Abschnitts�berschrift (T=3) der aktiven Seite.
+    ///
+    /// Strategie 1: child NodeId==4 (T=8 Collision, F=0x2FB3) IsVisible-Wechsel (wie TitleMenu � bew�hrt).
+    /// Strategie 2: HasFocusBit (0x100) auf DragDrop-Node.
+    /// Strategie 3 (Diag2-Fallback): Kind mit h�chsten Flags als "aktiv" annehmen + [CS-OPT]-Log.
+    /// Fallback: letzter bekannter Wert.
+    /// </summary>
+    private unsafe (int Index, string Label) GetFocusedTabInfo(AtkUnitBase* addon)
+    {
+        if (_csTabs.Count == 0) return (_csLastTabIndex, _csLastTabText);
+
+        // Strategie 1: child NodeId==4 IsVisible (DragDrop-Variante, wie TitleMenu-Muster)
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) continue;
+            if (n->NodeId < 7 || n->NodeId > 14) continue;
+
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null || child->NodeId != 4 || !child->IsVisible()) continue;
+                var idx   = _csTabs.FindIndex(t => t.NodeId == n->NodeId);
+                var label = GetConfigSectionHeading(addon);
+                // Kein Log hier: laeuft jeden Frame (flutete das Log 2026-07-11,
+                // tausende identische Zeilen); der Aufrufer loggt Tab-WECHSEL.
+                return (idx >= 0 ? idx : 0, label);
+            }
+        }
+
+        // Strategie 2: HasFocusBit (0x100) auf DragDrop-Node
+        const ushort HasFocusBit = 0x100;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) continue;
+            if (n->NodeId < 7 || n->NodeId > 14) continue;
+            if (((ushort)n->NodeFlags & HasFocusBit) == 0) continue;
+
+            var idx   = _csTabs.FindIndex(t => t.NodeId == n->NodeId);
+            var label = GetConfigSectionHeading(addon);
+            // Kein Log (jeden Frame) - Aufrufer loggt Tab-Wechsel
+            return (idx >= 0 ? idx : 0, label);
+        }
+
+        // Diag2-Fallback: alle DragDrop-Nodes loggen (kl�rt: welches Flag wechselt bei Navigation)
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) continue;
+            if (n->NodeId < 7 || n->NodeId > 14) continue;
+            var nf = (ushort)n->NodeFlags;
+            var childInfo = new System.Text.StringBuilder();
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null) continue;
+                childInfo.Append($" ch{child->NodeId}(F=0x{(ushort)child->NodeFlags:X4},v={child->IsVisible()})");
+            }
+            _log.Info($"[CS-OPT] DragDrop NodeId={n->NodeId} F=0x{nf:X4}{childInfo}");
+        }
+
+        return (_csLastTabIndex, _csLastTabText);
+    }
+
+    /// <summary>
+    /// Liest den Namen des aktiven Tabs dynamisch aus der ersten sichtbaren Abschnitts�berschrift.
+    /// Kriterien: T=3 (Text), sichtbar (IsVisible), Flags-Bit 0x10 (Collision/Aktiv), L�nge > 3.
+    /// Sprachneutral: funktioniert f�r DE, EN und alle anderen Sprachen.
+    /// </summary>
+    private unsafe string GetConfigSectionHeading(AtkUnitBase* addon)
+    {
+        const ushort MinFlags = 0x10; // mindestens Collision-Bit gesetzt (kein reines Hintergrund-Label)
+        for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+            if (((ushort)n->NodeFlags & MinFlags) == 0) continue;
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            // Volatile Anzeigen ueberspringen: der fps-Zaehler (Top-Level id=4)
+            // liegt am ENDE der Node-Liste, also VOR der echten Ueberschrift
+            // (id=22 "Anzeigeeinstellungen") - er wurde als Tab-Label gewaehlt
+            // und jede fps-Aenderung als "Tab-Wechsel" angesagt (Log 2026-07-11
+            // 10:16, Dump-verifiziert).
+            if (IsVolatileConfigText(t)) continue;
+            if (t.Length > 3 && !t.All(char.IsDigit)) // kein reiner Zahlenwert
+                return t;
+        }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Vollst�ndiger Diagnose-Dump von ConfigSystem: alle Nodes mit ComponentType, Flags, Text.
+    /// Automatisch im n�chsten PostUpdate-Frame nach InputReceived ausgel�st.
+    /// Ergebnis: Desktop\FFXIV_CS_Dump.txt + Dalamud-Log mit [CS-DIAG]-Pr�fix.
+    /// </summary>
+    private unsafe void DumpConfigSystemNodes(AtkUnitBase* addon)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"=== CS-DIAG: ConfigSystem | Vis={addon->IsVisible} | Nodes={addon->UldManager.NodeListCount} | Tabs={_csTabs.Count} ({string.Join(", ", _csTabs.Select(t => t.Label))}) ===");
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null) continue;
+            var typeNum = (int)n->Type;
+            var flags   = (ushort)n->NodeFlags;
+            var vis     = n->IsVisible() ? "V" : " ";
+
+            if (typeNum < 1000)
+            {
+                if (typeNum == 3)
+                {
+                    var rawText = ((AtkTextNode*)n)->NodeText.ToString().Replace("\n", "?");
+                    var txt     = rawText.Length > 70 ? rawText[..70] + "�" : rawText;
+                    sb.AppendLine($"  [{i}] id={n->NodeId} T={typeNum} F=0x{flags:X4} {vis} \"{txt}\"");
+                }
+                else
+                {
+                    sb.AppendLine($"  [{i}] id={n->NodeId} T={typeNum} F=0x{flags:X4} {vis}");
+                }
+                continue;
+            }
+
+            var comp   = ((AtkComponentNode*)n)->Component;
+            var ctNum  = comp != null ? (int)comp->GetComponentType() : -1;
+            var ctName = comp != null ? comp->GetComponentType().ToString() : "?";
+            var label  = GetTextFromNodeTree(n, 0);
+            if (label.Length > 60) label = label[..60] + "�";
+            sb.AppendLine($"  [{i}] id={n->NodeId} T={typeNum} CT={ctName}({ctNum}) F=0x{flags:X4} {vis} \"{label}\"");
+
+            if (comp == null) continue;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null) continue;
+                var ct2  = (int)child->Type;
+                var cf   = (ushort)child->NodeFlags;
+                var cv   = child->IsVisible() ? "V" : " ";
+                var cext = string.Empty;
+                if (ct2 == 3)
+                {
+                    var s = ((AtkTextNode*)child)->NodeText.ToString().Replace("\n", "?");
+                    cext = $" \"{(s.Length > 50 ? s[..50] + "�" : s)}\"";
+                }
+                else if (ct2 >= 1000)
+                {
+                    var cc = ((AtkComponentNode*)child)->Component;
+                    if (cc != null) cext = $" [CT={cc->GetComponentType()}({(int)cc->GetComponentType()})]";
+                }
+                sb.AppendLine($"    child[{j}] id={child->NodeId} T={ct2} F=0x{cf:X4} {cv}{cext}");
+            }
+        }
+
+        var output = sb.ToString();
+        foreach (var line in output.Split('\n'))
+        {
+            var l = line.TrimEnd('\r');
+            if (l.Length > 0) _log.Info($"[CS-DIAG] {l}");
+        }
+
+        var dumpFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            "FFXIV_CS_Dump.txt");
+        try
+        {
+            File.WriteAllText(dumpFile, output, System.Text.Encoding.UTF8);
+            _tolk.SpeakInterrupt($"ConfigSystem Dump. {addon->UldManager.NodeListCount} Nodes.");
+            _log.Info($"[CS-DIAG] Gespeichert: {dumpFile}");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[CS-DIAG] Datei-Fehler: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Generischer Text-Scanner f�r beliebige Addons.
+    /// isInit=true: bef�llt nur den Cache, sagt nichts an (beim �ffnen).
+    /// isInit=false: sagt ge�nderte Texte an (in PostUpdate).
     /// </summary>
     private unsafe void ScanAddonTexts(string addonName, AtkUnitBase* addon, bool isInit)
     {
@@ -629,13 +1683,17 @@ public sealed class UIReaderService : IDisposable
 
             if (n->Type == NodeType.Text)
             {
+                if (!n->IsVisible()) continue; // versteckte Nodes = alter/bedingter Inhalt
                 var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var hasKey = cache.TryGetValue(n->NodeId, out var prev);
                 if (hasKey && prev == t) continue;
                 cache[n->NodeId] = t;
                 if (!isInit && hasKey)
+                {
+                    _log.Info($"[Scan] {addonName} id={n->NodeId}: '{(t.Length > 60 ? t[..60] + "..." : t)}'");
                     _tolk.SpeakInterrupt(t);
+                }
                 continue;
             }
 
@@ -645,7 +1703,7 @@ public sealed class UIReaderService : IDisposable
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
                 var child = comp->UldManager.NodeList[j];
-                if (child == null || child->Type != NodeType.Text) continue;
+                if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
                 var t = ((AtkTextNode*)child)->NodeText.ToString().Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var key = n->NodeId * 10000u + child->NodeId;
@@ -653,12 +1711,15 @@ public sealed class UIReaderService : IDisposable
                 if (hasKey && prev == t) continue;
                 cache[key] = t;
                 if (!isInit && hasKey)
+                {
+                    _log.Info($"[Scan] {addonName} key={key}: '{(t.Length > 60 ? t[..60] + "..." : t)}'");
                     _tolk.SpeakInterrupt(t);
+                }
             }
         }
     }
 
-    // ── Gamepad-Kalibrierung ────────────────────────────────────────
+    // -- Gamepad-Kalibrierung ----------------------------------------
 
 
     // -- Datenzentrum-Auswahl (TitleDCWorldMap) -------------------------
@@ -670,11 +1731,11 @@ public sealed class UIReaderService : IDisposable
         _dcTabPanels.Clear();
 
         var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) { _tolk.SpeakInterrupt("Datenzentrum wählen."); return; }
+        if (addon == null) { _tolk.SpeakInterrupt("Datenzentrum w�hlen."); return; }
 
-        // ── Schritt 1: Alle Region-Panels sammeln.
+        // -- Schritt 1: Alle Region-Panels sammeln.
         // Wir sammeln ALLE Panels, auch die (noch) unsichtbaren, um die Navigation
-        // später über deren Sichtbarkeits-Wechsel zu erkennen.
+        // sp�ter �ber deren Sichtbarkeits-Wechsel zu erkennen.
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var n = addon->UldManager.NodeList[i];
@@ -688,17 +1749,18 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrWhiteSpace(region)) continue;
 
             _dcTabPanels.Add(((nint)n, region, dcs));
-            _log.Info($"[DC] Panel gefunden: {region} (NodeId={n->NodeId}, Type={typeNum})");
+            var dcInfo = string.Join(", ", dcs.Select(d => $"{d.Name}@0x{d.Node:X}"));
+            _log.Info($"[DC] Panel gefunden: {region} (NodeId={n->NodeId}, Type={typeNum}, DCs: {dcInfo})");
         }
 
         if (_dcTabPanels.Count == 0)
         {
-            _tolk.SpeakInterrupt("Datenzentrum wählen.");
+            _tolk.SpeakInterrupt("Datenzentrum w�hlen.");
             return;
         }
 
-        // Initiale Ansage: Liste der verfügbaren Regionen
-        var sb = new StringBuilder("Datenzentrum wählen. Regionen: ");
+        // Initiale Ansage: Liste der verf�gbaren Regionen
+        var sb = new StringBuilder("Datenzentrum w�hlen. Regionen: ");
         sb.Append(string.Join(", ", _dcTabPanels.Select(p => p.Region)));
         _tolk.SpeakInterrupt(sb.ToString());
         
@@ -709,99 +1771,308 @@ public sealed class UIReaderService : IDisposable
     private unsafe void OnDCWorldMapReceive(AddonEvent type, AddonArgs args)
     {
         if (args is not AddonReceiveEventArgs recv) return;
+
         // Debug: log ALL events except type=74 (TimelineActiveLabelChanged, fires every 300ms).
-        // This lets us see what the numpad keys generate.
         if ((int)recv.AtkEventType != 74)
             _log.Info($"[DC] ReceiveEvent type={(int)recv.AtkEventType}({recv.AtkEventType}) param={recv.EventParam}");
-        // Only announce on MouseOver (type=6, verified via log).
-        if ((int)recv.AtkEventType != 6) return;
 
-        var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) return;
-
-        // EventParam = node ID of the hovered region panel.
-        var nodeId = (uint)recv.EventParam;
-        var node   = addon->GetNodeById(nodeId);
-        if (node == null) return;
-
-        var (region, dcs) = ReadDCRegionPanel(node);
-        if (string.IsNullOrWhiteSpace(region)) return;
-
-        var text = dcs.Count > 0 ? $"{region}: {string.Join(", ", dcs)}" : region;
-        if (text == _lastDCText) return;
-        _log.Info($"[Accessibility] TitleDCWorldMap: '{text}' (node={nodeId})");
-        _lastDCText = text;
-        _tolk.SpeakInterrupt(text);
-    }
-
-    /// <summary>
-    /// Prüft jeden Frame den ausgewählten Tab und sagt die Region an, wenn sie sich geändert hat.
-    /// Dedup in AnnounceDCFocus() verhindert Wiederholungen; kein AtkStage nötig.
-    /// </summary>
-    private void OnDCWorldMapUpdate(AddonEvent type, AddonArgs args)
-    {
-        if (!IsDCMapOpen || _dcTabPanels.Count == 0) return;
-        AnnounceDCFocus();
-    }
-
-    /// <summary>
-    /// Prüft, welches der gespeicherten Region-Panels gerade sichtbar ist.
-    /// Dies ist der zuverlässigste Indikator für den Fokus in diesem Menü.
-    /// </summary>
-    private unsafe void AnnounceDCFocus()
-    {
-        if (_dcTabPanels.Count == 0) return;
-
-        foreach (var (panelPtr, region, dcs) in _dcTabPanels)
+        // DC-Button bestaetigt (Enter/Maus): DC-Name + Welten-Liste ansagen.
+        if ((int)recv.AtkEventType == 25)
         {
-            if (panelPtr == nint.Zero) continue;
-            var panel = (AtkResNode*)panelPtr;
-
-            // In FF14-Tabs ist meist nur das aktive Panel sichtbar.
-            if (!panel->IsVisible()) continue;
-
-            var text = dcs.Count > 0 ? $"{region}: {string.Join(", ", dcs)}" : region;
-            if (text == _lastDCText) return; 
-            
-            _log.Info($"[DC] Fokus-Wechsel erkannt (Panel sichtbar) → '{text}'");
-            _lastDCText = text;
-            _tolk.SpeakInterrupt(text);
+            TryAnnounceDCSelection(recv.AtkEvent);
             return;
+        }
+
+        // Fokus-Erkennung �ber MouseOver-Events (Type 6)
+        // Die Parameter entsprechen den Node-IDs der Reiter/Panels.
+        // 13 = Ozeanien, 7 = Europa, 1 = Japan, 19 = Nordamerika (verifiziert via Log)
+        if ((int)recv.AtkEventType == 6)
+        {
+            // 1) DC-Buttons innerhalb eines Region-Panels: Event-Node per Pointer-Vergleich
+            //    zuordnen. Die Event-Parameter der DC-Buttons (z.B. 9/10 in Europa, Log
+            //    2026-07-09) entsprechen keinen Node-IDs und sind nicht dokumentiert;
+            //    der Node im AtkEvent ist dagegen eindeutig.
+            if (TryAnnounceDCButton(recv.AtkEvent)) return;
+
+            // 2) Region-Tabs: enthalten keine Text-Nodes (Node-Dump 2026-05-27), deshalb
+            //    Zuordnung per Event-Parameter (verifiziert via Log).
+            var nodeId = (uint)recv.EventParam;
+            string? regionName = nodeId switch
+            {
+                13 => "Ozeanien",
+                7  => "Europa",
+                1  => "Japan",
+                19 => "Nordamerika",
+                _  => null
+            };
+
+            if (regionName != null)
+            {
+                // Suche das passende Panel in unserer Liste, um auch die DCs zu erhalten
+                var panelMatch = _dcTabPanels.FirstOrDefault(p => p.Region.Contains(regionName, StringComparison.OrdinalIgnoreCase));
+                var text = (panelMatch.DCs != null && panelMatch.DCs.Count > 0)
+                    ? $"{regionName}: {string.Join(", ", panelMatch.DCs.Select(d => d.Name))}"
+                    : regionName;
+
+                if (text != _lastDCText)
+                {
+                    _log.Info($"[DC] Fokus-Wechsel (Event ID {nodeId}) ? '{text}'");
+                    _lastDCText = text;
+                    _tolk.SpeakInterrupt(text);
+                }
+                return;
+            }
         }
     }
 
     /// <summary>
-    /// Löscht den Dedup-Cache und sagt die aktuell fokussierte Region sofort an.
-    /// Wird von Plugin.cs aufgerufen, wenn der Nutzer eine Nummernblock-Taste drückt.
+    /// Pr�ft jeden Frame den ausgew�hlten Tab und sagt die Region an, wenn sie sich ge�ndert hat.
+    /// Dedup in AnnounceDCFocus() verhindert Wiederholungen; kein AtkStage n�tig.
+    /// </summary>
+    private void OnDCWorldMapUpdate(AddonEvent type, AddonArgs args)
+    {
+        // Wir verlassen uns jetzt prim�r auf ReceiveEvent (MouseOver), 
+        // da die Sichtbarkeits-Flags in diesem Addon nicht zuverl�ssig sind.
+    }
+
+    /// <summary>
+    /// Pr�ft, welches der gespeicherten Region-Panels gerade sichtbar ist.
+    /// (Wird aktuell nicht genutzt, da OnDCWorldMapReceive zuverl�ssiger ist).
+    /// </summary>
+    private unsafe void AnnounceDCFocus()
+    {
+        // Vorerst deaktiviert, da ReceiveEvent die Arbeit �bernimmt.
+    }
+
+    /// <summary>
+    /// L�scht den Dedup-Cache und sagt die aktuell fokussierte Region sofort an.
+    /// Wird von Plugin.cs aufgerufen, wenn der Nutzer eine Nummernblock-Taste dr�ckt.
     /// </summary>
     public void ForceDCMapRead()
     {
-        _lastDCText = string.Empty; // Dedup zurücksetzen — User hat explizit navigiert
+        _lastDCText = string.Empty; // Dedup zur�cksetzen � User hat explizit navigiert
         AnnounceDCFocus();
+    }
+
+    /// <summary>
+    /// Maps the node of a MouseOver event to a DC button (type 1015) recorded in
+    /// _dcTabPanels and announces its text. Uses pointer comparison instead of the
+    /// event parameter, because DC button event params are undocumented (log 2026-07-09:
+    /// params 9/10 inside Europa do not match any node id in the 2026-05-27 node dump).
+    /// Text is read fresh from the node at announce time (never cached values).
+    /// </summary>
+    /// <returns>True if the event node belongs to a known DC button.</returns>
+    private unsafe bool TryAnnounceDCButton(nint atkEventPtr)
+    {
+        // Every early exit logs its reason - a silent exit here already cost us
+        // one in-game test run (log 2026-07-09 19:02: no probe lines at all).
+        if (atkEventPtr == 0)
+        {
+            _log.Info("[DC] TryAnnounceDCButton: AtkEvent pointer is null.");
+            return false;
+        }
+        var evt = (AtkEvent*)atkEventPtr;
+        if (!IsReadable(evt))
+        {
+            _log.Info($"[DC] TryAnnounceDCButton: AtkEvent not readable: {DescribeMemory(evt)}");
+            return false;
+        }
+
+        // Node and Target are treated as opaque pointers: matching only compares
+        // them against our known DC button nodes - the event pointers are never
+        // dereferenced, so a bogus value cannot crash us.
+        var node   = (nint)evt->Node;
+        var target = (nint)evt->Target;
+
+        foreach (var panel in _dcTabPanels)
+        {
+            foreach (var (dcNode, dcName, _) in panel.DCs)
+            {
+                if (!IsEventNodeInComponent(node, dcNode) && !IsEventNodeInComponent(target, dcNode)) continue;
+
+                var text = ReadFirstTextInComponent((AtkResNode*)dcNode);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    _log.Info($"[DC] DC button matched ('{dcName}', Region {panel.Region}) but text read came back empty.");
+                    return false;
+                }
+
+                if (text != _lastDCText)
+                {
+                    _lastDCText = text;
+                    _tolk.SpeakInterrupt(text);
+                    _log.Info($"[DC] DC focus via event node: '{text}' (Region {panel.Region})");
+                }
+                return true;
+            }
+        }
+
+        // Diagnostic probe: tells us which pointers the event actually carried if mapping fails.
+        _log.Info($"[DC] MouseOver not mapped to a DC button: Node=0x{node:X} Target=0x{target:X}");
+        return false;
+    }
+
+    /// <summary>
+    /// Announces DC name plus its world list after the user confirms a DC button
+    /// (AtkEventType 25 / ButtonClick). World names are read fresh from the world
+    /// list component at announce time - the lists are only populated once the
+    /// region is opened (node dump 2026-07-09).
+    /// </summary>
+    private unsafe void TryAnnounceDCSelection(nint atkEventPtr)
+    {
+        if (atkEventPtr == 0)
+        {
+            _log.Info("[DC] TryAnnounceDCSelection: AtkEvent pointer is null.");
+            return;
+        }
+        var evt = (AtkEvent*)atkEventPtr;
+        if (!IsReadable(evt))
+        {
+            _log.Info($"[DC] TryAnnounceDCSelection: AtkEvent not readable: {DescribeMemory(evt)}");
+            return;
+        }
+
+        var node   = (nint)evt->Node;
+        var target = (nint)evt->Target;
+
+        foreach (var panel in _dcTabPanels)
+        {
+            foreach (var (dcNode, dcName, worldList) in panel.DCs)
+            {
+                if (!IsEventNodeInComponent(node, dcNode) && !IsEventNodeInComponent(target, dcNode)) continue;
+
+                var worlds = ReadWorldListTexts(worldList);
+                var text   = AccessibilityStrings.DCSelected(dcName, worlds);
+                _lastDCText = text; // Dedup mitziehen, sonst wiederholt der naechste MouseOver den Text nicht
+                _tolk.SpeakInterrupt(text);
+                _log.Info($"[DC] DC selected: '{dcName}' (Region {panel.Region}), worlds=[{string.Join(", ", worlds)}]");
+                return;
+            }
+        }
+
+        // Region-Tabs und der Ok-Knopf landen ebenfalls hier - nur protokollieren.
+        _log.Info($"[DC] ButtonClick not mapped to a DC button: Node=0x{node:X} Target=0x{target:X}");
+    }
+
+    /// <summary>
+    /// Reads all non-empty item texts from a world list component (Comp 1019).
+    /// Returns an empty list if the pointer is null or the list has no filled rows.
+    /// </summary>
+    private unsafe List<string> ReadWorldListTexts(nint listNodePtr)
+    {
+        var result = new List<string>();
+        if (listNodePtr == 0) return result;
+
+        var listNode = (AtkResNode*)listNodePtr;
+        if ((int)listNode->Type < 1000) return result;
+        var comp = ((AtkComponentNode*)listNode)->Component;
+        if (comp == null || !IsReadable(comp)) return result;
+
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var item = comp->UldManager.NodeList[i];
+            if (item == null || (int)item->Type < 1000) continue; // list item renderers only
+            var t = ReadFirstTextInComponent(item);
+            if (!string.IsNullOrWhiteSpace(t)) result.Add(t);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// True if candidate points to the component node itself or to any node in its
+    /// UldManager node list (e.g. the collision node of a button component).
+    /// Only the KNOWN component node is dereferenced, never the candidate.
+    /// </summary>
+    /// <summary>
+    /// Reads the window title from an addon's Window component (CT=Window(2)).
+    /// Structure verified via SelectYesno dump 2026-07-09 21:32: Comp(1004)
+    /// CT=Window holds the title as Text children (empty for untitled dialogs).
+    /// Returns an empty string when there is no Window component or no title.
+    /// </summary>
+    private unsafe string ReadWindowTitle(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+            if (comp->GetComponentType() != ComponentType.Window) continue;
+
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var c = comp->UldManager.NodeList[j];
+                if (c == null || c->Type != NodeType.Text) continue;
+                var t = ((AtkTextNode*)c)->NodeText.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(t)) return t;
+            }
+            return string.Empty; // Window component found, but it has no title
+        }
+        return string.Empty;
+    }
+
+    private unsafe bool IsEventNodeInComponent(nint candidate, nint componentNodePtr)
+    {
+        if (candidate == 0) return false;
+        if (candidate == componentNodePtr) return true;
+        var compNode = (AtkResNode*)componentNodePtr;
+        if ((int)compNode->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)compNode)->Component;
+        if (comp == null || !IsReadable(comp)) return false;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            if ((nint)comp->UldManager.NodeList[i] == candidate) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Reads the first non-trivial text node from a component node (fresh read, no cache).
+    /// Returns an empty string if the node is not a component or has no usable text.
+    /// </summary>
+    private unsafe string ReadFirstTextInComponent(AtkResNode* compNode)
+    {
+        if (compNode == null || (int)compNode->Type < 1000) return string.Empty;
+        var comp = ((AtkComponentNode*)compNode)->Component;
+        if (comp == null || !IsReadable(comp)) return string.Empty;
+        for (var k = 0; k < comp->UldManager.NodeListCount; k++)
+        {
+            var gc = comp->UldManager.NodeList[k];
+            if (gc == null || gc->Type != NodeType.Text) continue;
+            var t = ((AtkTextNode*)gc)->NodeText.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(t) && t.Length > 1) return t;
+        }
+        return string.Empty;
     }
 
     /// <summary>
     /// Liest Region-Name und DC-Namen aus einem Regionen-Panel-Node des TitleDCWorldMap.
     /// Struktur (verifiziert via Node-Dump 2026-05-27):
-    ///   comp child type=1015 → gc[?] type=Text = DC-Name (z.B. "Materia", "Chaos")
-    ///   comp child type=1009 → gc[?] type=Text = Regionsname (z.B. "Ozeanien", "Europa")
-    ///   comp child type=1006 = Ok-Button — ignorieren.
-    /// Gibt ("", []) zurück wenn der Node kein Regionen-Panel ist.
+    ///   comp child type=1015 ? gc[?] type=Text = DC-Name (z.B. "Materia", "Chaos")
+    ///   comp child type=1009 ? gc[?] type=Text = Regionsname (z.B. "Ozeanien", "Europa")
+    ///   comp child type=1006 = Ok-Button � ignorieren.
+    /// Gibt ("", []) zur�ck wenn der Node kein Regionen-Panel ist.
     /// </summary>
-    private unsafe (string Region, List<string> DCs) ReadDCRegionPanel(AtkResNode* node)
+    private unsafe (string Region, List<(nint Node, string Name, nint WorldList)> DCs) ReadDCRegionPanel(AtkResNode* node)
     {
         if (node == null || (int)node->Type < 1000) return (string.Empty, []);
         var comp = ((AtkComponentNode*)node)->Component;
         if (comp == null) return (string.Empty, []);
 
         var region = string.Empty;
-        var dcs    = new List<string>();
+        var dcs    = new List<(nint Node, string Name, nint WorldList)>();
+
+        // Welten-Liste (Comp 1019) steht in der NodeList direkt VOR ihrem DC-Button
+        // (Comp 1015) - verifiziert im Node-Dump 2026-07-09 (Europa: Liste Alpha..Zodiark
+        // vor Button "Light", Liste Cerberus..Spriggan vor Button "Chaos").
+        nint pendingWorldList = 0;
 
         for (var j = 0; j < comp->UldManager.NodeListCount; j++)
         {
             var child = comp->UldManager.NodeList[j];
             if (child == null || (int)child->Type < 1000) continue;
-            if ((int)child->Type == 1006) continue; // Ok button — skip
+            if ((int)child->Type == 1019) { pendingWorldList = (nint)child; continue; }
+            if ((int)child->Type == 1006) continue; // Ok button � skip
 
             var childComp = ((AtkComponentNode*)child)->Component;
             if (childComp == null) continue;
@@ -815,9 +2086,12 @@ public sealed class UIReaderService : IDisposable
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
 
                 if ((int)child->Type == 1009)
-                    region = t;     // region name label (Ozeanien, Europa, …)
+                    region = t;     // region name label (Ozeanien, Europa, �)
                 else if ((int)child->Type == 1015)
-                    dcs.Add(t);     // DC name button (Materia, Chaos, …)
+                {
+                    dcs.Add(((nint)child, t, pendingWorldList)); // DC name button
+                    pendingWorldList = 0;
+                }
                 break; // first text node per child is sufficient
             }
         }
@@ -826,10 +2100,10 @@ public sealed class UIReaderService : IDisposable
     }
     private void OnPadCalibrationOpen(AddonEvent type, AddonArgs args)
     {
-        _tolk.SpeakInterrupt("Gamepad-Kalibrierung. Escape zum Schließen.");
+        _tolk.SpeakInterrupt("Gamepad-Kalibrierung. Escape zum Schlie�en.");
     }
 
-    // ── Benachrichtigungen ──────────────────────────────────────────
+    // -- Benachrichtigungen ------------------------------------------
 
     private unsafe void OnNotification(AddonEvent type, AddonArgs args)
     {
@@ -839,20 +2113,293 @@ public sealed class UIReaderService : IDisposable
         if (!string.IsNullOrWhiteSpace(text)) _tolk.SpeakInterrupt(text);
     }
 
-    // ── Tastatur-Navigation ─────────────────────────────────────────
+    // -- Charaktererstellung: Volk & Geschlecht ----------------------
 
-    // isHorizontal=true für Links/Rechts, false für Hoch/Runter
+    // Last announced (race, gender) so PostUpdate only speaks on change.
+    private (string Race, string Gender) _lastRaceGender = (string.Empty, string.Empty);
+    // Last race announced on mouse hover (MouseOver), separate dedup.
+    private string _lastRaceHover = string.Empty;
+    // Log the raw gender-symbol codepoints once, to verify the male/female
+    // mapping assumption against a real run (symbols are garbled in dumps).
+    private bool _raceGenderSymbolsLogged;
+    // Log the object table once per RaceGender session to identify the preview actor.
+    private bool _previewObjectsLogged;
+
+    /// <summary>
+    /// Announces the hovered race on MouseOver. Uses the event target pointer
+    /// (verified DC pattern) and cleans the trailing gender glyphs off the
+    /// label ("Miqo'te\t glyphs" -> "Miqo'te"). Runs instead of the generic
+    /// receive handler, which is skipped for this addon (SpecialUpdateAddons).
+    /// </summary>
+    private unsafe void OnRaceGenderReceive(AddonEvent type, AddonArgs args)
+    {
+        if (args is not AddonReceiveEventArgs recv) return;
+        var et = (int)recv.AtkEventType;
+        if (et != 6 && et != 25) return; // MouseOver / ButtonClick only
+
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (recv.AtkEvent == 0) return;
+        var evt = (AtkEvent*)recv.AtkEvent;
+        if (!IsReadable(evt)) return;
+
+        var match = FindComponentForEvent(addon, (nint)evt->Node, (nint)evt->Target);
+        if (match == 0) return;
+
+        var race = CleanRaceName(ReadFirstTextInComponent((AtkResNode*)match));
+        if (string.IsNullOrWhiteSpace(race) || race == _lastRaceHover) return;
+        _lastRaceHover = race;
+        _tolk.SpeakInterrupt(race);
+        _log.Info($"[Accessibility] RaceGender Hover: '{race}'");
+    }
+
+    /// <summary>
+    /// Announces the currently selected race and gender in _CharaMakeRaceGender
+    /// whenever it changes (covers left/right = gender switch and race changes).
+    /// Reads the real checked state instead of interpreting the garbled gender
+    /// glyphs: each race container (CT=Base) holds two gender checkboxes -
+    /// node id=4 (male symbol) and id=3 (female symbol) - verified via dump
+    /// 2026-07-09 21:45. IsChecked comes from AtkComponentCheckBox (FFXIVClientStructs).
+    /// </summary>
+    private unsafe void OnRaceGenderUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var (race, symbolGender, found) = ReadRaceGenderSelection(addon);
+        if (!found) return;
+
+        if (race == _lastRaceGender.Race && symbolGender == _lastRaceGender.Gender) return;
+        var genderOnly = race == _lastRaceGender.Race && !string.IsNullOrEmpty(_lastRaceGender.Race);
+        _lastRaceGender = (race, symbolGender);
+
+        // Gender label from the visible preview model (ground truth). Probe
+        // 2026-07-10 10:19: exactly one of 32 models visible, Sex=0, while
+        // checkbox id=3 was checked - contradicts the id=4=male assumption.
+        // Checkbox mapping stays as fallback when no single model is visible;
+        // disagreements are logged so the next run settles the mapping.
+        var sex    = GetVisiblePreviewSex();
+        var gender = sex switch
+        {
+            0 => AccessibilityStrings.GenderMale,
+            1 => AccessibilityStrings.GenderFemale,
+            _ => symbolGender,
+        };
+        if (sex >= 0 && gender != symbolGender)
+            _log.Info($"[Accessibility] RaceGender: Vorschau-Sex={sex} widerspricht Checkbox-Symbol '{symbolGender}' - Vorschau gilt");
+
+        var msg = genderOnly ? gender : $"{race}, {gender}";
+        _tolk.SpeakInterrupt(msg);
+        _log.Info($"[Accessibility] RaceGender gewählt: Volk='{race}' Geschlecht='{gender}'");
+    }
+
+    /// <summary>
+    /// Finds the race container whose male or female checkbox is checked and
+    /// returns (race name, gender, true). Returns (_, _, false) when nothing is
+    /// selected yet. GENDER MAPPING ASSUMPTION (test pending, see STATUS.md):
+    /// checkbox node id=4 = male, id=3 = female (FFXIV convention, male first).
+    /// The raw symbol codepoints are logged once so the run can confirm this.
+    /// </summary>
+    private unsafe (string Race, string Gender, bool Found) ReadRaceGenderSelection(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+            if (comp->GetComponentType() != ComponentType.Base) continue;
+
+            AtkComponentCheckBox* male = null, female = null;
+            AtkResNode* nameNode = null;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null || (int)child->Type < 1000) continue;
+                var cc = ((AtkComponentNode*)child)->Component;
+                if (cc == null || cc->GetComponentType() != ComponentType.CheckBox) continue;
+                switch (child->NodeId)
+                {
+                    case 4: male     = (AtkComponentCheckBox*)cc; break;
+                    case 3: female   = (AtkComponentCheckBox*)cc; break;
+                    case 2: nameNode = child; break;
+                }
+            }
+            if (male == null || female == null) continue;
+
+            if (!_raceGenderSymbolsLogged)
+            {
+                var mSym = male->AtkComponentButton.ButtonTextNode != null
+                    ? male->AtkComponentButton.ButtonTextNode->NodeText.ToString() : "?";
+                var fSym = female->AtkComponentButton.ButtonTextNode != null
+                    ? female->AtkComponentButton.ButtonTextNode->NodeText.ToString() : "?";
+                _log.Info($"[Accessibility] RaceGender-Symbole: id4(als männlich)='{ToHex(mSym)}' id3(als weiblich)='{ToHex(fSym)}'");
+                _raceGenderSymbolsLogged = true;
+            }
+
+            if (male->IsChecked || female->IsChecked)
+            {
+                var race = CleanRaceName(nameNode != null ? GetTextFromNodeTree(nameNode) : string.Empty);
+
+                // Checked state as CHANGE detector (verified in V4.13). The
+                // returned label is only the fallback mapping - the caller
+                // overrides it with the visible preview model's Sex byte.
+                var gender = male->IsChecked ? AccessibilityStrings.GenderMale : AccessibilityStrings.GenderFemale;
+                return (race, gender, true);
+            }
+        }
+        return (string.Empty, string.Empty, false);
+    }
+
+    /// <summary>
+    /// Returns the Sex byte (0=male, 1=female) of the single visible
+    /// character-creation preview model, or -1 when not exactly one model is
+    /// visible. All 32 race/tribe/sex combinations sit in the object table at
+    /// once (verified 2026-07-10: indices 200-231); only the shown one has
+    /// DrawObject.IsVisible=true, the hidden 31 carry RenderFlags 0x40
+    /// (verified same log: "Vorschau sichtbar: [200] Sex=0 (1 von 32 Pc)").
+    /// Struct fields verified via ilspycmd: GameObject.DrawObject@256,
+    /// RenderFlags@280, DrawObject.IsVisible. Full dump once per screen,
+    /// summary on every call (callers only invoke this on selection changes).
+    /// </summary>
+    private unsafe int GetVisiblePreviewSex()
+    {
+        var pcCount  = 0;
+        var lastSex  = -1;
+        var visible  = new List<string>();
+        foreach (var obj in _objectTable)
+        {
+            if (obj.Address == nint.Zero) continue;
+            var chara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)obj.Address;
+            if (chara->ObjectKind != FFXIVClientStructs.FFXIV.Client.Game.Object.ObjectKind.Pc) continue;
+            pcCount++;
+
+            var go   = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address;
+            var draw = go->DrawObject;
+            var vis  = draw != null && IsReadable(draw) && draw->IsVisible;
+            if (!_previewObjectsLogged)
+                _log.Info($"[Accessibility] CharaMake-Objekt[{obj.ObjectIndex}]: Sex={chara->Sex} RenderFlags=0x{(ulong)go->RenderFlags:X} Draw={(draw != null ? 1 : 0)} Sichtbar={vis}");
+            if (vis)
+            {
+                visible.Add($"[{obj.ObjectIndex}] Sex={chara->Sex}");
+                lastSex = chara->Sex;
+            }
+        }
+        _previewObjectsLogged = true;
+        _log.Info($"[Accessibility] Vorschau sichtbar: {(visible.Count == 0 ? "KEINES" : string.Join(", ", visible))} ({visible.Count} von {pcCount} Pc)");
+        return visible.Count == 1 ? lastSex : -1;
+    }
+
+    /// <summary>Takes the race name from a glyph-laden label ("Viera\t..."): keeps text up to the first tab/control char.</summary>
+    private static string CleanRaceName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        var sb = new StringBuilder();
+        foreach (var ch in raw)
+        {
+            if (ch == '\t' || ch == '\n' || ch == '\r') break;
+            // Stop at the gender glyphs / symbols that trail the name
+            if (!char.IsLetter(ch) && ch != 32 && ch != 39) break;
+            sb.Append(ch);
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string ToHex(string s) =>
+        string.Join(" ", System.Text.Encoding.UTF8.GetBytes(s).Select(b => b.ToString("X2")));
+
+    // -- Charaktererstellung: Volksstamm ------------------------------
+
+    // Dedup state for the tribe screen, reset on addon close.
+    private string _lastTribe      = string.Empty;
+    private string _lastTribeHover = string.Empty;
+
+    /// <summary>
+    /// Announces the hovered tribe/button on MouseOver in _CharaMakeTribe.
+    /// Same event-target pattern as OnRaceGenderReceive. Structure from the
+    /// F5 dump 2026-07-10 10:20: tribe options are top-level CheckBox
+    /// components (node ids 7/6) whose child id=2 text carries the name
+    /// ("Hochlaender"/"Wieslaender"); the nested gender-glyph checkboxes
+    /// clean to empty strings and are skipped.
+    /// </summary>
+    private unsafe void OnTribeReceive(AddonEvent type, AddonArgs args)
+    {
+        if (args is not AddonReceiveEventArgs recv) return;
+        var et = (int)recv.AtkEventType;
+        if (et != 6 && et != 25) return; // MouseOver / ButtonClick only
+
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (recv.AtkEvent == 0) return;
+        var evt = (AtkEvent*)recv.AtkEvent;
+        if (!IsReadable(evt)) return;
+
+        var match = FindComponentForEvent(addon, (nint)evt->Node, (nint)evt->Target);
+        if (match == 0) return;
+
+        var label = CleanRaceName(ReadFirstTextInComponent((AtkResNode*)match));
+        if (string.IsNullOrWhiteSpace(label) || label == _lastTribeHover) return;
+        _lastTribeHover = label;
+        _tolk.SpeakInterrupt(label);
+        _log.Info($"[Accessibility] Tribe Hover: '{label}'");
+    }
+
+    /// <summary>
+    /// Announces the selected tribe in _CharaMakeTribe when it changes
+    /// (up/down navigation). Reads the checked top-level CheckBox component
+    /// that carries a real text label.
+    /// </summary>
+    private unsafe void OnTribeUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var tribe = ReadTribeSelection(addon);
+        if (string.IsNullOrEmpty(tribe) || tribe == _lastTribe) return;
+        _lastTribe = tribe;
+        _tolk.SpeakInterrupt(tribe);
+        _log.Info($"[Accessibility] Tribe gewaehlt: '{tribe}'");
+    }
+
+    /// <summary>
+    /// Finds the checked top-level CheckBox component with a readable label
+    /// (>= 2 chars after cleaning - filters the single-glyph gender boxes).
+    /// Returns empty when nothing is selected yet (progress shows "? ? ?").
+    /// </summary>
+    private unsafe string ReadTribeSelection(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+            if (comp->GetComponentType() != ComponentType.CheckBox) continue;
+            if (!((AtkComponentCheckBox*)comp)->IsChecked) continue;
+
+            var label = CleanRaceName(ReadFirstTextInComponent((AtkResNode*)node));
+            if (label.Length >= 2) return label;
+        }
+        return string.Empty;
+    }
+
+    // -- Tastatur-Navigation -----------------------------------------
+
+    // isHorizontal=true f�r Links/Rechts, false f�r Hoch/Runter
     public void Navigate(int delta, bool isHorizontal)
     {
-        // SelectYesno: nur Links/Rechts navigieren Ja↔Nein
-        // Hoch/Runter passieren durch — das Spiel navigiert nativ
+        // SelectYesno: nur Links/Rechts navigieren Ja?Nein
+        // Hoch/Runter passieren durch � das Spiel navigiert nativ
         if (!isHorizontal) return;
         unsafe
         {
             var ynPtr = _gameGui.GetAddonByName("SelectYesno");
             if (!ynPtr.IsNull && ((AtkUnitBase*)(nint)ynPtr)->IsVisible)
             {
-                var newText = delta < 0 ? "Ja" : "Nein";
+                var newText = delta < 0 ? _ynConfirmLabel : _ynCancelLabel;
+                // Log BEFORE the dedup: user reported left/right silence in
+                // V4.31 and this method logged nothing - undiagnosable.
+                _log.Info($"[Accessibility] Navigate SelectYesno: delta={delta} -> '{newText}' (zuletzt '{_lastYesNoText}')");
                 if (newText == _lastYesNoText) return;
                 _lastYesNoText = newText;
                 _tolk.SpeakInterrupt(newText);
@@ -864,11 +2411,11 @@ public sealed class UIReaderService : IDisposable
     {
         var ynPtr = _gameGui.GetAddonByName("SelectYesno");
         if (ynPtr.IsNull || !((AtkUnitBase*)(nint)ynPtr)->IsVisible) return;
-        var newText = delta < 0 ? "Ja" : "Nein";
+        var newText = delta < 0 ? _ynConfirmLabel : _ynCancelLabel;
         if (newText == _lastYesNoText) return;
         _lastYesNoText = newText;
         _tolk.SpeakInterrupt(newText);
-        _log.Info($"[Accessibility] SelectYesno Gamepad → {newText}");
+        _log.Info($"[Accessibility] SelectYesno Gamepad -> {newText}");
     }
 
     public unsafe void ConfirmYesNo()
@@ -885,21 +2432,22 @@ public sealed class UIReaderService : IDisposable
             _log.Info("[Accessibility] ConfirmYesNo: SelectYesno nicht sichtbar.");
             return;
         }
-        var idx         = _lastYesNoText == "Nein" ? 1 : 0;
+        var isCancel    = _lastYesNoText == _ynCancelLabel;
+        var idx         = isCancel ? 1 : 0;
         var shouldClose = addon->ShouldFireCallbackAndHideOrClose;
-        _log.Info($"[Accessibility] ConfirmYesNo: idx={idx} ShouldFireCallbackAndHideOrClose={shouldClose}");
+        _log.Info($"[Accessibility] ConfirmYesNo: '{_lastYesNoText}' idx={idx} ShouldFireCallbackAndHideOrClose={shouldClose}");
 
-        if (_lastYesNoText == "Nein")
+        if (isCancel)
         {
-            // WORKAROUND: FireCallback(1, {Int:1}) schließt SelectYesno nicht (Log 11:40:10 bestätigt).
-            // Nein hat keinen Callback — das Spiel schließt das Fenster direkt ohne Callback.
-            // Fix: Close(true) schließt das Fenster ohne den Ja-Callback auszulösen.
-            _log.Info("[Accessibility] ConfirmYesNo: Nein → Close(true)");
+            // WORKAROUND: FireCallback(1, {Int:1}) schlie�t SelectYesno nicht (Log 11:40:10 best�tigt).
+            // Nein hat keinen Callback � das Spiel schlie�t das Fenster direkt ohne Callback.
+            // Fix: Close(true) schlie�t das Fenster ohne den Ja-Callback auszul�sen.
+            _log.Info("[Accessibility] ConfirmYesNo: Nein ? Close(true)");
             addon->Close(true);
         }
         else
         {
-            // Ja: FireCallback mit idx=0 + ShouldFireCallbackAndHideOrClose=True (bestätigt funktionstüchtig).
+            // Ja: FireCallback mit idx=0 + ShouldFireCallbackAndHideOrClose=True (best�tigt funktionst�chtig).
             if (!shouldClose)
                 addon->ShouldFireCallbackAndHideOrClose = true;
             var v = stackalloc AtkValue[1]; v[0].SetInt(0);
@@ -908,9 +2456,167 @@ public sealed class UIReaderService : IDisposable
         _lastYesNoText = string.Empty;
     }
 
+    public void AnnounceContextHelp()
+    {
+        _activeScreenContext = GetCurrentScreenContext();
+        var text = _activeScreenContext switch
+        {
+            ScreenContext.Title        => AccessibilityStrings.HelpForTitle,
+            ScreenContext.TitleMenu    => AccessibilityStrings.HelpForTitleMenu,
+            ScreenContext.ConfigSystem => AccessibilityStrings.HelpForConfigSystem,
+            _                          => AccessibilityStrings.NoHelpAvailable,
+        };
+        _tolk.SpeakInterrupt(text);
+    }
+
+    public void HandleEscapeKey()
+    {
+        var ctx = GetCurrentScreenContext();
+        if (ctx == ScreenContext.ConfigSystem)
+        {
+            _csPendingSave = false; // Escape = verwerfen
+            _tolk.SpeakInterrupt(AccessibilityStrings.Back);
+            return;
+        }
+        if (ctx != ScreenContext.TitleMenu) return;
+        _activeScreenContext = ScreenContext.TitleMenu;
+        _tolk.SpeakInterrupt(AccessibilityStrings.Back);
+    }
+
+    public unsafe void HandleConfirmKey()
+    {
+        var titleMenuPtr = _gameGui.GetAddonByName("_TitleMenu");
+        if (!titleMenuPtr.IsNull && ((AtkUnitBase*)(nint)titleMenuPtr)->IsVisible)
+        {
+            var selection = GetTitleMenuSelection((AtkUnitBase*)(nint)titleMenuPtr);
+            if (!string.IsNullOrWhiteSpace(selection.Item))
+            {
+                _activeScreenContext = ScreenContext.TitleMenu;
+                RememberTitleMenuSelection(selection.Item, selection.Index);
+                _tolk.SpeakInterrupt(AccessibilityStrings.Confirmed(selection.Item));
+            }
+            return;
+        }
+
+        var yesNoPtr = _gameGui.GetAddonByName("SelectYesno");
+        if (!yesNoPtr.IsNull && ((AtkUnitBase*)(nint)yesNoPtr)->IsVisible)
+        {
+            ConfirmYesNo();
+            return;
+        }
+
+        // Ok buttons in lobby / character creation (tribe screen, DC map,
+        // name dialog, ...): dispatch the button's real click event.
+        PressFocusedOk();
+    }
+
+    /// <summary>
+    /// Presses the "Ok" button of the topmost focused lobby/character-creation
+    /// addon by dispatching the button's registered ButtonClick event to its
+    /// listener - the same path a real mouse click takes, no per-addon
+    /// callback guessing. Verified via ilspycmd: AtkResNode.AtkEventManager
+    /// .Event (linked list via NextEvent), AtkEvent fields Node@0/Target@8/
+    /// Listener@16/Param@24/NextEvent@32/State@40, AtkEventState.EventType@0,
+    /// AtkEventListener.ReceiveEvent(type, param, event, data), AtkEventData
+    /// Size=40, AtkEventType.ButtonClick=25. Restricted to _CharaMake*/
+    /// CharaMake*/TitleDCWorldMap so Enter keeps its game meaning elsewhere.
+    /// </summary>
+    // Confirm-button labels in priority order (German client).
+    private static readonly string[] ConfirmButtonLabels = ["Ok", "Bestätigen"];
+
+    public unsafe void PressFocusedOk()
+    {
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return;
+
+        // Walk focused list from the back: the step addon sits after the
+        // always-focused _CharaMakeProgress (whose Ok is the FINAL confirm),
+        // e.g. [_CharaMakeProgress, _CharaMakeTribe] - Log 2026-07-10 10:20.
+        var sawCandidate = false;
+        for (var i = mgr->FocusedUnitsList.Count - 1; i >= 0 && i < 256; i--)
+        {
+            var addon = mgr->FocusedUnitsList.Entries[i].Value;
+            if (addon == null || !addon->IsVisible) continue;
+            var name = addon->NameString;
+            if (!name.StartsWith("_CharaMake") && !name.StartsWith("CharaMake") && name != "TitleDCWorldMap")
+                continue;
+
+            sawCandidate = true;
+            // Confirm labels vary per dialog: "Ok" (Tribe/RaceGender),
+            // "Bestätigen" (_CharaMakeCharaName, Log 2026-07-10 11:15).
+            foreach (var label in ConfirmButtonLabels)
+            {
+                if (!TryClickButton(addon, label)) continue;
+                _tolk.SpeakInterrupt(AccessibilityStrings.OkPressed);
+                _log.Info($"[Accessibility] PressOk: '{label}' in '{name}' ausgeloest");
+                return;
+            }
+            _log.Info($"[Accessibility] PressOk: kein Ok-Button in '{name}'");
+        }
+        if (sawCandidate) _tolk.SpeakInterrupt(AccessibilityStrings.NoOkButton);
+    }
+
+    /// <summary>
+    /// Finds a visible top-level Button component whose cleaned label equals
+    /// <paramref name="label"/> and dispatches its ButtonClick event to the
+    /// registered listener. Returns false when no such button/event exists.
+    /// </summary>
+    private unsafe bool TryClickButton(AtkUnitBase* addon, string label)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || !node->IsVisible() || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+            if (comp->GetComponentType() != ComponentType.Button) continue;
+
+            var text = CleanRaceName(ReadFirstTextInComponent(node));
+            if (!string.Equals(text, label, StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Click event registration usually sits on the collision child,
+            // sometimes on the component node itself - search both.
+            var evt = FindEventOfType(node, AtkEventType.ButtonClick);
+            for (var j = 0; j < comp->UldManager.NodeListCount && evt == null; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null) continue;
+                evt = FindEventOfType(child, AtkEventType.ButtonClick);
+            }
+            if (evt == null || evt->Listener == null || !IsReadable(evt->Listener))
+            {
+                _log.Info($"[Accessibility] PressOk: Button '{label}' ohne ButtonClick-Event/Listener");
+                return false;
+            }
+
+            var data = default(AtkEventData); // zeroed, Size=40 (ilspycmd)
+            evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
+            _log.Info($"[Accessibility] PressOk: ButtonClick param={evt->Param} dispatched");
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Walks a node's event list (AtkEventManager.Event -> NextEvent) for the given type.</summary>
+    private unsafe AtkEvent* FindEventOfType(AtkResNode* node, AtkEventType type)
+    {
+        var evt   = node->AtkEventManager.Event;
+        var guard = 0;
+        while (evt != null && guard++ < 32)
+        {
+            if (!IsReadable(evt)) return null;
+            if (evt->State.EventType == type) return evt;
+            evt = evt->NextEvent;
+        }
+        return null;
+    }
+
     public unsafe void ReadCurrentFocus()
     {
-        // Aktives Menü aus dem Stack
+        // Quest-Journal offen? Dann will der User die QUEST lesen, nicht die Liste.
+        if (TryReadQuestDetail()) return;
+
+        // Aktives Men� aus dem Stack
         if (_menuStack.Count > 0)
         {
             var (addonName, _) = _menuStack.Peek();
@@ -943,16 +2649,369 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        _tolk.SpeakInterrupt("Kein aktives Menü.");
+        _tolk.SpeakInterrupt("Kein aktives Men�.");
     }
 
-    // ── Hilfsmethoden ───────────────────────────────────────────────
+    /// <summary>
+    /// Reads the quest detail pane (JournalDetail): title, level, objectives,
+    /// description. Node ids from the F5 dump 2026-07-11 (docs/game-api.md ->
+    /// "Journal/JournalDetail"): canvas component JournalCanvas(20) with
+    /// direct text children id=38 title, id=9 level, id=8 description;
+    /// objective rows are Multipurpose(21) children with an id=3 text.
+    /// Returns false when the pane is not visible or carries no text.
+    /// </summary>
+    private unsafe bool TryReadQuestDetail()
+    {
+        var text = BuildQuestText("JournalDetail");
+        if (text.Length == 0) return false;
+        _tolk.SpeakInterrupt(text);
+        return true;
+    }
+
+    // Auto-read state: last spoken text per quest window (dedup), and which
+    // windows we have already logged a structure probe for (once each).
+    private readonly Dictionary<string, string> _lastQuestText = new();
+    private readonly HashSet<string> _questProbed = new();
+
+    // Static tab/panel headers of the quest window (JournalDetail/Accept/Result).
+    // In the first frames after the window opens the description is not populated
+    // yet, so the generic text fallback read every visible canvas text - which are
+    // these headers: "Zusammenfassung. Optionen. Vergütung bei Erfolg..." before
+    // the actual description (log 2026-07-12). They are chrome, never quest
+    // content, so drop them from the spoken output (still logged for diagnosis).
+    private static readonly HashSet<string> QuestPanelHeaders = new(StringComparer.Ordinal)
+    {
+        "Zusammenfassung", "Optionen", "Vergütung bei Erfolg", "Vergütung",
+        "Bedingungen", "Information", "Tipps", "Ziel", "Belohnung",
+    };
+
+    /// <summary>
+    /// Automatically reads a quest window (JournalDetail / JournalAccept /
+    /// JournalResult) when its text appears or changes. The text is populated a
+    /// few frames after the window opens and changes on page turns, so this runs
+    /// on PostUpdate and only speaks when the built text differs from last time.
+    /// </summary>
+    private unsafe void OnQuestWindowUpdate(AddonEvent type, AddonArgs args)
+    {
+        var name  = args.AddonName;
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastQuestText.Remove(name);   // reset so it re-reads on reopen
+            _questProbed.Remove(name);     // re-log the node structure on reopen
+            return;
+        }
+
+        // JournalResult is the completion window: read the actual REWARDS
+        // (item names + amounts), not the generic section labels.
+        var text = name == "JournalResult" ? BuildRewardText(addon) : string.Empty;
+        if (string.IsNullOrWhiteSpace(text)) text = BuildQuestText(name);
+        if (string.IsNullOrWhiteSpace(text)) return;
+        if (_lastQuestText.TryGetValue(name, out var prev) && prev == text) return;
+
+        _lastQuestText[name] = text;
+        _log.Info($"[Quest] {name}: '{text}'");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
+    /// Builds the spoken text for a quest window. All three quest windows use a
+    /// JournalCanvas component. For JournalDetail the node ids are verified
+    /// (9 level, 8 description; objective rows Multipurpose -> id=3; id=38 is an
+    /// EXP "Bonus." badge, not the title, so it is skipped) and give a structured
+    /// readout. For JournalAccept/JournalResult the ids are not verified yet, so
+    /// if the known ids yield nothing we fall back to reading every visible text
+    /// node in the canvas in order. Each text node is logged ([Quest]) so the
+    /// structure can be turned into a precise reader later.
+    /// "" when the window is not visible, has no canvas, or carries no text.
+    /// </summary>
+    private unsafe string BuildQuestText(string addonName)
+    {
+        var ptr = _gameGui.GetAddonByName(addonName);
+        if (ptr.IsNull) return string.Empty;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return string.Empty;
+
+        var canvas = FindJournalCanvas(addon);
+        if (canvas == null)
+        {
+            // No canvas: log the top-level component types once so we can build a
+            // precise reader for this window, and fall back to top-level texts.
+            ProbeQuestStructure(addonName, addon);
+            return ReadAllTexts(addon);
+        }
+
+        var level = string.Empty;
+        var description = string.Empty;
+        var objectives = new List<string>();
+        var allTexts = new List<string>();
+
+        for (var i = 0; i < canvas->UldManager.NodeListCount; i++)
+        {
+            var node = canvas->UldManager.NodeList[i];
+            if (node == null || !node->IsVisible()) continue;
+
+            if (node->Type == NodeType.Text)
+            {
+                var text = ((AtkTextNode*)node)->NodeText.ToString();
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                if (!_questProbed.Contains(addonName))
+                    _log.Info($"[Quest] {addonName} canvas textNode id={node->NodeId} '{text}'");
+                switch (node->NodeId)
+                {
+                    // id=38 is the EXP "Bonus." badge, NOT the quest title - it
+                    // showed "Bonus." on every quest (log 2026-07-12), so it is
+                    // pure noise for TTS. Kept in the diagnostic log above, but
+                    // excluded from the spoken text.
+                    case 38: break;
+                    case 9:  level = text; allTexts.Add(text); break;
+                    case 8:  description = text; allTexts.Add(text); break;
+                    // Skip the static panel headers so the fallback readout does
+                    // not lead with "Zusammenfassung. Optionen. Vergütung...".
+                    default: if (!QuestPanelHeaders.Contains(text.Trim())) allTexts.Add(text); break;
+                }
+            }
+            else if ((int)node->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)node)->Component;
+                if (comp == null || comp->GetComponentType() != ComponentType.Multipurpose) continue;
+                for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+                {
+                    var child = comp->UldManager.NodeList[j];
+                    if (child == null || child->Type != NodeType.Text
+                        || child->NodeId != 3 || !child->IsVisible()) continue;
+                    var text = ((AtkTextNode*)child)->NodeText.ToString();
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    objectives.Add(text);
+                    allTexts.Add(text);
+                }
+            }
+        }
+        if (allTexts.Count > 0) _questProbed.Add(addonName); // log ids only once text exists
+
+        // Structured output when the verified JournalDetail ids matched (objective
+        // + description); else the generic canvas-text fallback for the not-yet-
+        // verified windows. The quest name is not read here - it is announced when
+        // the quest is selected in the journal list.
+        var sb = new StringBuilder();
+        if (description.Length > 0 || objectives.Count > 0)
+        {
+            if (level.Length > 0) sb.Append(level).Append(". ");
+            if (objectives.Count > 0) sb.Append($"Ziel: {string.Join(", ", objectives)}. ");
+            if (description.Length > 0) sb.Append($"Beschreibung: {description}");
+        }
+        else if (allTexts.Count > 0)
+        {
+            sb.Append(string.Join(". ", allTexts));
+        }
+        return sb.ToString().Trim();
+    }
+
+    /// <summary>
+    /// Reads the reward summary of the quest-completion window (JournalResult).
+    /// Structure verified from a UI dump: the JournalCanvas holds reward entries
+    /// as Multipurpose components - item rewards carry an Icon component (resolved
+    /// to a name), currency/EXP rewards carry only a number in a TextNineGrid plus
+    /// a type IMAGE (no resolvable icon id). So items read by name, amounts read
+    /// by value. "" if the window has no rewards yet.
+    /// </summary>
+    private unsafe string BuildRewardText(AtkUnitBase* addon)
+    {
+        var canvas = FindJournalCanvas(addon);
+        if (canvas == null) return string.Empty;
+
+        var items   = new List<string>();
+        var amounts = new List<string>();
+
+        for (var i = 0; i < canvas->UldManager.NodeListCount; i++)
+        {
+            var node = canvas->UldManager.NodeList[i];
+            if (node == null || !node->IsVisible() || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Multipurpose) continue;
+
+            var icon = FindSlotIcon(comp);
+            if (icon != null && icon->IconId != 0)
+            {
+                var name = _inventory.ResolveIconName(icon->IconId);
+                if (string.IsNullOrEmpty(name)) continue;
+                var qty = ReadIconQuantity(icon);
+                items.Add(qty.Length > 0 ? $"{qty} mal {name}" : name);
+            }
+            else
+            {
+                var amount = FindNumericText(comp, 0);
+                if (amount.Length > 0) amounts.Add(amount);
+            }
+        }
+
+        if (items.Count == 0 && amounts.Count == 0) return string.Empty;
+
+        var parts = new List<string>();
+        if (items.Count > 0) parts.Add(string.Join(", ", items));
+
+        // WORKAROUND: the currency TYPE is only shown as a UI image (no resolvable
+        // icon id), so we label the amounts by position - JournalResult always
+        // lists Erfahrung first, then Gil, then other currencies. Logged so the
+        // order can be verified/replaced with a real type mapping later.
+        string[] labels = { "Erfahrung", "Gil" };
+        for (var k = 0; k < amounts.Count; k++)
+            parts.Add($"{(k < labels.Length ? labels[k] : "weitere Vergütung")} {amounts[k]}");
+
+        _log.Info($"[Quest] JournalResult Belohnung: items=[{string.Join(" | ", items)}] amounts=[{string.Join(",", amounts)}]");
+        return "Belohnung: " + string.Join(". ", parts);
+    }
+
+    /// <summary>First visible, purely numeric text (digits plus . , space) in a
+    /// component subtree - the reward amount of a currency entry. "" if none.</summary>
+    private unsafe string FindNumericText(AtkComponentBase* comp, int depth)
+    {
+        if (comp == null || depth > 4) return string.Empty;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible()) continue;
+            if (n->Type == NodeType.Text)
+            {
+                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                if (t.Length > 0 && t.Any(char.IsDigit)
+                    && t.All(c => char.IsDigit(c) || c is '.' or ',' or ' '))
+                    return t;
+            }
+            else if ((int)n->Type >= 1000)
+            {
+                var c = ((AtkComponentNode*)n)->Component;
+                var r = FindNumericText(c, depth + 1);
+                if (r.Length > 0) return r;
+            }
+        }
+        return string.Empty;
+    }
+
+    /// <summary>First JournalCanvas component directly under an addon, or null.</summary>
+    private static unsafe AtkComponentBase* FindJournalCanvas(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp != null && comp->GetComponentType() == ComponentType.JournalCanvas)
+                return comp;
+        }
+        return null;
+    }
+
+    /// <summary>Logs the top-level component types of a quest window once, so an
+    /// unverified window (no JournalCanvas) can be turned into a precise reader.</summary>
+    private unsafe void ProbeQuestStructure(string addonName, AtkUnitBase* addon)
+    {
+        if (!_questProbed.Add(addonName)) return;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+            _log.Info($"[Quest] {addonName} probe: node id={node->NodeId} comp={comp->GetComponentType()} vis={node->IsVisible()}");
+        }
+    }
+
+    // -- Hilfsmethoden -----------------------------------------------
 
     private void PushMenu(string name, int initialIndex)
     {
         if (_menuStack.Any(m => m.Name == name)) return;
         _menuStack.Push((name, initialIndex));
-        _log.Info($"[Accessibility] Menü geöffnet: {name}, Stack-Tiefe: {_menuStack.Count}");
+        _log.Info($"[Accessibility] Men� ge�ffnet: {name}, Stack-Tiefe: {_menuStack.Count}");
+    }
+
+    private void ResetTitleMenuState()
+    {
+        _titleMenuItems.Clear();
+        _lastTitleMenuText = string.Empty;
+        _lastTitleMenuIndex = -1;
+    }
+
+    private void RememberTitleMenuSelection(string item, int index)
+    {
+        _lastTitleMenuText = item;
+        _lastTitleMenuIndex = index;
+    }
+
+    private string FormatTitleMenuSelection(string item, int index, int count)
+    {
+        return AccessibilityStrings.MenuPosition(item, index + 1, count);
+    }
+
+    private unsafe void AnnounceTitleMenuFocusIfChanged(AtkUnitBase* addon)
+    {
+        // Dump NACH PostUpdate (Spiel hat Fokus bereits intern verschoben)
+        if (_dumpOnNextTitleMenuUpdate)
+        {
+            _dumpOnNextTitleMenuUpdate = false;
+            DumpTitleMenuButtonFlags(addon);
+        }
+
+        var selection = GetTitleMenuSelection(addon);
+        if (selection.Count <= 0 || string.IsNullOrWhiteSpace(selection.Item)) return;
+        if (selection.Index == _lastTitleMenuIndex && selection.Item == _lastTitleMenuText) return;
+
+        RememberTitleMenuSelection(selection.Item, selection.Index);
+        _tolk.SpeakInterrupt(FormatTitleMenuSelection(selection.Item, selection.Index, selection.Count));
+    }
+
+    private unsafe (string Item, int Index, int Count) GetTitleMenuSelection(AtkUnitBase* addon)
+    {
+        var items = ReadTitleMenuItems(addon);
+        _titleMenuItems.Clear();
+        _titleMenuItems.AddRange(items);
+
+        if (_titleMenuItems.Count == 0) return (string.Empty, -1, 0);
+
+        var focused = FindTitleMenuFocused(addon);
+        var index = FindTitleMenuItemIndex(focused);
+
+        if (index < 0 && _lastTitleMenuIndex >= 0 && _lastTitleMenuIndex < _titleMenuItems.Count)
+            index = _lastTitleMenuIndex;
+
+        if (index < 0)
+            index = 0;
+
+        return (_titleMenuItems[index], index, _titleMenuItems.Count);
+    }
+
+    private int FindTitleMenuItemIndex(string? focusedItem)
+    {
+        if (string.IsNullOrWhiteSpace(focusedItem)) return -1;
+
+        for (var i = 0; i < _titleMenuItems.Count; i++)
+        {
+            if (string.Equals(_titleMenuItems[i], focusedItem, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+
+        return -1;
+    }
+
+    private ScreenContext GetCurrentScreenContext()
+    {
+        unsafe
+        {
+            var csPtr = _gameGui.GetAddonByName("ConfigSystem");
+            if (!csPtr.IsNull && ((AtkUnitBase*)(nint)csPtr)->IsVisible)
+                return ScreenContext.ConfigSystem;
+
+            var titleMenuPtr = _gameGui.GetAddonByName("_TitleMenu");
+            if (!titleMenuPtr.IsNull && ((AtkUnitBase*)(nint)titleMenuPtr)->IsVisible)
+                return ScreenContext.TitleMenu;
+
+            var titlePtr = _gameGui.GetAddonByName("Title");
+            if (!titlePtr.IsNull && ((AtkUnitBase*)(nint)titlePtr)->IsVisible)
+                return ScreenContext.Title;
+        }
+
+        return ScreenContext.None;
     }
 
     private unsafe string ReadYesNoQuestion(AtkUnitBase* addon)
@@ -976,9 +3035,12 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
-    // ── VirtualQuery: Pointer-Sicherheitsnetz gegen AccessViolationException ──
+    // -- VirtualQuery: Pointer-Sicherheitsnetz gegen AccessViolationException --
 
-    [StructLayout(LayoutKind.Explicit, Size = 44)]
+    // Size MUST be 48 (4 trailing padding bytes for 8-byte alignment). With 44,
+    // VirtualQuery always fails with ERROR_BAD_LENGTH and IsReadable() returns
+    // false for EVERY pointer - proven by standalone repro on 2026-07-09.
+    [StructLayout(LayoutKind.Explicit, Size = 48)]
     private struct MEMORY_BASIC_INFORMATION
     {
         [FieldOffset(0)]  public nuint BaseAddress;
@@ -1004,11 +3066,28 @@ public sealed class UIReaderService : IDisposable
         return mbi.State == MEM_COMMIT && (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) == 0;
     }
 
-    // ── List-Item-Text lesen (abgesichert gegen ungültige Renderer-Pointer) ──
+    /// <summary>
+    /// Diagnostic companion to IsReadable: returns pointer value plus the
+    /// VirtualQuery verdict (State/Protect) so failed checks are explainable in the log.
+    /// </summary>
+    private static unsafe string DescribeMemory(void* ptr)
+    {
+        if (ptr == null) return "null";
+        if (VirtualQuery(ptr, out var mbi, (nuint)sizeof(MEMORY_BASIC_INFORMATION)) == 0)
+            return $"0x{(nint)ptr:X}: VirtualQuery failed";
+        return $"0x{(nint)ptr:X}: State=0x{mbi.State:X} Protect=0x{mbi.Protect:X} RegionSize=0x{(ulong)mbi.RegionSize:X}";
+    }
+
+    // -- List-Item-Text lesen (abgesichert gegen ung�ltige Renderer-Pointer) --
 
     private unsafe string ReadListItemText(AtkComponentList* list, int idx)
     {
-        if (idx < 0 || idx >= list->ListLength) return string.Empty;
+        // Bound = renderer slots, NOT ListLength: TreeList (Journal) manages
+        // its rows in its own Items vector (AtkComponentTreeList.Items @432,
+        // ilspycmd 2026-07-11) and leaves the base ListLength at 0 - the old
+        // ListLength guard rejected every row, which kept the Journal silent
+        // although HoveredItemIndex2 moved (log 2026-07-11 10:35).
+        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
         try
         {
             var rendererSlot = &list->ItemRendererList[idx];
@@ -1023,37 +3102,122 @@ public sealed class UIReaderService : IDisposable
             var nodeList = renderer->UldManager.NodeList;
             if (nodeList == null || !IsReadable(nodeList)) return string.Empty;
 
+            // All visible texts of the row, not just the first one - Journal
+            // rows carry level AND quest name ("St. 1" + "Willkommen in
+            // Gridania", dump 2026-07-10); invisible nodes are stale slots.
+            List<string>? parts = null;
             for (uint i = 0; i < nodeCount; i++)
             {
                 var node = nodeList[i];
-                if (node == null || node->Type != NodeType.Text) continue;
+                if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
                 var textNode = (AtkTextNode*)node;
                 if (textNode->NodeText.IsEmpty) continue;
                 var text = textNode->NodeText.ToString();
-                if (!string.IsNullOrEmpty(text)) return text;
+                if (!string.IsNullOrEmpty(text)) (parts ??= []).Add(text);
             }
+            if (parts != null) return string.Join(", ", parts);
         }
         catch (Exception ex) { _log.Warning($"[Accessibility] ListItem-Fehler: {ex.Message}"); }
         return string.Empty;
     }
 
+    // -- List index probe (which field tracks keyboard navigation?) --
+
+    private static unsafe (int Sel, int Hov, int Hov2, int Hov3, int Held, string Hl) ReadListIndices(AtkComponentList* list)
+    {
+        // Highlight mask over the renderer slots (ListItem.IsHighlighted,
+        // ilspycmd 2026-07-11). AllocatedItemRendererListLength bounds the
+        // real allocation - virtual lists allocate fewer slots than ListLength.
+        var hl = new StringBuilder();
+        var n = Math.Min(list->AllocatedItemRendererListLength, 64);
+        for (var i = 0; i < n; i++)
+        {
+            if (list->ItemRendererList[i].IsHighlighted)
+            {
+                if (hl.Length > 0) hl.Append(' ');
+                hl.Append(i);
+            }
+        }
+        return (list->SelectedItemIndex, list->HoveredItemIndex,
+                list->HoveredItemIndex2, list->HoveredItemIndex3,
+                list->HeldItemIndex, hl.ToString());
+    }
+
+    private unsafe void TrackListIndices(string name, AtkComponentList* list)
+    {
+        var state = ReadListIndices(list);
+        if (!_listIndexState.TryGetValue(name, out var prev))
+        {
+            _listIndexState[name] = state;
+            _log.Info($"[ListProbe] {name} Basis: Sel={state.Sel} Hov={state.Hov} Hov2={state.Hov2} Hov3={state.Hov3} Held={state.Held} HL=[{state.Hl}] Len={list->ListLength}");
+            return;
+        }
+        if (state == prev) return;
+
+        _listIndexState[name] = state;
+        _log.Info($"[ListProbe] {name}: Sel={state.Sel} Hov={state.Hov} Hov2={state.Hov2} Hov3={state.Hov3} Held={state.Held} HL=[{state.Hl}]");
+
+        // Announce the row of whichever candidate moved. Priority is only a
+        // tie-breaker; the probe log shows which one actually fired so the
+        // list can be trimmed to the verified field afterwards.
+        var idx = -1;
+        if      (state.Sel  != prev.Sel  && state.Sel  >= 0) idx = state.Sel;
+        else if (state.Hov  != prev.Hov  && state.Hov  >= 0) idx = state.Hov;
+        else if (state.Hov2 != prev.Hov2 && state.Hov2 >= 0) idx = state.Hov2;
+        else if (state.Hov3 != prev.Hov3 && state.Hov3 >= 0) idx = state.Hov3;
+        else if (state.Hl != prev.Hl && state.Hl.Length > 0)
+            idx = int.Parse(state.Hl.Split(' ')[0]);
+        if (idx < 0) return;
+
+        var text = ReadListItemText(list, idx);
+        if (string.IsNullOrEmpty(text)) return;
+        var announce = $"{idx}|{text}";
+        if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;
+        _lastListAnnounce[name] = announce;
+        _log.Info($"[Accessibility] {name} List-Navigation: [{idx}] {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // Row count for announcements: TreeList keeps the base ListLength at 0
+    // and counts its rows in the derived Items vector instead (Journal said
+    // "0 Eintraege"; AtkComponentTreeList.Items @432, ilspycmd 2026-07-11).
+    private static unsafe int GetListEntryCount(AtkComponentList* list)
+    {
+        if (list->ListLength > 0) return list->ListLength;
+        if (((AtkComponentBase*)list)->GetComponentType() == ComponentType.TreeList)
+            return (int)((AtkComponentTreeList*)list)->Items.LongCount;
+        return list->ListLength;
+    }
+
+    // TreeList (Journal) inherits AtkComponentList at offset 0
+    // ([Inherits<AtkComponentList>(0)], ilspycmd 2026-07-10) - the cast below
+    // is safe and SelectedItemIndex/ListLength work for both.
+    private static bool IsListComponent(ComponentType type) =>
+        type is ComponentType.List or ComponentType.TreeList;
+
     private static unsafe AtkComponentList* FindListInAddon(AtkUnitBase* addon)
     {
+        // Component nodes carry RAW type values >= 1000 (NodeType.Component
+        // = 10000 is only what GetNodeType() returns, ilspycmd 2026-07-11).
+        // The old check `Type != NodeType.Component` was therefore NEVER true
+        // for real components - this function returned null since its
+        // introduction and the universal list navigation was dead code
+        // (Journal/SystemMenu/SelectString all silent, log 2026-07-11).
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var node = addon->UldManager.NodeList[i];
-            if (node == null || node->Type != NodeType.Component) continue;
+            if (node == null || (int)node->Type < 1000) continue;
             var comp = ((AtkComponentNode*)node)->Component;
             if (comp == null) continue;
-            if (comp->GetComponentType() == ComponentType.List)
+            if (IsListComponent(comp->GetComponentType()))
                 return (AtkComponentList*)comp;
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
                 var inner = comp->UldManager.NodeList[j];
-                if (inner == null || inner->Type != NodeType.Component) continue;
+                if (inner == null || (int)inner->Type < 1000) continue;
                 var innerComp = ((AtkComponentNode*)inner)->Component;
                 if (innerComp == null) continue;
-                if (innerComp->GetComponentType() == ComponentType.List)
+                if (IsListComponent(innerComp->GetComponentType()))
                     return (AtkComponentList*)innerComp;
             }
         }
@@ -1062,7 +3226,7 @@ public sealed class UIReaderService : IDisposable
 
     /// <summary>
     /// Findet den Node mit dem Fokus-Flag (HasFocusBit) oder relevanten Hover-Effekten.
-    /// Rückgabe: (Text, Key)
+    /// R�ckgabe: (Text, Key)
     /// </summary>
     private unsafe (string? Text, uint Key) FindFocusedText(AtkUnitBase* addon)
     {
@@ -1086,14 +3250,15 @@ public sealed class UIReaderService : IDisposable
                     for (var j = 0; j < comp->UldManager.NodeListCount; j++)
                     {
                         var child = comp->UldManager.NodeList[j];
+                        // Wenn ein Kind-Node den Fokus hat, nehmen wir den Text des ganzen Komponenten-Nodes
                         if (child != null && child->IsVisible() && ((ushort)child->NodeFlags & HasFocusBit) != 0)
-                            return (GetTextFromNodeTree(child), node->NodeId * 1000 + child->NodeId);
+                            return (GetTextFromNodeTree(node), node->NodeId * 1000 + child->NodeId);
                     }
                 }
             }
         }
 
-        // 2. Durchlauf: Fallback auf Collision (0x10) für statische Menüs (z.B. TitleDCWorldMap)
+        // 2. Durchlauf: Fallback auf Collision (0x10) f�r statische Men�s (z.B. TitleDCWorldMap)
         // Wir suchen hier nur nach dem Glow auf Kind 4, um Fehlalarme zu vermeiden.
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
@@ -1121,18 +3286,18 @@ public sealed class UIReaderService : IDisposable
     /// <summary>
     /// Rekursive Text-Extraktion aus einem beliebigen Node-Baum.
     /// Erkennt ComponentType und liest entsprechend aus:
-    ///   List      → SelectedItemIndex-Text
-    ///   Button    → ButtonTextNode (direkt, effizient)
+    ///   List      ? SelectedItemIndex-Text
+    ///   Button    ? ButtonTextNode (direkt, effizient)
     ///   CheckBox, RadioButton, ListItemRenderer, alle anderen
-    ///             → alle Kind-Nodes werden rekursiv durchsucht,
+    ///             ? alle Kind-Nodes werden rekursiv durchsucht,
     ///               Texte werden kombiniert (Label + Wert/Status)
-    /// Depth-Limit = 6 verhindert Stack-Overflow bei tiefen Bäumen.
+    /// Depth-Limit = 6 verhindert Stack-Overflow bei tiefen B�umen.
     /// </summary>
     private unsafe string GetTextFromNodeTree(AtkResNode* node, int depth = 0)
     {
         if (node == null || depth > 6) return string.Empty;
 
-        // Text-Node: Inhalt direkt zurückgeben
+        // Text-Node: Inhalt direkt zur�ckgeben
         if (node->Type == NodeType.Text)
         {
             var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
@@ -1148,14 +3313,14 @@ public sealed class UIReaderService : IDisposable
 
         var compType = comp->GetComponentType();
 
-        // Liste / Dropdown: aktuell gewählten Eintrag lesen
+        // Liste / Dropdown: aktuell gew�hlten Eintrag lesen
         if (compType == ComponentType.List)
         {
             var list = (AtkComponentList*)comp;
             return ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
         }
 
-        // Button: ButtonTextNode bevorzugen (direkter Zugriff, keine Rekursion nötig)
+        // Button: ButtonTextNode bevorzugen (direkter Zugriff, keine Rekursion n�tig)
         if (compType == ComponentType.Button)
         {
             var btn = (AtkComponentButton*)comp;
@@ -1167,7 +3332,7 @@ public sealed class UIReaderService : IDisposable
         }
 
         // CheckBox, RadioButton, ListItemRenderer und alle weiteren:
-        // Kind-Nodes rekursiv durchsuchen — ergibt automatisch Label + Wert/Status.
+        // Kind-Nodes rekursiv durchsuchen � ergibt automatisch Label + Wert/Status.
         var sb = new StringBuilder();
         for (var j = 0; j < comp->UldManager.NodeListCount; j++)
         {
@@ -1198,7 +3363,7 @@ public sealed class UIReaderService : IDisposable
     private unsafe List<string> ReadTitleMenuItems(AtkUnitBase* addon)
     {
         var items = new List<string>();
-        // Rückwärts iterieren → niedrigere Node-IDs zuerst (visuell oben → unten).
+        // R�ckw�rts iterieren ? niedrigere Node-IDs zuerst (visuell oben ? unten).
         // AtkComponentButton (NodeType=1001, ComponentType=1) hat ButtonTextNode direkt bei Offset 0xC8.
         for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
         {
@@ -1217,10 +3382,12 @@ public sealed class UIReaderService : IDisposable
 
     private unsafe string? FindTitleMenuFocused(AtkUnitBase* addon)
     {
-        // AtkComponentButton (NodeType=1001) hat ButtonTextNode direkt bei Offset 0xC8.
-        // Fokus-Indikator: Child-Node id=4 (type=Res) des fokussierten Buttons hat HasCollision (0x10).
-        // Unfokussierte Buttons: 0x202F, fokussierter Button: 0x203F.
-        const ushort HasCollisionBit = 0x10;
+        // Fokus-Indikator: Kind-Node id=4, Typ Res (t=1) des fokussierten Buttons wird SICHTBAR.
+        // Best�tigt durch Dump-Analyse vom 30.05.2026:
+        //   Fokussierter Button:   id=4 t=1 F=0x203F vis=True
+        //   Unfokussierter Button: id=4 t=1 F=0x202F vis=False
+        // HasFocusBit (0x100) ist UNBRAUCHBAR: id=6 (t=8, F=0x273F) hat 0x100 DAUERHAFT auf
+        // ALLEN Buttons gesetzt und trifft immer den ersten Button im NodeList (btn=9 'Beenden').
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var node = addon->UldManager.NodeList[i];
@@ -1229,36 +3396,73 @@ public sealed class UIReaderService : IDisposable
             var comp = ((AtkComponentNode*)node)->Component;
             if (comp == null) continue;
 
-            var hasFocus = false;
+            var focused = false;
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
                 var child = comp->UldManager.NodeList[j];
-                // Nur Res-Knoten prüfen — das ist der Fokus-Indikator (child=4 type=Res)
-                // Andere Kinder haben HasCollision dauerhaft gesetzt und würden false positives erzeugen
-                if (child != null && child->Type == NodeType.Res && ((ushort)child->NodeFlags & HasCollisionBit) != 0)
+                if (child != null && child->NodeId == 4 && child->Type == NodeType.Res && child->IsVisible())
                 {
-                    hasFocus = true;
+                    focused = true;
                     break;
                 }
             }
-            if (!hasFocus) continue;
+            if (!focused) continue;
 
             var btn = (AtkComponentButton*)comp;
             if (btn->ButtonTextNode == null) continue;
             var text = btn->ButtonTextNode->NodeText.ToString().Trim();
-            _log.Info($"[DEBUG] TitleMenu btn={node->NodeId} ButtonTextNode='{text}'");
-            return string.IsNullOrWhiteSpace(text) ? null : text;
+            if (!string.IsNullOrWhiteSpace(text))
+                return text;
         }
         return null;
     }
 
+    /// <summary>
+    /// Vollst�ndiger Diagnostik-Dump aller _TitleMenu-Buttons inkl. ALLER Kinder-Nodes.
+    /// Wird im PostUpdate-Frame nach InputReceived ausgef�hrt, damit der Fokus-Zustand
+    /// bereits vom Spiel aktualisiert wurde.
+    /// Log-Format: ButtonFlags btn=... | Kinder: (id type F=0x... vis=true/false)
+    /// </summary>
+    private unsafe void DumpTitleMenuButtonFlags(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type != 1001) continue;
+
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+
+            var btn = (AtkComponentButton*)comp;
+            var lbl = btn->ButtonTextNode != null ? btn->ButtonTextNode->NodeText.ToString().Trim() : "?";
+            var nf  = (ushort)node->NodeFlags;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[DEBUG] ButtonFlags btn=id{node->NodeId} '{lbl}' NodeF=0x{nf:X4} | Kinder:");
+
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null) continue;
+                var cf  = (ushort)child->NodeFlags;
+                var vis = child->IsVisible();
+                sb.Append($" (id={child->NodeId} t={(int)child->Type} F=0x{cf:X4} vis={vis})");
+            }
+
+            _log.Info(sb.ToString());
+        }
+    }
+
     private unsafe string ReadAllTexts(AtkUnitBase* addon)
     {
+        // Only VISIBLE texts: hidden nodes carry stale/conditional content -
+        // JournalDetail spoke "Du kannst den Auftrag nicht annehmen..." from
+        // an invisible error label on open (log 2026-07-11 10:35).
         var sb = new StringBuilder();
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var node = addon->UldManager.NodeList[i];
-            if (node == null || node->Type != NodeType.Text) continue;
+            if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
             var text = ((AtkTextNode*)node)->NodeText.ToString();
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 1)
                 sb.Append(text).Append(". ");
@@ -1266,25 +3470,108 @@ public sealed class UIReaderService : IDisposable
         return sb.ToString().Trim();
     }
 
-    // ── UI-Dump (Diagnose) ──────────────────────────────────────────
+    // -- Window diagnosis (F2 / "/acc win") --------------------------
+
+    /// <summary>
+    /// Announces which addon currently has focus and logs all visible addons
+    /// with prefix [Win]. Main purpose: identify unknown menus that have no
+    /// handler yet, so they can be dumped and made accessible.
+    /// Fields verified against FFXIVClientStructs: AtkUnitManager.FocusedUnitsList /
+    /// AllLoadedUnitsList (AtkUnitList: Entries + Count), AtkUnitBase.NameString/IsVisible.
+    /// </summary>
+    public unsafe void AnnounceActiveWindow()
+    {
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null)
+        {
+            _log.Warning("[Win] RaptureAtkUnitManager.Instance() returned null.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.UiManagerUnavailable);
+            return;
+        }
+
+        // All visible addons -> log only (too many to speak)
+        var visible = new List<string>();
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (a == null || !a->IsVisible) continue;
+            visible.Add(a->NameString);
+        }
+
+        // Focused addons (usually 0-2) -> spoken
+        var focused = new List<string>();
+        for (var i = 0; i < mgr->FocusedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->FocusedUnitsList.Entries[i].Value;
+            if (a == null) continue;
+            focused.Add(a->NameString);
+        }
+
+        _log.Info($"[Win] Fokussiert ({focused.Count}): {(focused.Count > 0 ? string.Join(", ", focused) : "-")}");
+        _log.Info($"[Win] Sichtbar ({visible.Count}): {string.Join(", ", visible)}");
+
+        if (focused.Count > 0)
+            _tolk.SpeakInterrupt(AccessibilityStrings.ActiveWindow(string.Join(", ", focused), visible.Count));
+        else
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoWindowFocused(visible.Count));
+    }
+
+    // -- UI-Dump (Diagnose) ------------------------------------------
 
     /// <summary>
     /// Findet das aktuell sichtbare/aktive Addon und dumpt seinen Node-Tree.
-    /// Wird von Plugin.cs über F5 aufgerufen (kein Chat-Fenster nötig).
-    /// Sucht in einer festen Prioritätsliste, die den Titelbildschirm abdeckt.
+    /// Wird von Plugin.cs �ber F5 aufgerufen (kein Chat-Fenster n�tig).
+    /// Sucht in einer festen Priorit�tsliste, die den Titelbildschirm abdeckt.
     /// </summary>
     public unsafe void DumpFocusedAddon()
     {
-        // Prioritätsliste: Addons, die auf dem Titelbildschirm und im Spiel relevant sind
+        // First choice: whatever the game itself reports as focused
+        // (FocusedUnitsList). Covers unknown menus like character creation
+        // without relying on the hardcoded candidate list below.
+        // Dump ALL visible focused addons into one file: the "main" addon can
+        // be an empty container (CharaSelect: Vis=True, 0 Nodes - Log 21:18)
+        // while the real content lives in a sibling (_CharaSelectListMenu).
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr != null && mgr->FocusedUnitsList.Count > 0)
+        {
+            var names = new List<string>();
+            for (var i = 0; i < mgr->FocusedUnitsList.Count && i < 256; i++)
+            {
+                var a = mgr->FocusedUnitsList.Entries[i].Value;
+                if (a == null || !a->IsVisible) continue;
+                names.Add(a->NameString);
+            }
+            if (names.Count > 0)
+            {
+                // Companion panes ("Journal" -> "JournalDetail") are attached
+                // children, never focused themselves, but carry the actual
+                // content (quest description) - dump them along.
+                foreach (var focusedName in names.ToArray())
+                {
+                    var detailName = focusedName + "Detail";
+                    if (names.Contains(detailName)) continue;
+                    var detail = _gameGui.GetAddonByName(detailName);
+                    if (!detail.IsNull && ((AtkUnitBase*)(nint)detail)->IsVisible)
+                        names.Add(detailName);
+                }
+
+                _log.Info($"[Dump] Fokussierte Addons (alle im Dump): {string.Join(", ", names)}");
+                DumpAddons(names);
+                return;
+            }
+            _log.Info("[Dump] Fokussierte Addons vorhanden, aber keins sichtbar - Fallback auf Kandidatenliste.");
+        }
+
+        // Fallback: fixed candidate list (title screen etc.)
         var candidates = new List<string>();
 
-        // Oberstes Menü im Stack zuerst (im Spiel)
+        // Oberstes Men� im Stack zuerst (im Spiel)
         if (_menuStack.Count > 0)
             candidates.Add(_menuStack.Peek().Name);
 
         candidates.AddRange([
             "TitleDCWorldMap",        // Datenzentrum-Auswahl (Titelbildschirm)
-            "_TitleMenu",             // Hauptmenü (Titelbildschirm)
+            "_TitleMenu",             // Hauptmen� (Titelbildschirm)
             "Title",                  // Logo-Screen
             "SelectString",           // Auswahldialog
             "SelectIconString",
@@ -1305,7 +3592,7 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        _tolk.SpeakInterrupt("Kein aktives Addon für Dump gefunden.");
+        _tolk.SpeakInterrupt("Kein aktives Addon f�r Dump gefunden.");
         _log.Info("[Dump] Kein sichtbares Addon in der Kandidatenliste gefunden.");
     }
 
@@ -1322,27 +3609,50 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        var ptr = _gameGui.GetAddonByName(addonName.Trim());
-        if (ptr.IsNull)
+        DumpAddons([addonName.Trim()]);
+    }
+
+    /// <summary>
+    /// Dumps several addons into ONE log block and ONE desktop file.
+    /// Used by DumpFocusedAddon (all focused addons) and DumpAddon (single name).
+    /// </summary>
+    private unsafe void DumpAddons(IReadOnlyList<string> addonNames)
+    {
+        var sb         = new StringBuilder();
+        var totalNodes = 0;
+        var foundCount = 0;
+
+        foreach (var name in addonNames)
         {
-            _tolk.SpeakInterrupt($"Addon {addonName} nicht offen.");
-            return;
+            var ptr = _gameGui.GetAddonByName(name);
+            if (ptr.IsNull)
+            {
+                sb.AppendLine($"=== DUMP: {name} | nicht offen ===");
+                continue;
+            }
+
+            var addon = (AtkUnitBase*)(nint)ptr;
+            foundCount++;
+            totalNodes += addon->UldManager.NodeListCount;
+            sb.AppendLine($"=== DUMP: {name} | Vis={addon->IsVisible} | Nodes={addon->UldManager.NodeListCount} ===");
+
+            for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+            {
+                var node = addon->UldManager.NodeList[i];
+                if (node == null) continue;
+                DumpNode(sb, node, depth: 0, index: i);
+            }
         }
 
-        var addon = (AtkUnitBase*)(nint)ptr;
-        var sb    = new StringBuilder();
-        sb.AppendLine($"=== DUMP: {addonName} | Vis={addon->IsVisible} | Nodes={addon->UldManager.NodeListCount} ===");
-
-        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        if (foundCount == 0)
         {
-            var node = addon->UldManager.NodeList[i];
-            if (node == null) continue;
-            DumpNode(sb, node, depth: 0, index: i);
+            _tolk.SpeakInterrupt(AccessibilityStrings.AddonNotOpen(string.Join(", ", addonNames)));
+            return;
         }
 
         var output = sb.ToString();
 
-        // Log in Zeilen aufgeteilt (Dalamud-Log begrenzt Zeilenlänge)
+        // Log in Zeilen aufgeteilt (Dalamud-Log begrenzt Zeilenl�nge)
         foreach (var line in output.Split('\n'))
         {
             var l = line.TrimEnd('\r');
@@ -1356,7 +3666,7 @@ public sealed class UIReaderService : IDisposable
         try
         {
             File.WriteAllText(dumpFile, output, System.Text.Encoding.UTF8);
-            _tolk.SpeakInterrupt($"UI Dump auf Desktop gespeichert. {addon->UldManager.NodeListCount} Nodes.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.DumpSaved(foundCount, totalNodes));
             _log.Info($"[Dump] Gespeichert: {dumpFile}");
         }
         catch (Exception ex)
@@ -1367,9 +3677,9 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
-    /// Rekursive Node-Ausgabe für DumpAddon.
+    /// Rekursive Node-Ausgabe f�r DumpAddon.
     /// Gibt NodeId, Typ, Flags, Sichtbarkeit und Inhalt aus.
-    /// Tiefenlimit = 5, verhindert Stack-Overflow bei tiefen Bäumen.
+    /// Tiefenlimit = 5, verhindert Stack-Overflow bei tiefen B�umen.
     /// </summary>
     private unsafe void DumpNode(StringBuilder sb, AtkResNode* node, int depth, int index)
     {
@@ -1396,8 +3706,8 @@ public sealed class UIReaderService : IDisposable
 
         if (typeNum == 3) // Text
         {
-            var t = ((AtkTextNode*)node)->NodeText.ToString().Replace("\n", "↵");
-            if (t.Length > 80) t = t[..80] + "…";
+            var t = ((AtkTextNode*)node)->NodeText.ToString().Replace("\n", "?");
+            if (t.Length > 80) t = t[..80] + "�";
             extra = $" \"{t}\"";
         }
         else if (typeNum >= 1000)
@@ -1408,7 +3718,7 @@ public sealed class UIReaderService : IDisposable
                 var ct = comp->GetComponentType();
                 extra = $" [CT={ct}({(int)ct}) Ch={comp->UldManager.NodeListCount}]";
 
-                // Für Listen: Länge und aktuell gewählter Index
+                // F�r Listen: L�nge und aktuell gew�hlter Index
                 if (ct == ComponentType.List)
                 {
                     var list = (AtkComponentList*)comp;
@@ -1436,11 +3746,17 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       OnAnyAddonUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, OnAnyAddonReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PreFinalize,      OnAnyAddonClose);
-        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "Talk",        OnTalkOpen);
-        _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "Talk",        OnTalkReceive);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Talk",         OnTalkUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "SelectYesno", OnYesNoReceive);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(OnSelectStringOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Request", OnRequestOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Title", OnTitleScreenOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_TitleMenu", OnTitleMenuOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_TitleMenu", OnTitleMenuReceive);
@@ -1448,6 +3764,10 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PreFinalize,      "ConfigSystem", OnConfigSystemClose);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "ConfigSystem", OnConfigSystemReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "ConfigPadCalibration", OnPadCalibrationOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeRaceGender", OnRaceGenderUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeRaceGender", OnRaceGenderReceive);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "TitleDCWorldMap", OnDCWorldMapOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "TitleDCWorldMap", OnDCWorldMapUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "TitleDCWorldMap", OnDCWorldMapReceive);

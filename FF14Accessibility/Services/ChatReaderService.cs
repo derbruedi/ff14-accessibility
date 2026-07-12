@@ -29,6 +29,12 @@ public sealed class ChatReaderService : IDisposable
 
         if (string.IsNullOrWhiteSpace(messageText)) return;
 
+        // Many toast notifications (_TextError etc.) the UIReader already spoke
+        // are mirrored into the chat log as SystemMessage/ErrorMessage a few
+        // seconds later. Skip the echo when the plain message (no prefix) was
+        // just spoken (log 2026-07-12: "Du hast einen Auftrag angenommen!" twice).
+        if (_tolk.WasRecentlySpoken(messageText, 6)) return;
+
         var prefix = GetChatPrefix(msg.LogKind);
         var fullText = string.IsNullOrWhiteSpace(senderText)
             ? $"{prefix}: {messageText}"
