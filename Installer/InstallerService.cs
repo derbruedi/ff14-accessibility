@@ -59,26 +59,26 @@ public sealed class InstallerService
 
     private void Log(string message) => LogMessage?.Invoke(message);
     private void Info(string message) => Log(message);
-    private void Warn(string message) => Log("Achtung: " + message);
-    private void Error(string message) => Log("Fehler: " + message);
+    private void Warn(string message) => Log(Loc.Get("WarnPrefix") + message);
+    private void Error(string message) => Log(Loc.Get("ErrorPrefix") + message);
 
     /// <summary>Führt den kompletten Installations-/Update-Ablauf aus. Ein einziger
     /// Codepfad für Erstinstallation und Update (siehe Architektur-Doc Abschnitt 4.1).</summary>
     public async Task RunAsync()
     {
-        var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unbekannt";
-        Info("FF14 Accessibility – Installer und Updater (Version " + ownVersion + ").");
+        var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Loc.Get("UnknownVersion");
+        Info(Loc.Get("InstallerHeader", ownVersion));
         Info(string.Empty);
 
         try
         {
-            Info("Prüfe XIVLauncher ...");
+            Info(Loc.Get("CheckingXivLauncher"));
             if (!Directory.Exists(XivLauncherRoot))
             {
                 await HandleMissingXivLauncherAsync();
                 return; // Nutzer muss erst einloggen/Dalamud aktivieren/Spiel starten.
             }
-            Info("XIVLauncher gefunden.");
+            Info(Loc.Get("XivLauncherFound"));
             Info(string.Empty);
 
             var accResult = await UpdateAccessibilityPluginAsync(ownVersion);
@@ -88,15 +88,15 @@ public sealed class InstallerService
             var patchResult = PatchDalamudConfig();
 
             Info(string.Empty);
-            Info("=== Zusammenfassung ===");
-            Info("FF14 Accessibility: " + accResult);
-            Info("vnavmesh (Auto-Lauf): " + vnavResult);
+            Info(Loc.Get("SummaryHeader"));
+            Info(Loc.Get("SummaryAccessibility", accResult));
+            Info(Loc.Get("SummaryVnavmesh", vnavResult));
             Info(patchResult);
         }
         catch (Exception ex)
         {
-            Error("Unerwarteter Fehler: " + ex.Message);
-            Error("Es wurde nichts Unvollständiges geschrieben, das dein System beschädigt.");
+            Error(Loc.Get("UnexpectedError", ex.Message));
+            Error(Loc.Get("NoPartialWrite"));
         }
     }
 
@@ -104,10 +104,10 @@ public sealed class InstallerService
 
     private async Task HandleMissingXivLauncherAsync()
     {
-        Warn("XIVLauncher ist nicht installiert (Ordner nicht gefunden:");
-        Warn("  " + XivLauncherRoot + ").");
-        Info("XIVLauncher wird gebraucht, weil es Dalamud lädt – die Grundlage für das Plugin.");
-        Info("Lade die neueste XIVLauncher-Version herunter und installiere sie automatisch ...");
+        Warn(Loc.Get("XivLauncherNotInstalled1"));
+        Warn(Loc.Get("XivLauncherNotInstalled2", XivLauncherRoot));
+        Info(Loc.Get("XivLauncherNeeded"));
+        Info(Loc.Get("DownloadingXivLauncherAuto"));
 
         (string tag, string url, string name)? asset;
         try
@@ -117,21 +117,21 @@ public sealed class InstallerService
         }
         catch (HttpRequestException ex)
         {
-            Error("GitHub nicht erreichbar (" + ex.Message + "). Bitte Internetverbindung prüfen.");
-            Error("Installiere XIVLauncher alternativ manuell von https://goatcorp.github.io/ und");
-            Error("führe dieses Programm danach erneut aus.");
+            Error(Loc.Get("GitHubUnreachable", ex.Message));
+            Error(Loc.Get("InstallXivLauncherManually1"));
+            Error(Loc.Get("RunProgramAgain"));
             return;
         }
         catch (TaskCanceledException)
         {
-            Error("Zeitüberschreitung beim Abruf der XIVLauncher-Version. Bitte Internetverbindung prüfen.");
+            Error(Loc.Get("TimeoutFetchXivLauncher"));
             return;
         }
 
         if (asset == null)
         {
-            Error("Kein XIVLauncher-Setup im neuesten Release gefunden.");
-            Error("Bitte installiere XIVLauncher manuell von https://goatcorp.github.io/ .");
+            Error(Loc.Get("NoXivLauncherSetupFound"));
+            Error(Loc.Get("InstallXivLauncherManually2"));
             return;
         }
 
@@ -140,27 +140,27 @@ public sealed class InstallerService
 
         try
         {
-            Info($"Lade XIVLauncher {version} herunter ({assetName}) ...");
+            Info(Loc.Get("DownloadingXivLauncherVersion", version, assetName));
             await DownloadFileAsync(url, setupPath, "XIVLauncher-Setup");
         }
         catch (HttpRequestException ex)
         {
-            Error("Download fehlgeschlagen (" + ex.Message + "). Bitte installiere XIVLauncher manuell von");
-            Error("https://goatcorp.github.io/ und führe dieses Programm danach erneut aus.");
+            Error(Loc.Get("DownloadFailedInstallManually", ex.Message));
+            Error(Loc.Get("UrlAndRunAgain"));
             return;
         }
         catch (TaskCanceledException)
         {
-            Error("Zeitüberschreitung beim Download. Bitte Internetverbindung prüfen und erneut versuchen.");
+            Error(Loc.Get("TimeoutDownloadRetry"));
             return;
         }
         catch (IOException ex)
         {
-            Error("XIVLauncher-Setup konnte nicht gespeichert werden: " + ex.Message);
+            Error(Loc.Get("XivLauncherSaveFailed", ex.Message));
             return;
         }
 
-        Info("Installiere XIVLauncher automatisch im Hintergrund (--silent) ...");
+        Info(Loc.Get("InstallingXivLauncherSilent"));
         try
         {
             var psi = new ProcessStartInfo(setupPath)
@@ -171,26 +171,26 @@ public sealed class InstallerService
             using var proc = Process.Start(psi);
             if (proc != null)
                 await Task.Run(() => proc.WaitForExit(180_000)); // 3 Minuten Timeout, danach machen wir trotzdem weiter.
-            Info("XIVLauncher-Installation wurde gestartet und sollte inzwischen abgeschlossen sein.");
+            Info(Loc.Get("XivLauncherInstallStarted"));
         }
         catch (Exception ex)
         {
-            Warn("Die automatische Installation konnte nicht bestätigt werden (" + ex.Message + ").");
-            Warn("Falls XIVLauncher nicht gestartet ist, führe die Datei manuell aus:");
+            Warn(Loc.Get("AutoInstallNotConfirmed", ex.Message));
+            Warn(Loc.Get("RunSetupManuallyHint"));
             Warn("  " + setupPath);
         }
 
         Info(string.Empty);
-        Info("Bitte melde dich jetzt im XIVLauncher an, aktiviere in den Einstellungen");
-        Info("Dalamud und starte das Spiel EINMAL. Führe diesen Installer danach erneut");
-        Info("aus, um das Barrierefreiheits-Plugin einzurichten.");
+        Info(Loc.Get("LoginHint1"));
+        Info(Loc.Get("LoginHint2"));
+        Info(Loc.Get("LoginHint3"));
     }
 
     // ── Eigenes Plugin (FF14Accessibility) ────────────────────────────────
 
     private async Task<string> UpdateAccessibilityPluginAsync(string ownVersion)
     {
-        Info("Prüfe neueste Version von FF14 Accessibility ...");
+        Info(Loc.Get("CheckingAccessibilityVersion"));
         try
         {
             var release = await GetLatestReleaseAsync(AccessibilityRepoOwner, AccessibilityRepoName);
@@ -203,8 +203,8 @@ public sealed class InstallerService
                 n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
             if (asset == null)
             {
-                Warn("Kein passendes Release-Paket für FF14 Accessibility gefunden.");
-                return "Fehler (kein Release-Asset gefunden)";
+                Warn(Loc.Get("NoAccessibilityAssetFound"));
+                return Loc.Get("ErrorNoReleaseAsset");
             }
 
             var (tag, url, _) = asset.Value;
@@ -216,11 +216,11 @@ public sealed class InstallerService
 
             if (localVersion != null && !IsNewer(remoteVersion, localVersion))
             {
-                Info($"FF14 Accessibility ist aktuell (Version {localVersion}).");
-                return $"aktuell (Version {localVersion})";
+                Info(Loc.Get("AccessibilityUpToDate", localVersion));
+                return Loc.Get("UpToDateShort", localVersion);
             }
 
-            Info($"Lade FF14 Accessibility {remoteVersion} herunter ...");
+            Info(Loc.Get("DownloadingAccessibility", remoteVersion));
             var zipPath = Path.Combine(Path.GetTempPath(), "FF14Accessibility_" + Guid.NewGuid() + ".zip");
             await DownloadFileAsync(url, zipPath, "FF14 Accessibility");
 
@@ -230,30 +230,32 @@ public sealed class InstallerService
 
             var wasInstalled = localVersion != null;
             Info(wasInstalled
-                ? $"FF14 Accessibility aktualisiert auf Version {remoteVersion}."
-                : $"FF14 Accessibility installiert (Version {remoteVersion}).");
-            return (wasInstalled ? "aktualisiert auf " : "neu installiert, Version ") + remoteVersion;
+                ? Loc.Get("AccessibilityUpdated", remoteVersion)
+                : Loc.Get("AccessibilityInstalled", remoteVersion));
+            return wasInstalled
+                ? Loc.Get("UpdatedToShort", remoteVersion)
+                : Loc.Get("NewlyInstalledShort", remoteVersion);
         }
         catch (IOException ex)
         {
-            Error("Konnte Plugin-Dateien nicht schreiben: " + ex.Message);
-            Error("Bitte schließe FINAL FANTASY XIV und den XIVLauncher vollständig und versuche es erneut.");
-            return "Fehler (Dateien gesperrt – bitte Spiel/Launcher schließen)";
+            Error(Loc.Get("CouldNotWritePluginFiles", ex.Message));
+            Error(Loc.Get("CloseGameAndLauncher"));
+            return Loc.Get("ErrorFilesLocked");
         }
         catch (HttpRequestException ex)
         {
-            Error("FF14 Accessibility: GitHub nicht erreichbar (" + ex.Message + ").");
-            return "Fehler (kein Netzwerk/GitHub nicht erreichbar)";
+            Error(Loc.Get("AccessibilityGitHubUnreachable", ex.Message));
+            return Loc.Get("ErrorNoNetworkGitHub");
         }
         catch (TaskCanceledException)
         {
-            Error("FF14 Accessibility: Zeitüberschreitung beim Download.");
-            return "Fehler (Zeitüberschreitung)";
+            Error(Loc.Get("AccessibilityDownloadTimeout"));
+            return Loc.Get("ErrorTimeout");
         }
         catch (Exception ex)
         {
-            Error("FF14 Accessibility: Unerwarteter Fehler (" + ex.Message + ").");
-            return "Fehler";
+            Error(Loc.Get("AccessibilityUnexpectedError", ex.Message));
+            return Loc.Get("ErrorGeneric");
         }
     }
 
@@ -261,7 +263,7 @@ public sealed class InstallerService
 
     private async Task<string> UpdateVnavmeshAsync()
     {
-        Info("Prüfe neueste Version von vnavmesh (Auto-Lauf) ...");
+        Info(Loc.Get("CheckingVnavmeshVersion"));
 
         JsonNode? entry;
         try
@@ -284,27 +286,27 @@ public sealed class InstallerService
         }
         catch (HttpRequestException ex)
         {
-            Warn("vnavmesh: puni.sh nicht erreichbar (" + ex.Message + "). Auto-Lauf bleibt unverändert.");
-            return "Fehler (kein Netzwerk/puni.sh nicht erreichbar)";
+            Warn(Loc.Get("VnavmeshPunishUnreachable", ex.Message));
+            return Loc.Get("ErrorNoNetworkPunish");
         }
         catch (TaskCanceledException)
         {
-            Warn("vnavmesh: Zeitüberschreitung bei puni.sh.");
-            return "Fehler (Zeitüberschreitung)";
+            Warn(Loc.Get("VnavmeshPunishTimeout"));
+            return Loc.Get("ErrorTimeout");
         }
 
         if (entry == null)
         {
-            Warn("vnavmesh nicht im puni.sh-Repository gefunden.");
-            return "Fehler (nicht gefunden)";
+            Warn(Loc.Get("VnavmeshNotFound"));
+            return Loc.Get("ErrorNotFound");
         }
 
-        var remoteVersion = entry["AssemblyVersion"]?.GetValue<string>() ?? "unbekannt";
+        var remoteVersion = entry["AssemblyVersion"]?.GetValue<string>() ?? Loc.Get("UnknownVersion");
         var downloadUrl = entry["DownloadLinkInstall"]?.GetValue<string>();
         if (string.IsNullOrEmpty(downloadUrl))
         {
-            Warn("vnavmesh: kein Download-Link im Repository gefunden.");
-            return "Fehler (kein Download-Link)";
+            Warn(Loc.Get("VnavmeshNoDownloadLink"));
+            return Loc.Get("ErrorNoDownloadLink");
         }
 
         var targetDir = Path.Combine(DevPluginsRoot, VnavmeshInternalName);
@@ -313,27 +315,27 @@ public sealed class InstallerService
 
         if (localVersion != null && !IsNewer(remoteVersion, localVersion))
         {
-            Info($"vnavmesh ist aktuell (Version {localVersion}).");
-            return $"aktuell (Version {localVersion})";
+            Info(Loc.Get("VnavmeshUpToDate", localVersion));
+            return Loc.Get("UpToDateShort", localVersion);
         }
 
         if (localVersion == null)
         {
             Info(string.Empty);
-            Info("Das Auto-Lauf-Feature (automatisch zu Zielen laufen) braucht das separate");
-            Info("Plugin vnavmesh. Es stammt von einem anderen Autor (veyn) und wird vom");
-            Info("Original geladen, nicht von uns weitergegeben.");
-            var yes = AskYesNo?.Invoke("Soll vnavmesh jetzt für den Auto-Lauf eingerichtet werden?") ?? false;
+            Info(Loc.Get("AutoWalkNeedsVnav1"));
+            Info(Loc.Get("AutoWalkNeedsVnav2"));
+            Info(Loc.Get("AutoWalkNeedsVnav3"));
+            var yes = AskYesNo?.Invoke(Loc.Get("AskSetupVnavmesh")) ?? false;
             if (!yes)
             {
-                Info("vnavmesh übersprungen. Alles außer dem Auto-Lauf funktioniert trotzdem.");
-                return "übersprungen";
+                Info(Loc.Get("VnavmeshSkipped"));
+                return Loc.Get("SkippedShort");
             }
         }
 
         try
         {
-            Info($"Lade vnavmesh {remoteVersion} herunter ...");
+            Info(Loc.Get("DownloadingVnavmesh", remoteVersion));
             var zipPath = Path.Combine(Path.GetTempPath(), "vnavmesh_" + Guid.NewGuid() + ".zip");
             await DownloadFileAsync(downloadUrl, zipPath, "vnavmesh");
 
@@ -343,30 +345,32 @@ public sealed class InstallerService
 
             var wasInstalled = localVersion != null;
             Info(wasInstalled
-                ? $"vnavmesh aktualisiert auf Version {remoteVersion}."
-                : $"vnavmesh eingerichtet (Version {remoteVersion}).");
-            return (wasInstalled ? "aktualisiert auf " : "neu eingerichtet, Version ") + remoteVersion;
+                ? Loc.Get("VnavmeshUpdated", remoteVersion)
+                : Loc.Get("VnavmeshSetup", remoteVersion));
+            return wasInstalled
+                ? Loc.Get("UpdatedToShort", remoteVersion)
+                : Loc.Get("NewlySetupShort", remoteVersion);
         }
         catch (IOException ex)
         {
-            Error("vnavmesh: Konnte Dateien nicht schreiben: " + ex.Message);
-            Error("Bitte schließe FINAL FANTASY XIV und den XIVLauncher vollständig und versuche es erneut.");
-            return "Fehler (Dateien gesperrt – bitte Spiel/Launcher schließen)";
+            Error(Loc.Get("VnavmeshCouldNotWriteFiles", ex.Message));
+            Error(Loc.Get("CloseGameAndLauncher"));
+            return Loc.Get("ErrorFilesLocked");
         }
         catch (HttpRequestException ex)
         {
-            Error("vnavmesh: Download fehlgeschlagen (" + ex.Message + ").");
-            return "Fehler (kein Netzwerk)";
+            Error(Loc.Get("VnavmeshDownloadFailed", ex.Message));
+            return Loc.Get("ErrorNoNetwork");
         }
         catch (TaskCanceledException)
         {
-            Error("vnavmesh: Zeitüberschreitung beim Download.");
-            return "Fehler (Zeitüberschreitung)";
+            Error(Loc.Get("VnavmeshDownloadTimeout"));
+            return Loc.Get("ErrorTimeout");
         }
         catch (Exception ex)
         {
-            Error("vnavmesh: Unerwarteter Fehler (" + ex.Message + ").");
-            return "Fehler";
+            Error(Loc.Get("VnavmeshUnexpectedError", ex.Message));
+            return Loc.Get("ErrorGeneric");
         }
     }
 
@@ -382,11 +386,11 @@ public sealed class InstallerService
     {
         if (!File.Exists(DalamudConfigPath))
         {
-            Warn("dalamudConfig.json existiert noch nicht – Dalamud legt sie erst beim");
-            Warn("ersten Spielstart an. Starte das Spiel EINMAL über XIVLauncher (mit");
-            Warn("aktiviertem Dalamud) und führe diesen Installer danach erneut aus, damit");
-            Warn("die Plugins aktiviert werden können.");
-            return "dalamudConfig.json fehlt noch – bitte Spiel einmal starten und Installer erneut ausführen.";
+            Warn(Loc.Get("ConfigNotExist1"));
+            Warn(Loc.Get("ConfigNotExist2"));
+            Warn(Loc.Get("ConfigNotExist3"));
+            Warn(Loc.Get("ConfigNotExist4"));
+            return Loc.Get("ConfigMissingReturn");
         }
 
         byte[] bytes;
@@ -398,9 +402,9 @@ public sealed class InstallerService
         }
         catch (IOException ex)
         {
-            Error("dalamudConfig.json konnte nicht gelesen werden: " + ex.Message);
-            Error("Bitte schließe FINAL FANTASY XIV und den XIVLauncher vollständig und versuche es erneut.");
-            return "Fehler beim Lesen von dalamudConfig.json (Datei gesperrt?).";
+            Error(Loc.Get("ConfigReadFailed", ex.Message));
+            Error(Loc.Get("CloseGameAndLauncher"));
+            return Loc.Get("ConfigReadFailedReturn");
         }
 
         JObject config;
@@ -410,18 +414,18 @@ public sealed class InstallerService
         }
         catch (Exception ex)
         {
-            Error("dalamudConfig.json ließ sich nicht lesen (" + ex.Message + ").");
-            Error("Ich fasse sie nicht an. Bitte melde dich – hier ist Handarbeit sicherer.");
-            return "Fehler: dalamudConfig.json ungültig, nicht verändert.";
+            Error(Loc.Get("ConfigParseFailed", ex.Message));
+            Error(Loc.Get("ConfigNotTouching"));
+            return Loc.Get("ConfigInvalidReturn");
         }
 
         var loadLocations = config["DevPluginLoadLocations"]?["$values"] as JArray;
         if (loadLocations == null)
         {
-            Warn("Unerwarteter Aufbau der Konfiguration (DevPluginLoadLocations fehlt).");
-            Warn("Zur Sicherheit wird nichts geändert. Bitte starte das Spiel einmal und");
-            Warn("versuche es erneut.");
-            return "Fehler: unerwarteter Aufbau von dalamudConfig.json, nicht verändert.";
+            Warn(Loc.Get("ConfigUnexpectedStructure"));
+            Warn(Loc.Get("ConfigSafetyNoChange1"));
+            Warn(Loc.Get("ConfigSafetyNoChange2"));
+            return Loc.Get("ConfigUnexpectedStructureReturn");
         }
 
         var accDll = Path.Combine(DevPluginsRoot, AccessibilityInternalName, AccessibilityInternalName + ".dll");
@@ -442,25 +446,25 @@ public sealed class InstallerService
                     : new[] { AccessibilityInternalName });
 
             WriteAllTextNoBom(DalamudConfigPath, config.ToString());
-            Info("Konfiguration aktualisiert (Sicherung: " + Path.GetFileName(backup) + ").");
+            Info(Loc.Get("ConfigUpdated", Path.GetFileName(backup)));
 
             if (!enabled)
             {
                 Info(string.Empty);
-                Info("Hinweis: Das Plugin ist als Ladeort eingetragen, aber noch nicht als");
-                Info("aktiviert markiert (das legt Dalamud erst beim ersten Start an). Starte");
-                Info("das Spiel EINMAL, beende es, und führe diesen Installer noch einmal aus –");
-                Info("dann wird es scharf geschaltet.");
-                return "Plugins eingetragen, aber noch nicht aktiviert – Spiel einmal starten und Installer erneut ausführen.";
+                Info(Loc.Get("PluginNotEnabledYet1"));
+                Info(Loc.Get("PluginNotEnabledYet2"));
+                Info(Loc.Get("PluginNotEnabledYet3"));
+                Info(Loc.Get("PluginNotEnabledYet4"));
+                return Loc.Get("PluginsRegisteredNotEnabledReturn");
             }
 
-            return "Plugins eingetragen und aktiviert.";
+            return Loc.Get("PluginsRegisteredEnabledReturn");
         }
         catch (IOException ex)
         {
-            Error("dalamudConfig.json konnte nicht geschrieben werden: " + ex.Message);
-            Error("Bitte schließe FINAL FANTASY XIV und den XIVLauncher vollständig und versuche es erneut.");
-            return "Fehler beim Schreiben von dalamudConfig.json (Datei gesperrt?).";
+            Error(Loc.Get("ConfigWriteFailed", ex.Message));
+            Error(Loc.Get("CloseGameAndLauncher"));
+            return Loc.Get("ConfigWriteFailedReturn");
         }
     }
 
@@ -546,7 +550,7 @@ public sealed class InstallerService
             if (remote != null && own != null && remote > own)
             {
                 var url = a!["browser_download_url"]?.GetValue<string>() ?? "";
-                return $"Hinweis: Eine neuere Installer-Version ({m.Groups[1].Value}) ist verfügbar: {url}";
+                return Loc.Get("InstallerUpdateHint", m.Groups[1].Value, url);
             }
         }
         return null;
@@ -577,7 +581,7 @@ public sealed class InstallerService
                 var decile = percent / 10;
                 if (decile != lastDecile || percent == 100)
                 {
-                    Info($"{label}: {percent} % ...");
+                    Info(Loc.Get("DownloadProgress", label, percent));
                     lastDecile = decile;
                 }
             }

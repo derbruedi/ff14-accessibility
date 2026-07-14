@@ -19,17 +19,17 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unbekannt";
+        var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Loc.Get("UnknownVersion");
 
-        Text = "FF14 Accessibility – Installer";
+        Text = Loc.Get("WindowTitle");
         ClientSize = new Size(760, 480);
         MinimumSize = new Size(560, 360);
         StartPosition = FormStartPosition.CenterScreen;
 
         _titleLabel = new Label
         {
-            Text = $"FF14 Accessibility – Installer und Updater (Version {ownVersion})",
-            AccessibleName = $"FF14 Accessibility Installer, Version {ownVersion}",
+            Text = Loc.Get("MainTitleWithVersion", ownVersion),
+            AccessibleName = Loc.Get("MainTitleAccessibleName", ownVersion),
             AutoSize = false,
             Dock = DockStyle.Top,
             Height = 32,
@@ -45,8 +45,8 @@ public sealed class MainForm : Form
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
             TabIndex = 1,
-            AccessibleName = "Statusmeldungen",
-            AccessibleDescription = "Fortschritts- und Ergebnismeldungen des Installers, mit Pfeiltasten durchgehbar.",
+            AccessibleName = Loc.Get("LogBoxAccessibleName"),
+            AccessibleDescription = Loc.Get("LogBoxAccessibleDescription"),
             Font = new Font(FontFamily.GenericMonospace, 9f),
         };
 
@@ -60,8 +60,8 @@ public sealed class MainForm : Form
 
         _installButton = new Button
         {
-            Text = "Installieren / Aktualisieren",
-            AccessibleName = "Installieren oder Aktualisieren",
+            Text = Loc.Get("InstallButtonText"),
+            AccessibleName = Loc.Get("InstallButtonAccessibleName"),
             AutoSize = true,
             Padding = new Padding(12, 6, 12, 6),
             TabIndex = 2,
@@ -70,8 +70,8 @@ public sealed class MainForm : Form
 
         _exitButton = new Button
         {
-            Text = "Beenden",
-            AccessibleName = "Beenden",
+            Text = Loc.Get("ExitButtonText"),
+            AccessibleName = Loc.Get("ExitButtonAccessibleName"),
             AutoSize = true,
             Padding = new Padding(12, 6, 12, 6),
             TabIndex = 3,
@@ -116,7 +116,7 @@ public sealed class MainForm : Form
         // ausgeführt), daher ist ein direkter MessageBox.Show hier sicher.
         var result = MessageBox.Show(
             question,
-            "FF14 Accessibility – Installer",
+            Loc.Get("WindowTitle"),
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
         return result == DialogResult.Yes;
@@ -130,16 +130,16 @@ public sealed class MainForm : Form
         {
             await _service.RunAsync();
             MessageBox.Show(
-                "Vorgang abgeschlossen. Details siehe Log-Bereich im Fenster.",
-                "FF14 Accessibility – Installer",
+                Loc.Get("OperationCompleted"),
+                Loc.Get("WindowTitle"),
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(
-                "Unerwarteter Fehler: " + ex.Message,
-                "FF14 Accessibility – Installer",
+                Loc.Get("UnexpectedError", ex.Message),
+                Loc.Get("WindowTitle"),
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
