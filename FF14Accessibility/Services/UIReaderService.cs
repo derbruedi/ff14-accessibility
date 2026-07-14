@@ -28,6 +28,7 @@ public sealed class UIReaderService : IDisposable
     private readonly IObjectTable    _objectTable;
     private readonly InventoryService _inventory;
     private readonly BestiaryService _bestiary;
+    private readonly Configuration   _config;
     private readonly List<string>    _titleMenuItems = [];
 
     // SelectYesno: labels are read fresh from the dialog buttons on open -
@@ -145,6 +146,28 @@ public sealed class UIReaderService : IDisposable
         "_CharaSelectReturn",
     ];
 
+    // Seit V4.60/61 im Log dokumentierte, aber noch nicht gefixte Spam-Quellen
+    // (STATUS.md Zeilen 96-100), jetzt per V4.62 ueber Configuration.cs
+    // abschaltbar statt hart in HudNoiseAddons: _StatusCustom0 (Buff-Leiste)
+    // traegt ausschliesslich den Sprint-Countdown als Text-Node ("20s".."1s"
+    // im Sekundentakt) - keine Statuseffekt-NAMEN (die kommen nur per
+    // Maus-Tooltip, nicht als Node-Text), Vollsperre verliert also keine
+    // Information. _FlyText traegt Kampf-Popups ("+Sprint", "700", "(+100 %)"),
+    // die CombatService bereits sinnvoll aufbereitet ansagt (HP-Schwellen,
+    // Cast-Ansagen) - reine Duplikate ohne eigenen Wert.
+    private static readonly HashSet<string> StatusBarSpamAddons = ["_StatusCustom0"];
+    private static readonly HashSet<string> FlyTextSpamAddons   = ["_FlyText"];
+
+    /// <summary>
+    /// Wie HudNoiseAddons, aber fuer per Configuration.cs abschaltbare
+    /// Spam-Quellen (Default: unterdrueckt, siehe SuppressStatusBarSpam /
+    /// SuppressFlyTextSpam).
+    /// </summary>
+    private bool IsSuppressedAddon(string name) =>
+        HudNoiseAddons.Contains(name)
+        || (_config.SuppressStatusBarSpam && StatusBarSpamAddons.Contains(name))
+        || (_config.SuppressFlyTextSpam && FlyTextSpamAddons.Contains(name));
+
     // Listenlose Addons, bei denen wir per PostUpdate den Fokus tracken
     private static readonly HashSet<string> FocusTrackAddons =
     [
@@ -180,7 +203,7 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, BestiaryService bestiary)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, BestiaryService bestiary, Configuration config)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -189,6 +212,7 @@ public sealed class UIReaderService : IDisposable
         _objectTable    = objectTable;
         _inventory      = inventory;
         _bestiary       = bestiary;
+        _config         = config;
         RegisterHooks();
     }
 
@@ -278,7 +302,7 @@ public sealed class UIReaderService : IDisposable
         var name = args.AddonName;
         _log.Info($"[Accessibility] Addon: {name}");
         if (SpecialSetupAddons.Contains(name)) return;
-        if (HudNoiseAddons.Contains(name)) return;
+        if (IsSuppressedAddon(name)) return;
 
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
@@ -424,8 +448,9 @@ public sealed class UIReaderService : IDisposable
 
         // HUD-Rauschen komplett aus dem generischen Pfad (Fokus + Listen +
         // Scanner): NamePlate-"Fokus" pendelte alle 2s zwischen NPCs und
-        // wurde jedes Mal gesprochen (Log 2026-07-11 10:35).
-        if (HudNoiseAddons.Contains(name)) return;
+        // wurde jedes Mal gesprochen (Log 2026-07-11 10:35). Gleiches gilt
+        // (per Configuration.cs abschaltbar) fuer _StatusCustom0/_FlyText.
+        if (IsSuppressedAddon(name)) return;
 
         // 1. Universeller Fokus-Check (funktioniert f�r Buttons, Tabs, etc.)
         var res = FindFocusedText(currentAddon);
@@ -472,7 +497,7 @@ public sealed class UIReaderService : IDisposable
         }
 
         // 5. Generischer Text-Scanner (f�r �nderungen im Addon-Inhalt)
-        if (_noListCache.Contains(name) && !HudNoiseAddons.Contains(name))
+        if (_noListCache.Contains(name) && !IsSuppressedAddon(name))
         {
             // Some menus build their list only AFTER PostSetup (SystemMenu:
             // PostSetup found no list at 21:37:59, the dump 5s later shows
@@ -504,6 +529,7 @@ public sealed class UIReaderService : IDisposable
     {
         var name = args.AddonName;
         if (SpecialUpdateAddons.Contains(name)) return;
+        if (IsSuppressedAddon(name)) return;
         if (args is not AddonReceiveEventArgs recv) return;
         if (IgnoredEventTypes.Contains(Convert.ToByte(recv.AtkEventType))) return;
 

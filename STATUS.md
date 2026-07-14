@@ -3,7 +3,54 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-13, V4.61 gebaut)
+## STAND JETZT (2026-07-15, V4.62 gebaut)
+
+### Neu in V4.62: Ansage-Spam gefiltert (_StatusCustom0-Sprint-Countdown, _FlyText)
+Auftrag: Top-5-Punkt 1 aus docs/verbesserungsvorschlaege.md umsetzen, aber NUR
+den _StatusCustom0/_FlyText-Teil - Login-Geplapper (Zeile 101 unten) laut
+User-Entscheid bewusst NICHT anfassen ("damit zufrieden").
+BEFUND: Beide Quellen liefen NICHT ueber HudNoiseAddons (das ist eine
+hartkodierte Konstante ohne Laufzeit-Schalter), sondern waren schlicht noch
+gar nicht gefiltert - der generische Text-Scanner (ScanAddonTexts) und der
+Fokus-Leser (FindFocusedText/OnAnyAddonReceive) liefen fuer beide Addons ganz
+normal mit. _StatusCustom0 traegt laut Aufbau NUR den Sprint-Countdown als
+Text-Node (Statuseffekt-NAMEN kommen nicht als Node-Text, nur per Tooltip) -
+eine Vollsperre verliert also keine Information. _FlyText-Popups ("+Sprint",
+"700", "(+100 %)") dupliziert nur, was CombatService (HP-Schwellen, Cast-
+Ansagen) ohnehin schon sauber aufbereitet ansagt.
+FIX (UIReaderService + Configuration):
+(1) Zwei neue Configuration.cs-Schalter: SuppressStatusBarSpam (Default true)
+    und SuppressFlyTextSpam (Default true) - im Zweifel konfigurierbar statt
+    hart verdrahtet, wie vom User verlangt.
+(2) Neue Helper-Methode IsSuppressedAddon(name), die HudNoiseAddons PLUS die
+    beiden neuen Flags kombiniert; ersetzt HudNoiseAddons.Contains(name) an
+    allen 3 Stellen (OnAnyAddonOpen, OnAnyAddonUpdate-Scanner, OnAnyAddonUpdate-
+    Fokus) SOWIE zusaetzlich in OnAnyAddonReceive (dort lief bislang GAR KEIN
+    HudNoiseAddons-Check - _StatusCustom0/_FlyText haetten also auch ueber den
+    ReceiveEvent-Fokus-Pfad durchrutschen koennen).
+(3) UIReaderService bekommt Configuration als neuen Konstruktor-Parameter
+    (Plugin.cs entsprechend angepasst).
+Wichtige Statuseffekte (neue Debuffs/Buffs) werden dadurch NICHT stummgeschaltet -
+es wird weiterhin nichts an dieser Stelle je nach Statuseffekt-Namen gefiltert,
+sondern das GESAMTE Addon (das ohnehin nur den Countdown zeigt); eine gezielte
+Buff-/Debuff-Ansage nach Status-ID ist als eigener Vorschlag in
+verbesserungsvorschlaege.md vermerkt (separates Vorhaben, nicht Teil dieses
+Auftrags). Login-Geplapper (INVENTAR/SEITE AN SEITE/Menü-Text) unveraendert.
+Version 4.62, Build 0 Fehler/0 Warnungen, Deploy nach devPlugins bestaetigt.
+
+### Beim naechsten Start testen (V4.62)
+1. "Version 4 Punkt 62 bereit".
+2. SPRINT: Sprint/Dauerlauf aktivieren - KEIN Countdown-Sekundentakt ("20s"..
+   "1s") mehr aus der Buff-Leiste, KEIN "+Sprint"/"700"/"(+100 %)" mehr aus
+   FlyText?
+3. LOGIN: unveraendert - weiterhin wie in V4.61 (Server-Warteschlange wird
+   vorgelesen, kein "Beenden"-Spam, keine "Tastenbelegung gespeichert"-Ansage)?
+4. Neue Statuseffekte/Debuffs im Kampf (z.B. Silence, Vulnerability-Stack):
+   werden andere HUD-Ansagen (Kampf-HP, Cast-Ansagen) weiterhin normal gehoert?
+
+---
+
+## STAND V4.61 (2026-07-13 gebaut)
 
 ### Neu in V4.61: Auto-Lauf-Wächter repariert (kein Fehlabbruch bei Umwegen)
 User-Meldung + Log 2026-07-13 01:08: "Komme nicht näher"-Meldung kam kurz nach
@@ -93,13 +140,14 @@ Kleinschreibung egal, aber Wortlaut muss stimmen).
     nur Log/Datei); gesprochen wird nur noch bei echtem Tasten-Konflikt oder
     manuellem /acc keys. "Tastenbelegung gespeichert…" bei jedem Login war Lärm.
 
-### Spam-Quellen aus dem Log (NOCH NICHT gefixt, User noch nicht gefragt)
+### Spam-Quellen aus dem Log (Stand V4.61 - _StatusCustom0/_FlyText inzwischen in V4.62 gefixt s.o.)
 - _StatusCustom0 (Buff-Leiste): Sprint-Countdown "20s".."1s" im Sekundentakt
-  gesprochen → Kandidat für Scan-Ignorierliste
+  gesprochen → GEFIXT in V4.62 (SuppressStatusBarSpam, Default an)
 - _FlyText: "+Sprint", "+Dauerlauf", "-Sprint", "700", "(+100 %)" gesprochen
-  → Kandidat für Filter
+  → GEFIXT in V4.62 (SuppressFlyTextSpam, Default an)
 - Restliches Login-Geplapper (00:59: "INVENTAR", "SEITE AN SEITE", "Menü, 0
   Einträge", ".", "Ziel.") — User: "nicht so schlimm", bewusst zurückgestellt
+  (bleibt weiterhin unangetastet, User-Entscheid 2026-07-15 bestätigt)
 - V4.59-Test (Quest-Objective) steht WEITER AUS (keine [Quest]
   Objective-Zeilen im Log)
 

@@ -81,4 +81,14 @@ public sealed class Configuration : IPluginConfiguration
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
     public bool EnableTargetTone = true;        // Kurzer Ton wenn ein Gegner anvisiert wird
     public float TargetToneVolume = 0.4f;       // Ziel-Ton: 0 = stumm, 1 = volle Lautstärke
+
+    // Ansage-Spam-Filter (V4.62, STATUS.md V4.60/61 dokumentiert): _StatusCustom0
+    // (Buff-Leiste) sagte den Sprint-Countdown im Sekundentakt an ("20s".."1s") -
+    // reine Ziffern ohne Statuseffekt-Namen (der Text-Scan liest keine Icon-Namen,
+    // nur die Restzeit). _FlyText sagte jede Kampfzahl/jedes Buff-Popup an
+    // ("+Sprint", "700", "(+100 %)"). Beides ist reiner Laerm ohne Mehrwert -
+    // Default: unterdrueckt. Flag bleibt fuer den seltenen Fall, dass jemand den
+    // rohen Text-Scan dieser HUD-Elemente trotzdem hoeren moechte (z.B. Debugging).
+    public bool SuppressStatusBarSpam = true;   // _StatusCustom0-Sprint-Countdown stumm
+    public bool SuppressFlyTextSpam   = true;   // _FlyText-Kampfzahlen stumm
 }

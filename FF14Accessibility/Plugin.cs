@@ -46,8 +46,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.61";
-    private const string PluginVersionTag = "Auto-Lauf-Wächter misst Charakter-Bewegung statt Zieldistanz (Umwege = kein Fehlabbruch) + Tasten-Umzug: Kategorie zurück=Strg+Umschalt+N (Strg+Alt+N war NVDA-Hotkey), Gehhilfe=Umschalt+Numpad3";
+    private const string PluginVersion    = "4.62";
+    private const string PluginVersionTag = "Ansage-Spam gefiltert: _StatusCustom0-Sprint-Countdown und _FlyText-Kampfzahlen standardmaessig stumm (konfigurierbar in Configuration.cs), Login-Ansagen unveraendert";
 
     public Plugin()
     {
@@ -99,7 +99,7 @@ public sealed class Plugin : IDalamudPlugin
         _bestiary     = new BestiaryService(DataManager, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _bestiary);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _bestiary, _config);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
