@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using LuminaQuest = Lumina.Excel.Sheets.Quest;
 
 namespace FF14Accessibility.Services;
@@ -118,6 +120,60 @@ public sealed class QuestMarkerService
             AddMarkerDestinations(result, marker, currentTerritory, "OpenQuest");
 
         return result;
+    }
+
+    /// <summary>
+    /// Maps quest name -> current objective text ("what is still missing", e.g.
+    /// "Aurelias mit Hermetik erlegen 0/3") by reading the on-screen quest tracker
+    /// (_ToDoList). The objective text only exists in the running tracker - the
+    /// QuestManager exposes only sequence numbers, and the todo strings are not in
+    /// a plain Excel sheet. Only TRACKED quests appear here; others return no entry.
+    ///
+    /// Node-id layout verified from the probe (log 2026-07-12 19:59): quest-name
+    /// headers are ids 70001.. (70000 + slot), objectives are ids 20SSNN
+    /// (20000 + slot*100 + index), so objectives group under the header of the
+    /// same slot. Each mapping is logged once per call for verification.
+    /// </summary>
+    public unsafe Dictionary<string, string> GetQuestObjectives()
+    {
+        var map = new Dictionary<string, string>();
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return map;
+        var addon = mgr->GetAddonByName("_ToDoList");
+        if (addon == null || !addon->IsVisible) return map;
+
+        var nameBySlot = new Dictionary<int, string>();
+        var objsBySlot = new Dictionary<int, List<string>>();
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || node->Type != NodeType.Text) continue;
+            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            if (string.IsNullOrWhiteSpace(text)) continue;
+
+            var id = node->NodeId;
+            if (id is >= 70001 and <= 70099)
+            {
+                nameBySlot[(int)(id - 70000)] = text;
+            }
+            else if (id is >= 20000 and <= 20999)
+            {
+                var slot = (int)((id - 20000) / 100);
+                if (!objsBySlot.TryGetValue(slot, out var list))
+                    objsBySlot[slot] = list = new List<string>();
+                list.Add(text);
+            }
+        }
+
+        foreach (var (slot, name) in nameBySlot)
+        {
+            if (!objsBySlot.TryGetValue(slot, out var objs) || objs.Count == 0) continue;
+            var joined = string.Join(", ", objs);
+            map[name] = joined;
+            _log.Info($"[Quest] Objective slot {slot}: '{name}' -> '{joined}'");
+        }
+        return map;
     }
 
     /// <summary>

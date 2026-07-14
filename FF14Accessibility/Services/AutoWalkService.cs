@@ -27,6 +27,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly IClientState _clientState;
     private readonly TolkService _tolk;
     private readonly Configuration _config;
+    private readonly PlacesService _places;
     private readonly IPluginLog _log;
 
     private readonly ICallGateSubscriber<bool> _navIsReady;
@@ -63,8 +64,8 @@ public sealed class AutoWalkService : IDisposable
     // NOT sound the direction beacon - it was distracting while the game steers
     // for you (user 2026-07-12); the beacon stays with the manual walk guide.
     private ushort _startTerritory;    // announce success when the player crosses into a new zone
-    private float _bestDistance;       // closest we have been (for stall detection)
-    private DateTime _lastImprovementAt;
+    private Vector3 _lastPosition;     // where the character last moved (for stall detection)
+    private DateTime _lastMoveAt;
     private DateTime _lastProgressSpeak;
     private bool _diagLoggedPath;      // DIAGNOSTIC: full waypoint route logged once per walk
     private DateTime _lastDiagAt;      // DIAGNOSTIC: throttles the per-second position log
@@ -76,6 +77,7 @@ public sealed class AutoWalkService : IDisposable
         IClientState clientState,
         TolkService tolk,
         Configuration config,
+        PlacesService places,
         IPluginLog log)
     {
         _objectTable = objectTable;
@@ -83,6 +85,7 @@ public sealed class AutoWalkService : IDisposable
         _clientState = clientState;
         _tolk = tolk;
         _config = config;
+        _places = places;
         _log = log;
 
         // Subscribing is always safe - the gates only fail on INVOKE while
@@ -127,6 +130,21 @@ public sealed class AutoWalkService : IDisposable
             if (nearest.HasValue)
             {
                 _log.Info($"[Orte] NearestPoint ({approximate.X:F1}|{approximate.Y:F1}|{approximate.Z:F1}) -> " +
+                          $"({nearest.Value.X:F1}|{nearest.Value.Y:F1}|{nearest.Value.Z:F1})");
+                return nearest;
+            }
+
+            // Second pass with a tall column: 2D markers use the PLAYER's height
+            // as reference, but a target hundreds of metres away can sit on very
+            // different ground (log 2026-07-13 10:11/10:18: aetheryte 0.5 km off
+            // and a transition failed with the +-10 m box). NearestPoint picks
+            // the mesh point CLOSEST to the input, so with several levels the
+            // one nearest the reference height still wins - unlike PointOnFloor's
+            // blind down-cast (bridge trap, V4.41).
+            nearest = _nearestPoint.InvokeFunc(approximate, 10f, 100f);
+            if (nearest.HasValue)
+            {
+                _log.Info($"[Orte] NearestPoint (hohe Säule) ({approximate.X:F1}|{approximate.Y:F1}|{approximate.Z:F1}) -> " +
                           $"({nearest.Value.X:F1}|{nearest.Value.Y:F1}|{nearest.Value.Z:F1})");
                 return nearest;
             }
@@ -234,8 +252,8 @@ public sealed class AutoWalkService : IDisposable
         _sawRunning = false;
         _startedAt = DateTime.UtcNow;
         _startTerritory = (ushort)_clientState.TerritoryType;
-        _bestDistance = float.MaxValue;
-        _lastImprovementAt = DateTime.UtcNow;
+        _lastPosition = _objectTable.LocalPlayer?.Position ?? default;
+        _lastMoveAt = DateTime.UtcNow;
         _lastProgressSpeak = DateTime.UtcNow;
         _diagLoggedPath = false;
         _lastDiagAt = DateTime.UtcNow;
@@ -321,12 +339,14 @@ public sealed class AutoWalkService : IDisposable
         var distance = Vector3.Distance(player.Position, _destPosition);
         var now = DateTime.UtcNow;
 
-        // Track how close we have got - a full metre of progress resets the
-        // stall timer (small jitter while stuck must not count as progress).
-        if (distance < _bestDistance - 1f)
+        // Stall detection watches the character's OWN movement, not the distance
+        // to the destination: detours legitimately move away from the target for
+        // a while (false abort right after start, log 2026-07-13 01:08). Jitter
+        // while pushed against geometry stays under the 0.5 m threshold.
+        if (Vector3.Distance(player.Position, _lastPosition) >= 0.5f)
         {
-            _bestDistance = distance;
-            _lastImprovementAt = now;
+            _lastPosition = player.Position;
+            _lastMoveAt = now;
         }
 
         // DIAGNOSTIC (temporary, remove once the zone-transition stall is
@@ -385,17 +405,18 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        // Stall: vnavmesh keeps running but we stopped getting closer (stuck on
-        // geometry, or a destination the mesh cannot reach - e.g. a marker at a
-        // zone edge). End with clear feedback instead of running forever.
-        if (_sawRunning && (now - _lastImprovementAt).TotalSeconds > 5)
+        // Stall: vnavmesh keeps running but the character has not moved for 5 s
+        // (wedged on geometry the mesh does not know, e.g. the zone-line spots
+        // from 2026-07-12/13). Stop the path too - previously only our tracking
+        // ended and vnavmesh kept pushing against the obstacle.
+        if (_sawRunning && (now - _lastMoveAt).TotalSeconds > 5)
         {
-            _active = false;
             var arrived = distance <= _stopRange + 2f;
-            _log.Info($"[Nav] Auto-Lauf: kein Fortschritt seit 5 s, dist={distance:F1}, angekommen={arrived}");
+            _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit 5 s, dist={distance:F1}, angekommen={arrived}");
+            Stop(announce: false);
             _tolk.SpeakInterrupt(arrived
                 ? $"Ziel erreicht: {_targetName}."
-                : $"Komme nicht näher, noch {FormatRemaining(distance)}. Auto-Lauf beendet.");
+                : $"Ich stecke fest, noch {FormatRemaining(distance)}. Auto-Lauf beendet.");
             return;
         }
 
@@ -405,8 +426,25 @@ public sealed class AutoWalkService : IDisposable
         {
             _active = false;
             _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
-            _tolk.SpeakInterrupt($"Kein Weg zu {_targetName} gefunden.");
+            _tolk.SpeakInterrupt($"Kein Weg zu {_targetName} gefunden.{BuildNoPathHint()}");
         }
+    }
+
+    /// <summary>
+    /// Travel hint for a destination the navmesh cannot reach: city levels are
+    /// often separate mesh islands joined only by lifts/aethernet - walking can
+    /// NEVER cross that gap, the game's own transport is the way. Names the
+    /// aetheryte/shard closest to the destination when one is plausibly "at"
+    /// it (within 100 m); empty string otherwise (open-world targets).
+    /// </summary>
+    private string BuildNoPathHint()
+    {
+        var shard = _places.NearestAetheryteTo(_destPosition);
+        if (shard == null) return string.Empty;
+        var dist = PlacesService.Distance2D(shard.Position, _destPosition);
+        if (dist > 100f) return string.Empty;
+        _log.Info($"[Nav] Kein-Weg-Tipp: {shard.TypeLabel} {shard.Name} liegt {dist:F0} m vom Ziel.");
+        return $" Das Ziel liegt nahe {shard.TypeLabel} {shard.Name}. Reise per Aethernet dorthin.";
     }
 
     private static string FormatRemaining(float distance) =>

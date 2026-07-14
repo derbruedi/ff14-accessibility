@@ -46,14 +46,19 @@ public sealed class KeybindService
     /// that only share the physical key are listed as info.
     /// </summary>
     /// <param name="pluginKeys">Plugin hotkeys as (function, key label, VK code, modifiers).</param>
+    /// <param name="announce">False for the automatic post-login dump: it runs
+    /// silently (log/file only) and only speaks up when a real key conflict
+    /// exists - the success announcement was noise at every login (user
+    /// 2026-07-13). Manual /acc keys keeps full spoken feedback.</param>
     public unsafe void DumpKeybinds(
-        IReadOnlyList<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> pluginKeys)
+        IReadOnlyList<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> pluginKeys,
+        bool announce = true)
     {
         var uiInput = UIInputData.Instance();
         if (uiInput == null)
         {
             _log.Warning("[Keys] UIInputData.Instance() ist null.");
-            _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
             return;
         }
 
@@ -61,7 +66,7 @@ public sealed class KeybindService
         if (uiInput->InputData.Keybinds == null || numKeybinds <= 0 || numKeybinds > 4096)
         {
             _log.Warning($"[Keys] Keybind-Tabelle unplausibel: Keybinds={(nint)uiInput->InputData.Keybinds:X}, Num={numKeybinds}");
-            _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
             return;
         }
 
@@ -140,12 +145,14 @@ public sealed class KeybindService
         catch (Exception ex) // external call: file system
         {
             _log.Error(ex, "[Keys] Konnte Dump-Datei nicht schreiben.");
-            _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
             return;
         }
 
         _log.Info($"[Keys] {boundCount} Aktionen mit Taste, {conflictCount} Plugin-Konflikte. Gespeichert: {dumpFile}");
-        _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpSaved(boundCount, conflictCount));
+        // Conflicts are always spoken - the user must know a plugin key is dead.
+        if (announce || conflictCount > 0)
+            _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpSaved(boundCount, conflictCount));
     }
 
     /// <summary>Formats one key setting as e.g. "Strg+Umschalt+F1"; empty string if unbound.</summary>

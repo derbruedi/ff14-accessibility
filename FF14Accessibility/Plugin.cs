@@ -1,4 +1,6 @@
 using Dalamud.Game.ClientState.GamePad;
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -33,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly InventoryService   _inventoryReader;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
+    private readonly BestiaryService    _bestiary;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
@@ -43,8 +46,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.58";
-    private const string PluginVersionTag = "Ansagen entrümpelt (SeString-Payloads, Quest-Reiter, Belohnungs-Zahlen, Doppel-Meldungen, Hotbar-Keybinds, Cross-Zone-Quest-Dedup); HP/MP auf Strg+H (+ Strg+L Level repariert); Auto-Lauf ohne Beacon-Piepen";
+    private const string PluginVersion    = "4.61";
+    private const string PluginVersionTag = "Auto-Lauf-Wächter misst Charakter-Bewegung statt Zieldistanz (Umwege = kein Fehlabbruch) + Tasten-Umzug: Kategorie zurück=Strg+Umschalt+N (Strg+Alt+N war NVDA-Hotkey), Gehhilfe=Umschalt+Numpad3";
 
     public Plugin()
     {
@@ -73,6 +76,18 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 4;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.Version < 5)
+        {
+            // V4.61: Strg+Alt+N is NVDA's own start-NVDA hotkey (user report) and
+            // Alt+N is the game's beginner chat - category-back takes over
+            // Strg+Umschalt+N (Umschalt = backwards, matching N/Umschalt+N), the
+            // walk guide moves next to the auto-walk key (Numpad3 combos are free).
+            // Order matters: free up the walk guide key before assigning it.
+            if (_config.KeyWalkGuide == "Strg+Umschalt+N") _config.KeyWalkGuide = "Umschalt+Numpad3";
+            if (_config.KeyCategoryPrev == "Strg+Alt+N") _config.KeyCategoryPrev = "Strg+Umschalt+N";
+            _config.Version = 5;
+            PluginInterface.SavePluginConfig(_config);
+        }
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
         _tolk       = new TolkService(Log);
         _beacon       = new BeaconService(_config, _tolk, Log);
@@ -81,9 +96,10 @@ public sealed class Plugin : IDalamudPlugin
         _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
+        _bestiary     = new BestiaryService(DataManager, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, DataManager, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, Log);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _bestiary);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -171,6 +187,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Nächstes Objekt",   _config.KeyNextObject),
             ("Vorheriges Objekt", _config.KeyPrevObject),
             ("Kategorie",         _config.KeyCategory),
+            ("Kategorie zurück",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Menü vorlesen",  _config.KeyReadUI),
@@ -185,6 +202,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Emote weiter",   _config.KeyEmoteNext),
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
+            ("Bestiarium",     _config.KeyBestiary),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -280,7 +298,9 @@ public sealed class Plugin : IDalamudPlugin
         if (!_keybindsDumped && ClientState.IsLoggedIn && _keybinds.IsReady())
         {
             _keybindsDumped = true;
-            _keybinds.DumpKeybinds(GetPluginKeys());
+            // Silent: the spoken "Tastenbelegung gespeichert" at every login was
+            // noise (user 2026-07-13); conflicts are still announced.
+            _keybinds.DumpKeybinds(GetPluginKeys(), announce: false);
         }
 
         if (IsJustPressed(_config.KeyHelp))          _uiReader.AnnounceContextHelp();
@@ -293,6 +313,7 @@ public sealed class Plugin : IDalamudPlugin
             // (user wants quest DESCRIPTIONS announced; see UIReaderService)
             _uiReader.ProbeAddonTexts("_ToDoList");
         }
+        if (IsJustPressed(_config.KeyCategoryPrev)) _navigation.PreviousCategory();
         if (IsJustPressed(_config.KeyWalkGuide))
         {
             // Walk guide and auto-walk are mutually exclusive - only one at a time.
@@ -303,9 +324,16 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyAutoWalk))
         {
             _navigation.StopWalkGuideQuiet();
+            var bestiaryMonster = _uiReader.SelectedBestiaryMonster;
             var quest = _navigation.SelectedQuestDestination;
             var place = _navigation.SelectedPlaceDestination;
-            if (quest != null)
+            if (bestiaryMonster != null)
+            {
+                // Bestiary open with a monster row focused: track it - walk to
+                // the nearest live one, or tell the user where it lives.
+                TrackBestiaryMonster(bestiaryMonster);
+            }
+            else if (quest != null)
             {
                 if (quest.TerritoryTypeId != ClientState.TerritoryType)
                 {
@@ -382,6 +410,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
+        if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 — UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
@@ -439,14 +468,58 @@ public sealed class Plugin : IDalamudPlugin
         if (GamepadState.Pressed(GamepadButtons.DpadRight) > 0) _uiReader.NavigateGamepad(+1);
     }
 
+    /// <summary>
+    /// Auto-walk key while a bestiary monster row is focused: targets and walks
+    /// to the nearest live specimen, or announces its habitat when none is near.
+    /// </summary>
+    private void TrackBestiaryMonster(string monsterName)
+    {
+        if (_autoWalk.IsActive)
+        {
+            _autoWalk.Toggle(); // second press stops, like every other walk
+            return;
+        }
+
+        var player = ObjectTable.LocalPlayer;
+        if (player == null) return;
+
+        IGameObject? nearest = null;
+        var nearestDist = float.MaxValue;
+        foreach (var obj in ObjectTable)
+        {
+            if (obj.ObjectKind != ObjectKind.BattleNpc) continue;
+            if (!string.Equals(obj.Name.TextValue, monsterName, StringComparison.OrdinalIgnoreCase)) continue;
+            if (obj is IBattleChara { CurrentHp: 0 }) continue; // dead ones don't count
+            var dist = System.Numerics.Vector3.Distance(player.Position, obj.Position);
+            if (dist < nearestDist) { nearest = obj; nearestDist = dist; }
+        }
+
+        if (nearest == null)
+        {
+            var habitat = _bestiary.GetHabitat(monsterName);
+            _tolk.SpeakInterrupt(habitat != null
+                ? $"Kein {monsterName} in der Nähe. Lebt in {habitat}."
+                : $"Kein {monsterName} in der Nähe.");
+            return;
+        }
+
+        // Target it first (fight follows the walk); the game may reject the
+        // set (V4.24), so read back and warn instead of walking untargeted.
+        TargetManager.Target = nearest;
+        if (TargetManager.Target?.GameObjectId != nearest.GameObjectId)
+            _tolk.SpeakInterrupt("Achtung, nicht anvisiert.");
+        _autoWalk.Toggle();
+    }
+
     private void AnnounceHelp()
     {
         _tolk.SpeakInterrupt(
             "Tasten: " +
             "N, nächstes Objekt ansagen und anvisieren. " +
             "Umschalt+N, vorheriges Objekt. " +
-            "Strg+N, Kategorie wechseln. " +
-            "Strg+Umschalt+N, Gehhilfe an oder aus. " +
+            "Strg+N, Kategorie vorwärts. " +
+            "Strg+Umschalt+N, Kategorie zurück. " +
+            "Umschalt+Nummernblock 3, Gehhilfe an oder aus. " +
             "Nummernblock 3, automatisch zum Ziel laufen. " +
             "F, zum Ziel hindrehen. W, laufen. " +
             "Strg+F1, diese Hilfe. " +

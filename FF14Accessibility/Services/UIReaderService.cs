@@ -27,6 +27,7 @@ public sealed class UIReaderService : IDisposable
     private readonly IPluginLog      _log;
     private readonly IObjectTable    _objectTable;
     private readonly InventoryService _inventory;
+    private readonly BestiaryService _bestiary;
     private readonly List<string>    _titleMenuItems = [];
 
     // SelectYesno: labels are read fresh from the dialog buttons on open -
@@ -137,6 +138,11 @@ public sealed class UIReaderService : IDisposable
         // jeden Frame beim Teleportieren (Log 2026-07-11 19:52). Eigene Casts
         // spaeter sauber via LocalPlayer.IsCasting ansagen, nicht per Text-Scan.
         "_CastBar",
+        // _CharaSelectReturn traegt nur den "Beenden"-Knopf; beim Neuaufbau der
+        // Lobby-Fenster (Login-Dialog auf/zu) meldete der Fokus-Leser ihn jedes
+        // Mal ungefragt (Log 2026-07-13 00:58). Gezielte Navigation dorthin sagt
+        // weiterhin der globale FocusedNode-Leser an.
+        "_CharaSelectReturn",
     ];
 
     // Listenlose Addons, bei denen wir per PostUpdate den Fokus tracken
@@ -174,7 +180,7 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, BestiaryService bestiary)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -182,6 +188,7 @@ public sealed class UIReaderService : IDisposable
         _log            = log;
         _objectTable    = objectTable;
         _inventory      = inventory;
+        _bestiary       = bestiary;
         RegisterHooks();
     }
 
@@ -211,6 +218,15 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
+
+        // -- Bestiarium (Jagdtagebuch, "MonsterNote") -------------------
+        // TreeList (Comp CT=TreeList) mit gemischten Zeilen: Rang-Ueberschriften,
+        // Monster-Zeilen (Name + Fortschritt "0/3") und Verguetungen. Die
+        // Listen-Indizes (Hovered/Selected) bewegen sich hier bei Tastatur-
+        // Navigation NICHT (Log 2026-07-12: alle -1), aber der globale FocusedNode
+        // wandert. Deshalb dedizierter Leser statt des generischen Fokus-Lesers,
+        // der nur "0/10, NEU" (Fortschritt ohne Rang-Namen) wiederholte.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MonsterNote", OnMonsterNoteUpdate);
 
         // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
@@ -316,7 +332,14 @@ public sealed class UIReaderService : IDisposable
         ScanAddonTexts(name, addon, isInit: true);
         var text = ReadAllTexts(addon);
         if (!string.IsNullOrWhiteSpace(text))
+        {
             _tolk.Speak(text);
+            // SelectOk (z.B. Server-Warteschlange "hoher Andrang"): Der Fokus
+            // springt direkt nach dem Oeffnen auf den Standard-Knopf und schnitt
+            // die gerade gesprochene Meldung ab (Log 2026-07-13 00:58, nur
+            // "Abbrechen" hoerbar). Gleiche Schutzsperre wie SelectYesno.
+            if (name == "SelectOk") _dialogOpenedAt = DateTime.UtcNow;
+        }
     }
 
     // -- Universal: Addon geschlossen --------------------------------
@@ -786,6 +809,19 @@ public sealed class UIReaderService : IDisposable
 
         var node = input->FocusedNode;
         if (node == null)
+        {
+            _lastFocusedNodePtr  = 0;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
+        // Bestiarium hat einen eigenen Leser (OnMonsterNoteUpdate). Der globale
+        // FocusedNode landet dort auf einer Rang-Zusammenfassung ("0/10, NEU")
+        // ohne Rang-Namen - unbrauchbar. Solange das Fenster offen ist, schweigt
+        // der generische Leser fuer diese Zeilen (State wird zurueckgesetzt, damit
+        // nach dem Schliessen wieder frisch angesagt wird).
+        if (IsAddonVisible("MonsterNote"))
         {
             _lastFocusedNodePtr  = 0;
             _lastFocusedNodeText = string.Empty;
@@ -3222,6 +3258,282 @@ public sealed class UIReaderService : IDisposable
             }
         }
         return null;
+    }
+
+    // -- Bestiarium (Jagdtagebuch / MonsterNote) --------------------
+    //
+    // Datenmodell (ilspycmd 2026-07-12): AtkComponentTreeList.Items (@432) =
+    // logische Zeilen in visueller Reihenfolge; jedes AtkComponentTreeListItem
+    // traegt StringValues (@24, die vom Spiel gesetzten Anzeige-Strings) und
+    // einen Renderer-Zeiger (@48). Der fokussierte Node liegt in einem
+    // ListItemRenderer - wir klettern hoch, ordnen ihn einer Item-Zeile zu und
+    // lesen deren Strings (Name + Fortschritt). Die Listen-Indizes bewegen sich
+    // hier bei Tastatur-Navigation NICHT (Log 2026-07-12: alle -1).
+
+    private string _lastBestiaryRow = string.Empty;
+    private nint   _lastBestiaryRendererPtr;
+    private string? _selectedBestiaryMonster;
+
+    /// <summary>
+    /// The hunting log monster whose row is currently focused in the open
+    /// bestiary, or null (bestiary closed / a rank or reward row selected).
+    /// Plugin.cs uses this for the auto-walk key: track the monster nearby
+    /// or announce its habitat.
+    /// </summary>
+    public string? SelectedBestiaryMonster =>
+        _selectedBestiaryMonster != null && IsAddonVisible("MonsterNote")
+            ? _selectedBestiaryMonster
+            : null;
+
+    private unsafe void OnMonsterNoteUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var tree = FindTreeList(addon);
+        if (tree == null) return;
+
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return;
+
+        var renderer = ClimbToItemRenderer(focus);
+        if (renderer == null) return;
+
+        var (row, index, total) = ReadTreeRow(tree, renderer, out var item);
+        if ((nint)renderer == _lastBestiaryRendererPtr && row == _lastBestiaryRow) return;
+
+        // Ground-Truth-Probe (einmal pro Zeilenwechsel, kein Frame-Spam): alle
+        // Text-Nodes der Zeile (sichtbar UND unsichtbar) + die Roh-Strings.
+        // Klaert, wo bei unfertigen Raengen ("0/10, NEU") der Rang-Name steckt.
+        ProbeBestiaryRow(renderer, item);
+
+        _lastBestiaryRendererPtr = (nint)renderer;
+        _lastBestiaryRow = row;
+        if (string.IsNullOrEmpty(row)) return;
+
+        var announce = index >= 0 && total > 0 ? $"{index + 1} von {total}, {row}" : row;
+
+        // Monster rows get their habitat appended (MonsterNoteTarget sheet) so
+        // the user hears WHERE to hunt; the name also arms the auto-walk key.
+        _selectedBestiaryMonster = null;
+        if (TryExtractBestiaryMonster(row, out var monster))
+        {
+            var habitat = _bestiary.GetHabitat(monster);
+            if (habitat != null)
+            {
+                _selectedBestiaryMonster = monster;
+                announce += $". Lebt in {habitat}";
+            }
+            else
+            {
+                // Name mismatch UI vs. BNpcName sheet - log for ground truth.
+                _log.Info($"[Bestiary] Kein Lebensraum für '{monster}' (kein Sheet-Treffer).");
+            }
+        }
+        _tolk.SpeakInterrupt(announce);
+    }
+
+    /// <summary>
+    /// Monster rows read "Name, X von Y" after formatting; rank headers and
+    /// rewards carry no progress token. Returns the name part of such a row.
+    /// </summary>
+    private static bool TryExtractBestiaryMonster(string formattedRow, out string monster)
+    {
+        monster = string.Empty;
+        string? name = null;
+        var hasProgress = false;
+        foreach (var part in formattedRow.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (IsSpokenProgress(part)) hasProgress = true;
+            else name ??= part;
+        }
+        if (!hasProgress || name == null || name.All(char.IsDigit)) return false;
+        monster = name;
+        return true;
+    }
+
+    /// <summary>True for a progress token as spoken by FormatBestiaryRow ("0 von 3").</summary>
+    private static bool IsSpokenProgress(string part)
+    {
+        var pieces = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length == 3
+            && pieces[0].All(char.IsDigit)
+            && pieces[1] == "von"
+            && pieces[2].All(char.IsDigit);
+    }
+
+    /// <summary>
+    /// Reads the whole open bestiary (Hunting Log) TreeList aloud: every logical
+    /// row in visual order (rank headers, monsters with progress, rewards). Bound
+    /// to a key so the user hears the full list at once instead of arrowing
+    /// through it. Reads the game's own display strings - no sheet mapping.
+    /// </summary>
+    public unsafe void AnnounceBestiaryOverview()
+    {
+        var ptr = _gameGui.GetAddonByName("MonsterNote");
+        if (ptr.IsNull || !((AtkUnitBase*)(nint)ptr)->IsVisible)
+        {
+            _tolk.SpeakInterrupt("Bestiarium ist nicht geöffnet.");
+            return;
+        }
+
+        var addon = (AtkUnitBase*)(nint)ptr;
+        var tree = FindTreeList(addon);
+        if (tree == null)
+        {
+            _tolk.SpeakInterrupt("Bestiarium-Liste nicht gefunden.");
+            return;
+        }
+
+        var total = (int)tree->Items.LongCount;
+        var rows = new List<string>();
+        for (var i = 0; i < total; i++)
+        {
+            var item = tree->Items[i].Value;
+            if (item == null) continue;
+            var text = ReadItemStrings(item);
+            if (string.IsNullOrEmpty(text) && item->Renderer != null)
+                text = ReadRendererTexts(item->Renderer);
+            text = FormatBestiaryRow(text);
+            if (string.IsNullOrEmpty(text)) continue;
+            // Monsters get their habitat so the overview answers "where to go"
+            if (TryExtractBestiaryMonster(text, out var monster)
+                && _bestiary.GetHabitat(monster) is { } habitat)
+                text += $", lebt in {habitat}";
+            rows.Add(text);
+        }
+
+        _log.Info($"[Bestiary] Uebersicht: {rows.Count} Zeilen von {total} Items");
+        if (rows.Count == 0)
+        {
+            _tolk.SpeakInterrupt("Bestiarium ist leer.");
+            return;
+        }
+        _tolk.SpeakInterrupt($"Bestiarium, {rows.Count} Einträge. " + string.Join(". ", rows));
+    }
+
+    private static unsafe AtkComponentTreeList* FindTreeList(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp != null && comp->GetComponentType() == ComponentType.TreeList)
+                return (AtkComponentTreeList*)comp;
+        }
+        return null;
+    }
+
+    private static unsafe AtkComponentListItemRenderer* ClimbToItemRenderer(AtkResNode* node)
+    {
+        for (var up = 0; up < 8 && node != null; up++)
+        {
+            if ((int)node->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)node)->Component;
+                if (comp != null && comp->GetComponentType() == ComponentType.ListItemRenderer)
+                    return (AtkComponentListItemRenderer*)comp;
+            }
+            node = node->ParentNode;
+        }
+        return null;
+    }
+
+    private unsafe (string Text, int Index, int Total) ReadTreeRow(
+        AtkComponentTreeList* tree, AtkComponentListItemRenderer* renderer, out AtkComponentTreeListItem* item)
+    {
+        var total = (int)tree->Items.LongCount;
+        var index = -1;
+        item = null;
+        for (var i = 0; i < total; i++)
+        {
+            var it = tree->Items[i].Value;
+            if (it != null && it->Renderer == renderer) { index = i; item = it; break; }
+        }
+
+        var text = item != null ? ReadItemStrings(item) : string.Empty;
+        if (string.IsNullOrEmpty(text)) text = ReadRendererTexts(renderer);
+        return (FormatBestiaryRow(text), index, total);
+    }
+
+    /// <summary>The game's own display strings for a TreeList row (StringValues).</summary>
+    private static unsafe string ReadItemStrings(AtkComponentTreeListItem* item)
+    {
+        var parts = new List<string>();
+        var n = (int)item->StringValues.LongCount;
+        for (var i = 0; i < n; i++)
+        {
+            var s = item->StringValues[i];
+            if (!s.HasValue) continue;
+            var t = s.ToString().Trim();
+            if (!string.IsNullOrEmpty(t)) parts.Add(t);
+        }
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>Fallback: visible text nodes of a row's renderer in node order.</summary>
+    private static unsafe string ReadRendererTexts(AtkComponentListItemRenderer* renderer)
+    {
+        var comp = (AtkComponentBase*)renderer;
+        var parts = new List<string>();
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            if (!string.IsNullOrEmpty(t)) parts.Add(t);
+        }
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>"0/3, Marienkaefer" -> "Marienkaefer, 0 von 3": moves the progress
+    /// token to the end and spells it out for speech; order otherwise preserved.</summary>
+    private static string FormatBestiaryRow(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var parts = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var names = new List<string>();
+        var progress = new List<string>();
+        foreach (var p in parts)
+        {
+            if (TryFormatProgress(p, out var pretty)) progress.Add(pretty);
+            else names.Add(p);
+        }
+        return string.Join(", ", names.Concat(progress));
+    }
+
+    private static bool TryFormatProgress(string part, out string result)
+    {
+        result = part;
+        var slash = part.IndexOf('/');
+        if (slash <= 0 || slash >= part.Length - 1) return false;
+        var left = part[..slash];
+        var right = part[(slash + 1)..];
+        if (left.All(char.IsDigit) && right.All(char.IsDigit))
+        {
+            result = $"{left} von {right}";
+            return true;
+        }
+        return false;
+    }
+
+    private unsafe void ProbeBestiaryRow(AtkComponentListItemRenderer* renderer, AtkComponentTreeListItem* item)
+    {
+        var comp = (AtkComponentBase*)renderer;
+        var sb = new StringBuilder();
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text) continue;
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            sb.Append($" [id={n->NodeId} vis={(n->IsVisible() ? 1 : 0)} '{t}']");
+        }
+        var raw = item != null ? ReadItemStrings(item) : "(kein Item)";
+        var rid = comp->OwnerNode != null ? ((AtkResNode*)comp->OwnerNode)->NodeId : 0;
+        _log.Info($"[Bestiary] Probe rendererId={rid} texts:{sb} strings=[{raw}]");
     }
 
     /// <summary>

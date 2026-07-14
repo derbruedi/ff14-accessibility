@@ -132,7 +132,10 @@ public sealed class NavigationService
         ("Spieler",            new[] { ObjectKind.Pc }),
         ("Objekte",            new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         ("Sammelpunkte",       new[] { ObjectKind.GatheringPoint }),
-        ("Ätheryten",          new[] { ObjectKind.Aetheryte }),
+        // Ätheryten kommen aus den Kartendaten (PlacesService), nicht aus der
+        // ObjectTable: die Marker kennen ALLE Ätheryten + Aethernet-Splitter
+        // der Zone, die Objektsuche nur die in ~100 m (User-Wunsch 2026-07-13).
+        ("Ätheryten",          null),
         ("Quest-Ziele",        null),
         ("Annehmbare Quests",  null),
         ("Wegpunkte",          null),
@@ -141,6 +144,7 @@ public sealed class NavigationService
     private bool IsQuestCategory           => Categories[_categoryIndex].Label == "Quest-Ziele";
     private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Label == "Annehmbare Quests";
     private bool IsPlacesCategory          => Categories[_categoryIndex].Label == "Wegpunkte";
+    private bool IsAetheryteCategory       => Categories[_categoryIndex].Label == "Ätheryten";
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -163,9 +167,17 @@ public sealed class NavigationService
     private int _cycleIndex = -1;
 
     /// <summary>Switches to the next object category and announces its object count.</summary>
-    public void NextCategory()
+    public void NextCategory() => CycleCategory(+1);
+
+    /// <summary>Switches to the previous object category and announces its object count.</summary>
+    public void PreviousCategory() => CycleCategory(-1);
+
+    /// <summary>Steps the category index by <paramref name="direction"/> (wrapping)
+    /// and announces the new category with its object count.</summary>
+    private void CycleCategory(int direction)
     {
-        _categoryIndex = (_categoryIndex + 1) % Categories.Length;
+        var n = Categories.Length;
+        _categoryIndex = ((_categoryIndex + direction) % n + n) % n;
         _cycleIndex = -1;
         SelectedQuestDestination = null;
         SelectedPlaceDestination = null;
@@ -192,6 +204,13 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsAetheryteCategory)
+        {
+            var aetherytes = _places.GetPlaces().Count(IsAetherytePlace);
+            _tolk.SpeakInterrupt($"Kategorie Ätheryten: {aetherytes} im Gebiet.");
+            return;
+        }
+
         var count = GetCategoryObjects().Count;
         _tolk.SpeakInterrupt($"Kategorie {Categories[_categoryIndex].Label}: {count} in der Nähe.");
     }
@@ -211,9 +230,9 @@ public sealed class NavigationService
             return;
         }
 
-        if (IsPlacesCategory)
+        if (IsPlacesCategory || IsAetheryteCategory)
         {
-            CyclePlaceDestination(direction, player);
+            CyclePlaceDestination(direction, player, aetherytesOnly: IsAetheryteCategory);
             return;
         }
 
@@ -280,10 +299,18 @@ public sealed class NavigationService
         // apart from side quests (a sighted player sees a distinct marker).
         var story = dest.IsMainStory ? "Story: " : string.Empty;
 
+        // Current objective ("what is still missing", e.g. "Aurelias erlegen 0/3")
+        // from the on-screen quest tracker. Only tracked quests have one; the
+        // marker tooltip stays as a fallback for the rest.
+        var objectives = _questMarkers.GetQuestObjectives();
+        var todo = objectives.TryGetValue(dest.QuestName, out var obj) && !string.IsNullOrWhiteSpace(obj)
+            ? $", {obj}"
+            : string.Empty;
+
         string text;
         if (dest.InCurrentZone)
         {
-            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}, " +
+            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}{todo}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
                    $"{CalculateDirection(player, dest.Position)}.{detail}";
         }
@@ -293,7 +320,7 @@ public sealed class NavigationService
             // and the transition that leads there (BFS over the map graph).
             var zone = _places.GetMapName(dest.MapId);
             var hop  = _places.FindFirstHopToMap(dest.MapId, out var hops);
-            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}, " +
+            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}{todo}, " +
                    (string.IsNullOrEmpty(zone) ? "in einem anderen Gebiet." : $"im Gebiet {zone}.");
             if (hop != null)
             {
@@ -319,15 +346,18 @@ public sealed class NavigationService
         return MathF.Sqrt(dx * dx + dz * dz);
     }
 
-    private void CyclePlaceDestination(int direction, IGameObject player)
+    private void CyclePlaceDestination(int direction, IGameObject player, bool aetherytesOnly = false)
     {
         var places = _places.GetPlaces()
+            .Where(p => !aetherytesOnly || IsAetherytePlace(p))
             .OrderBy(p => Distance2D(player.Position, p.Position))
             .ToList();
         if (places.Count == 0)
         {
             SelectedPlaceDestination = null;
-            _tolk.SpeakInterrupt("Keine Wegpunkte in diesem Gebiet gefunden.");
+            _tolk.SpeakInterrupt(aetherytesOnly
+                ? "Keine Ätheryten in diesem Gebiet gefunden."
+                : "Keine Wegpunkte in diesem Gebiet gefunden.");
             return;
         }
 
@@ -394,6 +424,9 @@ public sealed class NavigationService
         var hop = _places.FindFirstHopToMap(dest.MapId, out _);
         return hop != null ? Distance2D(playerPos, hop.Position) : float.MaxValue;
     }
+
+    private static bool IsAetherytePlace(PlaceDestination p) =>
+        p.TypeLabel is "Ätheryt" or "Aethernet";
 
     private List<IGameObject> GetCategoryObjects()
     {

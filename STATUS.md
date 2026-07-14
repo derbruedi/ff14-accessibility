@@ -3,7 +3,208 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-12, V4.58 gebaut)
+## STAND JETZT (2026-07-13, V4.61 gebaut)
+
+### Neu in V4.61: Auto-Lauf-Wächter repariert (kein Fehlabbruch bei Umwegen)
+User-Meldung + Log 2026-07-13 01:08: "Komme nicht näher"-Meldung kam kurz nach
+dem Start, obwohl der Charakter lief — vnavmesh nimmt Umwege, dabei steigt die
+Luftlinie zum Ziel zeitweise. Zweiter Befund aus demselben Log: Der alte
+Abbruch setzte nur `_active=false`, stoppte den vnavmesh-Pfad NICHT — deshalb
+lief der Charakter nach der Meldung weiter (und kam sogar an).
+FIX (AutoWalkService):
+(1) Wächter misst jetzt die BEWEGUNG DES CHARAKTERS (Positionswechsel >=0,5 m
+    setzt den 5s-Timer zurück), nicht mehr die Zieldistanz. Umwege = Bewegung =
+    kein Abbruch. Echtes Verkeilen (Position friert ein, wie 26 m vor dem
+    Übergang nach Unteres La Noscea, La Thagran-Grenzposten) wird weiter erkannt.
+(2) Bei echtem Feststecken wird jetzt auch der vnavmesh-Pfad gestoppt
+    (Stop(announce:false)), Ansage: "Ich stecke fest, noch X Meter."
+(3) csproj-Version hing noch auf 4.59 (Plugin.cs sagte 4.60) — beides auf 4.61
+    synchronisiert.
+
+### Auch in V4.61: Tasten-Umzug (Strg+Alt+N war NVDA-Hotkey!)
+User-Meldung: Strg+Alt+N (Kategorie zurück, V4.59) ist der Windows-Hotkey zum
+NVDA-Start — unbenutzbar. Alt+N ist im Spiel CMD_BEGINNER (Neulings-Chat).
+User-Entscheid (3 Optionen angeboten): TAUSCH —
+- Kategorie zurück = Strg+Umschalt+N (Logik "Umschalt = rückwärts" wie N/Umschalt+N)
+- Gehhilfe = Umschalt+Numpad3 (neben Auto-Lauf Numpad3; Numpad3-Kombis laut
+  Keybind-Dump frei, Numpad 0-9 sonst alle vom Spiel belegt)
+Config-Migration Version 4→5 (gezielt, nur wenn alte Defaults gesetzt; Gehhilfe
+ZUERST umziehen, dann Kategorie-zurück — sonst greift der zweite Check auf den
+frisch vergebenen Wert). Hilfe-Text (Strg+F1) aktualisiert.
+
+### V4.60-Testergebnis (Log 2026-07-13 01:00) — BESTÄTIGT
+- Bestiarium-Zeilen werden angesagt ("1 von 31, Hermetiker 01", "2 von 31,
+  Marienkäfer, 0 von 3", "3 von 31, 75, Vergütung") ✓
+- Strg+F4-Übersicht liest die Liste ✓ — ABER nur 20 von 31 Items (Rest fehlt,
+  vermutlich eingeklappte/virtuelle Zeilen ohne Renderer)
+- Rang-Namen-Frage GEKLÄRT: die "0/10, NEU"-Zeilen sind eine ZWEITE Liste
+  (Rang-Auswahl 1–5). Textnodes: id=7 '0/10', id=6 Rang-NUMMER '1'..'5',
+  id=5 unsichtbar 'NEU'; StringValues leer ("(kein Item)"). Es gibt dort
+  KEINEN Klartext-Namen. Ansage derzeit "1, 0 von 10" — Aufwertung zu
+  "Rang 1, 0 von 10, neu" möglich (User noch nicht gefragt).
+
+### Auch in V4.61: Ätheryten zonenweit + Kein-Weg-Aethernet-Tipp (User-Wunsch)
+User: (1) Ätheryten über 100 m hinaus sehen/hinlaufen; (2) bei "kein Weg
+gefunden" über andere Wegpunkte routen. EINORDNUNG zu (2): "Kein Weg" =
+getrennte Mesh-Inseln (Stadt-Ebenen, nur per Aufzug/Aethernet verbunden) —
+Laufen über Zwischenpunkte kann die Lücke NIE schließen, spielgerechter Weg
+ist das Aethernet. Umsetzung:
+(1) Kategorie "Ätheryten" im Objekt-Browser jetzt SHEET-basiert (PlacesService/
+    MapMarker DataType 3+4 = Ätheryt + Aethernet-Splitter, zonenweit statt
+    ObjectTable ≤100m). CyclePlaceDestination(aetherytesOnly), Ansage
+    "Kategorie Ätheryten: N im Gebiet", Numpad 3 läuft hin (Places-Pipeline,
+    Y via Navmesh). ObjectKind.Aetheryte-Filter entfällt.
+(2) AutoWalkService.BuildNoPathHint (PlacesService injiziert): Bei "Kein Weg
+    zu X gefunden" wird der zielnächste Ätheryt/Splitter genannt, wenn er ≤100m
+    (2D) am Ziel liegt: "Das Ziel liegt nahe Aethernet <Name>. Reise per
+    Aethernet dorthin." + [Nav] Kein-Weg-Tipp-Log. Workflow für den User:
+    Strg+N → Ätheryten → N → Numpad 3 → am Splitter interagieren (Spiel-Menü
+    wird von der Listen-Navigation gelesen) → Ziel-Splitter wählen → weiter.
+
+### Auch in V4.61: Bestiarium-Lebensraum + Monster-Tracking (User-Wunsch)
+User: "kann man die Monster auch tracken bzw. ansagen in welche Gegend man muss?"
+DATENLAGE (ilspycmd 2026-07-13, Lumina.Excel.dll): MonsterNoteTarget-Sheet hat
+pro Monster BNpcName-Ref + PlaceNameZone[3] + PlaceNameLocation[3] (Zone +
+Untergebiet, bis zu 3 Fundorte) — exakt die Lebensraum-Info der Sehenden-UI.
+MonsterNote-Sheet: Name, Reward, 4× Target-Ref + 4× Count.
+NEU: BestiaryService.cs — lazy Dictionary BNpcName.Singular (lowercase) →
+Lebensraum-Text ("Zone, Untergebiet, oder Zone2, …").
+(1) Bestiarium-Zeilen-Ansage + Strg+F4-Übersicht hängen bei Monster-Zeilen
+    ". Lebt in <Lebensraum>" an. Monster-Erkennung: Zeile hat Fortschritts-
+    Token ("X von Y") + Name trifft im Sheet (Rang-Zeilen/Vergütungen nicht).
+    Sheet-Fehltreffer werden geloggt ("[Bestiary] Kein Lebensraum für …").
+(2) TRACKING: UIReaderService.SelectedBestiaryMonster (fokussierte Monster-
+    Zeile, nur solange MonsterNote sichtbar). Numpad 3 bei offenem Bestiarium:
+    sucht nächsten LEBENDEN BattleNpc gleichen Namens (CurrentHp>0) in der
+    ObjectTable → anvisieren (mit Read-back-Warnung) + Auto-Lauf hin;
+    keiner in der Nähe → "Kein <Name> in der Nähe. Lebt in <Lebensraum>."
+UNVERIFIZIERT (Log klärt es): UI-Monstername == BNpcName.Singular (Groß-/
+Kleinschreibung egal, aber Wortlaut muss stimmen).
+
+### Auch in V4.61: Login-/Lobby-Fixes (User-Feedback 2026-07-13)
+(1) SelectOk-Dialog (Server-Warteschlange "hoher Andrang"): Text wurde
+    gesprochen, aber 14 ms später vom Fokus-Leser ("Abbrechen") ABGESCHNITTEN
+    → User hörte nur "Abbrechen". Fix: OnAnyAddonOpen setzt bei SelectOk
+    dieselbe 1s-Dialog-Schutzsperre wie SelectYesno (_dialogOpenedAt).
+(2) "Beenden"-Spam: _CharaSelectReturn (trägt nur den Beenden-Knopf) meldete
+    bei jedem Lobby-Fenster-Neuaufbau ungefragt Fokus → in HudNoiseAddons.
+    Gezielte Navigation dorthin sagt weiter der globale FocusedNode-Leser an.
+(3) Auto-Keybind-Dump nach Login ist jetzt STUMM (DumpKeybinds announce:false,
+    nur Log/Datei); gesprochen wird nur noch bei echtem Tasten-Konflikt oder
+    manuellem /acc keys. "Tastenbelegung gespeichert…" bei jedem Login war Lärm.
+
+### Spam-Quellen aus dem Log (NOCH NICHT gefixt, User noch nicht gefragt)
+- _StatusCustom0 (Buff-Leiste): Sprint-Countdown "20s".."1s" im Sekundentakt
+  gesprochen → Kandidat für Scan-Ignorierliste
+- _FlyText: "+Sprint", "+Dauerlauf", "-Sprint", "700", "(+100 %)" gesprochen
+  → Kandidat für Filter
+- Restliches Login-Geplapper (00:59: "INVENTAR", "SEITE AN SEITE", "Menü, 0
+  Einträge", ".", "Ziel.") — User: "nicht so schlimm", bewusst zurückgestellt
+- V4.59-Test (Quest-Objective) steht WEITER AUS (keine [Quest]
+  Objective-Zeilen im Log)
+
+### Beim nächsten Start testen (V4.61)
+1. "Version 4 Punkt 61 bereit".
+2. AUTO-LAUF mit Umwegen (Numpad 3, längere Strecke): KEIN "Komme nicht
+   näher"-Fehlabbruch mehr kurz nach Start?
+3. An einer Verkeil-Stelle (z.B. Übergang Unteres La Noscea): kommt "Ich
+   stecke fest, noch X Meter" und der Charakter hört auf zu laufen (Pfad
+   wird jetzt wirklich gestoppt)?
+4. TASTEN-UMZUG: Meldet der Start "Konflikt"-frei? Strg+Umschalt+N blättert
+   die Kategorie RÜCKWÄRTS (nicht mehr Gehhilfe!), Umschalt+Numpad3 schaltet
+   die Gehhilfe?
+5. V4.59 nachholen: Quest-Ziele blättern (Strg+N) → Objective hinter dem
+   Namen?
+6. LOGIN: Bei der Server-Warteschlange ("hoher Andrang") wird jetzt der
+   TEXT gesprochen (nicht mehr nur "Abbrechen")? Kein ungefragtes "Beenden"
+   mehr in der Charakterauswahl? Keine "Tastenbelegung gespeichert"-Ansage?
+7. BESTIARIUM: Monster-Zeile fokussieren → kommt "… Lebt in <Gebiet>"?
+   Numpad 3 bei fokussiertem Monster: läuft hin (wenn eins in der Nähe)
+   bzw. sagt "Kein X in der Nähe. Lebt in …"? Falls kein Lebensraum kommt:
+   Log mitschicken ([Bestiary] Kein Lebensraum für … = Namens-Mismatch).
+8. ÄTHERYTEN: Strg+N bis "Kategorie Ätheryten: N im Gebiet" → zählt sie
+   die ganze Zone (auch weiter als 100 m)? N blättert mit Distanz/Richtung,
+   Numpad 3 läuft hin?
+9. KEIN-WEG-TIPP: An einer bekannten "kein Weg"-Stelle (z.B. anderes
+   Stadt-Level in Limsa) → kommt "… Das Ziel liegt nahe Aethernet <Name>"?
+
+---
+
+## STAND V4.60 (2026-07-13 gebaut, BESTÄTIGT s.o.)
+
+### Neu in V4.60: Bestiarium (Jagdtagebuch, "MonsterNote") barrierefrei
+User-Wunsch: Bestiarium vorlesbar machen; User wählte "Beides" (UI-Mitlesen +
+Übersichts-Taste). Dump 2026-07-12 (dalamud.log ~Zeile 456) analysiert.
+STRUKTUR: MonsterNote = ein Addon mit einer TreeList (Comp CT=TreeList). Zeilen
+sind ListItemRenderer in drei Templates: Rang-Überschriften (Comp 1015: Name +
+Badge "Erledigt!"), Monster-Zeilen (Comp 1017: Fortschritt "0/3" + Name + Icons)
+und Vergütungen (Comp 1018: Betrag + "Vergütung"). Datenmodell ilspycmd-verifiziert:
+AtkComponentTreeList.Items (@432) = logische Zeilen in visueller Reihenfolge;
+AtkComponentTreeListItem trägt StringValues (@24, Spiel-Anzeige-Strings) + Renderer
+(@48). MonsterNoteManager (12× MonsterNoteRankInfo, RankData[10], Kill-Counts) +
+Lumina MonsterNote-Sheet existieren (für spätere direkte Datenmodell-Lesung notiert).
+ROOT CAUSE des Bugs (Log 21:34): Beim Navigieren bewegen sich die Listen-Indizes
+(Hovered/Selected) NICHT (alle -1), aber der globale FocusedNode wandert. Der
+generische Fokus-Leser las darum immer nur "0/10, NEU" (Fortschritt + Badge einer
+Rang-Überschrift OHNE Rang-Namen) — User hörte bestätigt nur das.
+FIX (UIReaderService):
+(1) Dedizierter Handler OnMonsterNoteUpdate (PostUpdate "MonsterNote"): klettert
+    vom FocusedNode hoch zum ListItemRenderer, ordnet ihn per Items→Renderer der
+    logischen Zeile zu, liest deren StringValues (Fallback: sichtbare Text-Nodes
+    des Renderers). FormatBestiaryRow stellt "0/3, Marienkäfer" → "Marienkäfer,
+    0 von 3" um (Fortschritt ans Ende, ausgeschrieben). Dedup pro Renderer+Text.
+    Ansage "X von Y, <Zeile>".
+(2) UpdateGlobalFocus schweigt jetzt, solange MonsterNote sichtbar ist (kein
+    "0/10, NEU"-Doppel mehr).
+(3) ÜBERSICHTS-TASTE Strg+F4 (KeyBestiary, Keybind-Dump frei): AnnounceBestiary-
+    Overview liest die ganze offene TreeList am Stück (alle Items in visueller
+    Reihenfolge). Kein Sheet-Mapping — liest die vom Spiel gesetzten Strings.
+(4) GROUND-TRUTH-PROBE [Bestiary]: pro Zeilenwechsel werden ALLE Text-Nodes der
+    Zeile (sichtbar UND unsichtbar, mit id/vis) + die Roh-StringValues geloggt.
+    Klärt, wo bei unfertigen Rängen ("0/10, NEU") der Rang-NAME steckt (der Dump
+    zeigte nur fertige Ränge mit Namen). Danach ggf. Rang-Namen-Ansage nachziehen.
+
+### Beim nächsten Start testen (V4.60)
+1. "Version 4 Punkt 60 bereit".
+2. BESTIARIUM öffnen, mit Pfeiltasten/Controller durch die Liste navigieren:
+   werden jetzt Rang-Überschriften, Monster ("Marienkäfer, 0 von 3") und
+   Vergütungen sauber angesagt — nicht mehr nur "0/10, NEU"?
+3. Kommt bei den Rang-Überschriften ein NAME (z.B. "Hermetiker 01") oder weiter
+   nur "0 von 10, NEU"? Die [Bestiary] Probe-Logzeilen mitschicken (zeigen alle
+   Text-Nodes inkl. unsichtbar + Roh-Strings → daraus ziehe ich den Rang-Namen).
+4. Strg+F4 → wird die ganze Liste am Stück vorgelesen? Stimmen Namen/Fortschritt?
+   [Bestiary] Übersicht-Logzeile mitschicken.
+
+---
+
+## STAND V4.59 (2026-07-12, V4.59 gebaut)
+
+### Neu in V4.59: Quest-Objective + Kategorie-zurück-Taste
+User-Wünsche: (1) bei Quest-Zielen hinter dem Namen zeigen, was noch fehlt;
+(2) Taste, um Objekt-Kategorien RÜCKWÄRTS zu blättern.
+(1) OBJECTIVE: QuestManager liefert nur Sequenz-Zahlen, kein Klartext; der
+Objective-Text liegt nur im laufenden Quest-Tracker (_ToDoList). QuestMarkerService.
+GetQuestObjectives liest ihn via RaptureAtkUnitManager. Node-ID-Muster (aus Probe
+19:59 verifiziert): Header 70000+slot = Quest-Name, Objective 20000+slot*100+idx.
+Map Quest-Name → Objective wird in CycleQuestDestination angehängt: "1 von 3:
+Story: Fast wie zu Hause, Baderon Bericht erstatten, 55 Meter, links." Nur
+GETRACKTE Quests haben ein Objective (Tracker zeigt begrenzt viele); sonst wie
+bisher. Jede Zuordnung als [Quest] Objective-Log.
+(2) KATEGORIE ZURÜCK: neue Taste Strg+Alt+N (KeyCategoryPrev, laut Keybind-Dump
+frei; bare N-Familie war voll). NextCategory/PreviousCategory teilen CycleCategory.
+
+### Beim nächsten Start testen (V4.59)
+1. "Version 4 Punkt 59 bereit".
+2. OBJECTIVE: Quest-Ziele (Strg+N bis Quest-Ziele) durchblättern → steht jetzt
+   hinter dem Quest-Namen das aktuelle Ziel ("… , Aurelias mit Hermetik erlegen
+   0/3, …")? Stimmt die Zuordnung Quest→Objective? [Quest] Objective-Logzeilen
+   mitschicken (zeigen slot/name/objective — verifiziert das ID-Muster).
+3. KATEGORIE ZURÜCK: Strg+Alt+N → blättert die Kategorie rückwärts (Gegenprobe
+   zu Strg+N vorwärts)?
+
+---
+
+## STAND V4.58 (2026-07-12, gebaut)
 
 ### V4.57 BESTÄTIGT (Log 2026-07-12, komplettes Limsa-Tutorial gespielt)
 Story-Kennzeichnung funktioniert ("Story: Fast wie zu Hause", 899 Hauptszenario-

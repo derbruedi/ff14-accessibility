@@ -221,4 +221,27 @@ public sealed class PlacesService
                   (transition?.Name ?? $"KEIN Marker für Ziel-Map {hop} gefunden"));
         return transition;
     }
+
+    /// <summary>
+    /// The aetheryte or aethernet shard of the current zone closest to
+    /// <paramref name="position"/> (2D distance, marker Y is unknown), or null.
+    /// Travel hint for unreachable destinations: city levels are often joined
+    /// only by lifts/aethernet, so the shard nearest to the destination is the
+    /// game's intended way there.
+    /// </summary>
+    public PlaceDestination? NearestAetheryteTo(Vector3 position)
+    {
+        return GetPlaces()
+            .Where(p => p.TypeLabel is "Ätheryt" or "Aethernet")
+            .OrderBy(p => Distance2D(position, p.Position))
+            .FirstOrDefault();
+    }
+
+    /// <summary>2D distance (X/Z) - marker positions carry no usable height.</summary>
+    public static float Distance2D(Vector3 a, Vector3 b)
+    {
+        var dx = a.X - b.X;
+        var dz = a.Z - b.Z;
+        return MathF.Sqrt(dx * dx + dz * dz);
+    }
 }
