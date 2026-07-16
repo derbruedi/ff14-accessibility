@@ -63,7 +63,14 @@ ohne Spiel-Neustart uebernommen. Installer-EXE erneut publiziert
 V4.74 BESTAETIGT (User 16.07. spaet abends): "ok funktioniert" -
 Sprachausgabe ist nach Neuinstallation wieder da. Der komplette
 Block Neuinstallation (Plugin-Aktivierung + NVDA-Preload) ist damit
-verifiziert. RELEASE v4.74 wird veroeffentlicht.
+verifiziert.
+
+RELEASE v4.74 VEROEFFENTLICHT (16.07. ~22:45): Commits c864ae9
+(Code) + 1ddd395 (repo.json) gepusht; GitHub-Release v4.74 mit
+latest.zip / FF14Accessibility-v4.74.0.zip / neuer Installer-EXE
+(mit Aktivierungs-Fix). latest-Link verifiziert (HTTP 200, 508508
+Bytes = 4.74-Zip). uia_test.ps1 (UIA-Testskript, Repo-Wurzel)
+absichtlich uncommittet gelassen.
 
 ### Neu in V4.72: Laden-Fix (User-Test 18:21 zeigte das Problem)
 V4.71-Testauswertung aus dem Log:
