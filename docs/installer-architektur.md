@@ -314,17 +314,22 @@ Begründung:
 7. vnavmesh-Abfrage (puni.sh) → keine lokale Version vorhanden →
    Ja/Nein-Dialog "vnavmesh für Auto-Lauf jetzt einrichten?" → bei Ja:
    Download+Kopieren analog, Fortschrittstext.
-8. `dalamudConfig.json` patchen: DevPluginLoadLocations-Einträge setzen,
-   Backup anlegen. Da beim ersten Mal die Profil-Einträge (`IsEnabled`)
-   noch nicht existieren (Dalamud legt sie erst nach dem ersten
-   Laden/Erkennen an), zeigt der Installer: "Plugin eingetragen, aber noch
-   nicht aktiviert. Starte das Spiel einmal, beende es, und führe den
-   Installer noch einmal aus, um es zu aktivieren."
-9. **Dritter Lauf:** Alles vorhanden und aktuell → Profil-Einträge jetzt
-   vorhanden → `IsEnabled=true` gesetzt. Abschlusstext: "Fertig. Starte
-   FINAL FANTASY XIV über XIVLauncher — das Plugin meldet sich beim Login
-   mit einer Sprachansage." Fenster hat einen fokussierbaren
-   "Schließen"-Button (kein reiner Enter-Zwang wie in der Konsolen-Version).
+8. `dalamudConfig.json` patchen (ein Lauf genügt, dekompiliert verifiziert
+   gegen Dalamud 15.0.2.2): `DevMode=true` (ohne das scannt Dalamud die
+   DevPluginLoadLocations überhaupt nicht), DevPluginLoadLocations-Einträge,
+   pro Plugin ein `DevPluginSettings`-Eintrag (Schlüssel = DLL-Pfad,
+   `StartOnBoot=true`, feste `WorkingPluginId`) plus ein DefaultProfile-
+   Eintrag mit derselben `WorkingPluginId` und `IsEnabled=true`. Dalamud
+   erzeugt nur dann eine eigene GUID, wenn der `DevPluginSettings`-Eintrag
+   fehlt — vorbefüllte Einträge werden unverändert übernommen. Backup wird
+   angelegt. Abschlusstext: "Fertig. Starte FINAL FANTASY XIV über
+   XIVLauncher — das Plugin meldet sich beim Login mit einer Sprachansage."
+   Fenster hat einen fokussierbaren "Schließen"-Button (kein reiner
+   Enter-Zwang wie in der Konsolen-Version).
+   (Historie: Bis Juli 2026 setzte der Installer nur vorhandene
+   Profil-Einträge auf `IsEnabled=true` und verlangte dafür einen zweiten
+   Lauf nach einem Spielstart. Das konnte nie funktionieren, weil ohne
+   `DevMode=true` nie Profil-Einträge entstanden.)
 
 ### 5.2 Update-Lauf (alles schon installiert, Routinefall)
 

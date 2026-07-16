@@ -377,10 +377,13 @@ public sealed class InstallerService
     // ── dalamudConfig.json ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Registers the plugin DLLs as DevPlugin load locations and flips their
-    /// profile entries to enabled. Conservative on purpose: makes a backup and
-    /// writes BOM-free (Dalamud's ReliableFileStorage reads raw bytes; a UTF-8 BOM
-    /// makes it silently fall back to an old SQLite copy - documented project trap).
+    /// Registers the plugin DLLs as DevPlugin load locations and seeds everything
+    /// Dalamud needs to load them on the next boot without any UI interaction:
+    /// DevMode=true, a DevPluginSettings entry per DLL (StartOnBoot + WorkingPluginId)
+    /// and a matching enabled DefaultProfile entry (see <see cref="EnableDevPlugin"/>).
+    /// Conservative on purpose: makes a backup and writes BOM-free (Dalamud's
+    /// ReliableFileStorage reads raw bytes; a UTF-8 BOM makes it silently fall
+    /// back to an old SQLite copy - documented project trap).
     /// </summary>
     private string PatchDalamudConfig()
     {
@@ -437,25 +440,25 @@ public sealed class InstallerService
             var backup = DalamudConfigPath + ".bak-installer";
             File.Copy(DalamudConfigPath, backup, overwrite: true);
 
-            if (File.Exists(accDll)) AddDevPluginLocation(loadLocations, accDll);
+            // Without DevMode Dalamud never scans DevPluginLoadLocations at all
+            // (PluginManager boot load is gated on configuration.DevMode).
+            config["DevMode"] = true;
+
+            var hasAcc = File.Exists(accDll);
+            if (hasAcc) AddDevPluginLocation(loadLocations, accDll);
             if (hasVnav) AddDevPluginLocation(loadLocations, vnavDll);
 
-            var enabled = EnableProfilePlugins(config,
-                hasVnav
-                    ? new[] { AccessibilityInternalName, VnavmeshInternalName }
-                    : new[] { AccessibilityInternalName });
+            var enabled = true;
+            if (hasAcc) enabled &= EnableDevPlugin(config, AccessibilityInternalName, accDll);
+            if (hasVnav) enabled &= EnableDevPlugin(config, VnavmeshInternalName, vnavDll);
 
             WriteAllTextNoBom(DalamudConfigPath, config.ToString());
             Info(Loc.Get("ConfigUpdated", Path.GetFileName(backup)));
 
             if (!enabled)
             {
-                Info(string.Empty);
-                Info(Loc.Get("PluginNotEnabledYet1"));
-                Info(Loc.Get("PluginNotEnabledYet2"));
-                Info(Loc.Get("PluginNotEnabledYet3"));
-                Info(Loc.Get("PluginNotEnabledYet4"));
-                return Loc.Get("PluginsRegisteredNotEnabledReturn");
+                Warn(Loc.Get("ProfileStructureUnexpected"));
+                return Loc.Get("ProfileStructureUnexpectedReturn");
             }
 
             return Loc.Get("PluginsRegisteredEnabledReturn");
@@ -483,24 +486,79 @@ public sealed class InstallerService
         });
     }
 
-    /// <summary>Sets IsEnabled=true on the DefaultProfile entries for the given
-    /// plugins. Returns true if at least one matching entry existed.</summary>
-    private static bool EnableProfilePlugins(JObject config, string[] internalNames)
+    /// <summary>
+    /// Seeds everything a dev plugin needs to load on boot. Verified against
+    /// decompiled Dalamud 15.0.2.2 (PluginManager.LoadPluginAsync, LocalDevPlugin
+    /// ctor, Profile.WantsPlugin): a dev plugin loads at boot only when its
+    /// DevPluginSettings entry (dictionary keyed by full DLL path) has
+    /// StartOnBoot=true AND the DefaultProfile contains an entry with the SAME
+    /// WorkingPluginId and IsEnabled=true. Dalamud only generates a new GUID when
+    /// the DevPluginSettings entry is missing, so pre-seeding both sides with one
+    /// GUID is stable. Returns false if the profile structure is missing.
+    /// </summary>
+    private static bool EnableDevPlugin(JObject config, string internalName, string dllPath)
     {
-        var plugins = config["DefaultProfile"]?["Plugins"]?["$values"] as JArray;
-        if (plugins == null) return false;
-
-        var any = false;
-        foreach (var p in plugins)
+        if (config["DevPluginSettings"] is not JObject devSettings)
         {
-            var name = (string?)p["InternalName"];
-            if (name != null && internalNames.Contains(name))
+            devSettings = new JObject
             {
-                p["IsEnabled"] = true;
-                any = true;
+                ["$type"] = "System.Collections.Generic.Dictionary`2[[System.String, System.Private.CoreLib],[Dalamud.Configuration.Internal.DevPluginSettings, Dalamud]], System.Private.CoreLib",
+            };
+            config["DevPluginSettings"] = devSettings;
+        }
+
+        Guid workingId;
+        if (devSettings[dllPath] is JObject entry)
+        {
+            entry["StartOnBoot"] = true;
+            if (!Guid.TryParse((string?)entry["WorkingPluginId"], out workingId) || workingId == Guid.Empty)
+            {
+                workingId = Guid.NewGuid();
+                entry["WorkingPluginId"] = workingId.ToString();
             }
         }
-        return any;
+        else
+        {
+            workingId = Guid.NewGuid();
+            devSettings[dllPath] = new JObject
+            {
+                ["$type"] = "Dalamud.Configuration.Internal.DevPluginSettings, Dalamud",
+                ["StartOnBoot"] = true,
+                ["NotifyForErrors"] = true,
+                // Auto-reload on file change (user request 2026-07-16): a new
+                // deploy is picked up without restarting the game.
+                ["AutomaticReloading"] = true,
+                ["WorkingPluginId"] = workingId.ToString(),
+                ["DismissedValidationProblems"] = new JObject
+                {
+                    ["$type"] = "System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib",
+                    ["$values"] = new JArray(),
+                },
+            };
+        }
+
+        if (config["DefaultProfile"]?["Plugins"]?["$values"] is not JArray profilePlugins)
+            return false;
+
+        var existing = profilePlugins.FirstOrDefault(p =>
+            string.Equals((string?)p["InternalName"], internalName, StringComparison.Ordinal));
+        if (existing != null)
+        {
+            existing["IsEnabled"] = true;
+            // DevPluginSettings is the authority for the GUID (EffectiveWorkingPluginId).
+            existing["WorkingPluginId"] = workingId.ToString();
+        }
+        else
+        {
+            profilePlugins.Add(new JObject
+            {
+                ["$type"] = "Dalamud.Plugin.Internal.Profiles.ProfileModelV1+ProfileModelV1Plugin, Dalamud",
+                ["InternalName"] = internalName,
+                ["WorkingPluginId"] = workingId.ToString(),
+                ["IsEnabled"] = true,
+            });
+        }
+        return true;
     }
 
     // ── GitHub-API-Helfer ──────────────────────────────────────────────────

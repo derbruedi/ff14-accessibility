@@ -50,8 +50,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.73";
-    private const string PluginVersionTag = "Braille: alle Ansagen via Tolk_Output auch auf die Braillezeile (vorher Tolk_Speak = nur Sprache)";
+    private const string PluginVersion    = "4.74";
+    private const string PluginVersionTag = "NVDA-Fix: nvdaControllerClient64.dll wird aus dem Plugin-Ordner vorgeladen (Tolks natives LoadLibrary fand sie nach Neuinstallation nicht mehr - DLLs lagen nicht mehr im Spielverzeichnis)";
 
     public Plugin()
     {

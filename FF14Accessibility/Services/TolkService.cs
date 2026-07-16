@@ -26,7 +26,9 @@ public sealed class TolkService : IDisposable
             if (TolkNative.Tolk_IsLoaded())
             {
                 DetectedScreenReader = TolkNative.GetScreenReaderName();
-                _log.Info($"[Accessibility] Tolk geladen. Screenreader: {DetectedScreenReader ?? "Keiner erkannt"}");
+                _log.Info($"[Accessibility] Tolk geladen. Screenreader: {DetectedScreenReader ?? "Keiner erkannt"}, NVDA-Client vorab geladen: {TolkNative.NvdaClientPreloaded}");
+                if (DetectedScreenReader == null)
+                    _log.Warning("[Accessibility] Kein Screenreader erkannt - alle Ansagen bleiben stumm!");
             }
             else
             {

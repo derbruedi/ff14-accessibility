@@ -5,6 +5,66 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-07-16 abends, V4.72 gebaut + deployed)
 
+### Neuinstallation: Installer aktivierte Plugins nicht (16.07. spaet abends, GEFIXT)
+User hat alles neu installiert; Plugins (FF14Accessibility + vnavmesh)
+lagen in devPlugins, luden aber nicht. ROOT CAUSE (dekompiliert
+verifiziert, Dalamud 15.0.2.2 PluginManager Zeile "if (configuration.
+DevMode == true)"): Dalamud scannt DevPluginLoadLocations NUR bei
+DevMode=true - der Installer setzte das nie. Dadurch entstanden auch
+nie Profil-Eintraege, und der alte Installer-Pfad "Spiel einmal
+starten, dann erneut ausfuehren" konnte prinzipiell nie greifen.
+
+Sofort-Fix in dalamudConfig.json (Backup: .bak-vor-plugin-enable):
+DevMode=true; pro Plugin DevPluginSettings-Eintrag (Schluessel =
+DLL-Pfad, StartOnBoot=true, feste WorkingPluginId-GUID) + DefaultProfile-
+Eintrag mit DERSELBEN GUID und IsEnabled=true. Mechanik verifiziert:
+LocalDevPlugin uebernimmt eine vorhandene WorkingPluginId aus
+DevPluginSettings unveraendert; Profile.WantsPlugin matcht per GUID;
+Laden beim Boot nur bei IsEnabled=true UND StartOnBoot=true. BOM-frei
+geschrieben. AutomaticReloading bewusst false (kein unangekuendigter
+Plugin-Reload mitten im Spiel).
+
+Installer dauerhaft gefixt (InstallerService.cs): PatchDalamudConfig
+setzt jetzt DevMode=true und saet DevPluginSettings + Profil-Eintraege
+selbst (neue Methode EnableDevPlugin, ersetzt EnableProfilePlugins).
+Loc-Strings "PluginNotEnabledYet*" raus, "ProfileStructureUnexpected*"
+rein. Neue EXE gebaut + nach dist/ kopiert. NICHT released/committet -
+beim naechsten Release mitnehmen.
+
+LADEN BESTAETIGT (Log 22:16): Beide Plugins luden ("Loading dev
+plugin", Profil-Eintraege state true, V4.73-Startzeile im Log).
+
+### V4.74 (gebaut + deployed, ungetestet): NVDA stumm nach Neuinstallation
+User-Meldung: Plugin laeuft, aber Screenreader spricht nicht. Log
+22:16: "Tolk geladen. Screenreader: Keiner erkannt" - NVDA lief
+(PID 5940). ROOT CAUSE: Tolk.dll laedt nvdaControllerClient64.dll
+NATIV per LoadLibrary(Basisname) - der SetDllImportResolver greift
+nur fuer managed P/Invoke. Nativer Loader sucht Spielverzeichnis/
+System/PATH, NICHT den Plugin-Ordner. Vorher lagen die DLLs im alten
+Spielverzeichnis; neues Steam-Verzeichnis (K:\SteamLibrary\...) hat
+sie nicht. FIX V4.74: TolkNative.Initialize laedt
+nvdaControllerClient64.dll VORAB mit vollem Pfad aus dem Plugin-
+Ordner (NativeLibrary.TryLoad) - Windows-Loader gibt bei spaeterem
+LoadLibrary mit gleichem Basisnamen das geladene Modul zurueck.
+Plugin damit unabhaengig vom Spielverzeichnis, kein Game-Dir-Kopieren
+mehr noetig. Log zeigt jetzt "NVDA-Client vorab geladen: True/False"
++ Warnung bei keinem erkannten Screenreader.
+
+NEBENBEI GEFIXT (csproj): DeployToDevFolder lief VOR DalamudPackager
+(beide AfterTargets="Build", NuGet-Import registriert spaeter) ->
+devPlugins-Manifest hing immer einen Build hinterher (4.74-Build
+deployte 4.73-Manifest). Jetzt AfterTargets="DefaultDalamudPackagerDebug".
+
+AutomaticReloading=true gesetzt (User-Wunsch): in dalamudConfig.json
+fuer beide Plugins UND als Installer-Standard - neue Deploys werden
+ohne Spiel-Neustart uebernommen. Installer-EXE erneut publiziert
+(dist/). Weiterhin NICHT committet/released.
+
+V4.74 BESTAETIGT (User 16.07. spaet abends): "ok funktioniert" -
+Sprachausgabe ist nach Neuinstallation wieder da. Der komplette
+Block Neuinstallation (Plugin-Aktivierung + NVDA-Preload) ist damit
+verifiziert. RELEASE v4.74 wird veroeffentlicht.
+
 ### Neu in V4.72: Laden-Fix (User-Test 18:21 zeigte das Problem)
 V4.71-Testauswertung aus dem Log:
 - Item-Slot-Ansage BESTAETIGT: Charakterfenster 18:14:27 sprach
@@ -42,6 +102,11 @@ Tolk-API die empfohlene Ausgabefunktion) statt Tolk_Speak (nur
 Sprache). Tolk_Output war in TolkNative schon deklariert, nur
 ungenutzt. Bei NVDA geht Braille ueber nvdaController_brailleMessage
 (macht Tolk intern).
+
+### RELEASE v4.73 veroeffentlicht (16.07. abends)
+Commits 37d51da + 49acfb7 gepusht, GitHub-Release v4.73 mit
+latest.zip / FF14Accessibility-v4.73.0.zip / Installer-EXE.
+latest-Download-Link verifiziert (HTTP 200). repo.json auf 4.73.
 
 ### Noch offen zu testen
 1. Braillezeile (V4.73): zeigt jede Ansage an? Startansage
