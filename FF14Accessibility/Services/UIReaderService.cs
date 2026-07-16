@@ -252,6 +252,12 @@ public sealed class UIReaderService : IDisposable
         // der nur "0/10, NEU" (Fortschritt ohne Rang-Namen) wiederholte.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MonsterNote", OnMonsterNoteUpdate);
 
+        // Armoury chest: the current category ("Kopf", "Waffe" ...) lives in
+        // its title text node - announce it on every tab change, because the
+        // category tabs themselves are icon-only (dump 2026-07-16: id=121
+        // Text, tabs = Base-wrapped icons without text).
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ArmouryBoard", OnArmouryBoardUpdate);
+
         // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
             _addonLifecycle.RegisterListener(AddonEvent.PostSetup, name, OnSelectStringOpen);
@@ -721,6 +727,38 @@ public sealed class UIReaderService : IDisposable
         _tolk.SpeakInterrupt(spoken);
     }
 
+    // -- ArmouryBoard (Arsenalkammer) ---------------------------------
+
+    // Category title of the armoury chest ("Kopf", "Waffe" ...) as last
+    // announced, so switching tabs speaks the new category exactly once.
+    private string _lastArmouryCategory = string.Empty;
+
+    private unsafe void OnArmouryBoardUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->IsVisible)
+        {
+            _lastArmouryCategory = string.Empty;
+            return;
+        }
+
+        // Title text node id=121 (dump 2026-07-16: [5] id=121 Text V "Kopf").
+        var node = addon->GetNodeById(121);
+        if (node == null || node->Type != NodeType.Text) return;
+        var category = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+        if (string.IsNullOrEmpty(category) || category == _lastArmouryCategory) return;
+
+        var isSwitch = _lastArmouryCategory.Length > 0;
+        _lastArmouryCategory = category;
+        _log.Info($"[Accessibility] ArmouryBoard Kategorie: '{category}'");
+        // On open the window announcer names the window first - queue the
+        // initial category behind it instead of cutting it off; tab switches
+        // interrupt as usual.
+        if (isSwitch) _tolk.SpeakInterrupt($"Kategorie {category}.");
+        else          _tolk.Speak($"Kategorie {category}.");
+    }
+
     // -- SelectYesno -------------------------------------------------
 
     private unsafe void OnYesNoOpen(AddonEvent type, AddonArgs args)
@@ -949,7 +987,19 @@ public sealed class UIReaderService : IDisposable
                 if (comp == null) return string.Empty;
 
                 var icon = FindSlotIcon(comp);
-                if (icon == null || icon->IconId == 0) return string.Empty; // a real control, but not an item slot
+                if (icon == null) return string.Empty; // a real control, but not an item slot
+
+                // Empty slots must SPEAK (user 2026-07-16: silent cursor moves
+                // in the bag/armoury are indistinguishable from a stuck cursor).
+                // Only genuine slot components (Icon/DragDrop) with icon id 0
+                // say "Leer" - that combination is the empty-item-slot
+                // signature. Icon-decorated controls carry a REAL icon id
+                // (ConfigSystem tabs, DragDrop) or match only via the wrapper
+                // branch (armoury category tabs, Base) and stay silent.
+                var compType = comp->GetComponentType();
+                var isItemSlot = compType is ComponentType.Icon or ComponentType.DragDrop;
+                if (icon->IconId == 0)
+                    return isItemSlot && ((AtkResNode*)cur)->IsVisible() ? "Leer" : string.Empty;
 
                 var name = _inventory.ResolveIconName(icon->IconId);
                 if (string.IsNullOrEmpty(name)) return string.Empty;
@@ -4090,6 +4140,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "SelectYesno", OnYesNoReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);

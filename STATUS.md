@@ -3,7 +3,221 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-15, V4.62 gebaut)
+## STAND JETZT (2026-07-16, V4.67 gebaut)
+
+### Neu in V4.67: Inventar/Arsenal Stufe 2 (aus den User-Dumps vom 16.07.)
+DUMP-AUSWERTUNG (InventoryGrid 38 Nodes, Currency 111, ArmouryBoard 125;
+Bäume stehen komplett im dalamud.log, die Desktop-Datei wird pro Strg+F5
+ÜBERSCHRIEBEN - nur ArmouryBoard liegt noch auf Platte):
+- Item-Slots = DragDrop(17) mit Icon-Kind; GEFÜLLTE Slots wurden schon
+  gesprochen (Log 14:28: "7 mal Heiltrank", "Hanfbundhaube des Eifers" -
+  der generische Item-Slot-Leser im Fokus-Pfad greift).
+- LÜCKE 1: LEERE Slots (IconId=0) blieben stumm - Cursor-Bewegung nicht
+  von Stillstand unterscheidbar. FIX: Icon-/DragDrop-Komponente mit
+  IconId=0 sagt jetzt "Leer" (nur echte Slot-Typen; Icon-dekorierte
+  Controls wie ConfigSystem-Tabs haben echte IconIds bzw. matchen nur
+  über den Wrapper-Zweig und bleiben stumm).
+- LÜCKE 2: Arsenal-Kategorie-Reiter sind reine Icons ohne Text. FIX:
+  neuer OnArmouryBoardUpdate-Handler liest den Kategorie-Titel (Text-Node
+  id=121, Dump-verifiziert) - beim Öffnen angehängt ("Kategorie Kopf"),
+  bei Reiter-Wechsel per Interrupt.
+- Charakterfenster-Dump fehlt noch (User erwischte stattdessen Currency);
+  Ausrüstungs-Slots dort vermutlich gleiche Icon-Slot-Struktur - der
+  "Leer"-Fix gilt generisch, Test zeigt ob mehr nötig ist.
+V4.66-BEFUND aus demselben Log: Spiel hat ein eigenes Fenster "AUSRÜSTUNG
+OPTIMIEREN" (Addon RecommendEquip, Knöpfe Anlegen/Abbrechen wurden vom
+Fokus-Leser gesprochen) - User hat den Spielweg benutzt; Strg+F6/F7
+(EquipmentService) noch UNGETESTET.
+
+### Beim nächsten Start testen (V4.67)
+1. "Version 4 Punkt 67 bereit".
+2. Tasche öffnen, mit Numpad-Pfeilen über LEERE Felder: sagt er "Leer"?
+3. Arsenal öffnen: "Kategorie Kopf" (o.ä.) nach dem Fensternamen? Reiter
+   wechseln: neue Kategorie sofort angesagt?
+4. Strg+F6 (Ausrüstung vorlesen) und Strg+F7 (empfohlene anlegen) - beides
+   noch ungetestet aus V4.66.
+5. Charakterfenster öffnen + Strg+F5 (Dump fehlt noch; Fenster heißt im
+   Hauptmenü "Charakter").
+
+---
+
+## STAND V4.66 (2026-07-16 gebaut)
+
+### Neu in V4.66: Ausrüstung (Stufe 1 - datenbasiert, ohne UI)
+User-Wunsch: Inventar-/Rüstungs-/Arsenal-MENÜS barrierefrei + "optimale
+Rüstung anziehen". Stufe 1 jetzt, komplett ohne UI-Scraping:
+(1) NEU EquipmentService.cs. Strg+F6 = angelegte Ausrüstung vorlesen
+    ("Waffe: Bronzegladius. Kopf: ... X Plätze frei."). Quelle:
+    IGameInventory EquippedItems-Container; Slot-NAMEN kommen aus der
+    EquipSlotCategory-Zeile des jeweiligen Items (Sheet-Spalten ilspycmd-
+    verifiziert) - keine Slot-Index-Raterei.
+(2) Strg+F7 = EMPFOHLENE AUSRÜSTUNG ANLEGEN. Nutzt den SPIEL-EIGENEN
+    Optimierer (gleicher Code wie der Knopf im Charakterfenster):
+    UIModule.GetRecommendEquipModule -> SetupForClassJob(CurrentClassJobId)
+    -> IsUpdating abwarten (Timeout 3 s) -> EquipRecommendedGear. Alles
+    ilspycmd-verifiziert (game-api.md-würdig). Ergebnis-Ansage über
+    Vorher/Nachher-Vergleich der EquippedItems: "X Teile gewechselt" bzw.
+    "unverändert (schon optimal oder gerade nicht möglich)" - ehrliches
+    Feedback statt blindem Erfolgs-Claim (Kampf-Sperre etc.).
+STUFE 2 OFFEN (braucht F5-Dumps vom User): Navigation IN den Fenstern
+Inventar/Charakter/Arsenal (Cursor über Item-Slots sprechen - Slots haben
+keine Text-Nodes, Zuordnung Fokus-Slot -> Container-Index nötig, vgl.
+V4.46 InventoryEventGrid). Dump-Wunschliste: Tasche offen + Strg+F5,
+Charakterfenster offen + Strg+F5, Arsenal offen + Strg+F5.
+
+### Beim nächsten Start testen (V4.66)
+1. "Version 4 Punkt 66 bereit".
+2. Strg+F6: Ausrüstung wird mit Slot-Namen vorgelesen?
+3. Strg+F7: "Lege empfohlene Ausrüstung an" -> Ergebnis-Ansage? Bei
+   schlechterem Zeug in der Tasche: wird wirklich gewechselt (Strg+F6
+   danach zeigt neue Teile)?
+4. V4.65-Beacon: Ton leise bei fernem Ziel, lauter Richtung Ankunft?
+5. Für Stufe 2: Tasche/Charakter/Arsenal einzeln öffnen, jeweils Strg+F5
+   (Dump), Log/Desktop-Dateien an Claude.
+
+---
+
+## STAND V4.65 (2026-07-16 gebaut)
+
+### Neu in V4.65: Beacon-Lautstärke = Ziel-Distanz (User-Feedback aus V4.64-Test)
+V4.64 BESTÄTIGT (Log 10:33): Gehhilfe auf Strg+Numpad3 startet ("Gehhilfe an:
+Der einsame Leuchtturmwärter", 343 m, 15 Wegpunkte), Vorschau gesprochen,
+Wegpunkt-Erreichen + Skip-Ahead funktionieren (Sprung zu 3/15), Richtung ok.
+USER-FEEDBACK: Ton soll leiser sein, je weiter Wegpunkt/Ziel weg ist. Befund:
+Lautstärke hing am NÄCHSTEN WEGPUNKT (immer nah → dauernd laut, obwohl das
+Ziel 280 m entfernt war). FIX: Signale getrennt — Tonhöhe/Stereo steuern
+weiter zum Wegpunkt, die LAUTSTÄRKE folgt jetzt der Rest-Distanz zum ZIEL
+(leise = weit, schwillt bis zur Ankunft an). Kurve gestreckt: voll ≤5 m,
+linear bis 20 % ab 200 m (vorher 80 m — zu kurz für Quest-Distanzen);
+20-%-Boden hält den Ton hörbar. BeaconService.Update + Aufrufer, V4.65.
+
+### Beim nächsten Start testen (V4.65)
+1. "Version 4 Punkt 65 bereit".
+2. Gehhilfe zu fernem Ziel (Strg+Numpad3): Ton startet LEISE und wird auf
+   dem Weg zum Ziel stetig lauter? An Ecken ändert sich nur Tonhöhe/Seite,
+   nicht die Lautstärke?
+3. Restpunkte aus V4.63/64: Ecken-Führung um Hindernis, Wegpunkt-Ton +
+   Ankunfts-Doppelton, Questziel-Führung, Kompass-Check, Auto-Lauf-Vorschau.
+
+---
+
+## STAND V4.64 (2026-07-16 gebaut, in-game bestätigt)
+
+### Neu in V4.64: Gehhilfe-Taste repariert (Windows-NumLock-Umschalt-Falle)
+User-Test V4.63 (Log 2026-07-16 08:59): Umschalt+Numpad3 löste NICHTS aus —
+kein einziger [Nav]-Gehhilfe-Eintrag, während Strg+Numpad3 (Vorschau) sofort
+funktionierte ("Weg zu Verwirrter Fuhrmann, 10 Meter: 10 Meter nach Westen").
+ROOT CAUSE: Windows-Tastaturtreiber-Eigenheit — bei aktivem NumLock wird
+Umschalt+Numpad-Ziffer in die NAVIGATIONS-Taste umgewandelt (Numpad3 →
+Bild-ab, Umschalt künstlich losgelassen). Das Plugin sieht nie VK Numpad3;
+Bild-ab ist im Spiel obendrein CAMERA_ZOOMOUT. Die Gehhilfe war damit seit
+dem V4.61-Tastenumzug NIE auslösbar. Dokumentiert in game-api.md →
+"Safe Mod Keys" (Numpad-Ziffern nie mit Umschalt, nur mit Strg).
+FIX: Gehhilfe = Strg+Numpad3 (nachweislich ankommend, neben Auto-Lauf
+Numpad3), Routen-Vorschau = Strg+Numpad5 (Numpad5 hat die tastbare
+Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 laut Dump frei).
+Config-Migration V5→6 (Vorschau ZUERST von Strg+Numpad3 wegziehen, dann
+Gehhilfe drauf). Hilfe-Text (Strg+F1) aktualisiert.
+Version 4.64, Build 0 Fehler/0 Warnungen, Deploy bestätigt.
+
+### Beim nächsten Start testen (V4.64)
+1. "Version 4 Punkt 64 bereit".
+2. GEHHILFE: Ziel mit N wählen, dann STRG+Numpad3 — kommt jetzt
+   "Gehhilfe an: <Name>" + Beacon + Routen-Vorschau?
+3. VORSCHAU: STRG+Numpad5 — "Weg zu <Name>, X Meter ..."?
+4. Restliche Testpunkte aus V4.63 unten (Ecken-Führung, Questziel-Führung,
+   Abkürzen/Re-Route, Kompass-Check, Auto-Lauf-Vorschau).
+
+---
+
+## STAND V4.63 (2026-07-16 gebaut, Wegpunkt-Routing)
+
+### Neu in V4.63: Wegpunkt-Routing (Routen-Vorschau + pfadbasierte Gehhilfe)
+Auftrag: Offener Verdent-Wunsch vom 15.07. — "ansagen über welche Wegpunkte
+man den gewünschten Punkt erreicht" und "manuell über mehrere Wegpunkte,
+um Hindernisse herum". Umsetzung nach dem extern gelieferten Ratgeber
+docs-de/ideen/ff14-route-guidance-guide.md (KOTOR-Mod-Team) plus Verdents
+docs/manuelle-navigation-konzept.md.
+
+WICHTIGE KORREKTUR am Konzeptdokument: vnavmesh `Nav.Pathfind` gibt
+`Task<List<Vector3>>` zurück, NICHT `List<Vector3>` (ilspycmd an der
+installierten DLL, 2026-07-16: QueryPathBasic ist async). Der Task wird
+pro Frame gepollt, nie blockiert. Dokumentiert in game-api.md.
+
+NEUE TEILE:
+(1) RouteService.cs (neu): Nav.Pathfind-IPC (reine Abfrage, KEINE
+    Auto-Bewegung) + Segment-Builder für die Sprach-Vorschau: Wegpunkt-
+    Hops werden in 8 Kompass-Sektoren gefaltet (gleiche Richtung =
+    zusammengelegt, Hops unter 1 m wandern in den nächsten Abschnitt =
+    Mesh-Zittern raus), max. 4 gesprochene Segmente, danach "dann weiter".
+    Ansage: "Weg zu Ätheryt, 62 Meter: 25 Meter nach Norden, dann 30
+    Meter nach Nordosten, dann weiter."
+    Kompass-Konvention Norden=−Z/Osten=+X hergeleitet aus der verifizierten
+    Pixel→Welt-Formel + genordeter Spielkarte (game-api.md, neue Sektion);
+    jede Vorschau loggt Segment 1 samt Rohvektor als Prüfpunkt.
+(2) ROUTEN-VORSCHAU auf Strg+Numpad3 (neben Numpad3=Auto-Lauf und
+    Umschalt+Numpad3=Gehhilfe; Numpad3-Kombis laut Keybind-Dump frei,
+    kein NVDA-Konflikt bei NumLock an): sagt den Weg zum gewählten Ziel
+    an OHNE zu laufen — Questmarker/Wegpunkt aus dem Objekt-Browser oder
+    aktuelles Spielziel. Bei "kein Weg": Aethernet-Tipp wie beim Auto-Lauf
+    (BuildNoPathHint ist dafür von AutoWalkService nach PlacesService
+    umgezogen, ein gemeinsamer Code-Pfad).
+(3) GEHHILFE PFADBASIERT (Kern-Upgrade): Beacon + Richtungsansagen
+    verfolgen den NÄCHSTEN Wegpunkt der vnavmesh-Route statt der Luftlinie
+    — um eine Ecke zeigt der Ton auf die Ecke statt in die Wand.
+    Beim Start: Kompass-Vorschau der Route. Danach ereignisgesteuert:
+    Wegpunkt erreicht (3-m-Radius) → kurzer hoher Ton (CueService, 1568 Hz,
+    mittig) + EINE Ansage zum nächsten Abschnitt relativ zur Blickrichtung
+    ("15 Meter, leicht links", bei >1,5 m Höhenunterschied "aufwärts"/
+    "abwärts"); dazwischen nur alle 5 s eine Wiederhol-Ansage (vorher
+    stur alle 2 s dasselbe). Skip-Ahead: wer die Ecke schneidet oder schon
+    nahe einem SPÄTEREN Wegpunkt ist, wird nicht zurückgeschickt (Cursor
+    springt still weiter). Drift-Re-Route: >10 m neben der Route (oder
+    Ziel-NPC >10 m weitergelaufen) → stilles Neu-Berechnen, Ansage nur
+    wenn sich die Richtung dadurch ändert ("Neuer Weg: rechts.").
+    Ankunft: fallender Doppelton + "Ziel erreicht" wie bisher.
+    Ohne vnavmesh/ohne Route: alte Luftlinien-Führung als Fallback
+    ("Kein Wegenetz, führe in Luftlinie."), Config-Schalter
+    WalkGuideRouteMode=false erzwingt sie. Neue Config RouteCueVolume.
+(4) GEHHILFE KANN JETZT AUCH MARKER-ZIELE: Quest-Ziele, Wegpunkte,
+    Ätheryten aus dem Objekt-Browser (vorher nur echte Spielobjekte;
+    Fremdzonen-Quests führen zum Übergang, wie beim Auto-Lauf). Die
+    Ziel-Auflösung (Zonen-Check, Übergangs-Routing, Navmesh-Höhe) ist
+    dafür in Plugin.cs zu TryResolveMarkerDestination zusammengezogen —
+    Auto-Lauf, Gehhilfe und Vorschau nutzen denselben Code.
+(5) AUTO-LAUF sagt beim Start jetzt einmal die Routen-Vorschau an
+    (liest die schon vorhandene Path.ListWaypoints-Diagnose); der
+    3-s-Fortschritts-Timer startet 5 s später, damit er die Vorschau
+    nicht abschneidet.
+Version 4.63 (csproj + Plugin.cs synchron), Build 0 Fehler/0 Warnungen,
+Deploy nach devPlugins bestätigt. Commit steht noch aus (erst testen).
+
+### Beim nächsten Start testen (V4.63)
+1. "Version 4 Punkt 63 bereit".
+2. VORSCHAU: Mit N ein Ziel wählen (z.B. NPC ~50 m weg), Strg+Numpad3:
+   kommt "Weg zu <Name>, X Meter: ... nach <Himmelsrichtung> ..."?
+   KOMPASS-CHECK: bei einem Ziel mit bekannter Richtung prüfen ob die
+   Himmelsrichtung stimmt (Log [Route] zeigt Segment 1 + Vektor —
+   falls gespiegelt, bitte Log schicken).
+3. GEHHILFE UM ECKE: Ziel hinter einer Ecke/Mauer wählen,
+   Umschalt+Numpad3: Vorschau kommt? Beacon zeigt zur ECKE (nicht in
+   die Wand)? An der Ecke: kurzer hoher Ton + neue Richtungsansage?
+   Am Ziel: fallender Ton + "Ziel erreicht"?
+4. GEHHILFE MIT QUESTZIEL: Kategorie Quest-Ziele (Strg+N), Ziel wählen,
+   Umschalt+Numpad3 — führt die Gehhilfe? (Vorher ging das gar nicht.)
+5. ABKÜRZEN: Beim geführten Laufen absichtlich neben dem Weg laufen
+   (>10 m): sagt er nach ein paar Sekunden neue Richtung an bzw. führt
+   ohne Streit weiter? Kein Ansage-Spam?
+6. AUTO-LAUF: Numpad3 wie gewohnt — zusätzlich einmal die Weg-Vorschau
+   nach "Laufe zu ..."? Fortschritt "Noch X Meter" kommt weiter?
+7. OHNE ROUTE: Ziel auf getrennter Mesh-Insel (z.B. andere Stadt-Ebene):
+   Gehhilfe sagt "Kein Weg gefunden, führe in Luftlinie" + Aethernet-Tipp?
+8. V4.62-REST (falls noch nicht getestet): Sprint ohne Countdown-Spam,
+   kein "+Sprint"/Kampfzahlen-Spam, Login unverändert.
+
+---
+
+## STAND V4.62 (2026-07-15 gebaut)
 
 ### Neu in V4.62: Ansage-Spam gefiltert (_StatusCustom0-Sprint-Countdown, _FlyText)
 Auftrag: Top-5-Punkt 1 aus docs/verbesserungsvorschlaege.md umsetzen, aber NUR

@@ -15,8 +15,15 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyPrevObject   = "Umschalt+N";       // Objekt-Browser: vorheriges Objekt
     public string KeyCategory     = "Strg+N";           // Objekt-Browser: Kategorie vorwärts
     public string KeyCategoryPrev = "Strg+Umschalt+N";  // Objekt-Browser: Kategorie zurück (Umschalt = rückwärts, wie N/Umschalt+N; Strg+Alt+N war NVDA-Start-Hotkey!)
-    public string KeyWalkGuide    = "Umschalt+Numpad3"; // Gehhilfe an/aus (neben Auto-Lauf Numpad3; Numpad3-Kombis laut Keybind-Dump frei)
+    // WINDOWS-FALLE Umschalt+Nummernblock: bei aktivem NumLock wandelt der
+    // Tastaturtreiber Umschalt+Numpad-Ziffer in die NAVIGATIONS-Taste um
+    // (Numpad3 -> Bild-ab) und laesst Umschalt dabei kuenstlich los - das
+    // Plugin sieht NIE VK Numpad3 (Log 2026-07-16: kein einziger
+    // Gehhilfe-Trigger seit dem V4.61-Umzug; Bild-ab ist im Spiel obendrein
+    // CAMERA_ZOOMOUT). Nur Strg+Numpad-Kombis sind zuverlaessig.
+    public string KeyWalkGuide    = "Strg+Numpad3";     // Gehhilfe an/aus (neben Auto-Lauf Numpad3; Strg+Numpad3 laut Keybind-Dump frei)
     public string KeyAutoWalk     = "Numpad3";          // Auto-Lauf zum Ziel an/aus (braucht vnavmesh)
+    public string KeyRoutePreview = "Strg+Numpad5";     // Routen-Vorschau: Weg ansagen ohne zu laufen (Numpad5 hat die tastbare Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 frei)
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
     public string KeyCombatStatus = "Strg+H";           // HP/MP ansagen (H=Health; bare H ist im Spiel MENU_CRAFT, Modifier+H laut Keybind-Dump frei)
@@ -30,6 +37,8 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyEmotePrev     = "Umschalt+F4";     // Emote-Browser: vorheriges Emote ansagen
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
     public string KeyBestiary      = "Strg+F4";         // Bestiarium (Jagdtagebuch) komplett vorlesen (Strg+F4 laut Keybind-Dump frei)
+    public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
+    public string KeyEquipBest     = "Strg+F7";         // Empfohlene Ausrüstung anlegen - Spiel-eigener Optimierer (Strg+F7 laut Keybind-Dump frei)
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -42,6 +51,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyCategoryPrev = defaults.KeyCategoryPrev;
         KeyWalkGuide    = defaults.KeyWalkGuide;
         KeyAutoWalk     = defaults.KeyAutoWalk;
+        KeyRoutePreview = defaults.KeyRoutePreview;
         KeyReadUI       = defaults.KeyReadUI;
         KeySilence      = defaults.KeySilence;
         KeyCombatStatus = defaults.KeyCombatStatus;
@@ -55,6 +65,8 @@ public sealed class Configuration : IPluginConfiguration
         KeyEmotePrev     = defaults.KeyEmotePrev;
         KeyEmoteDo       = defaults.KeyEmoteDo;
         KeyBestiary      = defaults.KeyBestiary;
+        KeyReadEquipment = defaults.KeyReadEquipment;
+        KeyEquipBest     = defaults.KeyEquipBest;
     }
 
     // Chat
@@ -71,6 +83,11 @@ public sealed class Configuration : IPluginConfiguration
     public float NearbyDistance = 30f;
     public bool AnnounceTargetChanges = true;   // Zielwechsel (Tab/F1-F12) ansagen
     public float BeaconVolume = 0.35f;          // Gehhilfe-Ton: 0 = stumm, 1 = volle Lautstärke
+
+    // Gehhilfe (V4.63): Beacon und Ansagen folgen der vnavmesh-Wegpunkt-Route
+    // (um Hindernisse herum) statt der Luftlinie. false = alte Luftlinien-Führung.
+    public bool WalkGuideRouteMode = true;
+    public float RouteCueVolume = 0.4f;         // Wegpunkt-/Ankunftston der Gehhilfe: 0 = stumm
 
     // Auto-Lauf: wie nah vnavmesh vor dem Ziel anhält (Meter)
     public float AutoWalkPlaceStopRange = 1.0f;      // Orte, Wegpunkte, Questziele: dicht dran

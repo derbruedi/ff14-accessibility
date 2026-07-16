@@ -66,11 +66,16 @@ public sealed class BeaconService : IDisposable
     }
 
     /// <summary>
-    /// Feeds the current relative angle to the target (degrees, 0 = straight
-    /// ahead, positive = right - sign convention under verification, see
-    /// NavigationService.RelativeAngle) and the distance in yalms/meters.
+    /// Feeds the current relative angle to the steering point (degrees, 0 =
+    /// straight ahead, positive = right; verified, see
+    /// NavigationService.RelativeAngle) and the remaining distance to the
+    /// FINAL destination in yalms/meters. The two signals are separate on
+    /// purpose (user request 2026-07-16): pitch/pan steer towards the next
+    /// waypoint, the volume tracks journey progress - quiet when the goal is
+    /// far, swelling towards arrival. Tying the volume to the waypoint made
+    /// the tone permanently loud (waypoints are always near).
     /// </summary>
-    public void Update(double relAngleDegrees, float distance)
+    public void Update(double relAngleDegrees, float distanceToDestination)
     {
         var provider = _provider;
         if (provider == null) return;
@@ -85,9 +90,10 @@ public sealed class BeaconService : IDisposable
         // (behind is encoded by the low pitch, not the pan).
         provider.Pan = (float)Math.Sin(relAngleDegrees * Math.PI / 180.0);
 
-        // Louder when close: full volume at 5 m and below, fading linearly
-        // to 20% at 80 m and beyond (browser range is 100 m).
-        provider.DistanceFactor = Math.Clamp(1f - (distance - 5f) / 75f * 0.8f, 0.2f, 1f);
+        // Louder when close to the DESTINATION: full volume at 5 m and below,
+        // fading linearly to 20% at 200 m and beyond (quest goals sit hundreds
+        // of metres out; the 20% floor keeps the tone audible for steering).
+        provider.DistanceFactor = Math.Clamp(1f - (distanceToDestination - 5f) / 195f * 0.8f, 0.2f, 1f);
     }
 
     public void Dispose() => Stop();

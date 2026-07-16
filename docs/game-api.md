@@ -160,6 +160,15 @@ Zusammenfassung des offiziellen Handbuchs. VORBEHALT: Sonderzeichen-Tasten
   Umschalt+F1…F12 ebenfalls frei (belegt: Umschalt+Tab/T/F/M/V)
 - Einschränkung: bare SHIFT/CONTROL sind im BARDEN-MUSIKMODUS Oktav-Tasten
   (PERFORMANCE_MODE_*) — Strg-Kombis dort vermeiden
+- **WINDOWS-FALLE Umschalt+Nummernblock (entdeckt 2026-07-16):** bei aktivem
+  NumLock wandelt der Windows-Tastaturtreiber Umschalt+Numpad-ZIFFER in die
+  Navigations-Taste um (Numpad3 → Bild-ab/VK_NEXT) und lässt Umschalt dabei
+  künstlich los — IKeyState sieht NIE die Numpad-VK. Beleg: Gehhilfe auf
+  Umschalt+Numpad3 (V4.61–V4.63) hat laut Log kein einziges Mal gefeuert,
+  während Strg+Numpad3 (Routen-Vorschau) sofort ankam. Bild-ab ist im Spiel
+  obendrein CAMERA_ZOOMOUT. ⇒ Numpad-Ziffern NIE mit Umschalt kombinieren,
+  nur mit Strg. Strg+Numpad2/4/6/8 sind vom Spiel belegt (Allianz-/
+  Gegnerlisten-Cursor); Strg+Numpad1/3/5/7/9 frei.
 - Plugin-Tasten seit V4.21 (Config-Migration V1→V2): N=Objekte nah,
   Umschalt+N=Richtung, Strg+N=Ziel verfolgen, Strg+Umschalt+N=Verfolgung aus,
   Strg+F1=Hilfe, Strg+F2=Fenster, Strg+F5=UI-Dump, Strg+F10=Menü vorlesen,
@@ -230,6 +239,32 @@ Zusammenfassung des offiziellen Handbuchs. VORBEHALT: Sonderzeichen-Tasten
   wirft der INVOKE (IpcNotReadyError) — Subscriben ist immer gefahrlos.
 - Pfadziel ist ein PUNKT (Position beim Start) — bewegte NPCs laufen weg,
   ggf. neu starten.
+- WICHTIG `Nav.Pathfind(Vector3 from, Vector3 to, bool fly)`: reine
+  Wegpunkt-ABFRAGE ohne Auto-Bewegung, aber der Rückgabetyp ist
+  **`Task<List<Vector3>>`**, NICHT `List<Vector3>` (ilspycmd 2026-07-16
+  an der installierten vnavmesh.dll: das IPC-Gate wrappt
+  `NavmeshManager.QueryPathBasic`, eine `async`-Methode). Subscriber:
+  `GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>`;
+  Task pro Frame pollen (`IsCompletedSuccessfully` prüfen — Task kann
+  faulten wenn das Mesh beim Zonenwechsel entlädt), NIE blockierend
+  `.Result` vor Abschluss. `Nav.PathfindInProgress`/`Nav.PathfindNumQueued`
+  melden den Queue-Zustand; mehrere Anfragen werden intern nacheinander
+  abgearbeitet (`ExecuteWhenIdle`). Verdents Konzeptdokument
+  (manuelle-navigation-konzept.md) gibt hier fälschlich `List<Vector3>` an.
+- QueryPath wirft eine Exception, wenn kein Mesh geladen ist — vor dem
+  Invoke `Nav.IsReady` prüfen (RouteService macht das).
+
+### Kompass-Konvention Welt→Himmelsrichtung (hergeleitet 2026-07-16)
+- Norden = −Z, Osten = +X. Herleitung aus verifizierten Fakten: die
+  Pixel→Welt-Formel (oben) bildet Karten-Pixel-X→Welt-X und
+  Karten-Pixel-Y→Welt-Z GLEICHSINNIG ab; Kartenbilder haben den Ursprung
+  oben links (Pixel-Y wächst nach unten); die Spielkarte ist genordet
+  (Norden oben). ⇒ Peilung ab Nord = `atan2(dx, −dz)` (0°=N, 90°=O).
+- Genutzt von RouteService (Routen-Vorschau „25 Meter nach Norden").
+  Jede Vorschau loggt Segment 1 samt Vektor ([Route]) — eine gespiegelte
+  Achse würde beim ersten Praxistest im Log sichtbar.
+- Spieler-Blickrichtung: rot=0 ⇒ Blickvektor (sin 0, cos 0) = (0,0,1) =
+  +Z = SÜDEN (folgt aus obiger Konvention + verifiziertem Blickvektor).
 
 ### Quest-Marker mit Welt-Position (ilspycmd-verifiziert 2026-07-10)
 Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,

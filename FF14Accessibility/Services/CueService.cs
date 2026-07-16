@@ -28,14 +28,37 @@ public sealed class CueService : IDisposable
     }
 
     /// <summary>
-    /// Plays the "enemy targeted" cue: a short two-note blip. No-op when the
-    /// cue is disabled in the config or the audio device is unavailable.
+    /// Plays the "enemy targeted" cue: a short two-note rising blip. No-op when
+    /// the cue is disabled in the config or the audio device is unavailable.
     /// </summary>
     public void PlayTargetTone()
     {
         if (!_config.EnableTargetTone) return;
         if (!EnsureOutput()) return;
-        _provider!.Trigger(_config.TargetToneVolume);
+        _provider!.Trigger(_config.TargetToneVolume, 990f, 1320f);
+    }
+
+    /// <summary>
+    /// Walk-guide waypoint reached: one short steady high note, kept clear of
+    /// the beacon range (220-880 Hz) and the rising enemy cue. Centered and
+    /// non-positional on purpose - the player is standing on the waypoint.
+    /// </summary>
+    public void PlayWaypointTone()
+    {
+        if (_config.RouteCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.RouteCueVolume, 1568f, 1568f);
+    }
+
+    /// <summary>
+    /// Walk-guide final arrival: a falling two-note blip (mirror of the enemy
+    /// cue) so "done" sounds distinct from "next waypoint".
+    /// </summary>
+    public void PlayArrivalTone()
+    {
+        if (_config.RouteCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.RouteCueVolume, 1320f, 990f);
     }
 
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
@@ -77,31 +100,34 @@ public sealed class CueService : IDisposable
 
 /// <summary>
 /// Generates one-shot cues on the NAudio playback thread. Outputs silence
-/// until <see cref="Trigger"/> queues a blip; the blip is a two-note rising
-/// chirp (short, distinct from the beacon's steady beep). The trigger fields
-/// are written from the framework thread and read on the audio thread.
+/// until <see cref="Trigger"/> queues a blip; a blip is two 70 ms notes whose
+/// frequencies the caller picks per cue (rising = enemy targeted, steady high
+/// = waypoint reached, falling = arrived). The trigger fields are written
+/// from the framework thread and read on the audio thread.
 /// </summary>
 internal sealed class CueSampleProvider : ISampleProvider
 {
     private const int Rate = 44100;
     private const int NoteSamples = Rate * 70 / 1000;   // 70 ms per note
-    private const int TotalSamples = NoteSamples * 2;    // two rising notes
+    private const int TotalSamples = NoteSamples * 2;    // two notes per cue
     private const int RampSamples = Rate * 4 / 1000;     // 4 ms fade to avoid clicks
-
-    // Two-note rising chirp; kept clear of the beacon's 220-880 Hz range.
-    private const float Note1 = 990f;
-    private const float Note2 = 1320f;
 
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2);
 
     private volatile float _volume;
+    private volatile float _note1 = 990f;
+    private volatile float _note2 = 1320f;
     private volatile int _remaining;   // samples left to play; 0 = silent
     private double _phase;
 
-    /// <summary>Queues a single cue at the given volume (0..1). Restarts if already playing.</summary>
-    public void Trigger(float volume)
+    /// <summary>Queues a single two-note cue at the given volume (0..1) and
+    /// note frequencies (keep clear of the beacon's 220-880 Hz range).
+    /// Restarts if already playing.</summary>
+    public void Trigger(float volume, float note1, float note2)
     {
         _volume = Math.Clamp(volume, 0f, 1f);
+        _note1 = note1;
+        _note2 = note2;
         _phase = 0;
         _remaining = TotalSamples;
     }
@@ -116,7 +142,7 @@ internal sealed class CueSampleProvider : ISampleProvider
             if (remaining > 0)
             {
                 var pos = TotalSamples - remaining;
-                var freq = pos < NoteSamples ? Note1 : Note2;
+                var freq = pos < NoteSamples ? _note1 : _note2;
                 _phase += 2.0 * Math.PI * freq / Rate;
                 if (_phase > 2.0 * Math.PI) _phase -= 2.0 * Math.PI;
                 sample = (float)Math.Sin(_phase) * Envelope(pos) * _volume;

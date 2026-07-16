@@ -1,3 +1,4 @@
+using System.Numerics;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -33,9 +34,11 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CueService         _cue;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
+    private readonly EquipmentService   _equipment;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
     private readonly BestiaryService    _bestiary;
+    private readonly RouteService       _routes;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
@@ -46,8 +49,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.62";
-    private const string PluginVersionTag = "Ansage-Spam gefiltert: _StatusCustom0-Sprint-Countdown und _FlyText-Kampfzahlen standardmaessig stumm (konfigurierbar in Configuration.cs), Login-Ansagen unveraendert";
+    private const string PluginVersion    = "4.67";
+    private const string PluginVersionTag = "Inventar/Arsenal: leere Slots sagen 'Leer', Arsenal sagt die Kategorie beim Oeffnen und bei Reiter-Wechsel an";
 
     public Plugin()
     {
@@ -88,17 +91,32 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 5;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.Version < 6)
+        {
+            // V4.64: Umschalt+Numpad3 never reached the plugin - with NumLock on,
+            // Windows turns Shift+numpad-digit into the NAVIGATION key (Numpad3
+            // -> PageDown, shift artificially released), so the walk guide was
+            // untriggerable since V4.61 (log 2026-07-16, see Configuration.cs).
+            // Only Ctrl+numpad combos arrive reliably. Order matters: free up
+            // Strg+Numpad3 (route preview) before handing it to the walk guide.
+            if (_config.KeyRoutePreview == "Strg+Numpad3") _config.KeyRoutePreview = "Strg+Numpad5";
+            if (_config.KeyWalkGuide == "Umschalt+Numpad3") _config.KeyWalkGuide = "Strg+Numpad3";
+            _config.Version = 6;
+            PluginInterface.SavePluginConfig(_config);
+        }
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
         _tolk       = new TolkService(Log);
         _beacon       = new BeaconService(_config, _tolk, Log);
         _cue          = new CueService(_config, Log);
         _hotbar       = new HotbarService(DataManager, _tolk, Log);
         _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
+        _equipment    = new EquipmentService(GameInventory, DataManager, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, DataManager, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, Log);
+        _routes       = new RouteService(PluginInterface, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _bestiary, _config);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
@@ -190,6 +208,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Kategorie zurück",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
+            ("Routen-Vorschau",   _config.KeyRoutePreview),
             ("Menü vorlesen",  _config.KeyReadUI),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
@@ -203,6 +222,8 @@ public sealed class Plugin : IDalamudPlugin
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
             ("Bestiarium",     _config.KeyBestiary),
+            ("Ausrüstung",     _config.KeyReadEquipment),
+            ("Beste Ausrüstung", _config.KeyEquipBest),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -227,7 +248,7 @@ public sealed class Plugin : IDalamudPlugin
         // Freie Tasten laut Keybind-Dump 2026-07-10 (N = einziger freier BARE
         // Buchstabe). H und L sind bare belegt (MENU_CRAFT / MENU_LINKSHELL),
         // aber mit Modifier frei - nur so (Strg+H, Strg+L) konfiguriert.
-        ["N"] = 0x4E, ["H"] = 0x48, ["L"] = 0x4C, ["Numpad3"] = 0x63,
+        ["N"] = 0x4E, ["H"] = 0x48, ["L"] = 0x4C, ["Numpad3"] = 0x63, ["Numpad5"] = 0x65,
     };
 
     private readonly bool[] _keyWasDown     = new bool[256];
@@ -319,80 +340,46 @@ public sealed class Plugin : IDalamudPlugin
             // Walk guide and auto-walk are mutually exclusive - only one at a time.
             // (Only the walk guide sounds the beacon; auto-walk is silent.)
             _autoWalk.StopQuiet();
-            _navigation.ToggleWalkGuide();
+            if (_navigation.IsWalkGuideActive)
+            {
+                _navigation.ToggleWalkGuide(); // second press: off
+            }
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop))
+            {
+                // Marker destinations (quest objectives, map waypoints) work in
+                // the walk guide too since V4.63 - manual walking was
+                // game-target-only before.
+                case MarkerResolve.Resolved: _navigation.StartWalkGuideToPosition(pos, name, stop); break;
+                case MarkerResolve.None:     _navigation.ToggleWalkGuide();                         break;
+                case MarkerResolve.Failed:   break; // reason already announced
+            }
         }
         if (IsJustPressed(_config.KeyAutoWalk))
         {
             _navigation.StopWalkGuideQuiet();
             var bestiaryMonster = _uiReader.SelectedBestiaryMonster;
-            var quest = _navigation.SelectedQuestDestination;
-            var place = _navigation.SelectedPlaceDestination;
             if (bestiaryMonster != null)
             {
                 // Bestiary open with a monster row focused: track it - walk to
                 // the nearest live one, or tell the user where it lives.
                 TrackBestiaryMonster(bestiaryMonster);
             }
-            else if (quest != null)
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop))
             {
-                if (quest.TerritoryTypeId != ClientState.TerritoryType)
-                {
-                    // Fresh zone check at press time - the flag from selection
-                    // time is stale after teleports/zone changes. Quest is in
-                    // another zone: walk to the transition that leads there
-                    // (route over the static map graph) instead of refusing.
-                    var hop = _places.FindFirstHopToMap(quest.MapId, out _);
-                    if (hop == null)
-                    {
-                        _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.");
-                    }
-                    else
-                    {
-                        var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-                        var floor   = _autoWalk.ResolveFloorPoint(hop.Position with { Y = playerY });
-                        if (floor == null)
-                            // Transition: stop almost on the marker so the zone line triggers.
-                            _tolk.SpeakInterrupt($"Kein begehbarer Punkt am {hop.Name} gefunden.");
-                        else
-                            _autoWalk.ToggleToPosition(floor.Value, hop.Name, _config.AutoWalkTransitionStopRange);
-                    }
-                }
-                else
-                {
-                    // Snap the marker onto the walkable mesh so the tight stop
-                    // range can be met (marker centres can sit off the mesh);
-                    // fall back to the raw position if no floor is found.
-                    var floor = _autoWalk.ResolveFloorPoint(quest.Position) ?? quest.Position;
-                    var stop  = quest.Radius > 0f
-                        ? MathF.Max(_config.AutoWalkPlaceStopRange, quest.Radius)
-                        : _config.AutoWalkPlaceStopRange;
-                    _autoWalk.ToggleToPosition(floor, quest.QuestName, stop);
-                }
+                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop); break;
+                case MarkerResolve.None:     _autoWalk.Toggle();                          break;
+                case MarkerResolve.Failed:   break; // reason already announced
             }
-            else if (place != null)
+        }
+        if (IsJustPressed(_config.KeyRoutePreview))
+        {
+            // Speak the route (compass segments) without walking - to the
+            // selected marker destination, or to the current game target.
+            switch (TryResolveMarkerDestination(out var pos, out var name, out _))
             {
-                // Map markers are 2D - resolve the walkable height via the
-                // navmesh first (player height as search origin).
-                var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-                var approx  = place.Position with { Y = playerY };
-                var floor   = _autoWalk.ResolveFloorPoint(approx);
-                if (floor == null)
-                {
-                    _tolk.SpeakInterrupt($"Kein begehbarer Punkt bei {place.Name} gefunden.");
-                }
-                else
-                {
-                    // Transitions get an extra-tight range so the player walks
-                    // right into the zone line; other places stop on the spot.
-                    var stop = place.IsZoneTransition
-                        ? _config.AutoWalkTransitionStopRange
-                        : _config.AutoWalkPlaceStopRange;
-                    _autoWalk.ToggleToPosition(floor.Value, place.Name, stop);
-                }
-            }
-            else
-            {
-                _autoWalk.Toggle();
+                case MarkerResolve.Resolved: _navigation.PreviewRoute(pos, name); break;
+                case MarkerResolve.None:     _navigation.PreviewRouteToTarget();  break;
+                case MarkerResolve.Failed:   break; // reason already announced
             }
         }
         if (IsJustPressed(_config.KeyReadUI))        _uiReader.ReadCurrentFocus();
@@ -411,6 +398,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
         if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
+        if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
+        if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 — UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
@@ -419,6 +408,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
+        _equipment.Update();
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk
         // target announcements are muted (soft-target churn while passing NPCs).
@@ -466,6 +456,94 @@ public sealed class Plugin : IDalamudPlugin
         // Controller D-Pad Links/Rechts: SelectYesno Ja↔Nein
         if (GamepadState.Pressed(GamepadButtons.DpadLeft)  > 0) _uiReader.NavigateGamepad(-1);
         if (GamepadState.Pressed(GamepadButtons.DpadRight) > 0) _uiReader.NavigateGamepad(+1);
+    }
+
+    private enum MarkerResolve
+    {
+        /// <summary>No marker destination selected - callers fall back to the game target.</summary>
+        None,
+        /// <summary>Walkable position resolved (out parameters are valid).</summary>
+        Resolved,
+        /// <summary>A marker is selected but unusable; the reason was announced.</summary>
+        Failed,
+    }
+
+    /// <summary>
+    /// Resolves the marker destination selected in the object browser (quest
+    /// objective or map waypoint) into a walkable world position. Shared by
+    /// auto-walk, walk guide and route preview so all three reach the same
+    /// spot. Cross-zone quests resolve to the first transition on the route
+    /// (fresh zone check at press time - the flag from selection time is stale
+    /// after teleports); 2D map markers get their height from the navmesh.
+    /// </summary>
+    private MarkerResolve TryResolveMarkerDestination(out Vector3 position, out string name, out float stopRange)
+    {
+        position = default;
+        name = string.Empty;
+        stopRange = _config.AutoWalkPlaceStopRange;
+
+        var quest = _navigation.SelectedQuestDestination;
+        var place = _navigation.SelectedPlaceDestination;
+
+        if (quest != null)
+        {
+            if (quest.TerritoryTypeId != ClientState.TerritoryType)
+            {
+                // Quest is in another zone: walk to the transition that leads
+                // there (route over the static map graph) instead of refusing.
+                var hop = _places.FindFirstHopToMap(quest.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.");
+                    return MarkerResolve.Failed;
+                }
+                var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var floor   = _autoWalk.ResolveFloorPoint(hop.Position with { Y = playerY });
+                if (floor == null)
+                {
+                    _tolk.SpeakInterrupt($"Kein begehbarer Punkt am {hop.Name} gefunden.");
+                    return MarkerResolve.Failed;
+                }
+                position = floor.Value;
+                name = hop.Name;
+                // Transition: stop almost on the marker so the zone line triggers.
+                stopRange = _config.AutoWalkTransitionStopRange;
+                return MarkerResolve.Resolved;
+            }
+
+            // Snap the marker onto the walkable mesh so the tight stop range
+            // can be met (marker centres can sit off the mesh); fall back to
+            // the raw position if no floor is found.
+            position = _autoWalk.ResolveFloorPoint(quest.Position) ?? quest.Position;
+            name = quest.QuestName;
+            stopRange = quest.Radius > 0f
+                ? MathF.Max(_config.AutoWalkPlaceStopRange, quest.Radius)
+                : _config.AutoWalkPlaceStopRange;
+            return MarkerResolve.Resolved;
+        }
+
+        if (place != null)
+        {
+            // Map markers are 2D - resolve the walkable height via the
+            // navmesh first (player height as search origin).
+            var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+            var floor   = _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY });
+            if (floor == null)
+            {
+                _tolk.SpeakInterrupt($"Kein begehbarer Punkt bei {place.Name} gefunden.");
+                return MarkerResolve.Failed;
+            }
+            position = floor.Value;
+            name = place.Name;
+            // Transitions get an extra-tight range so the player walks right
+            // into the zone line; other places stop on the spot.
+            stopRange = place.IsZoneTransition
+                ? _config.AutoWalkTransitionStopRange
+                : _config.AutoWalkPlaceStopRange;
+            return MarkerResolve.Resolved;
+        }
+
+        return MarkerResolve.None;
     }
 
     /// <summary>
@@ -519,8 +597,9 @@ public sealed class Plugin : IDalamudPlugin
             "Umschalt+N, vorheriges Objekt. " +
             "Strg+N, Kategorie vorwärts. " +
             "Strg+Umschalt+N, Kategorie zurück. " +
-            "Umschalt+Nummernblock 3, Gehhilfe an oder aus. " +
+            "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
             "Nummernblock 3, automatisch zum Ziel laufen. " +
+            "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
             "F, zum Ziel hindrehen. W, laufen. " +
             "Strg+F1, diese Hilfe. " +
             "Strg+F2, aktives Fenster. " +
@@ -528,6 +607,8 @@ public sealed class Plugin : IDalamudPlugin
             "Strg+F11, Sprache stoppen. " +
             "Strg+H, HP und MP ansagen. " +
             "Strg+F9, Aktionsleiste 1 vorlesen. " +
+            "Strg+F6, angelegte Ausrüstung vorlesen. " +
+            "Strg+F7, empfohlene Ausrüstung anlegen. " +
             "Befehle: " +
             "/acc nav, Richtung zum Ziel. " +
             "/acc set, Aktuelles Ziel verfolgen. " +

@@ -28,6 +28,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly TolkService _tolk;
     private readonly Configuration _config;
     private readonly PlacesService _places;
+    private readonly RouteService _routes;
     private readonly IPluginLog _log;
 
     private readonly ICallGateSubscriber<bool> _navIsReady;
@@ -78,6 +79,7 @@ public sealed class AutoWalkService : IDisposable
         TolkService tolk,
         Configuration config,
         PlacesService places,
+        RouteService routes,
         IPluginLog log)
     {
         _objectTable = objectTable;
@@ -86,6 +88,7 @@ public sealed class AutoWalkService : IDisposable
         _tolk = tolk;
         _config = config;
         _places = places;
+        _routes = routes;
         _log = log;
 
         // Subscribing is always safe - the gates only fail on INVOKE while
@@ -349,14 +352,15 @@ public sealed class AutoWalkService : IDisposable
             _lastMoveAt = now;
         }
 
-        // DIAGNOSTIC (temporary, remove once the zone-transition stall is
-        // understood): dump the path vnavmesh is actually following.
-        //  - once, when the route first appears: the full waypoint list plus
-        //    how far its LAST point sits from our target. Last-point-near-target
-        //    => destination reachable, the char jams on collision; last point
-        //    far short => the mesh has no route there (a gap / wrong target).
-        //  - every second: live position, remaining waypoint count and the
-        //    distance to the next waypoint, so we see exactly where it jams.
+        // Reads the path vnavmesh is actually following (Path.ListWaypoints):
+        //  - once, when the route first appears: speak the route preview (user
+        //    request 2026-07-15: announce via which waypoints the destination
+        //    is reached) and log the full waypoint list plus how far its LAST
+        //    point sits from our target. Last-point-near-target => destination
+        //    reachable, the char jams on collision; last point far short =>
+        //    the mesh has no route there (a gap / wrong target).
+        //  - every second (diagnostic): live position, remaining waypoint
+        //    count and the distance to the next waypoint.
         // try-catch: IPC into a foreign plugin (see Toggle).
         try
         {
@@ -367,6 +371,11 @@ public sealed class AutoWalkService : IDisposable
                 var last = waypoints[^1];
                 var route = string.Join(" -> ", waypoints.Select(w => $"({w.X:F1}|{w.Y:F1}|{w.Z:F1})"));
                 _log.Info($"[NavDiag] Pfad: {waypoints.Count} Wegpunkte, letzter->Ziel={Vector3.Distance(last, _destPosition):F1} m. Route: {route}");
+                // Queued (not interrupting) so it follows "Laufe zu ..."; push
+                // the 3 s progress timer back so "Noch X Meter" does not cut
+                // the preview off mid-sentence.
+                _tolk.Speak(_routes.DescribeRoute(_targetName, waypoints));
+                _lastProgressSpeak = DateTime.UtcNow.AddSeconds(5);
             }
             if ((now - _lastDiagAt).TotalSeconds >= 1)
             {
@@ -426,25 +435,8 @@ public sealed class AutoWalkService : IDisposable
         {
             _active = false;
             _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
-            _tolk.SpeakInterrupt($"Kein Weg zu {_targetName} gefunden.{BuildNoPathHint()}");
+            _tolk.SpeakInterrupt($"Kein Weg zu {_targetName} gefunden.{_places.BuildNoPathHint(_destPosition)}");
         }
-    }
-
-    /// <summary>
-    /// Travel hint for a destination the navmesh cannot reach: city levels are
-    /// often separate mesh islands joined only by lifts/aethernet - walking can
-    /// NEVER cross that gap, the game's own transport is the way. Names the
-    /// aetheryte/shard closest to the destination when one is plausibly "at"
-    /// it (within 100 m); empty string otherwise (open-world targets).
-    /// </summary>
-    private string BuildNoPathHint()
-    {
-        var shard = _places.NearestAetheryteTo(_destPosition);
-        if (shard == null) return string.Empty;
-        var dist = PlacesService.Distance2D(shard.Position, _destPosition);
-        if (dist > 100f) return string.Empty;
-        _log.Info($"[Nav] Kein-Weg-Tipp: {shard.TypeLabel} {shard.Name} liegt {dist:F0} m vom Ziel.");
-        return $" Das Ziel liegt nahe {shard.TypeLabel} {shard.Name}. Reise per Aethernet dorthin.";
     }
 
     private static string FormatRemaining(float distance) =>

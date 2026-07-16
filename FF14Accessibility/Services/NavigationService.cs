@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
@@ -20,6 +21,8 @@ public sealed class NavigationService
     private readonly CueService _cue;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService _places;
+    private readonly RouteService _routes;
+    private readonly Configuration _config;
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
 
@@ -36,6 +39,8 @@ public sealed class NavigationService
         CueService cue,
         QuestMarkerService questMarkers,
         PlacesService places,
+        RouteService routes,
+        Configuration config,
         IDataManager data,
         IPluginLog log)
     {
@@ -47,6 +52,8 @@ public sealed class NavigationService
         _cue = cue;
         _questMarkers = questMarkers;
         _places = places;
+        _routes = routes;
+        _config = config;
         _data = data;
         _log = log;
     }
@@ -62,6 +69,9 @@ public sealed class NavigationService
     /// </summary>
     public void Update(bool announceTargetChanges)
     {
+        // Route preview runs independently of the walk guide (async pathfind).
+        PollPreviewTask();
+
         // LocalPlayer.TargetObject does NOT track UI targeting (verified in-game
         // 2026-07-10: Tab-target set, property stayed null) - ITargetManager does.
         var player = _objectTable.LocalPlayer;
@@ -445,22 +455,63 @@ public sealed class NavigationService
             .ToList();
     }
 
-    // ── Gehhilfe: beim Laufen regelmäßig Richtung + Distanz zum Ziel ansagen ──
+    // ── Gehhilfe: manuell laufen, geführt von Beacon + Ansagen ──
+    // Seit V4.63 pfadbasiert: Beacon und Richtungsansagen verfolgen den
+    // NÄCHSTEN Wegpunkt der vnavmesh-Route (Nav.Pathfind, reine Abfrage ohne
+    // Auto-Bewegung), nicht mehr die Luftlinie zum Endziel - um eine Ecke
+    // zeigt der Ton auf die Ecke statt in die Wand. Ohne vnavmesh/Route läuft
+    // die alte Luftlinien-Führung weiter. Design: docs-de/ideen/
+    // ff14-route-guidance-guide.md + docs/manuelle-navigation-konzept.md.
 
     private bool _walkGuideActive;
-    private ulong _walkTargetId;
+    private ulong _walkTargetId;              // 0 = fixed-position destination (marker)
     private string _walkTargetName = string.Empty;
+    private Vector3 _walkDestPosition;        // fixed position, or refreshed from the object
+    private float _walkArrivalRange = ArrivalDistance;
     private DateTime _lastGuideTick = DateTime.MinValue;
+
+    // Route state. A null route = straight-line guidance (the pre-V4.63 mode).
+    private List<Vector3>? _route;
+    private int _routeCursor;
+    private Vector3 _routeDest;               // destination the active route was computed for
+    private Task<List<Vector3>>? _routeTask;  // pending Nav.Pathfind (polled, never awaited)
+    private bool _routeTaskIsReroute;
+    private DateTime _routeRequestedAt;
+    private bool _computeAnnounced;
+    private DateTime _lastRerouteAt = DateTime.MinValue;
 
     /// <summary>Arrival distance for the walk guide, in yalms/meters.</summary>
     private const float ArrivalDistance = 3f;
 
+    /// <summary>A route waypoint counts as reached within this radius: exact
+    /// arrival is impossible on foot and funnel corners sit tight against
+    /// walls - too small strands the cursor at a corner already turned.</summary>
+    private const float WaypointReachRadius = 3f;
+
+    /// <summary>How many waypoints beyond the cursor the skip-ahead checks.</summary>
+    private const int SkipAheadLookahead = 3;
+
+    /// <summary>Re-pathfind when the player is this far off the current route
+    /// segment (exploring, dodging, knockbacks) or the destination moved.</summary>
+    private const float DriftRerouteDistance = 10f;
+
+    private const double RerouteMinIntervalS = 3;
+
+    // Spoken cadence: route mode speaks on EVENTS (waypoint reached) with a
+    // slow reassurance repeat between them; the straight-line fallback has no
+    // events and keeps the old 2 s rhythm.
+    private const double RouteSpeakIntervalS = 5;
+    private const double StraightSpeakIntervalS = 2;
+
+    /// <summary>Whether the walk guide is currently running (Plugin.cs decides
+    /// between "switch off" and "start towards a marker destination").</summary>
+    public bool IsWalkGuideActive => _walkGuideActive;
+
     /// <summary>
     /// Toggles the walk guide for the current game target: audio beacon
     /// (pitch + pan encode the direction, updated every frame) plus spoken
-    /// direction and distance every 2 seconds until arrival. The player
-    /// walks manually (F turns to the target, W/R runs) - no movement is
-    /// injected.
+    /// guidance until arrival. The player walks manually (F turns towards
+    /// the guide tone, W/R runs) - no movement is injected.
     /// </summary>
     public void ToggleWalkGuide()
     {
@@ -479,18 +530,55 @@ public sealed class NavigationService
             return;
         }
 
+        StartWalkGuide(target.GameObjectId, target.Name.TextValue, target.Position, ArrivalDistance);
+    }
+
+    /// <summary>
+    /// Starts the walk guide towards a fixed world position - quest markers
+    /// and map waypoints have no game object to target (mirrors the auto-walk;
+    /// user request 2026-07-15: reach marker destinations manually too). The
+    /// position must already sit on the walkable mesh (Plugin.cs resolves the
+    /// height). Callers turn a running guide off before starting a new one.
+    /// </summary>
+    public void StartWalkGuideToPosition(Vector3 position, string name, float arrivalRange)
+        => StartWalkGuide(0, name, position, MathF.Max(ArrivalDistance, arrivalRange));
+
+    private void StartWalkGuide(ulong targetId, string name, Vector3 destination, float arrivalRange)
+    {
         _walkGuideActive = true;
-        _walkTargetId = target.GameObjectId;
-        _walkTargetName = target.Name.TextValue;
-        _lastGuideTick = DateTime.MinValue;
+        _walkTargetId = targetId;
+        _walkTargetName = name;
+        _walkDestPosition = destination;
+        _walkArrivalRange = arrivalRange;
+        // Not MinValue: an immediate first repeat would interrupt the
+        // "Gehhilfe an" line and the route preview (V4.42 lesson: competing
+        // interrupt-speakers cut each other off).
+        _lastGuideTick = DateTime.UtcNow;
+        ClearRoute();
         _beacon.Start();
-        _tolk.SpeakInterrupt($"Gehhilfe an: {_walkTargetName}. F dreht dich hin, W läuft.");
+        _tolk.SpeakInterrupt($"Gehhilfe an: {_walkTargetName}.");
+        _log.Info($"[Nav] Gehhilfe: gestartet zu {name} (id={targetId:X}, ankunft={arrivalRange:F1})");
+
+        var player = _objectTable.LocalPlayer;
+        if (_config.WalkGuideRouteMode && player != null)
+            RequestRoute(player.Position, isReroute: false);
+        else if (!_config.WalkGuideRouteMode)
+            _log.Info("[Nav] Gehhilfe: Routen-Modus per Config aus, Luftlinie.");
     }
 
     private void StopWalkGuide()
     {
         _walkGuideActive = false;
         _beacon.Stop();
+        ClearRoute();
+    }
+
+    private void ClearRoute()
+    {
+        _route = null;
+        _routeCursor = 0;
+        _routeTask = null;
+        _computeAnnounced = false;
     }
 
     /// <summary>Stops the walk guide without announcement (the auto-walk takes over the beacon).</summary>
@@ -501,39 +589,328 @@ public sealed class NavigationService
         _log.Info("[Nav] Gehhilfe: durch Auto-Lauf abgelöst.");
     }
 
-    /// <summary>Runs every frame while the walk guide is active.</summary>
-    private void WalkGuideFrame(IGameObject player)
+    /// <summary>
+    /// Queues a pathfind from <paramref name="from"/> to the current guide
+    /// destination. Falls back to straight-line guidance (with one spoken
+    /// notice on the initial request) when vnavmesh is unavailable.
+    /// </summary>
+    private void RequestRoute(Vector3 from, bool isReroute)
     {
-        var obj = _objectTable.FirstOrDefault(o => o.GameObjectId == _walkTargetId);
-        if (obj == null)
+        if (_routeTask != null) return; // one pending query at a time
+
+        var task = _routes.RequestPath(from, _walkDestPosition);
+        if (task == null)
         {
-            StopWalkGuide();
-            _tolk.SpeakInterrupt("Gehhilfe: Ziel verloren.");
-            _log.Info($"[Nav] Gehhilfe: Ziel {_walkTargetId:X} nicht mehr in der ObjectTable.");
+            if (!isReroute)
+            {
+                _tolk.Speak("Kein Wegenetz, führe in Luftlinie.");
+                _log.Info("[Nav] Gehhilfe: Nav.Pathfind nicht verfügbar, Luftlinien-Modus.");
+            }
+            return;
+        }
+        _routeTask = task;
+        _routeTaskIsReroute = isReroute;
+        _routeRequestedAt = DateTime.UtcNow;
+        _lastRerouteAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Adopts a finished pathfind: initial routes speak the compass
+    /// preview, re-routes stay quiet unless the immediate direction changed.</summary>
+    private void PollRouteTask(IGameObject player)
+    {
+        var task = _routeTask;
+        if (task == null) return;
+        if (!task.IsCompleted)
+        {
+            // Explain a noticeably long computation once (fresh zones can
+            // still be building mesh tiles).
+            if (!_computeAnnounced && (DateTime.UtcNow - _routeRequestedAt).TotalSeconds > 1)
+            {
+                _computeAnnounced = true;
+                _tolk.Speak("Weg wird berechnet.");
+            }
+            return;
+        }
+        _routeTask = null;
+        _computeAnnounced = false;
+
+        List<Vector3>? waypoints = null;
+        if (task.IsCompletedSuccessfully)
+            waypoints = task.Result;
+        else
+            _log.Warning("[Nav] Gehhilfe: Pathfind-Task nicht erfolgreich: " +
+                         (task.Exception?.GetBaseException().Message ?? "abgebrochen"));
+
+        if (waypoints == null || waypoints.Count == 0)
+        {
+            // No route (separate mesh islands, jump-only gaps): keep the old
+            // route if this was a re-route, otherwise guide straight-line.
+            if (_route == null && !_routeTaskIsReroute)
+            {
+                _tolk.Speak($"Kein Weg gefunden, führe in Luftlinie.{_places.BuildNoPathHint(_walkDestPosition)}");
+                _log.Info("[Nav] Gehhilfe: kein Weg gefunden, Luftlinien-Modus.");
+            }
             return;
         }
 
-        var distance = Vector3.Distance(player.Position, obj.Position);
-        if (distance <= ArrivalDistance)
+        var previousDirection = _route != null && _routeCursor < _route.Count
+            ? DirectionText(RelativeAngle(player, _route[_routeCursor]))
+            : null;
+
+        _route = waypoints;
+        _routeCursor = 0;
+        _routeDest = _walkDestPosition;
+        // The first waypoint is the start position - skip everything already in reach.
+        AdvancePastReachedWaypoints(player, announce: false);
+
+        if (!_routeTaskIsReroute)
+        {
+            _tolk.Speak(_routes.DescribeRoute(_walkTargetName, waypoints));
+        }
+        else if (_route != null && _routeCursor < _route.Count)
+        {
+            // Guide rule: after a quiet re-route speak one line ONLY when the
+            // immediate direction actually changed.
+            var newDirection = DirectionText(RelativeAngle(player, _route[_routeCursor]));
+            if (newDirection != previousDirection)
+                _tolk.SpeakInterrupt($"Neuer Weg: {newDirection}.");
+            _log.Info($"[Nav] Gehhilfe: Route neu berechnet ({waypoints.Count} Wegpunkte).");
+        }
+    }
+
+    /// <summary>Runs every frame while the walk guide is active.</summary>
+    private void WalkGuideFrame(IGameObject player)
+    {
+        // Destination refresh: objects move (NPCs); marker positions are fixed.
+        if (_walkTargetId != 0)
+        {
+            var obj = _objectTable.FirstOrDefault(o => o.GameObjectId == _walkTargetId);
+            if (obj == null)
+            {
+                StopWalkGuide();
+                _tolk.SpeakInterrupt("Gehhilfe: Ziel verloren.");
+                _log.Info($"[Nav] Gehhilfe: Ziel {_walkTargetId:X} nicht mehr in der ObjectTable.");
+                return;
+            }
+            _walkDestPosition = obj.Position;
+        }
+
+        var distance = Vector3.Distance(player.Position, _walkDestPosition);
+        if (distance <= _walkArrivalRange)
         {
             StopWalkGuide();
+            _cue.PlayArrivalTone();
             _tolk.SpeakInterrupt($"Ziel erreicht: {_walkTargetName}.");
             _log.Info($"[Nav] Gehhilfe: Ziel erreicht, dist={distance:F1}");
             return;
         }
 
-        var relAngle = RelativeAngle(player, obj.Position);
+        PollRouteTask(player);
+
+        if (_route != null)
+        {
+            AdvancePastReachedWaypoints(player, announce: true);
+            CheckReroute(player);
+        }
+
+        var guidePoint = _route != null && _routeCursor < _route.Count
+            ? _route[_routeCursor]
+            : _walkDestPosition;
+        var guideDist = Vector3.Distance(player.Position, guidePoint);
+        var relAngle = RelativeAngle(player, guidePoint);
+        // Steering (pitch/pan) follows the waypoint; loudness follows the
+        // remaining distance to the DESTINATION (see BeaconService.Update).
         _beacon.Update(relAngle, distance);
 
-        // Speech only every 2 seconds - the beacon covers the frames between.
-        if ((DateTime.UtcNow - _lastGuideTick).TotalSeconds < 2) return;
+        // Reassurance repeat between waypoint events; the beacon carries the
+        // direction continuously in the frames between.
+        var interval = _route != null ? RouteSpeakIntervalS : StraightSpeakIntervalS;
+        if ((DateTime.UtcNow - _lastGuideTick).TotalSeconds < interval) return;
         _lastGuideTick = DateTime.UtcNow;
 
-        _tolk.SpeakInterrupt($"{FormatDistance(distance)}, {DirectionText(relAngle)}.");
-        // Audit data: zero point is verified (F-snap => relAngle ~0); the
-        // left/right SIGN is not. Turning right (D) must move relAngle
-        // negative if "positive = right" is correct (target drifts left).
-        _log.Info($"[Nav] Gehhilfe: dist={distance:F1} relAngle={relAngle:F0} rot={player.Rotation:F2}");
+        _tolk.SpeakInterrupt($"{FormatDistance(guideDist)}, {DirectionText(relAngle)}{VerticalHint(player, guidePoint)}.");
+        _log.Info($"[Nav] Gehhilfe: dist={guideDist:F1} zielDist={distance:F1} relAngle={relAngle:F0} " +
+                  $"wp={_routeCursor}/{_route?.Count ?? 0} rot={player.Rotation:F2}");
+    }
+
+    /// <summary>
+    /// Moves the route cursor. A waypoint within <see cref="WaypointReachRadius"/>
+    /// counts as reached (cue + fresh spoken leg). Skip-ahead advances SILENTLY
+    /// when the player is already within reach of a later waypoint or clearly
+    /// closer to the next one than the current corner is - a player who cuts a
+    /// corner must not be told to walk backwards. After the last waypoint the
+    /// guide homes in on the destination directly.
+    /// </summary>
+    private void AdvancePastReachedWaypoints(IGameObject player, bool announce)
+    {
+        var route = _route;
+        if (route == null) return;
+
+        var advanced = false;
+        var genuineReach = false;
+
+        while (_routeCursor < route.Count)
+        {
+            if (Vector3.Distance(player.Position, route[_routeCursor]) <= WaypointReachRadius)
+            {
+                _routeCursor++;
+                advanced = true;
+                genuineReach = true;
+                continue;
+            }
+
+            // Skip-ahead (a): within reach of a LATER waypoint - jump past it.
+            var skipTo = -1;
+            var lookEnd = Math.Min(route.Count, _routeCursor + 1 + SkipAheadLookahead);
+            for (var i = _routeCursor + 1; i < lookEnd; i++)
+            {
+                if (Vector3.Distance(player.Position, route[i]) <= WaypointReachRadius)
+                    skipTo = i + 1;
+            }
+            if (skipTo > 0)
+            {
+                _routeCursor = skipTo;
+                advanced = true;
+                continue;
+            }
+
+            // Skip-ahead (b): measurably closer to the NEXT waypoint than the
+            // current one is - the corner was cut, drop the corner point.
+            if (_routeCursor + 1 < route.Count
+                && Vector3.Distance(player.Position, route[_routeCursor + 1]) + 1f
+                   < Vector3.Distance(route[_routeCursor], route[_routeCursor + 1]))
+            {
+                _routeCursor++;
+                advanced = true;
+                continue;
+            }
+
+            break;
+        }
+
+        if (_routeCursor >= route.Count)
+        {
+            // All waypoints consumed: home in on the destination directly.
+            // The arrival cue/announcement stays with the target-arrival check.
+            _route = null;
+            _log.Info("[Nav] Gehhilfe: letzter Wegpunkt passiert, Zielanflug.");
+            return;
+        }
+
+        if (advanced && announce)
+        {
+            if (genuineReach) _cue.PlayWaypointTone();
+            // Fresh leg, spoken once, relative to the current heading - this
+            // event line replaces the old fixed 2 s repetition.
+            var next = route[_routeCursor];
+            var relAngle = RelativeAngle(player, next);
+            var dist = Vector3.Distance(player.Position, next);
+            _tolk.SpeakInterrupt($"{FormatDistance(dist)}, {DirectionText(relAngle)}{VerticalHint(player, next)}.");
+            _lastGuideTick = DateTime.UtcNow;
+            _log.Info($"[Nav] Gehhilfe: Wegpunkt {(genuineReach ? "erreicht" : "übersprungen")}, " +
+                      $"weiter zu {_routeCursor + 1}/{route.Count}, dist={dist:F1}");
+        }
+    }
+
+    /// <summary>
+    /// Re-pathfinds quietly when the player drifted off the current route
+    /// segment (exploring, dodging mobs, knockbacks) or the destination itself
+    /// moved (wandering NPCs). The guide follows the player, it does not scold.
+    /// </summary>
+    private void CheckReroute(IGameObject player)
+    {
+        var route = _route;
+        if (route == null || _routeTask != null) return;
+        if ((DateTime.UtcNow - _lastRerouteAt).TotalSeconds < RerouteMinIntervalS) return;
+
+        var destMoved = Vector3.Distance(_walkDestPosition, _routeDest) > DriftRerouteDistance;
+        var segStart = route[_routeCursor > 0 ? _routeCursor - 1 : 0];
+        var drift = DistanceToSegment2D(player.Position, segStart, route[_routeCursor]);
+        if (!destMoved && drift <= DriftRerouteDistance) return;
+
+        _log.Info($"[Nav] Gehhilfe: Re-Routing (drift={drift:F1}, zielBewegt={destMoved}).");
+        RequestRoute(player.Position, isReroute: true);
+    }
+
+    /// <summary>", aufwärts"/", abwärts" when the guide point sits clearly above
+    /// or below the player (stairs, ramps) - plain Y arithmetic on route data.</summary>
+    private static string VerticalHint(IGameObject player, Vector3 point)
+    {
+        var dy = point.Y - player.Position.Y;
+        return dy > 1.5f ? ", aufwärts" : dy < -1.5f ? ", abwärts" : string.Empty;
+    }
+
+    /// <summary>2D point-to-segment distance on XZ (Y is noisy across slopes).</summary>
+    private static float DistanceToSegment2D(Vector3 p, Vector3 a, Vector3 b)
+    {
+        float px = p.X - a.X, pz = p.Z - a.Z;
+        float bx = b.X - a.X, bz = b.Z - a.Z;
+        var lenSq = bx * bx + bz * bz;
+        var t = lenSq > 0f ? Math.Clamp((px * bx + pz * bz) / lenSq, 0f, 1f) : 0f;
+        float dx = px - t * bx, dz = pz - t * bz;
+        return MathF.Sqrt(dx * dx + dz * dz);
+    }
+
+    // ── Routen-Vorschau: Weg ansagen, ohne zu laufen (Strg+Numpad3) ──
+
+    private Task<List<Vector3>>? _previewTask;
+    private string _previewName = string.Empty;
+    private Vector3 _previewDest;
+
+    /// <summary>
+    /// Speaks the turn-by-turn route to a destination without walking:
+    /// pathfind, announce, discard. Lets the player build a mental map before
+    /// choosing between auto-walk and the manual walk guide.
+    /// </summary>
+    public void PreviewRoute(Vector3 position, string name)
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+
+        var task = _routes.RequestPath(player.Position, position);
+        if (task == null)
+        {
+            _tolk.SpeakInterrupt("Kein Wegenetz. Das Plugin vnavmesh fehlt oder lädt noch.");
+            return;
+        }
+        _previewTask = task;
+        _previewName = name;
+        _previewDest = position;
+        _tolk.SpeakInterrupt($"Berechne Weg zu {name}.");
+    }
+
+    /// <summary>Route preview to the current game target.</summary>
+    public void PreviewRouteToTarget()
+    {
+        var target = _targetManager.Target ?? _targetManager.SoftTarget;
+        if (target == null)
+        {
+            _tolk.SpeakInterrupt("Kein Ziel. Erst mit N ein Objekt wählen.");
+            return;
+        }
+        PreviewRoute(target.Position, target.Name.TextValue);
+    }
+
+    /// <summary>Polled every frame from Update (the pathfind runs async).</summary>
+    private void PollPreviewTask()
+    {
+        var task = _previewTask;
+        if (task == null || !task.IsCompleted) return;
+        _previewTask = null;
+
+        List<Vector3>? waypoints = null;
+        if (task.IsCompletedSuccessfully)
+            waypoints = task.Result;
+        else
+            _log.Warning("[Route] Vorschau-Pathfind nicht erfolgreich: " +
+                         (task.Exception?.GetBaseException().Message ?? "abgebrochen"));
+
+        if (waypoints == null || waypoints.Count == 0)
+        {
+            _tolk.SpeakInterrupt($"Kein Weg zu {_previewName} gefunden.{_places.BuildNoPathHint(_previewDest)}");
+            return;
+        }
+        _tolk.SpeakInterrupt(_routes.DescribeRoute(_previewName, waypoints));
     }
 
     /// <summary>", HP X Prozent" for targets that have hit points, else empty.</summary>

@@ -237,6 +237,24 @@ public sealed class PlacesService
             .FirstOrDefault();
     }
 
+    /// <summary>
+    /// Travel hint for a destination the navmesh cannot reach: city levels are
+    /// often separate mesh islands joined only by lifts/aethernet - walking can
+    /// NEVER cross that gap, the game's own transport is the way. Names the
+    /// aetheryte/shard closest to the destination when one is plausibly "at"
+    /// it (within 100 m); empty string otherwise (open-world targets).
+    /// Shared by the auto-walk and the route preview.
+    /// </summary>
+    public string BuildNoPathHint(Vector3 destination)
+    {
+        var shard = NearestAetheryteTo(destination);
+        if (shard == null) return string.Empty;
+        var dist = Distance2D(shard.Position, destination);
+        if (dist > 100f) return string.Empty;
+        _log.Info($"[Nav] Kein-Weg-Tipp: {shard.TypeLabel} {shard.Name} liegt {dist:F0} m vom Ziel.");
+        return $" Das Ziel liegt nahe {shard.TypeLabel} {shard.Name}. Reise per Aethernet dorthin.";
+    }
+
     /// <summary>2D distance (X/Z) - marker positions carry no usable height.</summary>
     public static float Distance2D(Vector3 a, Vector3 b)
     {
