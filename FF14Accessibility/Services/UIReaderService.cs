@@ -7,6 +7,7 @@ using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace FF14Accessibility.Services;
@@ -27,6 +28,7 @@ public sealed class UIReaderService : IDisposable
     private readonly IPluginLog      _log;
     private readonly IObjectTable    _objectTable;
     private readonly InventoryService _inventory;
+    private readonly GearInfoService _gearInfo;
     private readonly BestiaryService _bestiary;
     private readonly Configuration   _config;
     private readonly List<string>    _titleMenuItems = [];
@@ -62,6 +64,19 @@ public sealed class UIReaderService : IDisposable
     private int    _csLastTabIndex    = -1;
     private string _csLastTabText     = string.Empty;
     private readonly List<(uint NodeId, string Label)> _csTabs = [];
+
+    // Enter on a tab: remember WHICH tab we clicked so the page-change
+    // announcement can state a truthful position ("Tab X von 8") - the
+    // child-4 detection reported "Tab 8 von 8" on page 1 (log 2026-07-16
+    // 16:32:06), so its index must not be spoken unconfirmed.
+    private int  _csExpectedTabIdx = -1;
+    private long _csTabActivatedAt;
+
+    // [CS-NUM] probe: last snapshot of ConfigSystemNumberArray (25 ints,
+    // only [0]=FPS is mapped upstream) - a changing slot on tab switch
+    // would be a clean data source for the active tab index.
+    private readonly int[] _csNumSnapshot = new int[25];
+    private bool _csNumSnapshotValid;
 
 
     // Performance-Cache: Addons ohne AtkComponentList nicht erneut suchen
@@ -203,7 +218,7 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, BestiaryService bestiary, Configuration config)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, Configuration config)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -211,6 +226,7 @@ public sealed class UIReaderService : IDisposable
         _log            = log;
         _objectTable    = objectTable;
         _inventory      = inventory;
+        _gearInfo       = gearInfo;
         _bestiary       = bestiary;
         _config         = config;
         RegisterHooks();
@@ -937,6 +953,9 @@ public sealed class UIReaderService : IDisposable
             // those while that window is open; buttons ("Abschließen") and item
             // names are non-numeric and still pass through.
             if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
+            // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
+            // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
+            if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
             _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
         }
     }
@@ -961,6 +980,46 @@ public sealed class UIReaderService : IDisposable
         var ptr = _gameGui.GetAddonByName(addonName);
         if (ptr.IsNull) return false;
         return ((AtkUnitBase*)(nint)ptr)->IsVisible;
+    }
+
+    // Shop windows list gear as bare "name, price" rows - no level, no
+    // wearability. While one is open, spoken row texts get the gear info
+    // appended when a row part matches an equipment name. Addon names are
+    // community knowledge, NOT verified against a dump yet - if a shop stays
+    // unenriched, the [Accessibility] Addon: log line names the real window.
+    private static readonly string[] ShopAddons =
+    {
+        "Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop",
+    };
+
+    /// <summary>Appends "Stufe X, tragbar/nicht tragbar" to a spoken text while a
+    /// shop is open and one of its comma-parts is an equipment name. The text
+    /// itself is never altered, only extended - prices etc. stay audible.</summary>
+    private string AppendShopGearInfo(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+
+        var shopOpen = false;
+        foreach (var name in ShopAddons)
+        {
+            if (IsAddonVisible(name)) { shopOpen = true; break; }
+        }
+        if (!shopOpen) return text;
+
+        foreach (var part in text.Split(", "))
+        {
+            // Shop rows wrap the item name in SeString payload bytes
+            // (0x02..0x03, log 2026-07-16 18:21: '226, <payload>Laien-
+            // Hanfbundhaube<payload>') - match on the sanitized name, the
+            // same form the user hears.
+            var info = _gearInfo.DescribeByName(TolkService.Sanitize(part));
+            if (info.Length > 0)
+            {
+                _log.Info($"[Gear] Laden-Zeile '{part}': {info}");
+                return $"{text}, {info}";
+            }
+        }
+        return text;
     }
 
     /// <summary>
@@ -1001,13 +1060,19 @@ public sealed class UIReaderService : IDisposable
                 if (icon->IconId == 0)
                     return isItemSlot && ((AtkResNode*)cur)->IsVisible() ? "Leer" : string.Empty;
 
-                var name = _inventory.ResolveIconName(icon->IconId);
+                var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
                 if (string.IsNullOrEmpty(name)) return string.Empty;
+
+                // Equipment gets level + wearability appended ("Bronzegladius,
+                // Stufe 5, tragbar") - the info a blind player needs when
+                // browsing gear slots or shop wares. "" for non-equipment.
+                var gear = _gearInfo.DescribeGear(itemId);
 
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
-                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}'");
-                return qty.Length > 0 ? $"{qty} mal {name}" : name;
+                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' gear='{gear}'");
+                var spoken = qty.Length > 0 ? $"{qty} mal {name}" : name;
+                return gear.Length > 0 ? $"{spoken}, {gear}" : spoken;
             }
             cur = cur->ParentNode;
         }
@@ -1482,6 +1547,10 @@ public sealed class UIReaderService : IDisposable
             DumpConfigSystemNodes(addon);
         }
 
+        // [CS-NUM] Probe: sucht den Slot im ConfigSystemNumberArray, der beim
+        // Seitenwechsel springt (kuenftige saubere Quelle fuer den Tab-Index).
+        ProbeConfigSystemNumbers();
+
         // Tab-Fokus pr�fen
         var (tabIdx, tabLabel) = GetFocusedTabInfo(addon);
         if (tabIdx != _csLastTabIndex || tabLabel != _csLastTabText)
@@ -1491,8 +1560,23 @@ public sealed class UIReaderService : IDisposable
 
             if (!string.IsNullOrEmpty(tabLabel) && _csTabs.Count > 0)
             {
-                _log.Info($"[CS] Tab-Wechsel ? '{tabLabel}' [{tabIdx + 1}/{_csTabs.Count}]");
-                _tolk.SpeakInterrupt(AccessibilityStrings.TabPosition(tabLabel, tabIdx + 1, _csTabs.Count));
+                // Position nur ansagen, wenn wir sie sicher WISSEN (eigener
+                // Enter-Dispatch merkt sich den gedrueckten Reiter). Die
+                // child-4-Erkennung meldete "Tab 8 von 8" bei Seite 1
+                // (Log 2026-07-16 16:32:06) - unbestaetigt nicht sprechen.
+                if (_csExpectedTabIdx >= 0)
+                {
+                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' [{_csExpectedTabIdx + 1}/{_csTabs.Count}] (per Enter)");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.TabPosition(tabLabel, _csExpectedTabIdx + 1, _csTabs.Count));
+                    _csLastTabIndex   = _csExpectedTabIdx;
+                    _csExpectedTabIdx = -1;
+                }
+                else
+                {
+                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' (Index unbestaetigt, child4 lieferte {tabIdx + 1})");
+                    _tolk.SpeakInterrupt(tabLabel);
+                }
+                LogTabMarkerProbe(addon); // [CS-TAB]: welcher Reiter traegt den Aktiv-Marker?
             }
 
             // Cache zur�cksetzen: neue Texte des Tabs als Ersterscheinung behandeln
@@ -1503,8 +1587,29 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Enter auf einem Reiter ohne erkennbaren Seitenwechsel: ehrlich melden
+        // statt still bleiben (V4.70 blieb stumm, User drueckte doppelt).
+        if (_csExpectedTabIdx >= 0 && Environment.TickCount64 - _csTabActivatedAt > 1500)
+        {
+            _csExpectedTabIdx = -1;
+            _log.Info("[CS] Reiter-Aktivierung ohne erkannten Seitenwechsel (>1,5 s)");
+            LogTabMarkerProbe(addon);
+            _tolk.SpeakInterrupt("Reiter gedrückt, aber kein Seitenwechsel erkannt.");
+        }
+
         // [CS-OPT] Flags-Änderungen an Option-Nodes erkennen (Diag2)
         LogConfigOptionFlagChanges(addon);
+
+        // 1.5: Textlose Controls über den GLOBALEN Fokus ansagen. Slider,
+        // DropDownLists und die Reiter tragen KEINEN Text (Probe [CS-OPT]:
+        // Slider/DropDown = ""), FindFocusedText unten sucht zudem nur nach
+        // dem Fokus-BIT an den Nodes - die Tastatur bewegt aber den
+        // AtkInputManager.FocusedNode (V4.35-Erkenntnis). Ergebnis war
+        // Stille bei Pfeiltasten (User-Log 2026-07-16 15:52: Fokus wanderte
+        // zwischen zwei Slidern, Text=''). Labels stehen als eigener
+        // Top-Level-Text DIREKT VOR dem Control in der Node-Liste
+        // (Dump: "Transparenz" vor Slider id=570, "Größe" vor id=566).
+        AnnounceConfigGlobalFocus(addon);
 
         // 2. Fokus auf Optionen (CheckBox, Slider, etc.) prüfen
         var (focused, nodeId) = FindFocusedText(addon);
@@ -1521,6 +1626,189 @@ public sealed class UIReaderService : IDisposable
 
         // 3. Wert-Änderungen in Text-Nodes scannen und ansagen
         ScanConfigSystemTexts(addon);
+    }
+
+    // Global-Fokus-Zustand für die Config-Fenster: welcher Fokus-Node zuletzt
+    // angesagt wurde, sein Top-Level-Control (gecacht, die Suche ist teuer)
+    // und der zuletzt gesprochene Wert (Wert-Änderungen am fokussierten
+    // Control - Slider links/rechts, Dropdown-Auswahl - sprechen nur den
+    // neuen Wert, nicht die ganze Zeile).
+    private nint _csFocusPtr;
+    private nint _csFocusTop;
+    private int _csFocusTopIdx = -1;
+    private string _csFocusValue = string.Empty;
+
+    /// <summary>
+    /// Announces text-less config controls (sliders, drop-downs, category
+    /// tabs) via the global keyboard focus. Speaks "{label}, {type}, {value}"
+    /// on focus change and just the new value while the focus stays put.
+    /// Controls WITH text (checkboxes, radio buttons, footer buttons) keep
+    /// being announced by the generic focus reader - this handler stays
+    /// silent for them to avoid double speech.
+    /// V4.69: ownership is found by SEARCHING the addon's top-level
+    /// components for the focused node - the ParentNode chain of
+    /// component-internal nodes does NOT reliably reach the addon root
+    /// (V4.68 climbed it and never matched; log 2026-07-16 16:14).
+    /// </summary>
+    private unsafe void AnnounceConfigGlobalFocus(AtkUnitBase* addon)
+    {
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return;
+
+        AtkResNode* top;
+        if ((nint)focus == _csFocusPtr)
+        {
+            // Focus unchanged: reuse the cached control, only track its value.
+            if (_csFocusTop == 0) return;
+            top = (AtkResNode*)_csFocusTop;
+            var newValue = ReadConfigControlValue(top);
+            if (newValue.Length > 0 && newValue != _csFocusValue)
+            {
+                _csFocusValue = newValue;
+                _log.Info($"[CS] Wert-Änderung: '{newValue}'");
+                _tolk.SpeakInterrupt(newValue);
+            }
+            return;
+        }
+
+        // Fresh focus: find the top-level component that CONTAINS the node.
+        _csFocusPtr = (nint)focus;
+        var owner = FindTopLevelOwner(addon, focus, out var ownerIdx);
+        _csFocusTop = (nint)owner;
+        _csFocusTopIdx = ownerIdx;
+        if (owner == null)
+        {
+            _log.Info($"[CS] Fokus (global): Node 0x{(nint)focus:X} gehört keinem Top-Level-Control");
+            return;
+        }
+        top = owner;
+        if ((int)top->Type < 1000) return; // bare node (no component), nothing to describe
+
+        var comp = ((AtkComponentNode*)top)->Component;
+        if (comp == null) return;
+        string desc;
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.Slider:
+            {
+                // AtkComponentSlider.Value/MinValue/MaxValue (ilspycmd-verified 2026-07-16)
+                var slider = (AtkComponentSlider*)comp;
+                _csFocusValue = slider->Value.ToString();
+                desc = $"{NearestPrecedingLabel(addon, _csFocusTopIdx)}, Regler, {_csFocusValue}, " +
+                       $"von {slider->MinValue} bis {slider->MaxValue}.";
+                break;
+            }
+            case ComponentType.DropDownList:
+            {
+                // AtkComponentDropDownList.List (ilspycmd-verified); the list's
+                // SelectedItemIndex marks the chosen entry even while closed.
+                _csFocusValue = ReadConfigControlValue(top);
+                desc = $"{NearestPrecedingLabel(addon, _csFocusTopIdx)}, Auswahlliste, {_csFocusValue}.";
+                break;
+            }
+            case ComponentType.DragDrop when top->NodeId is >= 7 and <= 14 && _csTabs.Count > 0:
+            {
+                // Category tab focused (icon-only): position readout; the page
+                // heading is announced by the tab-CHANGE detector once the tab
+                // is activated.
+                var idx = _csTabs.FindIndex(t => t.NodeId == top->NodeId);
+                _csFocusValue = string.Empty;
+                desc = $"Reiter {idx + 1} von {_csTabs.Count}.";
+                break;
+            }
+            default:
+                return; // has text (generic reader speaks it) or unknown - stay silent
+        }
+
+        _log.Info($"[CS] Fokus (global): {desc}");
+        _tolk.SpeakInterrupt(desc);
+    }
+
+    /// <summary>Current value of a config control as speech: slider number or
+    /// drop-down selection; "" for types without a trackable value.</summary>
+    private unsafe string ReadConfigControlValue(AtkResNode* top)
+    {
+        if ((int)top->Type < 1000) return string.Empty;
+        var comp = ((AtkComponentNode*)top)->Component;
+        if (comp == null) return string.Empty;
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.Slider:
+                return ((AtkComponentSlider*)comp)->Value.ToString();
+            case ComponentType.DropDownList:
+            {
+                var dd = (AtkComponentDropDownList*)comp;
+                return dd->List != null
+                    ? ReadListItemText(dd->List, Math.Max(0, dd->List->SelectedItemIndex))
+                    : string.Empty;
+            }
+            default:
+                return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// The addon's top-level node that is or contains <paramref name="focus"/>.
+    /// Component contents are searched recursively (a drop-down's focus sits
+    /// on a collision node inside its embedded checkbox component).
+    /// </summary>
+    private static unsafe AtkResNode* FindTopLevelOwner(AtkUnitBase* addon, AtkResNode* focus, out int index)
+    {
+        var count = addon->UldManager.NodeListCount;
+        for (var i = 0; i < count; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null) continue;
+            if (n == focus)
+            {
+                index = i;
+                return n;
+            }
+            if ((int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp != null && ComponentContainsNode(comp, focus, 0))
+            {
+                index = i;
+                return n;
+            }
+        }
+        index = -1;
+        return null;
+    }
+
+    private static unsafe bool ComponentContainsNode(AtkComponentBase* comp, AtkResNode* needle, int depth)
+    {
+        if (depth > 3) return false;
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var c = comp->UldManager.NodeList[j];
+            if (c == null) continue;
+            if (c == needle) return true;
+            if ((int)c->Type < 1000) continue;
+            var inner = ((AtkComponentNode*)c)->Component;
+            if (inner != null && ComponentContainsNode(inner, needle, depth + 1)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Label of a text-less control: the nearest visible top-level text node
+    /// BEFORE the control in the addon's node list (dump-verified layout,
+    /// e.g. "Transparenz" directly before its slider). Volatile texts (fps
+    /// counter) are skipped.
+    /// </summary>
+    private unsafe string NearestPrecedingLabel(AtkUnitBase* addon, int topIdx)
+    {
+        for (var i = topIdx - 1; i >= 0; i--)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || n->Type != NodeType.Text) continue;
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            if (t.Length > 1 && !IsVolatileConfigText(t)) return t;
+        }
+        return "Ohne Beschriftung";
     }
 
     /// <summary>
@@ -1616,7 +1904,10 @@ public sealed class UIReaderService : IDisposable
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
                 var child = comp->UldManager.NodeList[j];
-                if (child == null || child->NodeId != 4 || !child->IsVisible()) continue;
+                // EFFEKTIV sichtbar (Eltern-Kette): das eigene Flag allein traf
+                // auf alle Reiter zu -> Strategie lieferte immer den LETZTEN
+                // ("Tab 8 von 8" bei Seite 1, Log 2026-07-16 16:32:06).
+                if (child == null || child->NodeId != 4 || !IsEffectivelyVisible(child)) continue;
                 var idx   = _csTabs.FindIndex(t => t.NodeId == n->NodeId);
                 var label = GetConfigSectionHeading(addon);
                 // Kein Log hier: laeuft jeden Frame (flutete das Log 2026-07-11,
@@ -1671,12 +1962,16 @@ public sealed class UIReaderService : IDisposable
     /// </summary>
     private unsafe string GetConfigSectionHeading(AtkUnitBase* addon)
     {
-        const ushort MinFlags = 0x10; // mindestens Collision-Bit gesetzt (kein reines Hintergrund-Label)
         for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
         {
             var n = addon->UldManager.NodeList[i];
-            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
-            if (((ushort)n->NodeFlags & MinFlags) == 0) continue;
+            if (n == null || n->Type != NodeType.Text) continue;
+            // EFFEKTIVE Sichtbarkeit (Eltern-Kette): versteckte Seiten behalten
+            // das eigene Visible-Flag ihrer Nodes, nur der Seiten-CONTAINER wird
+            // unsichtbar - IsVisible() des Nodes selbst sah deshalb ALLE
+            // Ueberschriften als sichtbar und lieferte immer dieselbe (kein
+            // einziger Tab-Wechsel im Log 2026-07-16 16:32 trotz Seitenwechsel).
+            if (!IsEffectivelyVisible(n)) continue;
             var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
             // Volatile Anzeigen ueberspringen: der fps-Zaehler (Top-Level id=4)
             // liegt am ENDE der Node-Liste, also VOR der echten Ueberschrift
@@ -1688,6 +1983,75 @@ public sealed class UIReaderService : IDisposable
                 return t;
         }
         return string.Empty;
+    }
+
+    /// <summary>
+    /// True when the node AND every ancestor carry the Visible flag (0x10).
+    /// The bit is log-verified: node id=4 F=0x202F -> IsVisible()=false vs.
+    /// F=0x203F -> true (dalamud.log 2026-07-16 16:32:04, ButtonFlags).
+    /// Needed because hidden config PAGES only clear the flag on their
+    /// container while the child nodes keep theirs.
+    /// </summary>
+    private static unsafe bool IsEffectivelyVisible(AtkResNode* node)
+    {
+        var guard = 0;
+        for (var n = node; n != null && guard++ < 32; n = n->ParentNode)
+        {
+            if (((ushort)n->NodeFlags & (ushort)NodeFlags.Visible) == 0) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// [CS-TAB] probe: one line per tab with the child-4 marker state (own
+    /// flag + effective visibility). Logged on every page change - the next
+    /// test log shows WHICH tab carries a marker that tracks the active page,
+    /// so the position readout can be trusted to it in a follow-up version.
+    /// </summary>
+    private unsafe void LogTabMarkerProbe(AtkUnitBase* addon)
+    {
+        var sb = new StringBuilder("[CS-TAB]");
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000) continue;
+            if (n->NodeId is < 7 or > 14) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) continue;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null || child->NodeId != 4) continue;
+                sb.Append($" T{n->NodeId}:F=0x{(ushort)child->NodeFlags:X4},eff={IsEffectivelyVisible(child)}");
+            }
+        }
+        _log.Info(sb.ToString());
+    }
+
+    /// <summary>
+    /// [CS-NUM] probe: logs every change in ConfigSystemNumberArray (25 ints;
+    /// only [0]=FPS is mapped upstream, so [0] is skipped as known noise).
+    /// A slot that jumps exactly on tab activation is the game's own active-
+    /// tab index - the clean future source for the position readout.
+    /// </summary>
+    private unsafe void ProbeConfigSystemNumbers()
+    {
+        var arr = ConfigSystemNumberArray.Instance();
+        if (arr == null) return;
+        var data = arr->Data;
+        if (!_csNumSnapshotValid)
+        {
+            for (var i = 0; i < _csNumSnapshot.Length && i < data.Length; i++) _csNumSnapshot[i] = data[i];
+            _csNumSnapshotValid = true;
+            _log.Info($"[CS-NUM] Init: {string.Join(",", _csNumSnapshot)}");
+            return;
+        }
+        for (var i = 1; i < _csNumSnapshot.Length && i < data.Length; i++) // [0]=FPS ueberspringen
+        {
+            if (data[i] == _csNumSnapshot[i]) continue;
+            _log.Info($"[CS-NUM] [{i}] {_csNumSnapshot[i]} -> {data[i]}");
+            _csNumSnapshot[i] = data[i];
+        }
     }
 
     /// <summary>
@@ -2617,9 +2981,100 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Enter on a focused ConfigSystem category tab: activate it (the
+        // keyboard focus alone never switches the page; user 2026-07-16).
+        if (TryActivateFocusedConfigTab()) return;
+
         // Ok buttons in lobby / character creation (tribe screen, DC map,
         // name dialog, ...): dispatch the button's real click event.
         PressFocusedOk();
+    }
+
+    /// <summary>
+    /// Activates the focused ConfigSystem category tab by dispatching the
+    /// tab's own registered click event - the same path a real mouse click
+    /// takes (pattern proven by TryClickButton). The tabs are DragDrop
+    /// components; candidate event types are tried in order DragDropClick,
+    /// MouseClick, ButtonClick, and every registered type is logged once so
+    /// a wrong guess is diagnosable from the log. Returns false when
+    /// ConfigSystem is closed or the focus is not on a tab.
+    /// </summary>
+    private unsafe bool TryActivateFocusedConfigTab()
+    {
+        var ptr = _gameGui.GetAddonByName("ConfigSystem");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return false;
+
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return false;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return false;
+
+        var top = FindTopLevelOwner(addon, focus, out _);
+        if (top == null || (int)top->Type < 1000) return false;
+        if (top->NodeId is < 7 or > 14) return false;
+        var comp = ((AtkComponentNode*)top)->Component;
+        if (comp == null || comp->GetComponentType() != ComponentType.DragDrop) return false;
+
+        // Collect the registered events of the tab node and its children.
+        var registered = new List<string>();
+        AtkEvent* candidate = null;
+        var candidateRank = int.MaxValue;
+        ScanClickCandidates(top, registered, ref candidate, ref candidateRank);
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child != null) ScanClickCandidates(child, registered, ref candidate, ref candidateRank);
+        }
+
+        _log.Info($"[CS] Reiter-Aktivierung: Node id={top->NodeId}, Events=[{string.Join(", ", registered)}], " +
+                  $"Kandidat={(candidate != null ? candidate->State.EventType.ToString() : "KEINER")}");
+        if (candidate == null || candidate->Listener == null || !IsReadable(candidate->Listener))
+        {
+            _tolk.SpeakInterrupt("Reiter reagiert nicht.");
+            return true; // handled: focus WAS on a tab, do not fall through
+        }
+
+        var data = default(AtkEventData); // zeroed, Size=40 (ilspycmd)
+        candidate->Listener->ReceiveEvent(candidate->State.EventType, (int)candidate->Param, candidate, &data);
+        // Remember WHICH tab was pressed so the page-change announcement can
+        // state a truthful position - and so the 1.5 s no-change fallback can
+        // report a dead press. (V4.70 declared these fields but never set
+        // them, so both paths were dead code - found via CS0649 warning.)
+        var pressedNodeId = top->NodeId; // pointer deref must not leak into the lambda
+        _csExpectedTabIdx = _csTabs.FindIndex(t => t.NodeId == pressedNodeId);
+        _csTabActivatedAt = Environment.TickCount64;
+        // No speech here: switching the page changes the heading, which the
+        // tab-change detector announces ("..., Tab X von 8").
+        return true;
+    }
+
+    /// <summary>Ranks a node's registered events for tab activation:
+    /// DragDropClick before MouseClick before ButtonClick.</summary>
+    private unsafe void ScanClickCandidates(AtkResNode* node, List<string> registered, ref AtkEvent* best, ref int bestRank)
+    {
+        var evt   = node->AtkEventManager.Event;
+        var guard = 0;
+        while (evt != null && guard++ < 32)
+        {
+            if (!IsReadable(evt)) return;
+            var type = evt->State.EventType;
+            registered.Add(type.ToString());
+            var rank = type switch
+            {
+                AtkEventType.DragDropClick => 0,
+                AtkEventType.MouseClick    => 1,
+                AtkEventType.ButtonClick   => 2,
+                _                          => int.MaxValue,
+            };
+            if (rank < bestRank)
+            {
+                bestRank = rank;
+                best = evt;
+            }
+            evt = evt->NextEvent;
+        }
     }
 
     /// <summary>
@@ -3287,7 +3742,7 @@ public sealed class UIReaderService : IDisposable
         if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;
         _lastListAnnounce[name] = announce;
         _log.Info($"[Accessibility] {name} List-Navigation: [{idx}] {text}");
-        _tolk.SpeakInterrupt(text);
+        _tolk.SpeakInterrupt(AppendShopGearInfo(text));
     }
 
     // Row count for announcements: TreeList keeps the base ListLength at 0

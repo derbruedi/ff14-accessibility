@@ -35,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
     private readonly EquipmentService   _equipment;
+    private readonly GearInfoService    _gearInfo;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
     private readonly BestiaryService    _bestiary;
@@ -49,8 +50,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.67";
-    private const string PluginVersionTag = "Inventar/Arsenal: leere Slots sagen 'Leer', Arsenal sagt die Kategorie beim Oeffnen und bei Reiter-Wechsel an";
+    private const string PluginVersion    = "4.73";
+    private const string PluginVersionTag = "Braille: alle Ansagen via Tolk_Output auch auf die Braillezeile (vorher Tolk_Speak = nur Sprache)";
 
     public Plugin()
     {
@@ -110,14 +111,15 @@ public sealed class Plugin : IDalamudPlugin
         _cue          = new CueService(_config, Log);
         _hotbar       = new HotbarService(DataManager, _tolk, Log);
         _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
-        _equipment    = new EquipmentService(GameInventory, DataManager, _tolk, Log);
+        _gearInfo     = new GearInfoService(DataManager, Log);
+        _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _routes       = new RouteService(PluginInterface, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _bestiary, _config);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _config);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);

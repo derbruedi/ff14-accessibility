@@ -3,7 +3,205 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-16, V4.67 gebaut)
+## STAND JETZT (2026-07-16 abends, V4.72 gebaut + deployed)
+
+### Neu in V4.72: Laden-Fix (User-Test 18:21 zeigte das Problem)
+V4.71-Testauswertung aus dem Log:
+- Item-Slot-Ansage BESTAETIGT: Charakterfenster 18:14:27 sprach
+  "Leder-Grimoire, Stufe 5, tragbar" (Job 26 -> Spalte ACN korrekt).
+- Laden: Addon heisst wirklich "Shop" (Erkennung lief, Namens-Cache
+  wurde gebaut), aber KEIN Treffer beim Namens-Match. ROOT CAUSE:
+  Shop-Zeilen-Fokus-Text = '226, <0x02-Payload>Laien-Hanfbundhaube
+  <0x03>' - der Item-Name steckt in SeString-Payload-Huellen, der
+  Match lief auf dem ROHEN Text. FIX: AppendShopGearInfo sanitized
+  jede Zeilen-Teil vor dem Match (TolkService.Sanitize jetzt public).
+
+### Strg+F7 BESTAETIGT (User + Log 18:21:58, noch in der V4.71-Session)
+Setup Job 26 -> EquipRecommendedGear -> "4 Plaetze geaendert". Der
+spieleigene Optimierer laeuft sauber ueber unsere Taste.
+
+### Gehhilfe BESTAETIGT (User 16.07. abends)
+Manuelles Laufen mit Wegpunkt-Routing (Strg+Numpad3, V4.63-4.65)
+funktioniert in der Praxis. OFFEN (User-Wunsch, bei Gelegenheit):
+Sounds austauschen - aktuell Sinus-Piepser (Beacon 880Hz-Familie,
+Wegpunkt-Cue 1568Hz, Ankunft 1320->990Hz). Vor Umsetzung fragen,
+welche Sounds stoeren und was stattdessen gewuenscht ist (andere
+Toene oder echte Sound-Dateien).
+
+### V4.72 Laden BESTAETIGT (User + Log 18:46)
+Beide Faelle sauber: "Laien-Hanfbundhaube: Stufe 10, tragbar" /
+"Messingbrille: Stufe 13, nicht tragbar, ab Stufe 13". Der
+Payload-Sanitize-Fix war der fehlende Baustein. Ausruestungs-Block
+(User-Auftrag Stufe+Tragbarkeit + Bestes anlegen) damit KOMPLETT
+bestaetigt bis auf:
+
+### Neu in V4.73 (gebaut + deployed, ungetestet): Braillezeile
+User-Wunsch: alles Gesprochene auch auf der Braillezeile. Fix:
+TolkService ruft jetzt Tolk_Output (Sprache UND Braille, laut
+Tolk-API die empfohlene Ausgabefunktion) statt Tolk_Speak (nur
+Sprache). Tolk_Output war in TolkNative schon deklariert, nur
+ungenutzt. Bei NVDA geht Braille ueber nvdaController_brailleMessage
+(macht Tolk intern).
+
+### Noch offen zu testen
+1. Braillezeile (V4.73): zeigt jede Ansage an? Startansage
+   "Version 4 Punkt 73 bereit" muesste schon auf der Zeile stehen.
+2. Strg+F6: jedes getragene Teil mit "Stufe X"?
+3. Einstellungen (V4.70/71-Fix): Reiter + Enter -> "Ueberschrift,
+   Tab X von 8"? (Rest der Optionen-Baustelle ist eh zurueckgestellt)
+
+---
+
+## STAND V4.71 (2026-07-16, Item-Slots BESTAETIGT, Laden-Match kaputt - Fix in V4.72)
+
+### Neu in V4.71: Ausruestung - Stufe + Tragbarkeit (User-Auftrag)
+User will: im Laden UND am Koerper hoeren, welche Stufe ein
+Ausruestungsteil hat und ob er es tragen kann; plus "Bestes anlegen".
+Letzteres EXISTIERT schon: Strg+F7 (V4.66, noch nie getestet) ruft die
+spieleigene "Empfohlene Ausruestung" auf.
+
+Neu: GearInfoService.cs - liest NUR Spiel-Datenblaetter (ilspycmd-
+verifiziert): Item.LevelEquip (noetige Stufe), Item.ClassJobCategory
+(bool-Spalte je Job, Spaltenwahl ueber ENGLISCHE ClassJob-Abkuerzung,
+kein Spalten-Reihenfolge-Raten), Item.EquipRestriction (Volk/Geschlecht),
+Spielerseite aus PlayerState (CurrentLevel/CurrentClassJobId/Race/Sex).
+Unbekannte Spalte/Werte -> nur "Stufe X", NIE geratenes Urteil (Log
+[Gear] zeigt die Luecke). Die native InventoryManager.CanEquip existiert,
+braucht aber einen rohen itemRow-Zeiger -> Crash-Risiko, nicht benutzt.
+
+Eingebaut an 3 Stellen:
+1. Item-Slot-Navigation (Inventar/Charakterfenster/Arsenal): Ansage
+   jetzt "Bronzegladius, Stufe 5, tragbar" bzw. "..., nicht tragbar,
+   ab Stufe 26" / "nur fuer Gladiator" / "nicht fuer dein Volk".
+   Icon-Aufloesung kennt jetzt auch getragene + Arsenal-Items
+   (EquippedItems + Armory*-Container in der Icon-Map).
+2. Strg+F6 (Ausruestung vorlesen): pro Teil ", Stufe X" angehaengt;
+   "tragbar" wird dort nur bei PROBLEM gesprochen (nicht 12x "tragbar").
+3. Laden-Listen: waehrend ein Shop-Fenster offen ist, wird an gesprochene
+   Zeilen die Gear-Info angehaengt (Namens-Match gegen Ausruestungs-
+   Namen). ACHTUNG: Shop-Addon-Namen (Shop, ShopExchangeItem,
+   ShopExchangeCurrency, InclusionShop) sind UNVERIFIZIERT (Community-
+   Wissen) - wenn im Laden nichts angehaengt wird, nennt die
+   "[Accessibility] Addon:"-Logzeile den echten Fensternamen.
+
+Nebenbei-Fund (CS0649-Warnung): V4.70 hat _csExpectedTabIdx/
+_csTabActivatedAt deklariert, aber NIE gesetzt -> "Tab X von 8"-Ansage
+nach Enter und der 1,5s-Fallback ("Reiter gedrueckt, aber kein
+Seitenwechsel") waren tote Pfade. Jetzt verdrahtet: Enter-Dispatch merkt
+sich den gedrueckten Reiter (NodeId -> _csTabs-Index).
+
+### Beim naechsten Start testen (V4.71)
+1. "Version 4 Punkt 71 bereit".
+2. Charakterfenster/Inventar: Slot mit Ruestung fokussieren ->
+   "Name, Stufe X, tragbar"? Leere Slots weiter "Leer"?
+3. Strg+F6: jedes Teil mit "Stufe X"?
+4. Laden (Haendler) oeffnen, durch Waren gehen: haengt "Stufe X,
+   tragbar/nicht tragbar" hinten dran? Falls stumm: Log an Claude
+   (Addon-Name pruefen).
+5. Strg+F7 (aeltester offener Test): legt empfohlene Ausruestung an,
+   Ansage "X Teile gewechselt"?
+6. Einstellungen (V4.70-Fix): Reiter fokussieren, Enter -> jetzt
+   "Ueberschrift, Tab X von 8"? Bei totem Reiter nach 1,5 s ehrliche
+   Meldung?
+7. Log-Kontrolle danach: [Gear]-Zeilen (Job-Spalten-Zuordnung,
+   Laden-Treffer).
+
+---
+
+## STAND V4.70 (2026-07-16 gebaut, Reiter-Merken war UNVERDRAHTET - in V4.71 gefixt)
+
+### Neu in V4.70: Enter aktiviert Einstellungs-Reiter
+V4.69 BESTÄTIGT (Log 16:25): Slider ("Regler ... von X bis Y"),
+Auswahllisten ("Bildschirmmodus, Auswahlliste, NVIDIA...") und Reiter
+("Reiter 1-8 von 8") werden beim Fokussieren angesagt - der
+Enthaltensein-Ansatz (FindTopLevelOwner) war richtig.
+USER-MELDUNG: Reiter fokussierbar, aber "wenn ich drücke passiert
+nichts" - der Seitenwechsel fand nie statt (keine Tab-Wechsel-Ansage im
+Log). Fokus allein aktiviert die DragDrop-Reiter nicht.
+FIX: TryActivateFocusedConfigTab in HandleConfirmKey (Enter): dispatcht
+das registrierte Klick-Event des fokussierten Reiters an seinen Listener
+- gleicher Mechanismus wie das bewährte PressFocusedOk (Enter=Ok der
+Charaktererstellung). Kandidaten-Reihenfolge DragDropClick(58) >
+MouseClick(9) > ButtonClick(25); ALLE registrierten Event-Typen des
+Reiter-Nodes werden geloggt ([CS] Reiter-Aktivierung), damit ein
+falscher Kandidat sofort im Log erkennbar ist. Nach dem Wechsel sagt der
+vorhandene Tab-Wechsel-Detektor die neue Seiten-Überschrift an.
+
+### Beim nächsten Start testen (V4.70)
+1. "Version 4 Punkt 70 bereit".
+2. Systemkonfiguration: Reiter fokussieren ("Reiter 3 von 8"), ENTER:
+   wechselt die Seite ("<Überschrift>, Tab 3 von 8" wird angesagt)?
+3. Falls nicht: Log-Zeile "[CS] Reiter-Aktivierung: ... Events=[...]"
+   an Claude - sie zeigt, welche Events der Reiter wirklich registriert.
+4. Rest von V4.69: Slider-Werte beim Schieben, Auswahllisten.
+
+---
+
+## STAND V4.69 (2026-07-16 gebaut, BESTÄTIGT)
+
+### Neu in V4.69: Einstellungen-Fix Nummer 2 (V4.68 blieb stumm)
+V4.68-Test (Log 16:14): RadioButtons/Buttons sprachen (generischer Leser),
+Slider/Auswahllisten weiter stumm, KEINE "[CS] Fokus (global)"-Zeile, keine
+Exception. BEFUND: Der V4.68-Ansatz kletterte per ParentNode vom Fokus-Node
+zur Fenster-Wurzel - die Eltern-Kette Komponenten-INTERNER Nodes erreicht
+die Wurzel aber nicht zuverlässig (Handler stieg still am Wurzel-Check aus).
+FIX: Zuordnung umgedreht - FindTopLevelOwner durchsucht die Top-Level-
+Komponenten des Fensters danach, WELCHE den Fokus-Node ENTHÄLT (rekursiv
+bis Tiefe 3, Dropdown-Fokus sitzt in der eingebetteten Checkbox-Komponente).
+Owner-Komponente wird pro Fokus-Wechsel EINMAL gesucht und gecacht
+(Wert-Verfolgung nutzt den Cache). Zusätzlich Diagnose-Zeile wenn der
+Fokus-Node keinem Top-Level-Control zugeordnet werden kann.
+
+### Beim nächsten Start testen (V4.69) - wie V4.68-Plan
+1. "Version 4 Punkt 69 bereit".
+2. Systemkonfiguration, Pfeiltasten: Slider "Label, Regler, Wert, von X
+   bis Y"? Auswahllisten "Label, Auswahlliste, Eintrag"?
+3. Regler links/rechts: neuer Wert gesprochen?
+4. Reiter fokussieren: "Reiter X von 8"?
+5. Falls wieder stumm: Log hat jetzt die Zeile "[CS] Fokus (global): Node
+   ... gehört keinem Top-Level-Control" - dann weiß ich, wo es klemmt.
+
+---
+
+## STAND V4.68 (2026-07-16 gebaut, WIDERLEGT - siehe V4.69)
+
+### Neu in V4.68: Einstellungen - Slider/Auswahllisten/Reiter sprechen
+User-Meldung + Log 15:52 + frischer ConfigSystem-Dump: Pfeiltasten-Fokus
+wanderte zwischen zwei Slidern ("Transparenz"/"Größe", Seite
+Farbwahrnehmung), beide OHNE Text -> Stille. ROOT CAUSE doppelt:
+(1) Slider/DropDownList/Reiter tragen keinen Text-Node (Probe [CS-OPT]
+    zeigt ""), das Label steht als EIGENER Top-Level-Text DIREKT VOR dem
+    Control in der Node-Liste (Dump: "Transparenz" vor Slider id=570);
+(2) FindFocusedText sucht das Fokus-BIT an den Nodes, die Tastatur bewegt
+    aber den globalen AtkInputManager.FocusedNode (V4.35-Erkenntnis).
+FIX (UIReaderService, AnnounceConfigGlobalFocus, laeuft im ConfigSystem-
+PostUpdate): globalen FocusedNode zum Top-Level-Ancestor klettern;
+Slider -> "{Label}, Regler, {Wert}, von {Min} bis {Max}" (Felder
+Value/MinValue/MaxValue ilspycmd-verifiziert); DropDownList ->
+"{Label}, Auswahlliste, {gewaehlter Eintrag}" (List->SelectedItemIndex);
+Kategorie-Reiter (DragDrop id 7-14) -> "Reiter X von 8". Bleibt der Fokus
+auf dem Control, werden nur WERT-Aenderungen gesprochen (Slider-Schieben,
+Dropdown-Auswahl). Label = naechster sichtbarer Top-Level-Text VOR dem
+Control (volatile Texte wie fps uebersprungen). Controls MIT Text
+(CheckBox/RadioButton/Buttons) sagt weiterhin der generische Fokus-Leser
+an - keine Doppel-Ansage.
+OFFEN: Charakterkonfiguration (ConfigCharacter) vermutlich gleiches
+Layout, aber eigener Addon-Name - nach CS-Test pruefen/nachziehen.
+
+### Beim naechsten Start testen (V4.68)
+1. "Version 4 Punkt 68 bereit".
+2. Systemkonfiguration oeffnen, mit Pfeiltasten durch die Controls:
+   Slider sagen "Label, Regler, Wert"? Auswahllisten "Label, Auswahlliste,
+   Eintrag"? Checkboxen weiter wie bisher?
+3. Auf einem Regler links/rechts druecken: wird der neue Wert gesprochen?
+4. Reiter fokussieren: "Reiter X von 8"? Reiter aktivieren: Seiten-
+   Ueberschrift wie gehabt?
+5. V4.67-Punkte falls offen: "Leer" in der Tasche, Arsenal-Kategorien,
+   Strg+F6/F7.
+
+---
+
+## STAND V4.67 (2026-07-16 gebaut)
 
 ### Neu in V4.67: Inventar/Arsenal Stufe 2 (aus den User-Dumps vom 16.07.)
 DUMP-AUSWERTUNG (InventoryGrid 38 Nodes, Currency 111, ArmouryBoard 125;

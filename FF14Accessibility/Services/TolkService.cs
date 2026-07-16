@@ -63,7 +63,7 @@ public sealed class TolkService : IDisposable
     ///   tab/newline/carriage-return) are payload remnants.
     /// Collapses the whitespace the removal leaves behind.
     /// </summary>
-    private static string Sanitize(string text)
+    public static string Sanitize(string text)
     {
         var sb = new System.Text.StringBuilder(text.Length);
         var inPayload = false;
@@ -119,7 +119,10 @@ public sealed class TolkService : IDisposable
         text = Sanitize(text);
         if (text.Length == 0) return;
         _log.Info($"[Speak] '{Short(text)}'");
-        TolkNative.Tolk_Speak(text, false);
+        // Tolk_Output = speech AND braille (user request 2026-07-16: every
+        // announcement must also reach the braille display); Tolk_Speak
+        // was speech-only.
+        TolkNative.Tolk_Output(text, false);
         Remember(text);
     }
 
@@ -142,7 +145,7 @@ public sealed class TolkService : IDisposable
         _lastSpokenTick = now;
 
         _log.Info($"[Speak] INT '{Short(text)}'");
-        TolkNative.Tolk_Speak(text, true);
+        TolkNative.Tolk_Output(text, true); // speech + braille, see Speak()
         Remember(text);
     }
 

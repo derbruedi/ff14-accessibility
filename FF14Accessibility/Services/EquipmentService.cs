@@ -22,13 +22,15 @@ public sealed class EquipmentService
 {
     private readonly IGameInventory _inventory;
     private readonly IDataManager _data;
+    private readonly GearInfoService _gearInfo;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
 
-    public EquipmentService(IGameInventory inventory, IDataManager data, TolkService tolk, IPluginLog log)
+    public EquipmentService(IGameInventory inventory, IDataManager data, GearInfoService gearInfo, TolkService tolk, IPluginLog log)
     {
         _inventory = inventory;
         _data = data;
+        _gearInfo = gearInfo;
         _tolk = tolk;
         _log = log;
     }
@@ -55,8 +57,13 @@ public sealed class EquipmentService
             var label = SlotLabel(item.BaseItemId);
             var name = ResolveItemName(item.BaseItemId);
             var hq = item.IsHq ? " Hoch-Qualität" : string.Empty;
-            _log.Info($"[Equip] slot={item.InventorySlot} id={item.ItemId} '{label}: {name}'{hq}");
-            parts.Add($"{label}: {name}{hq}");
+            // Level per piece; "tragbar" is omitted for wearable gear (brief) -
+            // worn pieces are normally wearable, only a mismatch (e.g. after a
+            // class change) is worth words: "nicht tragbar, nur für ...".
+            var gear = _gearInfo.DescribeGear(item.BaseItemId, briefWhenWearable: true);
+            var gearNote = gear.Length > 0 ? $", {gear}" : string.Empty;
+            _log.Info($"[Equip] slot={item.InventorySlot} id={item.ItemId} '{label}: {name}'{hq}{gearNote}");
+            parts.Add($"{label}: {name}{hq}{gearNote}");
         }
 
         if (parts.Count == 0)

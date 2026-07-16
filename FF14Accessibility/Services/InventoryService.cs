@@ -132,28 +132,48 @@ public sealed class InventoryService
         return result;
     }
 
+    // Everything the player owns that has an icon slot in the UI: bags, key
+    // items, worn gear and the armoury chest (Dalamud GameInventoryType values
+    // ilspycmd-verified 2026-07-16) - so character-window and armoury slots
+    // resolve against the player's own items instead of the sheet fallback.
+    private static readonly GameInventoryType[] GearContainers =
+    {
+        GameInventoryType.EquippedItems,
+        GameInventoryType.ArmoryMainHand, GameInventoryType.ArmoryOffHand,
+        GameInventoryType.ArmoryHead,     GameInventoryType.ArmoryBody,
+        GameInventoryType.ArmoryHands,    GameInventoryType.ArmoryWaist,
+        GameInventoryType.ArmoryLegs,     GameInventoryType.ArmoryFeets,
+        GameInventoryType.ArmoryEar,      GameInventoryType.ArmoryNeck,
+        GameInventoryType.ArmoryWrist,    GameInventoryType.ArmoryRings,
+        GameInventoryType.ArmorySoulCrystal,
+    };
+
     /// <summary>
-    /// Maps item icon ids to names for everything the player currently carries
-    /// (bags + key items). Hand-over grids (Request/InventoryEventGrid) show
-    /// icon-only slots with NO text in the UI, so the icon id is the only link
-    /// to the item - we resolve it against the player's own items (collisions
-    /// are practically impossible within a single bag). Rebuilt per call so it
-    /// reflects the current inventory.
+    /// Maps item icon ids to names for everything the player currently owns.
+    /// Hand-over grids (Request/InventoryEventGrid) show icon-only slots with
+    /// NO text in the UI, so the icon id is the only link to the item - we
+    /// resolve it against the player's own items (collisions are practically
+    /// impossible within a single bag). Rebuilt per call so it reflects the
+    /// current inventory.
     /// </summary>
     public Dictionary<uint, string> BuildIconNameMap()
     {
         var map = new Dictionary<uint, string>();
+        foreach (var (icon, entry) in BuildOwnedIconMap())
+            map[icon] = entry.Name;
+        return map;
+    }
+
+    /// <summary>Icon id -> (name, item id) for all owned items. Key items carry
+    /// ItemId 0 - they index the EventItem sheet, not Item, and have no gear data.</summary>
+    private Dictionary<uint, (string Name, uint ItemId)> BuildOwnedIconMap()
+    {
+        var map = new Dictionary<uint, (string, uint)>();
 
         foreach (var page in BagPages)
-            foreach (var item in _inventory.GetInventoryItems(page))
-            {
-                if (item.IsEmpty || item.ItemId == 0) continue;
-                if (_data.GetExcelSheet<LuminaItem>().TryGetRow(item.BaseItemId, out var row))
-                {
-                    var name = row.Name.ExtractText();
-                    if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = name;
-                }
-            }
+            AddIconEntries(map, page);
+        foreach (var container in GearContainers)
+            AddIconEntries(map, container);
 
         foreach (var item in _inventory.GetInventoryItems(GameInventoryType.KeyItems))
         {
@@ -161,14 +181,27 @@ public sealed class InventoryService
             if (_data.GetExcelSheet<LuminaEventItem>().TryGetRow(item.ItemId, out var row))
             {
                 var name = row.Name.ExtractText();
-                if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = name;
+                if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, 0);
             }
         }
 
         return map;
     }
 
-    private Dictionary<uint, string>? _iconSheetCache;
+    private void AddIconEntries(Dictionary<uint, (string, uint)> map, GameInventoryType container)
+    {
+        foreach (var item in _inventory.GetInventoryItems(container))
+        {
+            if (item.IsEmpty || item.ItemId == 0) continue;
+            if (_data.GetExcelSheet<LuminaItem>().TryGetRow(item.BaseItemId, out var row))
+            {
+                var name = row.Name.ExtractText();
+                if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, item.BaseItemId);
+            }
+        }
+    }
+
+    private Dictionary<uint, (string Name, uint ItemId)>? _iconSheetCache;
 
     /// <summary>
     /// Resolves an item icon id to a name for the focus auto-announce. Prefers
@@ -176,30 +209,34 @@ public sealed class InventoryService
     /// a full Item/EventItem sheet reverse lookup (built once, cached) so quest
     /// REWARD items - which are not in the bag yet - resolve too. "" if unknown.
     /// </summary>
-    public string ResolveIconName(uint iconId)
-    {
-        if (iconId == 0) return string.Empty;
+    public string ResolveIconName(uint iconId) => ResolveIconItem(iconId).Name;
 
-        if (BuildIconNameMap().TryGetValue(iconId, out var owned)) return owned;
+    /// <summary>Like ResolveIconName, but also returns the Item sheet row id so
+    /// callers can announce gear data. ItemId 0 = no Item row (unknown/key item).</summary>
+    public (string Name, uint ItemId) ResolveIconItem(uint iconId)
+    {
+        if (iconId == 0) return (string.Empty, 0);
+
+        if (BuildOwnedIconMap().TryGetValue(iconId, out var owned)) return owned;
 
         _iconSheetCache ??= BuildIconSheetCache();
-        return _iconSheetCache.TryGetValue(iconId, out var sheet) ? sheet : string.Empty;
+        return _iconSheetCache.TryGetValue(iconId, out var sheet) ? sheet : (string.Empty, 0);
     }
 
-    private Dictionary<uint, string> BuildIconSheetCache()
+    private Dictionary<uint, (string Name, uint ItemId)> BuildIconSheetCache()
     {
-        var map = new Dictionary<uint, string>();
+        var map = new Dictionary<uint, (string, uint)>();
         foreach (var row in _data.GetExcelSheet<LuminaItem>())
         {
             if (row.Icon == 0) continue;
             var name = row.Name.ExtractText();
-            if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = name;
+            if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, row.RowId);
         }
         foreach (var row in _data.GetExcelSheet<LuminaEventItem>())
         {
             if (row.Icon == 0) continue;
             var name = row.Name.ExtractText();
-            if (!string.IsNullOrWhiteSpace(name)) map.TryAdd(row.Icon, name);
+            if (!string.IsNullOrWhiteSpace(name)) map.TryAdd(row.Icon, (name, 0));
         }
         _log.Info($"[Inventory] Icon-Sheet-Cache gebaut: {map.Count} Einträge.");
         return map;
