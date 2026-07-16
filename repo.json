@@ -3,7 +3,7 @@
     "Author": "FF14 Accessibility Project",
     "Name": "FF14 Accessibility",
     "InternalName": "FF14Accessibility",
-    "AssemblyVersion": "4.73.0.0",
+    "AssemblyVersion": "4.74.0.0",
     "Description": "Macht FF14 für blinde Spieler zugänglich via NVDA/TOLK Integration, Audio-Navigation und vollständiger Tastatursteuerung.",
     "Punchline": "FF14 für blinde Spieler via NVDA und Tastatur zugänglich machen.",
     "ApplicableVersion": "any",
