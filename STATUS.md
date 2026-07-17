@@ -3,7 +3,19 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-17 abends, V4.89 gebaut + deployed, UNCOMMITTET)
+## STAND JETZT (2026-07-17 abends, V4.89 COMMITTET + RELEASED v4.89)
+
+### RELEASE v4.89 VEROEFFENTLICHT (17.07. abends)
+Code-Commit 1e4ee57 (V4.82-V4.89) + repo.json-Commit 44ec959 (Version
+4.89) gepusht. GitHub-Release v4.89 mit latest.zip /
+FF14Accessibility-v4.89.0.zip (je 518046 Bytes, Release-Build,
+Manifest 4.89.0.0 im Zip verifiziert) + Installer-EXE (unveraendert
+seit 4.74er-Aktivierungs-Fix). latest-Link verifiziert (HTTP 200,
+518046 Bytes). uia_test.ps1 weiterhin absichtlich uncommittet.
+WICHTIG: V4.82-V4.89 (ganze Charaktererstellung) sind released, aber
+noch NICHT in-game getestet - Testpunkte unten gelten weiter.
+
+
 
 ### V4.89: Namensfelder Vorname/Nachname werden benannt (User-Wunsch)
 User: "die felder fuer vor und nachname muessen auch noch benannt
