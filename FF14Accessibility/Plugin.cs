@@ -52,8 +52,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.81";
-    private const string PluginVersionTag = "Skill-Browser kann alle 10 Leisten: Umschalt+F11 = Ziel-Leiste wechseln, Ansagen nennen die LIVE gebundene Taste (KeybindService.GetBoundKey, HOTBAR_n_m aus der Keybind-Tabelle; Leiste 2 = Strg+1..0 laut Dump), Strg+F9 liest die gewaehlte Leiste";
+    private const string PluginVersion    = "4.89";
+    private const string PluginVersionTag = "Namenseingabe: Vorname/Nachname werden beim Fokuswechsel angesagt (Label per Naehe zum Feld) + Tipp-Echo pro Feld; Zaehler-Spam stumm";
 
     public Plugin()
     {
@@ -229,6 +229,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Bestiarium",     _config.KeyBestiary),
             ("Ausrüstung",     _config.KeyReadEquipment),
             ("Beste Ausrüstung", _config.KeyEquipBest),
+            ("Zufälliges Aussehen", _config.KeyRandomLook),
             ("Skill zurück",   _config.KeySkillPrev),
             ("Skill weiter",   _config.KeySkillNext),
             ("Skill-Ziel-Taste", _config.KeySkillSlot),
@@ -410,6 +411,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
+        if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillPrev))     _hotbar.CycleSkillPrev();
         if (IsJustPressed(_config.KeySkillNext))     _hotbar.CycleSkillNext();
         if (IsJustPressed(_config.KeySkillSlot))     _hotbar.CycleTargetSlot();
@@ -624,6 +626,7 @@ public sealed class Plugin : IDalamudPlugin
             "Strg+F9, gewählte Aktionsleiste vorlesen. " +
             "Strg+F6, angelegte Ausrüstung vorlesen. " +
             "Strg+F7, empfohlene Ausrüstung anlegen. " +
+            "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
             "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
             "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
             "Umschalt+F9, Ziel-Taste der Leiste wählen. " +

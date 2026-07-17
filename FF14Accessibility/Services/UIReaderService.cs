@@ -129,6 +129,15 @@ public sealed class UIReaderService : IDisposable
         "_CharaMakeRaceGender",
         // Volksstamm: eigene Handler, gleiche Struktur wie RaceGender.
         "_CharaMakeTribe",
+        // Beschreibungs-Pane: der generische Scanner sprach den Text mit
+        // SpeakInterrupt und schnitt damit die Volk-Ansage ab (Log 2026-07-17
+        // 16:56); OnCharaMakeHelpUpdate liest ihn dediziert NACH dem Namen.
+        "_CharaMakeHelp",
+        // Kommentar-Textfeld beim Aussehen-Speichern: der Scanner wuerde
+        // Zaehler ("1/40") und Inhalt bei JEDEM Tastendruck unterbrechend
+        // sprechen - das dedizierte Tipp-Echo (OnCharaMakeInputUpdate)
+        // uebernimmt. Oeffnungs-Ansage kommt weiter aus OnAnyAddonOpen.
+        "CharaMakeDataInputString",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -308,6 +317,25 @@ public sealed class UIReaderService : IDisposable
         // Charaktererstellung: Volksstamm - gleiche Struktur wie RaceGender (F5-Dump 2026-07-10)
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
+
+        // Charaktererstellung: Beschreibungstext (Volk/Volksstamm) - Dumps
+        // 2026-07-17 16:31: der Text steht in _CharaMakeHelp, Text-Node id=4,
+        // und wird beim Markieren einer Option live umgeschrieben
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "_CharaMakeHelp", OnCharaMakeHelpOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "_CharaMakeHelp", OnCharaMakeHelpUpdate);
+
+        // Charaktererstellung: Kommentar-Textfeld beim Aussehen-Speichern
+        // (Dump 2026-07-17 17:42: TextInput-Komponente, Zaehler "0/40") -
+        // dediziertes Tipp-Echo, generischer Scanner ist dafuer stumm
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "CharaMakeDataInputString", OnCharaMakeInputOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "CharaMakeDataInputString", OnCharaMakeInputUpdate);
+
+        // Charaktererstellung: Namenseingabe (Vorname/Nachname). Dump
+        // 2026-07-17 17:57: zwei sichtbare TextInputs (id=9/7) mit eigenem
+        // Label-Text daneben (id=8 "Nachname", id=6 "Vorname"). Handler sagt
+        // beim Feldwechsel das Label an + Tipp-Echo pro Feld.
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "_CharaMakeCharaName", OnCharaMakeNameOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "_CharaMakeCharaName", OnCharaMakeNameUpdate);
 
         // -- Benachrichtigungen -----------------------------------
         foreach (var name in NotificationAddons)
@@ -909,6 +937,20 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Namenseingabe (_CharaMakeCharaName): der dedizierte Handler
+        // OnCharaMakeNameUpdate sagt Feld-Label (Vorname/Nachname) + Tipp-Echo
+        // an. Der generische Leser wuerde den Zeichenzaehler ("0/15") unter dem
+        // Fokus vorlesen - stumm, solange der Fokus IN einem Namensfeld sitzt
+        // (Knoepfe wie "Bestaetigen" liegen NICHT in einem TextInput und werden
+        // weiter generisch gelesen).
+        if (IsFocusInsideNameField(node))
+        {
+            _lastFocusedNodePtr  = (nint)node;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
         // Item slots (inventory grid, hand-over, quest reward) show only an
         // icon - no name. Their raw text is empty or JUST the stack quantity
         // ("10"), so the icon->name resolution must take PRIORITY over the text
@@ -933,6 +975,12 @@ public sealed class UIReaderService : IDisposable
             // Tree discards texts of length 1, which is exactly why hotbar
             // rows were spoken without their keys.
             text = keybindRow;
+        }
+        else if (TryReadCharaMakeIconFocusRow(node, out var cmfRow))
+        {
+            // Aussehen-Picker der Charaktererstellung: Zeilen sind textlose
+            // Icon-/Farbfelder, angesagt wird die Position ("12 von 52").
+            text = cmfRow;
         }
         else
         {
@@ -964,6 +1012,10 @@ public sealed class UIReaderService : IDisposable
             // those while that window is open; buttons ("Abschließen") and item
             // names are non-numeric and still pass through.
             if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
+            // Zeichen-Zaehler eines Textfelds ("3/40"): der Fokus sitzt auf
+            // dem Zaehler-Node und wuerde bei jedem Tastendruck sprechen -
+            // das Tipp-Echo (OnCharaMakeInputUpdate) uebernimmt dort.
+            if (IsBareNumber(text) && IsAddonVisible("CharaMakeDataInputString")) return;
             // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
             // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
@@ -2875,11 +2927,231 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
+    private string _lastCharaMakeHelpText = string.Empty;
+
+    private void OnCharaMakeHelpOpen(AddonEvent type, AddonArgs args)
+    {
+        // Fresh pane: forget the old text so an unchanged description is
+        // announced again when the creation screen is re-entered.
+        _lastCharaMakeHelpText = string.Empty;
+    }
+
+    /// <summary>
+    /// Announces the race/tribe description whenever _CharaMakeHelp rewrites
+    /// its text. The description lives in top-level Text node id=4 (dumps
+    /// 2026-07-17 16:31: race "Die Elezen sind stolze Nomaden..." and tribe
+    /// "Der Volksstamm der Wieslaender..."). Spoken non-interrupting so it
+    /// queues behind the race/gender announcement; the next SpeakInterrupt
+    /// (arrowing on) cuts it off.
+    /// </summary>
+    private unsafe void OnCharaMakeHelpUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var node = addon->GetNodeById(4);
+        if (node == null || node->Type != NodeType.Text || !node->IsVisible()) return;
+
+        var text = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+        if (text == _lastCharaMakeHelpText) return;
+        _lastCharaMakeHelpText = text;
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        _tolk.Speak(text);
+        _log.Info($"[Accessibility] CharaMake-Beschreibung: '{TolkService.Sanitize(text)}'");
+    }
+
+    // -- Textfeld-Echo (Charaktererstellung: Kommentar beim Speichern) --
+
+    private string _lastTextInputEcho = string.Empty;
+
+    private void OnCharaMakeInputOpen(AddonEvent type, AddonArgs args)
+        => _lastTextInputEcho = string.Empty;
+
+    /// <summary>
+    /// Typing echo for the comment field of "Charakterdaten speichern"
+    /// (CharaMakeDataInputString, dump 2026-07-17 17:42). Reads the
+    /// TextInput component's EvaluatedString (AtkComponentInputBase @224,
+    /// ilspycmd 2026-07-17) each frame and speaks the difference: typed
+    /// characters, deleted characters ("X gelöscht"), or the full new text
+    /// after a mid-string edit.
+    /// </summary>
+    private unsafe void OnCharaMakeInputUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var input = FindTextInput(addon);
+        if (input == null) return;
+
+        var text = input->AtkComponentInputBase.EvaluatedString.ToString();
+        if (text == _lastTextInputEcho) return;
+        SpeakTextEchoDiff(_lastTextInputEcho, text);
+        _lastTextInputEcho = text;
+        _log.Info($"[Echo] Textfeld: '{TolkService.Sanitize(text)}'");
+    }
+
+    /// <summary>
+    /// Speaks the change between two text-field states: the appended
+    /// characters when typing, "X gelöscht" when deleting a trailing run,
+    /// "leer" when cleared, or the full new text after a mid-string edit.
+    /// </summary>
+    private void SpeakTextEchoDiff(string old, string @new)
+    {
+        if (@new.Length == 0)
+            _tolk.SpeakInterrupt("leer");
+        else if (@new.Length > old.Length && @new.StartsWith(old, StringComparison.Ordinal))
+            _tolk.SpeakInterrupt(@new[old.Length..]);
+        else if (old.Length > @new.Length && old.StartsWith(@new, StringComparison.Ordinal))
+            _tolk.SpeakInterrupt($"{old[@new.Length..]} gelöscht");
+        else
+            _tolk.SpeakInterrupt(@new);
+    }
+
+    /// <summary>First top-level TextInput component of an addon.</summary>
+    private static unsafe AtkComponentTextInput* FindTextInput(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+            if (comp->GetComponentType() == ComponentType.TextInput)
+                return (AtkComponentTextInput*)comp;
+        }
+        return null;
+    }
+
+    // -- Namenseingabe (Vorname/Nachname) ----------------------------
+
+    private nint   _lastNameFieldPtr;
+    private string _lastNameFieldEcho = string.Empty;
+
+    private void OnCharaMakeNameOpen(AddonEvent type, AddonArgs args)
+    {
+        _lastNameFieldPtr  = 0;
+        _lastNameFieldEcho = string.Empty;
+    }
+
+    /// <summary>
+    /// True while the global keyboard focus sits inside a visible name-entry
+    /// TextInput of _CharaMakeCharaName. Used to mute the generic focus reader
+    /// (it would otherwise announce the character counter under the cursor).
+    /// </summary>
+    private unsafe bool IsFocusInsideNameField(AtkResNode* focused)
+    {
+        var ptr = _gameGui.GetAddonByName("_CharaMakeCharaName");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return false;
+        return FindFocusedNameField(addon, focused) != null;
+    }
+
+    /// <summary>
+    /// Announces the focused name field's label (Vorname/Nachname) on field
+    /// change and echoes typing within the focused field. Two visible
+    /// TextInputs, each with its own top-level label text beside it (dump
+    /// 2026-07-17 17:57). The label is paired by physical proximity (nearest
+    /// short top-level text), which is robust to node order and language.
+    /// </summary>
+    private unsafe void OnCharaMakeNameUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var stage = AtkStage.Instance();
+        var focused = stage != null && stage->AtkInputManager != null
+            ? stage->AtkInputManager->FocusedNode : null;
+        if (focused == null) { _lastNameFieldPtr = 0; return; }
+
+        var field = FindFocusedNameField(addon, focused);
+        if (field == null) { _lastNameFieldPtr = 0; return; }
+
+        var input   = (AtkComponentTextInput*)((AtkComponentNode*)field)->Component;
+        var content = input->AtkComponentInputBase.EvaluatedString.ToString();
+
+        if ((nint)field != _lastNameFieldPtr)
+        {
+            _lastNameFieldPtr  = (nint)field;
+            _lastNameFieldEcho = content;
+            var label = FindNameFieldLabel(addon, field);
+            var msg   = content.Length > 0 ? $"{label}, {content}" : label;
+            _tolk.SpeakInterrupt(msg);
+            _log.Info($"[Name] Feld id={field->NodeId} Label='{label}' Inhalt='{TolkService.Sanitize(content)}'");
+            return;
+        }
+
+        if (content != _lastNameFieldEcho)
+        {
+            SpeakTextEchoDiff(_lastNameFieldEcho, content);
+            _lastNameFieldEcho = content;
+            _log.Info($"[Name] Echo id={field->NodeId}: '{TolkService.Sanitize(content)}'");
+        }
+    }
+
+    /// <summary>
+    /// The visible top-level TextInput component node of the name-entry addon
+    /// that contains (or is) the focused node, or null. The invisible
+    /// alternate-input TextInputs are skipped.
+    /// </summary>
+    private static unsafe AtkResNode* FindFocusedNameField(AtkUnitBase* addon, AtkResNode* focused)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000 || !node->IsVisible()) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.TextInput) continue;
+            if ((nint)node == (nint)focused) return node;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                if ((nint)comp->UldManager.NodeList[j] == (nint)focused) return node;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Label of a name field = the nearest visible short top-level text node
+    /// (2..20 chars, no "/" so counters are excluded). Proximity uses the
+    /// field's own X/Y; labels and fields share the addon root as parent, so
+    /// their coordinates are directly comparable.
+    /// </summary>
+    private unsafe string FindNameFieldLabel(AtkUnitBase* addon, AtkResNode* field)
+    {
+        var fx = field->X;
+        var fy = field->Y;
+        var best = string.Empty;
+        var bestDist = float.MaxValue;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            if (t.Length is < 2 or > 20 || t.Contains('/')) continue;
+            var dx = n->X - fx;
+            var dy = n->Y - fy;
+            var dist = dx * dx + dy * dy;
+            if (dist < bestDist) { bestDist = dist; best = t; }
+        }
+        return best;
+    }
+
     // -- Tastatur-Navigation -----------------------------------------
 
     // isHorizontal=true f�r Links/Rechts, false f�r Hoch/Runter
     public void Navigate(int delta, bool isHorizontal)
     {
+        // Aussehen-Picker der Charaktererstellung zuerst: das Spiel ignoriert
+        // Pfeiltasten in den Icon-/Farb-Rastern komplett (Log 2026-07-17
+        // 17:24:47: alle vier Pfeile gedrueckt, kein ListProbe-/Focus-Wechsel)
+        // - hier navigiert das Plugin die Liste selbst (alle Pfeile = +-1).
+        unsafe
+        {
+            if (TryNavigateCharaMakePicker(delta)) return;
+        }
+
         // SelectYesno: nur Links/Rechts navigieren Ja?Nein
         // Hoch/Runter passieren durch � das Spiel navigiert nativ
         if (!isHorizontal) return;
@@ -2908,6 +3180,85 @@ public sealed class UIReaderService : IDisposable
         _lastYesNoText = newText;
         _tolk.SpeakInterrupt(newText);
         _log.Info($"[Accessibility] SelectYesno Gamepad -> {newText}");
+    }
+
+    /// <summary>
+    /// Arrow-key navigation for the character-creation icon/colour pickers
+    /// (CMFIcon*/CMFColor*). The game ignores arrow keys in these grids
+    /// (log 2026-07-17 17:24: no index/focus movement on any arrow), so the
+    /// plugin moves the selection itself: SelectItem(idx, dispatchEvent:true)
+    /// is the game's own selection path (ilspycmd 2026-07-17) - the dispatch
+    /// lets the addon react like on a mouse click (preview update).
+    /// Returns false when no CMF picker with entries is visible - the caller
+    /// continues with the other navigation branches.
+    /// </summary>
+    private unsafe bool TryNavigateCharaMakePicker(int delta)
+    {
+        if (!IsAddonVisible("_CharaMakeTitle")) return false;
+
+        // Only when the picker itself is the TOPMOST menu: with another
+        // window on top (log 17:42: stack [BgSelector, CMFIconHair,
+        // CharaMakeDataExport]) arrows must NOT move the hidden picker list.
+        if (_menuStack.Count > 0 && !_menuStack.Peek().Name.StartsWith("CMF", StringComparison.Ordinal))
+            return false;
+
+        // Active picker = the top-of-stack CMF menu when visible and
+        // populated; fallback: scan all loaded units. Inactive pickers stay
+        // loaded with 0 entries (log 17:23:52), so the count check
+        // disambiguates.
+        AtkUnitBase* addon = null;
+        AtkComponentList* list = null;
+        string pickerName = string.Empty;
+        if (_menuStack.Count > 0)
+        {
+            var topName = _menuStack.Peek().Name;
+            var p = _gameGui.GetAddonByName(topName);
+            if (!p.IsNull)
+            {
+                var a = (AtkUnitBase*)(nint)p;
+                if (a->IsVisible)
+                {
+                    var l = FindListInAddon(a);
+                    if (l != null && GetListEntryCount(l) > 0)
+                    {
+                        addon = a; list = l; pickerName = topName;
+                    }
+                }
+            }
+        }
+        if (list == null)
+        {
+            var mgr = RaptureAtkUnitManager.Instance();
+            if (mgr == null) return false;
+            for (var u = 0; u < mgr->AllLoadedUnitsList.Count && u < 256; u++)
+            {
+                var a = mgr->AllLoadedUnitsList.Entries[u].Value;
+                if (a == null || !a->IsVisible) continue;
+                var n = a->NameString;
+                if (!n.StartsWith("CMF", StringComparison.Ordinal)) continue;
+                var l = FindListInAddon(a);
+                if (l == null || GetListEntryCount(l) <= 0) continue;
+                addon = a; list = l; pickerName = n;
+                break;
+            }
+        }
+        if (list == null) return false;
+
+        var count = GetListEntryCount(list);
+        var cur   = list->SelectedItemIndex;
+        var next  = cur < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : Math.Clamp(cur + delta, 0, count - 1);
+
+        list->SelectItem(next, true);
+        list->ScrollToItem((short)next);
+
+        var text = $"{next + 1} von {count}";
+        // Prime the list tracker's dedup so the Sel change is not re-announced.
+        _lastListAnnounce[pickerName] = $"{next}|{text}";
+        _tolk.SpeakInterrupt(text);
+        _log.Info($"[CMF] Picker-Navigation: {pickerName} {cur} -> {next} (SelectItem dispatch=true)");
+        return true;
     }
 
     public unsafe void ConfirmYesNo()
@@ -3192,6 +3543,58 @@ public sealed class UIReaderService : IDisposable
             evt = evt->NextEvent;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Presses the game's own "Zufälliges Aussehen" button in the character-
+    /// creation appearance step (_CharaMakeFeature, top-level Button node
+    /// id=4 - dump 2026-07-17 16:35). Matched by NODE ID, not label, so it
+    /// works in every client language. Same ButtonClick dispatch as
+    /// PressFocusedOk/TryClickButton. Honest announcements: reports the
+    /// press, not an unverified "appearance changed".
+    /// </summary>
+    public unsafe void PressRandomAppearance()
+    {
+        var ptr = _gameGui.GetAddonByName("_CharaMakeFeature");
+        if (ptr.IsNull || !((AtkUnitBase*)(nint)ptr)->IsVisible)
+        {
+            _tolk.SpeakInterrupt("Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung.");
+            return;
+        }
+        var addon = (AtkUnitBase*)(nint)ptr;
+        var node  = addon->GetNodeById(4);
+        if (node == null || (int)node->Type < 1000 || !node->IsVisible())
+        {
+            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen nicht gefunden.");
+            _log.Warning("[Accessibility] RandomLook: _CharaMakeFeature id=4 fehlt oder unsichtbar");
+            return;
+        }
+        var comp = ((AtkComponentNode*)node)->Component;
+        if (comp == null || !IsReadable(comp) || comp->GetComponentType() != ComponentType.Button)
+        {
+            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen nicht gefunden.");
+            _log.Warning("[Accessibility] RandomLook: id=4 ist kein Button");
+            return;
+        }
+
+        var evt = FindEventOfType(node, AtkEventType.ButtonClick);
+        for (var j = 0; j < comp->UldManager.NodeListCount && evt == null; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child == null) continue;
+            evt = FindEventOfType(child, AtkEventType.ButtonClick);
+        }
+        if (evt == null || evt->Listener == null || !IsReadable(evt->Listener))
+        {
+            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen reagiert nicht.");
+            _log.Warning("[Accessibility] RandomLook: kein ButtonClick-Event/Listener an id=4");
+            return;
+        }
+
+        var data = default(AtkEventData); // zeroed, Size=40 (ilspycmd)
+        evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
+        _log.Info($"[Accessibility] RandomLook: ButtonClick param={evt->Param} dispatched");
+        _tolk.SpeakInterrupt("Zufälliges Aussehen gedrückt.");
     }
 
     public unsafe void ReadCurrentFocus()
@@ -3803,6 +4206,49 @@ public sealed class UIReaderService : IDisposable
         return !string.IsNullOrEmpty(text);
     }
 
+    /// <summary>
+    /// While the character-creation "Aussehen" pickers are open, resolves the
+    /// globally focused node to its row in a CMF icon/colour list and returns
+    /// "position von count". Those rows are pure image swatches without any
+    /// text (dump 2026-07-17 16:35: CMFIconFeature rows = ListItemRenderer
+    /// with only Image children), so the position is the only speakable
+    /// content. ListItemIndex is the renderer's DATA row (ilspycmd
+    /// 2026-07-17, offset 388) - correct even when the list scrolls under a
+    /// fixed focus node. False when no CMF list owns the renderer - the
+    /// caller falls back to the generic reader.
+    /// </summary>
+    private unsafe bool TryReadCharaMakeIconFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        // _CharaMakeTitle is visible during the whole character creation
+        // (dumps 2026-07-17 16:31 + 16:35) - cheap gate before any scanning.
+        if (!IsAddonVisible("_CharaMakeTitle")) return false;
+        var renderer = ClimbToItemRenderer(node);
+        if (renderer == null) return false;
+
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return false;
+        for (var u = 0; u < mgr->AllLoadedUnitsList.Count && u < 256; u++)
+        {
+            var a = mgr->AllLoadedUnitsList.Entries[u].Value;
+            if (a == null || !a->IsVisible) continue;
+            if (!a->NameString.StartsWith("CMF", StringComparison.Ordinal)) continue;
+            var list = FindListInAddon(a);
+            if (list == null) continue;
+            var slots = Math.Min(list->AllocatedItemRendererListLength, 64);
+            for (var i = 0; i < slots; i++)
+            {
+                if (list->ItemRendererList[i].AtkComponentListItemRenderer != renderer) continue;
+                var count = GetListEntryCount(list);
+                var idx   = renderer->ListItemIndex;
+                if (count <= 0 || idx < 0 || idx >= count) return false;
+                text = $"{idx + 1} von {count}";
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>First visible, non-empty text node with the given id inside a
     /// component (direct children only).</summary>
     private static unsafe string ReadComponentTextById(AtkComponentBase* comp, uint textNodeId)
@@ -3870,6 +4316,11 @@ public sealed class UIReaderService : IDisposable
         // with the command; generic reader as fallback if the structure drifts.
         var text = name == "ConfigKeybind" ? ReadConfigKeybindRow(list, idx) : string.Empty;
         if (string.IsNullOrEmpty(text)) text = ReadListItemText(list, idx);
+        // CharaMake-Aussehen-Picker (CMFIcon*/CMFColor*): rows are pure image
+        // swatches without text (dump 2026-07-17 16:35) - the position is the
+        // only speakable content.
+        if (string.IsNullOrEmpty(text) && name.StartsWith("CMF", StringComparison.Ordinal))
+            text = $"{idx + 1} von {GetListEntryCount(list)}";
         if (string.IsNullOrEmpty(text)) return;
         var announce = $"{idx}|{text}";
         if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;
@@ -4531,6 +4982,23 @@ public sealed class UIReaderService : IDisposable
                         names.Add(detailName);
                 }
 
+                // Character creation: the race/step description pane lives in
+                // a SIBLING addon that is never focused (_CharaMakeInfo/
+                // Notice/Help - which one is unverified, user report
+                // 2026-07-17: race description not announced). Dump every
+                // visible CharaMake addon along so the text can be located.
+                if (names.Any(n => n.Contains("CharaMake", StringComparison.Ordinal)))
+                {
+                    for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+                    {
+                        var a = mgr->AllLoadedUnitsList.Entries[i].Value;
+                        if (a == null || !a->IsVisible) continue;
+                        var n = a->NameString;
+                        if (n.Contains("CharaMake", StringComparison.Ordinal) && !names.Contains(n))
+                            names.Add(n);
+                    }
+                }
+
                 _log.Info($"[Dump] Fokussierte Addons (alle im Dump): {string.Join(", ", names)}");
                 DumpAddons(names);
                 return;
@@ -4745,6 +5213,12 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeRaceGender", OnRaceGenderReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_CharaMakeHelp", OnCharaMakeHelpOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeHelp", OnCharaMakeHelpUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "CharaMakeDataInputString", OnCharaMakeInputOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "CharaMakeDataInputString", OnCharaMakeInputUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_CharaMakeCharaName", OnCharaMakeNameOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeCharaName", OnCharaMakeNameUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "TitleDCWorldMap", OnDCWorldMapOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "TitleDCWorldMap", OnDCWorldMapUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "TitleDCWorldMap", OnDCWorldMapReceive);

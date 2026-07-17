@@ -3,7 +3,296 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-17 nachmittags, V4.81 gebaut + deployed + RELEASED)
+## STAND JETZT (2026-07-17 abends, V4.89 gebaut + deployed, UNCOMMITTET)
+
+### V4.89: Namensfelder Vorname/Nachname werden benannt (User-Wunsch)
+User: "die felder fuer vor und nachname muessen auch noch benannt
+werden". Dump _CharaMakeCharaName (Desktop 17:57): zwei sichtbare
+TextInputs (id=9/7) OHNE Label im Feld - die Labels stehen als
+separater Top-Level-Text daneben (id=8 "Nachname", id=6 "Vorname").
+FIX (UIReaderService): dedizierter Handler OnCharaMakeNameUpdate
+(PostUpdate _CharaMakeCharaName):
+- Fokus-Node -> enthaltendes sichtbares TextInput (FindFocusedName-
+  Field, prueft node==field oder in dessen Kind-Liste).
+- Bei Feldwechsel: Label + aktueller Inhalt ("Vorname" bzw.
+  "Vorname, Max"). Label per PHYSISCHER NAEHE (X/Y Feld vs. kurze
+  Top-Level-Texte, "/" gefiltert = keine Zaehler) - robuster als
+  das id-1-Muster, sprachunabhaengig.
+- Gleiches Feld, Inhalt geaendert: Tipp-Echo (EvaluatedString-Diff,
+  gemeinsamer Helfer SpeakTextEchoDiff mit dem Kommentar-Feld).
+- Generischer Fokus-Leser fuer Namensfelder stumm (IsFocusInside-
+  NameField) - sonst spraeche er den Zaehler "0/15". Knoepfe
+  (Bestaetigen/Zurueck) bleiben generisch lesbar.
+Build 0/0, deployt (Manifest 4.89.0.0).
+OFFEN/UNVERIFIZIERT: wie der Nutzer zwischen den Feldern wechselt
+(Tab/Klick) - Laufzeit-Log war rotiert. Die Naehe-Paarung ist
+gegenueber dem id-1-Muster abgesichert, aber ungetestet.
+
+### Beim naechsten Test (V4.89)
+1. "Version 4 Punkt 89 bereit".
+2. Charaktererstellung bis zum Namensfenster ("Name des Charakters").
+   In ein Feld gehen (Tab? Pfeil? Klick?): sagt er "Vorname" bzw.
+   "Nachname"? Ins andere Feld: anderes Label?
+3. Tippen: jedes Zeichen? Ruecktaste "X geloescht"? KEIN "0/15"-
+   Zaehler-Gequatsche?
+4. Knoepfe Bestaetigen/Zurueck: werden die noch normal angesagt?
+5. Falls Label falsch/vertauscht: Log an Claude - [Name]-Zeile zeigt
+   Feld-id + gewaehltes Label.
+
+### V4.87/4.88 weiterhin ungetestet (in der 17:23-17:42-Session nicht ausgeloest)
+- Picker-Pfeile (Frisur/Farb-Raster navigieren + Wirkung auf Vorschau)
+- Tipp-Echo im Aussehen-Speichern-Kommentarfeld
+
+---
+
+## STAND 2026-07-17 abends (V4.88 gebaut + deployed, UNCOMMITTET)
+
+### Neu entdeckt (User-Dump 17:42): "Charakterdaten speichern"-Dialog
+User hat im Aussehen-Schritt den Speichern-Weg probiert (Ok ->
+SelectYesno "Einstellungen speichern?" -> Ja). Drei neue Addons:
+- CharaMakeDataExport ("CHARAKTERDATEN SPEICHERN"): List(9) mit 40
+  Speicherslots, Zeilen MIT Text (id=6 Volksstamm/Geschlecht, id=5
+  "Speicherslot N", id=4 Datum). FUNKTIONIERT SCHON KOMPLETT: Titel,
+  "Menue, 40 Eintraege", Zeilen-Ansagen beim Navigieren (Hov2-Pfad),
+  Enter -> Ueberschreiben-Dialog (CharaMakeDataImportDialog) wurde
+  vorgelesen, Ok fuehrte weiter. KEIN Fix noetig.
+- CharaMakeDataInputString: Kommentar-Dialog mit TextInput (Zaehler
+  "0/40"), Speichern/Abbrechen. Oeffnungs-Ansage lief ("Kommentar.
+  Das Aussehen von ... wird in Slot 2 gespeichert."), aber TIPPEN
+  war stumm (Textfeld-Echo = aelteste offene Baustelle).
+
+### V4.88: Tipp-Echo + zwei Absicherungen
+1. TIPP-ECHO (OnCharaMakeInputUpdate, PostUpdate CharaMakeData-
+   InputString): liest EvaluatedString der TextInput-Komponente
+   (AtkComponentInputBase @224, ilspycmd-verifiziert) pro Frame,
+   spricht die DIFFERENZ: getippte Zeichen / "X geloescht" /
+   kompletten Text nach Editieren mittendrin / "leer".
+   Erster genereller Textfeld-Echo-Baustein - wenn er sich hier
+   bewaehrt, auf andere Textfelder (Chat, Suche) ausweiten.
+2. Zaehler-Spam stumm: Addon in SpecialUpdateAddons (Scanner haette
+   "1/40" + Inhalt pro Tastendruck unterbrechend gesprochen) +
+   IsBareNumber-Guard im globalen Fokus-Leser (Fokus sitzt auf dem
+   Zaehler-Node "3/40").
+3. Picker-Navigation abgesichert: Pfeile greifen nur noch, wenn der
+   CMF-Picker das OBERSTE Menue im Stack ist - Log 17:42 zeigte
+   Stack [BgSelector, CMFIconHair, CharaMakeDataExport]: die Pfeile
+   haetten sonst die VERSTECKTE Frisur-Liste unterm Speicher-Dialog
+   bewegt.
+HINWEIS: V4.87-Picker-Pfeile wurden in der Session NICHT getestet
+(keine [Key]/[CMF]-Zeilen im Log; User hat stattdessen den
+Speichern-Weg erkundet). Nebenbefund: [Key]-Zeilen erscheinen NUR,
+wenn das Spiel die Pfeile nicht selbst verbraucht (17:24 Frisur-
+Raster: Zeilen da; native Listen: keine) - IKeyState sieht offenbar
+nur unverbrauchte Tasten. Gut fuer uns: kein Doppel-Navigieren.
+
+### Beim naechsten Test (V4.88)
+1. "Version 4 Punkt 88 bereit".
+2. PICKER-PFEILE (V4.87, weiter ungetestet): Aussehen -> Frisur,
+   Pfeiltasten: "52 von 53"...? Aendert sich die Frisur wirklich
+   (Fenster zu/auf: startet bei neuer Nummer)?
+3. TIPP-ECHO: Aussehen speichern -> Slot waehlen -> Ok -> im
+   Kommentarfeld tippen: jedes Zeichen wird gesprochen? Ruecktaste:
+   "X geloescht"? KEIN "1/40"-Geplapper dazwischen?
+4. Speichern druecken: Bestaetigung vom Spiel? Danach im Slot-
+   Fenster: neuer Eintrag mit Datum?
+
+---
+
+## STAND 2026-07-17 abends (V4.87 gebaut + deployed, UNCOMMITTET)
+
+### V4.86-Testauswertung (Log 17:23-17:25): 2x BESTAETIGT, 1 Blocker
+- BESTAETIGT Beschreibungen: Volk UND Volksstamm sprechen Name ->
+  Beschreibung in richtiger Reihenfolge (Halmlinge/Sandlinge inkl.
+  Start-Attribute).
+- BESTAETIGT Strg+F8: "Zufaelliges Aussehen gedrueckt", Werte aendern
+  sich real (Koerpergroesse 50 -> 64 -> 34). 3x ausgeloest.
+- BESTAETIGT Positions-Ansagen: "3 von 4" (FaceType), "1 von 192"
+  (CMFColorL) - der ListProbe-Pfad (TrackListIndices-Fallback) und
+  der Fokus-Pfad greifen BEIDE (Focus-Zeile '3 von 4' + DEBOUNCED).
+  Diese Bewegungen kamen aber von Maus-Hover/Klicks, NICHT von
+  Pfeiltasten.
+- BLOCKER (User: "an einem punkt kam ich nicht mit der tastatur
+  weiter"): CMFIconHair (Frisur, 49 Eintraege, Sel=46) offen,
+  17:24:47-48 alle VIER Pfeiltasten gedrueckt ([Key]-Zeilen) ->
+  KEINE ListProbe-Aenderung, KEIN Fokus-Wechsel. Das SPIEL ignoriert
+  Pfeiltasten in den Icon-/Farb-Rastern komplett (mausbedient).
+
+### V4.87: Plugin navigiert die Aussehen-Picker selbst
+FIX (UIReaderService.TryNavigateCharaMakePicker, laeuft VOR dem
+SelectYesno-Zweig in Navigate; Plugin.cs ruft Navigate bei aktivem
+Menue fuer alle 4 Pfeile):
+- Aktiver Picker = oberstes sichtbares CMF-Menue im Stack MIT
+  Eintraegen (inaktive Picker sind geladen, aber 0 Eintraege -
+  log-belegt); Fallback: Scan aller sichtbaren CMF-Addons.
+- Pfeil = +-1 (alle vier Richtungen gleich, linear durchs Raster),
+  Klemmen an den Enden, Start bei Sel (= aktuell angewandte Wahl).
+- list->SelectItem(idx, dispatchEvent:true) = spieleigener Auswahl-
+  Pfad (ilspycmd-verifiziert an AtkComponentList) + ScrollToItem.
+  dispatchEvent:true soll die Klick-Reaktion des Addons ausloesen
+  (Vorschau-Update) - Laufzeit-Wirkung UNVERIFIZIERT, Log-Zeile
+  [CMF] Picker-Navigation zeigt jeden Schritt.
+- Ansage "13 von 49", Dedup gegen den ListProbe-Pfad geprimt.
+Build 0/0, deployt (Manifest 4.87.0.0).
+
+### Beim naechsten Test (V4.87)
+1. "Version 4 Punkt 87 bereit".
+2. Aussehen -> Frisur oeffnen ("Menue, 49 Eintraege"), Pfeiltasten:
+   "47 von 49", "48 von 49"...? An den Enden klemmt es (keine
+   Endlos-Schleife)?
+3. WICHTIG: Aendert sich die FRISUR im Spiel wirklich mit (z.B.
+   Ok druecken, Fenster neu oeffnen: startet bei der neuen Nummer?
+   Oder Strg+F8-Gegenprobe)? Falls die Vorschau nicht mitgeht,
+   Log an Claude - dann probieren wir DispatchItemEvent statt
+   SelectItem.
+4. Farb-Raster (Haarfarbe 192): gleiche Probe.
+5. Enter auf gewaehltem Eintrag: was passiert/wird angesagt?
+
+---
+
+## STAND 2026-07-17 abends (V4.86 gebaut + deployed, UNCOMMITTET)
+
+### V4.86: Strg+F8 = "Zufaelliges Aussehen" (User-Wunsch)
+User: "es sollte auch einen schalter zufaellige beschreibung oder so
+geben" - gemeint ist der spieleigene Knopf "Zufaelliges Aussehen"
+(_CharaMakeFeature, Top-Level-Button id=4, Dump-verifiziert 16:35).
+Sehende klicken ihn mit der Maus; ob die Spiel-Tastaturnavigation ihn
+erreicht, ist UNVERIFIZIERT - Plugin-Taste daher gerechtfertigt.
+NEU: Strg+F8 (Config KeyRandomLook, laut Keybind-Dump frei) drueckt
+den Knopf per ButtonClick-Dispatch (bewaehrter PressFocusedOk-Pfad),
+Matching per NODE-ID (sprachunabhaengig, nicht per Label).
+Ansagen ehrlich: "Zufaelliges Aussehen gedrueckt." nach dem Dispatch
+(NICHT "Aussehen geaendert" - Wirkung nicht auslesbar), "Kein
+Aussehen-Fenster offen..." ausserhalb, Warnungen ins Log wenn Knopf/
+Event fehlen. Hilfe-Text (Strg+F1) + /acc keys Konflikt-Liste
+ergaenzt. Build 0/0, deployt (Manifest 4.86.0.0).
+HINWEIS: id=4 traegt im Volksstamm-Schritt den "Aussehen"-
+Fortschritts-Button in _CharaMakeProgress - aber wir greifen NUR auf
+_CharaMakeFeature zu, das nur im Aussehen-Schritt sichtbar ist.
+
+### Beim naechsten Test (V4.86; ersetzt V4.85-Punkte, alle noch offen)
+1. "Version 4 Punkt 86 bereit".
+2. Aussehen -> Frisur, Pfeiltasten durch die Icons: "12 von 52"?
+   Scrollen: Zahlen laufen weiter? Farb-Raster ebenso?
+3. Strg+F8 im Aussehen-Schritt: "Zufaelliges Aussehen gedrueckt."
+   + danach aendern sich Werte (z.B. Slider-Ansagen)? Vor dem
+   Schritt (z.B. bei Volk): kommt die "Kein Aussehen-Fenster"-Ansage?
+4. Enter auf einem Icon-Eintrag: was passiert/wird angesagt?
+5. Falls Listen stumm: Log an Claude ([ListProbe]/[Focus] zeigen den
+   aktiven Pfad).
+
+---
+
+## STAND 2026-07-17 abends (V4.85 gebaut + deployed, UNCOMMITTET)
+
+### V4.84 BESTAETIGT (User: "ok das funktioniert")
+Reihenfolge Name -> Beschreibung sitzt. Neuer Auftrag: "jetzt muessen
+wir das aussehen barrierefrei machen".
+
+### V4.85: Aussehen-Schritt - Icon-/Farb-Listen sagen Position an
+BESTANDSAUFNAHME (Logs 16:31-16:36): Im Aussehen-Schritt sprechen
+schon: Kategorie-Buttons (_CharaMakeFeature, "Frisur"...), Slider
+(CMFSlider: "50, ORIGINAL, 50", "Etwa 192,5 cm"), Radio-Fenster
+(CMFRadio2/4/6: "Typ 2"). LUECKE: die Icon-/Farb-Picker (CMFIconHair
+52 Eintraege, CMFColorL/Hair 192, CMFColorFacePaint 96...) - Zeilen
+sind reine Bild-Felder OHNE Text (Dump 16:35), bisher nur "Menue,
+52 Eintraege" beim Oeffnen, danach Stille. Da Blinde die Optik eh
+nicht bewerten koennen, ist Paritaet hier: Position kennen + waehlen
+koennen -> Ansage "12 von 52".
+FIX V4.85 (UIReaderService), ZWEI Pfade, weil unverifiziert ist, ob
+die Tastatur dort die Listen-Indizes oder den globalen Fokus bewegt
+(beide Muster existieren im Spiel, vgl. ConfigKeybind vs. Listen):
+1. TrackListIndices-Fallback: leerer Zeilentext + Addon-Praefix
+   "CMF" -> "{idx+1} von {count}".
+2. Globaler Fokus-Pfad: TryReadCharaMakeIconFocusRow - Fokus-Node
+   zum ListItemRenderer klettern (bewaehrter Bestiarium-Pfad),
+   Renderer per Zeiger-Vergleich einer sichtbaren CMF-Liste zuordnen,
+   Index = renderer->ListItemIndex (Offset 388, ilspycmd-verifiziert;
+   Daten-Zeile, korrekt auch bei gescrollter Liste). Gate:
+   _CharaMakeTitle sichtbar (Dump-belegt: ganze Erstellung ueber).
+Log zeigt beim Test, welcher Pfad greift ([ListProbe] vs. [Focus]).
+Build 0/0, deployt (Manifest 4.85.0.0).
+
+### Beim naechsten Test (V4.85)
+1. "Version 4 Punkt 85 bereit".
+2. Charaktererstellung -> Aussehen -> Frisur oeffnen, mit Pfeiltasten
+   durch die Icons: "12 von 52"-Ansagen? Scrollen (ueber den
+   sichtbaren Bereich hinaus): Zahlen laufen korrekt weiter?
+3. Haarfarbe/Tattoofarbe (Farb-Raster 192/96): Position wird
+   angesagt?
+4. Enter auf einem Eintrag: uebernimmt das Spiel die Wahl (Vorschau-
+   Modell aendert sich - hoerbar leider nicht)? Was wird angesagt?
+5. Falls stumm: Log an Claude - [ListProbe]-Zeilen zeigen, ob sich
+   die Indizes bewegen, [Focus]-Zeilen den Fokus-Pfad.
+
+---
+
+## STAND 2026-07-17 abends (V4.84 gebaut + deployed, UNCOMMITTET)
+
+### V4.84: Beschreibung kommt jetzt NACH dem Namen (V4.83-Testbefund)
+User-Test V4.83 (Log 16:56): "er liest den namen vor aber er sollte
+erst den namen lesen und dann die beschreibung". ROOT CAUSE im Log:
+die Beschreibung lief DOPPELT - der GENERISCHE Text-Scanner
+(ScanAddonTexts, [Scan] _CharaMakeHelp id=4) sprach sie mit
+SpeakInterrupt und schnitt damit die gerade laufende Namens-Ansage
+("Lalafell") sofort ab; der neue dedizierte Handler legte sie danach
+nochmal (korrekt, nicht-unterbrechend) in die Warteschlange.
+FIX: "_CharaMakeHelp" in SpecialUpdateAddons (gleiches Muster wie
+_CharaMakeRaceGender/_CharaMakeTribe) - der generische Update-Pfad
+ist fuer das Pane jetzt stumm, es spricht NUR noch
+OnCharaMakeHelpUpdate: Name (Interrupt) zuerst, Beschreibung
+(Warteschlange) hinterher. Build 0/0, deployt (Manifest 4.84.0.0).
+
+### Beim naechsten Test (V4.84)
+1. "Version 4 Punkt 84 bereit".
+2. Volk & Geschlecht: ERST "Lalafell" (bzw. Volk), DANN die
+   Beschreibung - und nur EINMAL?
+3. Weiterblaettern mitten in der Beschreibung: bricht ab, naechster
+   Name + Beschreibung?
+4. Volksstamm: gleiche Reihenfolge?
+
+---
+
+## STAND 2026-07-17 spaeter nachmittag (V4.83 gebaut + deployed, UNCOMMITTET)
+
+### V4.83: Volk-/Volksstamm-Beschreibung wird vorgelesen (GEFUNDEN!)
+User-Meldung: Beim Volk-Waehlen wird die BESCHREIBUNG nicht vorgelesen.
+V4.82 (Dump-Erweiterung: Strg+F5 nimmt alle sichtbaren CharaMake-
+Addons mit) lieferte die Antwort - User hat an MEHREREN Schritten
+gedumpt (6 Dumps 16:31-16:35 im Log; der erste Blick auf die Desktop-
+Datei erwischte nur den letzten, am Aussehen-Schritt):
+- BEFUND (Dumps 16:31:39 + 16:31:49 Volk, 16:31:57 Volksstamm):
+  Beschreibung steht in _CharaMakeHelp, Top-Level-TEXT-NODE id=4,
+  und wird beim Markieren live umgeschrieben ("Die Elezen sind stolze
+  Nomaden..." / "Der Volksstamm der Wieslaender macht die grosse
+  Mehrheit im Volk der Hyuran aus. ...").
+- _CharaMakeInfo ist es NICHT (Text-Nodes leer, auch waehrend die
+  Beschreibung auf dem Schirm stand). game-api.md dokumentiert.
+FIX V4.83 (UIReaderService): PostUpdate-Listener auf _CharaMakeHelp,
+Aenderungs-Detektor auf dem id=4-Text, Ansage NICHT-unterbrechend
+(kommt nach "Elezen, maennlich"; Weiterblaettern schneidet sie ab).
+PostSetup reset, damit die Beschreibung beim Wiederbetreten erneut
+kommt. Build 0 Fehler/0 Warnungen, deployt (Manifest 4.83.0.0).
+
+### Nebenbefunde aus den Dumps (fuer spaeter)
+- CMFIconFeature (Gesichtsmerkmale): Listeneintraege sind reine
+  Icon-ListItemRenderer OHNE Text - vorlesbar hoechstens als
+  "Eintrag X von Y". Gleiches Muster vermutlich bei CMFIconHair/
+  FaceType/Tatoo/FacePaint (Frisuren, Tattoos etc.).
+- _CharaMakeFeature: Kategorie-Buttons + MouseOver-Ansagen liefen
+  laut Log sauber (Frisur, Tattoofarbe, Farbe des Merkmals...).
+
+### Beim naechsten Test (V4.83)
+1. "Version 4 Punkt 83 bereit".
+2. Charaktererstellung -> Volk & Geschlecht: nach "Hyuran, maennlich"
+   kommt die Volk-Beschreibung hinterher? Weiterblaettern bricht sie
+   ab und die naechste kommt?
+3. Volksstamm-Schritt: Beschreibung des Stamms ebenso?
+4. V4.81/4.80 weiter offen: Umschalt+F11 Ziel-Leiste, Fehler-Toasts
+   (Testpunkte im V4.81-Abschnitt unten).
+
+---
+
+## STAND 2026-07-17 nachmittags (V4.81 gebaut + deployed + RELEASED)
 
 ### RELEASE v4.81 VEROEFFENTLICHT (17.07. ~16:05)
 Commits 5f86d43 (Code V4.75-V4.81) + 7b6813b (repo.json 4.81) + a1abe28

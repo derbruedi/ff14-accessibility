@@ -58,8 +58,112 @@ CMFSlider (2x), CMFColorL, CharaMakeSelectYesNo, CharaMakeDCWorldMap(Bg)
   „Stammwelt", „Name"; Ok-Button = Comp(1001)
 - Das ©/® im Wert von „Volk & Geschlecht" ist das gewählte Geschlechts-Symbol
 
+### _CharaMakeFeature (Dump 2026-07-17 16:35, Schritt „Aussehen")
+- Kategorie-Buttons = Comp(1004) [CT=Button], Label im Text-Kind id=2
+  („Körpergröße", „Körperbau", „Gesicht", … „Stimme"); unsichtbare Buttons
+  (F=0x2023 ohne V) sind für das gewählte Volk nicht verfügbare Kategorien
+- Beschreibung als Top-Level-Text id=6 („Bestimme das Aussehen deines
+  Charakters."), Fenster-Titel id=3 („Aussehen"),
+  „Zufälliges Aussehen" = Comp(1003)-Button, Top-Level-**id=4**
+  (V4.86: Strg+F8 drückt ihn per ButtonClick-Dispatch, Match per
+  Node-ID — sprachunabhängig), Zurück/Ok = id=38/37
+- MouseOver/ButtonClick liefern die Kategorie im Event-Param (node id)
+
+### CMFIcon* (Dump 2026-07-17 16:35: CMFIconFeature „Gesichtsmerkmale")
+- Auswahl = List(9)-Komponente, Einträge ListItemRenderer(14) mit
+  AUSSCHLIESSLICH Image-Kindern — KEIN Text pro Eintrag. Vorlesen nur als
+  „Eintrag X von Y" (ListLen/Sel im List-Layout) möglich, Icons sind stumm.
+- Fenster-Titel als Top-Level-Text id=3, Ok-Button id=7
+- Bekannte Picker-Fenster (Live-Log 2026-07-17): CMFIconFaceType,
+  CMFIconHair (52), CMFIconFeature, CMFIconTatoo (27?), CMFIconFacePaint
+  (27), CMFColorL (192), CMFColorHair (192), CMFColorFacePaint (96);
+  weitere CMFColor*-Varianten wahrscheinlich (Augen-/Lippen-/Hautfarbe
+  noch nicht im Log gesehen) → Ansage-Pfade matchen per Präfix „CMF"
+- `AtkComponentListItemRenderer.ListItemIndex` (Offset 388, ilspycmd
+  2026-07-17) = DATEN-Zeile des Renderers — korrekt auch wenn die Liste
+  unter einem festen Fokus-Node scrollt (Renderer-Slot-Index wäre falsch)
+- Vorlesen: V4.85, zwei Pfade („12 von 52"): TrackListIndices-Fallback
+  + TryReadCharaMakeIconFocusRow im globalen Fokus-Pfad. Live-Log
+  17:24: BEIDE greifen (Maus-Hover bewegte Hov2 → List-Navigation-
+  Ansage, Fokus-Zeile lieferte denselben Text, Debounce fing das Echo)
+- **Das SPIEL ignoriert Pfeiltasten in diesen Rastern** (Log 17:24:47:
+  alle vier Pfeile, keinerlei Index-/Fokus-Bewegung — reine Maus-UI).
+  V4.87: Plugin navigiert selbst — `AtkComponentList.SelectItem(idx,
+  dispatchEvent)` + `ScrollToItem(short)` + `GetItemCount()` (alle
+  ilspycmd-verifiziert; auch vorhanden: `DispatchItemEvent(idx,
+  AtkEventType)` als Alternative, falls SelectItem die Vorschau nicht
+  aktualisiert — Laufzeit-Wirkung von dispatchEvent noch unverifiziert)
+- Inaktive Picker bleiben geladen mit 0 Einträgen; nur der aktive hat
+  ListLength > 0 (Log 17:23:52) → Erkennung „aktiver Picker" über
+  Count > 0
+
+### _CharaMakeCharaName (Namenseingabe, Dump 2026-07-17 17:57)
+- Fenstertitel „Name des Charakters", Hilfetext id=13 („Vor- und
+  Nachname können je zwischen 2 und 15 Zeichen…"), Instruktion id=5
+  („Gib deinem Charakter einen Namen."), Gesamt-Zähler id=12 „0/20"
+- ZWEI sichtbare TextInput-Komponenten (CT=7): **id=9 und id=7**
+  (je F=…V), jede mit eigenem Zähler-Kind id=17 („0/15") und
+  Anzeige-Text id=16. Dazu ZWEI unsichtbare TextInputs id=11 (Zähler
+  „0/9") + id=10 („0/6") = alternative Eingabemodi (nicht genutzt,
+  kein V) → nur sichtbare Felder verarbeiten
+- Labels als Top-Level-Text: **id=8 „Nachname", id=6 „Vorname"**.
+  Node-Reihenfolge: TextInput id=9 → Text id=8 → TextInput id=7 →
+  Text id=6. id-1-Muster passt (9→8, 7→6), aber V4.89 paart per
+  PHYSISCHER NÄHE (X/Y des Feldes vs. Label) — robuster gegen Node-
+  Ordnung/Sprache
+- „Bestätigen"-Button id=16, „Zurück"-Button id=3
+- Vorlesen: V4.89 OnCharaMakeNameUpdate — Fokus-Node → enthaltendes
+  sichtbares TextInput (FindFocusedNameField), bei Feldwechsel Label +
+  Inhalt, sonst Tipp-Echo (EvaluatedString-Diff). Generischer Fokus-
+  Leser für Namensfelder stummgeschaltet (IsFocusInsideNameField),
+  Knöpfe bleiben generisch lesbar
+- OFFEN: wie wechselt der Nutzer die Felder (Tab? Klick?) — Laufzeit-
+  Log fehlte (rotiert); nächster Test klärt es ([Name]-Zeilen)
+
+### Aussehen speichern (Dumps + Log 2026-07-17 17:42)
+- Weg: Aussehen-Schritt → Ok → SelectYesno „Die Einstellungen
+  speichern?" → Ja
+- `CharaMakeDataExport` („CHARAKTERDATEN SPEICHERN"): List(9) mit 40
+  Slots, ListItemRenderer-Zeilen MIT Text: id=6 Volksstamm/Geschlecht
+  („Wiesländer♂"), id=5 „Speicherslot N", id=4 Datum. Tastatur bewegt
+  Hov2 (nativ) → generische Listen-Ansage greift. Spalten-Köpfe +
+  Beschreibung als Top-Level-Texte (id=6/5/4/2)
+- `CharaMakeDataImportDialog`: Überschreiben-Bestätigung (Ok/Abbrechen),
+  Frage wird von OnAnyAddonOpen gelesen
+- `CharaMakeDataInputString`: Kommentar-Dialog — Window-Komponente,
+  Speichern/Abbrechen-Buttons (id=5/6), **TextInput-Komponente (CT=7)**
+  top-level id=4 mit Zähler-Text id=17 („0/40") und Anzeige-Text id=16
+- `AtkComponentInputBase` (ilspycmd 2026-07-17): EvaluatedString @224,
+  RawString @328, CursorPos @460, SelectionStart/End @452/456 —
+  EvaluatedString = Quelle fürs Tipp-Echo (V4.88,
+  OnCharaMakeInputUpdate, Diff-Ansage pro Frame)
+- ACHTUNG Fokus: der globale Fokus sitzt im Dialog auf dem ZÄHLER-Node
+  („0/40") und ändert sich pro Tastendruck → IsBareNumber-Guard
+- [Key]-Probe-Erkenntnis: IsJustPressed sieht Pfeiltasten NUR, wenn das
+  Spiel sie nicht selbst verbraucht (native Listen-Navigation
+  verbraucht sie; tote Icon-Raster nicht) → Plugin-Navigation kollidiert
+  nie mit nativer Navigation
+
+### Volk-/Volksstamm-Beschreibung = _CharaMakeHelp (Dumps 2026-07-17 16:31)
+- Der Beschreibungstext steht in `_CharaMakeHelp`, Top-Level-**Text-Node
+  id=4** (F=0x2033 V), und wird beim Markieren einer Option live
+  umgeschrieben — verifiziert an ZWEI Schritten:
+  - Volk & Geschlecht (16:31:39/49): „Die Elezen sind stolze Nomaden, …"
+  - Volksstamm (16:31:57): „Der Volksstamm der Wiesländer macht die
+    große Mehrheit im Volk der Hyuran aus. …"
+- Übrige _CharaMakeHelp-Nodes: id=5 TextNineGrid (Text leer), id=3 Text
+  leer, id=7/6/2 Images — id=4 ist der einzige Inhalts-Node
+- _CharaMakeInfo ist NICHT die Beschreibung (beide Text-Nodes leer,
+  auch während die Beschreibung sichtbar war)
+- Am Schritt „Aussehen" ist _CharaMakeHelp unsichtbar (Dumps 16:32/16:35)
+- Vorlesen: V4.83 `OnCharaMakeHelpUpdate` (PostUpdate _CharaMakeHelp,
+  Änderungs-Detektor auf dem Node-Text, nicht-unterbrechende Ansage)
+- ACHTUNG (V4.84): `_CharaMakeHelp` MUSS in SpecialUpdateAddons stehen —
+  sonst spricht der generische Scanner (ScanAddonTexts) den Text
+  zusätzlich per SpeakInterrupt und schneidet die Namens-Ansage ab
+  (Log 2026-07-17 16:56)
+
 ### Noch nicht analysiert (Dumps im Log vom 2026-07-10 vorhanden!)
-- _CharaMakeFeature + CMFSlider (Log-Zeilen ~482-734)
 - CMFColorL (Farbwahl, ~1283-2793)
 - CharaMake-SelectYesno (~4555+)
 - Dump-Datei auf Desktop wird bei jedem F5 ÜBERSCHRIEBEN — Log hat alle

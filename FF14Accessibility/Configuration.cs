@@ -39,6 +39,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyBestiary      = "Strg+F4";         // Bestiarium (Jagdtagebuch) komplett vorlesen (Strg+F4 laut Keybind-Dump frei)
     public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
     public string KeyEquipBest     = "Strg+F7";         // Empfohlene Ausrüstung anlegen - Spiel-eigener Optimierer (Strg+F7 laut Keybind-Dump frei)
+    public string KeyRandomLook    = "Strg+F8";         // Charaktererschaffung: "Zufälliges Aussehen"-Knopf drücken (Strg+F8 laut Keybind-Dump frei)
     // Skill-Browser (V4.75): Aktionsleiste 1 per Tastatur umbelegen. Umschalt+F7-F10
     // laut Keybind-Dump frei (Umschalt+F1-F12 alle frei, F3-F6 nutzt das Plugin schon).
     public string KeySkillPrev     = "Umschalt+F7";     // Skill-Browser: vorheriger gelernter Skill
