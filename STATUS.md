@@ -3,7 +3,17 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-17 nachmittags, V4.81 gebaut + deployed)
+## STAND JETZT (2026-07-17 nachmittags, V4.81 gebaut + deployed + RELEASED)
+
+### RELEASE v4.81 VEROEFFENTLICHT (17.07. ~16:05)
+Commits 5f86d43 (Code V4.75-V4.81) + 7b6813b (repo.json 4.81) + a1abe28
+(README DE+EN) gepusht. GitHub-Release v4.81 mit latest.zip /
+FF14Accessibility-v4.81.0.zip (je 514759 Bytes, Release-Build,
+Manifest 4.81.0.0 im Zip verifiziert) + Installer-EXE (unveraendert
+seit 4.74er-Aktivierungs-Fix). latest-Link verifiziert (HTTP 200,
+514759 Bytes). uia_test.ps1 weiterhin absichtlich uncommittet.
+HINWEIS: V4.80 (Toasts) und V4.81 (Ziel-Leiste) sind released, aber
+noch NICHT in-game getestet - Testpunkte unten gelten weiter.
 
 ### V4.79 BESTAETIGT (User): Tastenbelegung sagt Befehl + Taste an
 User: "das mit den tasten funktioniert, wenn ich bei den leisten bin
