@@ -82,7 +82,7 @@ public sealed class GearInfoService
 
         if (row.ClassJobCategory.ValueNullable is { } cat)
         {
-            var jobOk = JobAllowed(cat, ps->CurrentClassJobId);
+            var jobOk = AllowsJob(cat, ps->CurrentClassJobId);
             if (jobOk == null) return (null, string.Empty);
             if (jobOk == false)
             {
@@ -104,7 +104,12 @@ public sealed class GearInfoService
     // One resolved column per job id; null means "column not found - stay silent".
     private readonly Dictionary<byte, PropertyInfo?> _jobColumns = new();
 
-    private bool? JobAllowed(ClassJobCategory cat, byte jobId)
+    /// <summary>
+    /// Whether a ClassJobCategory row includes the given job; null when the
+    /// job column cannot be resolved (then no claim is made). Public because
+    /// the skill browser (HotbarService) filters Action rows the same way.
+    /// </summary>
+    public bool? AllowsJob(ClassJobCategory cat, byte jobId)
     {
         if (!_jobColumns.TryGetValue(jobId, out var prop))
         {

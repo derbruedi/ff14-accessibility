@@ -27,6 +27,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private ITargetManager          TargetManager   { get; init; } = null!;
     [PluginService] private IDataManager            DataManager     { get; init; } = null!;
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
+    [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -44,14 +45,15 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
+    private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.74";
-    private const string PluginVersionTag = "NVDA-Fix: nvdaControllerClient64.dll wird aus dem Plugin-Ordner vorgeladen (Tolks natives LoadLibrary fand sie nach Neuinstallation nicht mehr - DLLs lagen nicht mehr im Spielverzeichnis)";
+    private const string PluginVersion    = "4.81";
+    private const string PluginVersionTag = "Skill-Browser kann alle 10 Leisten: Umschalt+F11 = Ziel-Leiste wechseln, Ansagen nennen die LIVE gebundene Taste (KeybindService.GetBoundKey, HOTBAR_n_m aus der Keybind-Tabelle; Leiste 2 = Strg+1..0 laut Dump), Strg+F9 liest die gewaehlte Leiste";
 
     public Plugin()
     {
@@ -109,9 +111,10 @@ public sealed class Plugin : IDalamudPlugin
         _tolk       = new TolkService(Log);
         _beacon       = new BeaconService(_config, _tolk, Log);
         _cue          = new CueService(_config, Log);
-        _hotbar       = new HotbarService(DataManager, _tolk, Log);
-        _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
         _gearInfo     = new GearInfoService(DataManager, Log);
+        _keybinds     = new KeybindService(_tolk, Log);
+        _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _tolk, Log);
+        _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
@@ -121,9 +124,9 @@ public sealed class Plugin : IDalamudPlugin
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _config);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
+        _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
-        _keybinds   = new KeybindService(_tolk, Log);
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
@@ -226,6 +229,11 @@ public sealed class Plugin : IDalamudPlugin
             ("Bestiarium",     _config.KeyBestiary),
             ("Ausrüstung",     _config.KeyReadEquipment),
             ("Beste Ausrüstung", _config.KeyEquipBest),
+            ("Skill zurück",   _config.KeySkillPrev),
+            ("Skill weiter",   _config.KeySkillNext),
+            ("Skill-Ziel-Taste", _config.KeySkillSlot),
+            ("Skill belegen",  _config.KeySkillAssign),
+            ("Skill-Ziel-Leiste", _config.KeySkillBar),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -402,6 +410,11 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
+        if (IsJustPressed(_config.KeySkillPrev))     _hotbar.CycleSkillPrev();
+        if (IsJustPressed(_config.KeySkillNext))     _hotbar.CycleSkillNext();
+        if (IsJustPressed(_config.KeySkillSlot))     _hotbar.CycleTargetSlot();
+        if (IsJustPressed(_config.KeySkillAssign))   _hotbar.AssignSelectedSkill();
+        if (IsJustPressed(_config.KeySkillBar))      _hotbar.CycleTargetBar();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 — UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
@@ -608,9 +621,13 @@ public sealed class Plugin : IDalamudPlugin
             "Strg+F10, Menü vorlesen. " +
             "Strg+F11, Sprache stoppen. " +
             "Strg+H, HP und MP ansagen. " +
-            "Strg+F9, Aktionsleiste 1 vorlesen. " +
+            "Strg+F9, gewählte Aktionsleiste vorlesen. " +
             "Strg+F6, angelegte Ausrüstung vorlesen. " +
             "Strg+F7, empfohlene Ausrüstung anlegen. " +
+            "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
+            "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
+            "Umschalt+F9, Ziel-Taste der Leiste wählen. " +
+            "Umschalt+F10, gewählten Skill auf die Ziel-Taste legen. " +
             "Befehle: " +
             "/acc nav, Richtung zum Ziel. " +
             "/acc set, Aktuelles Ziel verfolgen. " +
@@ -628,6 +645,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Framework.Update -= OnFrameworkUpdate;
         CommandManager.RemoveHandler("/acc");
+        _toasts.Dispose();
         _chatReader.Dispose();
         _uiReader.Dispose();
         _autoWalk.Dispose();

@@ -417,9 +417,104 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   für alle Typen; als Fallback nach Lumina). Weitere nützliche Member:
   `IsSlotUsable(type, id)`, `IsSlotActionTargetInRange2(type, id)` (für
   spätere Cooldown-/Reichweiten-Ansage, noch ungenutzt).
+
+### Hotbar UMBELEGEN + gelernte Skills (ilspycmd-verifiziert 2026-07-17)
+- `RaptureHotbarModule.SetAndSaveSlot(uint hotbarId, uint slotId,
+  HotbarSlotType commandType, uint commandId, bool ignoreSharedHotbars=false,
+  bool allowSaveToPvP=true)` — schreibt NUR den GESPEICHERTEN Hotbar-
+  Zustand, NICHT die Live-Leiste! IN-GAME BEWIESEN (2026-07-17): Zuweisung
+  9:43 blieb live wirkungslos (auch 2 Frames später, Leiste nicht geteilt),
+  erschien aber nach dem Relog um 11:57 auf der Leiste. Die GitHub-Doku
+  („sets a hotbar slot and triggers a save") ist hier irreführend.
+  ⇒ Für sofortige Wirkung danach `LoadSavedHotbar(classJobId, hotbarId)`
+  aufrufen („loads the saved hotbar into the live hotbar, will not reload
+  from disk", respektiert PvP automatisch) — V4.78 macht das; Erfolg per
+  Read-back über `GetSlotById` prüfen (2 Frames später).
+  Verwandt: `ClearSavedSlotById(hotbarId, slotId)` (Slot leeren),
+  `ExecuteSlotById(hotbarId, slotId)` (Slot auslösen, byte-Rückgabe),
+  `IsHotbarShared(hotbarId)` (bool).
+- Lumina `Action`-Sheet (Spalten dekompiliert 2026-07-17): `Name`,
+  `ClassJobLevel` (byte; 0 = keine per-Stufe-gelernte Spieler-Action),
+  `ClassJobCategory` (RowRef, bool-Spalte je Job wie beim Item-Sheet —
+  Spaltenwahl über engl. ClassJob-Abkürzung, s. GearInfoService.AllowsJob),
+  `ClassJob` (RowRef), `IsPvP`, `IsRoleAction`, `IsPlayerAction` (packed
+  bools), `UnlockLink` (untypisierte RowRef, uint bei Offset+4; 0 = keine
+  Quest-Freischaltung nötig).
+- Freischaltungs-Check: `UIState.Instance()->
+  IsUnlockLinkUnlockedOrQuestCompleted(uint unlockLinkOrQuestId, byte
+  minQuestProgression=0, bool a4=true)` — nimmt laut Signatur UnlockLink-
+  ODER Quest-Id (deckt beide Fälle der UnlockLink-Spalte ab). UIState liegt
+  in `FFXIVClientStructs.FFXIV.Client.Game.UI`.
+- Skill-Browser-Filter: RowId!=0, !IsPvP, ClassJobLevel 1..Spielerstufe,
+  ClassJobCategory enthält aktuellen Job, UnlockLink erfüllt, UND
+  IsPlayerAction==true — OHNE letzteres rutschen interne Zeilen durch den
+  Job-Filter (in-game belegt 2026-07-17 12:01: fünfmal „Ausweichen" +
+  „Perfekter Hieb" bei Job 26). OFFEN: exakter Abgleich mit dem Fenster
+  „Aktionen & Traits" (Log `[Hotbar] Skill-Liste gebaut` zeigt Anzahl).
+- KEINE Unlock-Methode in `ActionManager` (komplett durchgesehen 2026-07-17)
+  — Action-Freischaltung läuft nur über UIState/UnlockLink.
+- LEISTEN-ANZAHL (ilspycmd 2026-07-17): `RaptureHotbarModule.Hotbars` =
+  FixedSizeArray18<Hotbar>; `StandardHotbars` = Hotbars[0..9] (10 Stück,
+  UI „Kommandomenü 1–10"), `CrossHotbars` = Hotbars[10..17] (Gamepad).
+  Jede Hotbar hat 16 Slots (FixedSizeArray16<HotbarSlot>), Standard-UI
+  nutzt 12. `GetSlotById(uint hotbarId, uint slotId)`,
+  `LoadSavedHotbar(uint classJobId, uint hotbarId)` und SetAndSaveSlot
+  nehmen alle die Leisten-Nummer — der V4.78-Pfad gilt für jede Leiste.
+- HOTBAR-TASTEN im InputId-Enum (Live-Dump 2026-07-17):
+  `HOTBAR_{Leiste}_{Suffix}` mit Suffix 1..9, 0, A, B = Slot 0..11
+  (HOTBAR_1_1=57, Blöcke à 12 direkt hintereinander). Leiste 2 ist
+  standardmäßig Strg+1..Strg+0 (+Strg+VK137/139 für Slot 11/12);
+  Leiste 3+ unbelegt. Live-Abfrage: KeybindService.GetBoundKey
+  (Enum.TryParse<InputId> → GetKeybindSpan()[Index], V4.81).
+
+### ConfigKeybind — Fenster „Tastenbelegung" (F5-Dump 2026-07-17)
+- KORREKTUR (Log 2026-07-17 13:12, widerlegt den 09:45-Befund):
+  Pfeiltasten bewegen den GLOBALEN Fokus (AtkInputManager.FocusedNode),
+  die Listen-Indizes stehen still (Hov2 blieb 0, nur EINE
+  List-Navigation beim Öffnen). Die Liste scrollt dabei UNTER einem
+  festen Fokus-Node (gleicher Node-Ptr, wechselnder Zeilentext) —
+  Zeilen-Ansagen müssen deshalb pro Frame neu gelesen werden, nicht
+  nur bei Fokus-Wechsel. ListLen wechselt je Kategorie-Reiter
+  (Bewegung 32, Schnelltasten 134). Ansage läuft seit V4.79 über
+  UpdateGlobalFocus → ClimbToItemRenderer → dedizierter Zeilen-Leser.
+- FALLE dabei: GetTextFromNodeTree verwirft Texte der Länge 1 —
+  einstellige Tasten-Labels („W", „1", „C") fehlten deshalb im
+  generischen Fokus-Pfad, mehrstellige („Tab", „NUM0") nicht.
+- Zeile = ListItemRenderer(14) mit: direktem Text id=2 = Befehlsname
+  („Kommandomenü 1 - Slot 1"), Button-Komponente id=6 = Belegung 1,
+  Button id=5 = Belegung 2; der Tasten-Text steckt JEWEILS in einem
+  Text-Kind id=5 IN der Button-Komponente. Der generische
+  ReadListItemText liest nur direkte Text-Nodes → Tasten fehlten in
+  der Ansage (Fix V4.77: ReadConfigKeybindRow).
+- Deutsch: Hotbar heißt in der UI „Kommandomenü", Reiter als
+  RadioButtons: Bewegung/Zielen/Schnelltasten/Chat/System/Kommandos/
+  Gamepad; Knöpfe Schließen/Anwenden/Zurücksetzen; Checkbox
+  „Direkt-Chatmodus aktivieren".
+- WICHTIG (Semantik): Dieses Fenster ändert TASTE→SLOT-Bindungen
+  („welche Taste feuert Kommandomenü 1 - Slot 1"), NICHT welcher
+  Skill im Slot liegt (das ist die Hotbar selbst / SetAndSaveSlot).
+- OFFEN: Was löst Enter auf einer Zeile aus (Erfassungsmodus für
+  neue Taste?) — nie getestet, kein Handler; nächster In-Game-Test.
 - StdList (z. B. `Map.UnacceptedQuestMarkers`): implementiert
   `IEnumerable<T>`+`Count`; `GetEnumerator()` liefert Struct-Enumerator
   (foreach allokationsfrei), yield by value (read-only-Kopie sicher).
+
+### Toasts / Fehlermeldungen (IToastGui, ilspycmd-verifiziert 2026-07-17)
+- Aktions-Fehler („Das Ziel ist zu weit entfernt.", „Die Aktion ist
+  noch nicht bereit.") sind FEHLER-TOASTS im Overlay `_TextError`.
+- FALLE: `_TextError` feuert PostRefresh NIE — Log 2026-07-17 zeigt
+  über eine ganze Session nur das leere PostSetup beim Login. Der
+  Lifecycle-Ansatz (NotificationAddons) kann diese Meldungen also
+  prinzipiell nicht liefern. In den Chat gespiegelt werden die
+  meisten Aktions-Fehler ebenfalls nicht.
+- Sauberer Weg: `Dalamud.Plugin.Services.IToastGui` (ilspycmd an
+  Dalamud.dll): Events `ErrorToast(ref SeString, ref bool isHandled)`,
+  `Toast(ref SeString, ref ToastOptions, ref bool)`,
+  `QuestToast(ref SeString, ref QuestToastOptions, ref bool)` —
+  feuern auf dem Show-Toast-Aufruf des Spiels. Seit V4.80 liest
+  ToastService.cs sie vor (Fehler = Interrupt, Info/Quest = Queue
+  mit WasRecentlySpoken-Echo-Schutz, da manche Info-Toasts parallel
+  als `_WideText`/`_ScreenText` gezeichnet werden).
 
 ## Werkzeuge / Traps
 

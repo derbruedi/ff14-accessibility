@@ -3,7 +3,266 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-16 abends, V4.72 gebaut + deployed)
+## STAND JETZT (2026-07-17 nachmittags, V4.81 gebaut + deployed)
+
+### V4.79 BESTAETIGT (User): Tastenbelegung sagt Befehl + Taste an
+User: "das mit den tasten funktioniert, wenn ich bei den leisten bin
+werden die tasten auch angesagt". Der Fokus-Pfad-Fix (globaler Fokus
+-> ClimbToItemRenderer -> dedizierter Zeilen-Leser) ist damit
+verifiziert. Enter auf einer Zeile (Erfassungsmodus) weiter offen.
+
+### Neu in V4.81: Skill-Browser kann alle 10 Leisten (User-Wunsch)
+User: "es gibt ja mehrere leisten, wie kann ich skills auf die
+zweite leiste ziehen?" Ilspycmd-verifiziert: RaptureHotbarModule.
+StandardHotbars = Hotbars[0..9] (10 Stueck; 10-17 = Gamepad-Kreuz),
+GetSlotById/SetAndSaveSlot/LoadSavedHotbar nehmen alle die Leisten-
+Nummer. Live-Keybind-Dump als Ground Truth: InputId-Namen
+HOTBAR_{Leiste}_{1..9,0,A,B}; Leiste 2 ist beim User schon auf
+Strg+1..Strg+0 gebunden -> direkt nutzbar!
+NEU:
+- Umschalt+F11 = Ziel-Leiste weiterschalten ("Ziel-Leiste 2, 0 von
+  12 belegt", + Warnung ", keine Tasten zugewiesen" wenn die Leiste
+  keine Tasten hat). Slot-Wahl wird beim Wechsel zurueckgesetzt.
+- KeybindService.GetBoundKey(InputId-Name): liest die LIVE gebundene
+  Taste aus der Keybind-Tabelle ("Strg+3", KEY_-Prefix gestrippt).
+  Alle Ansagen nennen sie: Ziel-Slot ("Ziel-Leiste 2, Taste Strg+3:
+  leer"), Belegen ("X liegt jetzt auf Leiste 2, Taste Strg+3."),
+  Skill-Fundort ("liegt auf Leiste 2, Taste Strg+3"), unbelegte
+  Leisten sagen "Slot n" statt Taste.
+- FindSlotLocationFor durchsucht jetzt ALLE 10 Leisten (vorher nur 1).
+- Strg+F9 liest die GEWAEHLTE Leiste (Default weiter Leiste 1).
+- Config KeySkillBar="Umschalt+F11" (laut Dump frei), Hilfe-Text
+  aktualisiert. Leiste-1-Ansagen unveraendert ("Ziel-Taste 3").
+
+### Beim naechsten Test (V4.81 + V4.80)
+1. "Version 4 Punkt 81 bereit".
+2. Umschalt+F11: "Ziel-Leiste 2, X von 12 belegt"? Weiter bis 10 und
+   Umlauf zurueck zu 1?
+3. Auf Leiste 2: Umschalt+F9 ("Ziel-Leiste 2, Taste Strg+1: leer"?),
+   Skill waehlen, Umschalt+F10 -> "liegt jetzt auf Leiste 2, Taste
+   Strg+1"? Dann Strg+1 druecken: Skill feuert?
+4. Strg+F9 nach Leisten-Wechsel: liest Leiste 2?
+5. V4.80-Toasts: Zauber auf zu fernes Ziel -> "Das Ziel ist zu weit
+   entfernt."? Abklingzeit-Spam ertraeglich? Gebiets-Toast einmal?
+6. Offen von frueher: Enter in der Tastenbelegung (Erfassungsmodus),
+   Braillezeile, Strg+F6 Stufen, Einstellungs-Reiter Enter.
+
+---
+
+## STAND 2026-07-17 nachmittags (V4.80 gebaut + deployed)
+
+### Neu in V4.80: Fehlermeldungen des Spiels werden vorgelesen (User-Wunsch)
+User: "wenn ein zauber nicht ausgeloest wird ... kommt vom spiel eine
+meldung, aber die wird nicht vorgelesen". BEFUND: Diese Meldungen
+("Das Ziel ist zu weit entfernt.") sind FEHLER-TOASTS im _TextError-
+Overlay. Der alte Ansatz (NotificationAddons: PostSetup+PostRefresh
+-> OnNotification) war dafuer tot: Log 2026-07-17 zeigt als einziges
+Lifecycle-Event das LEERE PostSetup beim Login (13:10:15), danach
+nie wieder - PostRefresh feuert fuer _TextError schlicht nicht.
+In den Chat gespiegelt werden die meisten Aktions-Fehler auch nicht
+(ChatReaderService liest ErrorMessage zwar, sah sie aber nie).
+FIX: neuer ToastService.cs via Dalamud IToastGui (Interface per
+ilspycmd an der installierten Dalamud.dll verifiziert: ErrorToast/
+Toast/QuestToast-Events, feuern auf dem Show-Toast-Aufruf des
+Spiels selbst):
+- Fehler-Toasts: SpeakInterrupt (Feedback zur eben gedrueckten
+  Taste), Log [Toast] Fehler
+- Info-/Quest-Toasts: Speak (nicht unterbrechend) mit Echo-Schutz
+  (WasRecentlySpoken 6s - manche laufen zusaetzlich als _WideText/
+  _ScreenText oder Chat-Echo); OnNotification hat den Schutz jetzt
+  in Gegenrichtung (4s)
+- Config: AnnounceErrorToasts / AnnounceInfoToasts (Default true)
+
+### Beim naechsten Test (V4.80)
+1. "Version 4 Punkt 80 bereit" (AutomaticReloading laeuft).
+2. Zauber auf zu weites / nicht sichtbares Ziel: "Das Ziel ist zu
+   weit entfernt." o.ae. wird gesprochen?
+3. Skill waehrend Abklingzeit spammen: Ansage kommt, aber kein
+   Dauergeplapper (0,5s-Debounce)?
+4. Gebiets-/Quest-Toast (neues Gebiet betreten): EINMAL gesprochen,
+   nicht doppelt?
+5. V4.79 weiter offen: TASTENBELEGUNG mit Taste ("Vorwaerts, Taste
+   W"?), Enter auf einer Zeile (Erfassungsmodus), Braillezeile,
+   Strg+F6 Stufen, Einstellungs-Reiter Enter.
+
+---
+
+## STAND 2026-07-17 nachmittags (V4.79; V4.78-Hotbar-Fix BESTAETIGT)
+
+### Neu in V4.79: Tastenbelegung spricht jetzt WIRKLICH Befehl + Taste
+Log-Auswertung 13:06-13:12 (V4.78 lief): Im Fenster TASTENBELEGUNG
+bewegen die Pfeiltasten den GLOBALEN Fokus (AtkInputManager.
+FocusedNode), NICHT die Listen-Indizes - nur EINE List-Navigation-
+Zeile beim Oeffnen ([0] "Laufen und Steuern, keine Taste"), danach
+ausschliesslich [Focus]-Zeilen. Der V4.77-Fix (ReadConfigKeybindRow)
+sass im Listen-Pfad und kam daher NIE zum Zug. ZWEITE Ursache:
+der generische Baum-Leser (GetTextFromNodeTree) verwirft Texte der
+Laenge 1 - einstellige Tasten ("W", "1", "C") fehlten deshalb
+("Kommandomenue 1 - Slot 1" ohne Taste; "Tab, Gegner durchschalten"
+HATTE die Taste, weil "Tab" 3 Zeichen lang ist).
+FIX (UIReaderService): UpdateGlobalFocus prueft bei sichtbarem
+ConfigKeybind, ob der Fokus-Node in einem ListItemRenderer liegt
+(ClimbToItemRenderer, bewaehrter Bestiarium-Pfad) und liest die
+Zeile mit dem dedizierten Leser ("Befehl, Taste X" / ", keine
+Taste"). Laeuft pro Frame, weil die Liste UNTER dem festen Fokus-
+Node scrollt (gleicher Node-Ptr, neuer Zeilentext - Log 13:12:06-08).
+NEBENBEI: Zeilen OHNE Belegungs-Buttons (Abschnitts-Koepfe) sagen nur
+noch ihr Label, ohne falsches ", keine Taste".
+
+### V4.78 BESTAETIGT (User "jetzt kann ich tasten zuweisen" + Log 13:22)
+V4.79 lud per AutomaticReloading mitten in der Session (13:19:50
+"Version 4 Punkt 79 bereit", kein Spiel-Neustart noetig). Danach
+kompletter Skill-Browser-Durchlauf im Log: Blaettern ("9 von 12:
+Schwaere, Stufe 10"), "liegt auf Taste X"-Hinweise, Ziel-Tasten-
+Zyklus, Schutz-Ansage ("Keine Ziel-Taste gewaehlt"), dann ZWEI
+erfolgreiche Zuweisungen auf BELEGTE Slots: Taste 7 Juwelenschein
+-> Schwaere, Taste 8 Stumpfsinn -> Energieentzug. Live-Slot stand
+DIREKT nach dem Call auf der neuen Action, 2-Frame-Read-back
+bestaetigte beide. LoadSavedHotbar war der fehlende Baustein.
+Skill-Filter griff ebenfalls: 10 Nicht-Spieler-Actions raus, Liste
+12 statt 22 Eintraege (Job 26, Stufe 12).
+
+### Noch offen zu testen (V4.79)
+1. TASTENBELEGUNG mit V4.79, Pfeiltasten: "Vorwaerts, Taste W"?
+   Schnelltasten-Reiter: "Kommandomenue 1 - Slot 1, Taste 1"?
+   (Fix kam 13:19 per Reload; Fenster wurde danach nicht mehr
+   geoeffnet - der 13:12-Durchlauf lief noch auf V4.78.)
+2. ENTER auf einer Tastenbelegungs-Zeile: was passiert / was wird
+   angesagt? Danach Log an Claude (klaert den Erfassungsmodus
+   fuers Umbelegen).
+3. Offen von frueher: Braillezeile, Strg+F6 Stufen, Einstellungs-
+   Reiter Enter.
+
+### Session-Notiz 13:06-13:12 (V4.78-Kurztest)
+Start + Login sauber (Warteschlangen-Hinweis gesprochen), SystemMenu-
+Navigation ok, TASTENBELEGUNG geoeffnet und Zeilen durchlaufen
+(Befund oben). KEIN [Hotbar]-Eintrag im Log - der V4.78-Belegen-Fix
+wurde nicht getestet, Enter in der Tastenbelegung auch nicht.
+
+---
+
+## STAND 2026-07-17 mittags (V4.78 gebaut + deployed; Abschnitt nachgetragen)
+
+### V4.78: Skill-Belegen-Fix nach V4.76-Probe
+V4.76-Probe-Beweis (Log 11:59): SetAndSaveSlot schreibt nur den
+GESPEICHERTEN Zustand - die 09:43-Zuweisung erschien erst nach dem
+Relog auf der Leiste. FIX (HotbarService): nach SetAndSaveSlot zieht
+LoadSavedHotbar(CurrentClassJobId, Leiste 0) den gespeicherten Stand
+sofort in die Live-Leiste (FFXIVClientStructs-Doku, game-api.md).
+Erfolg wird weiter erst nach dem 2-Frame-Read-back gemeldet.
+Ausserdem: Skill-Liste filtert Nicht-Spieler-Actions (5x
+"Ausweichen"). IN-GAME NOCH UNGETESTET (Testpunkt 4 oben).
+
+---
+
+## STAND 2026-07-17 (V4.77 gebaut + deployed; Fix kam nie zum Zug - siehe V4.79)
+
+### Neu in V4.77: Tastenbelegung (ConfigKeybind) sagt Befehl + Taste an
+User hat statt Benutzermakros das Fenster TASTENBELEGUNG gedumpt
+(ConfigKeybind, Reiter Schnelltasten; Struktur in game-api.md ->
+"ConfigKeybind"). Log-Befund 09:45/10:14: Listen-Navigation lief dort
+SCHON (Pfeiltasten, Kategorie-Wechsel), aber Zeilen wurden OHNE die
+belegte Taste angesagt ("Vorwaerts" statt "Vorwaerts, Taste W") -
+ROOT CAUSE: Tasten-Texte stecken in Button-KOMPONENTEN in der Zeile
+(id=6 Belegung 1, id=5 Belegung 2, Tasten-Text = Text id=5 darin),
+ReadListItemText liest nur direkte Text-Nodes. FIX: dedizierter
+ReadConfigKeybindRow ("Befehl, Taste X" / "Befehl, keine Taste"),
+generischer Leser als Fallback.
+WICHTIG fuer den User geklaert: Dieses Fenster aendert TASTE->SLOT
+("welche Taste feuert Kommandomenue 1 - Slot 1"), NICHT welcher Skill
+im Slot liegt. Skill->Slot ist der Skill-Browser (V4.75/76).
+OFFEN: Enter auf einer Zeile (Tasten-Erfassungsmodus?) - nie
+getestet; User hat Session um 10:15 beendet ohne Enter zu druecken.
+
+### Beim naechsten Start testen (V4.77)
+1. "Version 4 Punkt 77 bereit".
+2. TASTENBELEGUNG oeffnen, Pfeiltasten: "Vorwaerts, Taste W"?
+   Schnelltasten-Reiter: "Kommandomenue 1 - Slot 1, Taste 1"?
+   Unbelegte: "..., keine Taste"?
+3. ENTER auf einer Zeile druecken: Was passiert / was wird angesagt?
+   Danach Log an Claude (klaert den Erfassungsmodus fuers Umbelegen).
+4. V4.76-Probe: Umschalt+F10 auf belegte UND leere Taste (Skill-
+   Browser), Log an Claude ([Hotbar]-Zeilen vorher/sofort/2 Frames).
+5. Offen von frueher: Braillezeile, Strg+F6 Stufen, Einstellungs-
+   Reiter Enter.
+
+---
+
+## STAND 2026-07-17 (V4.76 gebaut + deployed)
+
+### V4.75-Testbefund: Skill-Belegen ohne Wirkung -> Probe in V4.76
+User: "konnte keine Taste zuweisen, die schon belegt war". Log 09:43:15
+(einziger Versuch): SetAndSaveSlot(0, 0, Action, 25798 Karfunkel-
+Beschwoerung) lief OHNE Exception durch, Slot blieb aber auf Action 163
+(Ruin) - sofortiger Read-back meldete ehrlich "Belegen fehlgeschlagen".
+Skill-Liste selbst OK (Job 26, Stufe 12, 22 Skills, plausibel).
+GitHub-Doku (aers/FFXIVClientStructs) sagt: SetAndSaveSlot setzt den
+LIVE-Slot und speichert via WriteSavedSlot - haette also sofort greifen
+muessen. Native Internas nicht einsehbar -> V4.76 = Audit-Probe:
+- loggt Slot-Zustand VORHER / SOFORT nach dem Call / NACH 2 FRAMES
+  (RunOnTick, Signatur ilspycmd-verifiziert) + IsHotbarShared(0)
+- Ansage kommt erst nach dem 2-Frame-Read-back (trennt "Spiel lehnt ab"
+  von "Live-Slot zieht einen Frame nach")
+Naechster Test: Umschalt+F10 auf belegte UND auf leere Taste, dann Log
+an Claude ([Hotbar]-Zeilen zeigen das Urteil).
+
+### RICHTUNGSWECHSEL (User 2026-07-17): Makro-Fenster statt/neben Skill-Browser
+User will die Hotbar-Frage "lieber uebers Menue" loesen und das Fenster
+Benutzermakros barrierefrei machen. OFFENE FRAGEN an den User (gestellt,
+noch unbeantwortet): (1) Ziel = Makros erstellen/bearbeiten (auch als
+Chat-Ersatz!) oder Skills auf die Leiste? (2) Skill-Browser V4.75
+behalten oder raus? HINWEIS gegeben: Makro-Fenster ist texteingabe-
+lastig, Textfeld-Echo ist die aelteste offene Baustelle; moeglicher
+Ausweg RaptureMacroModule (lesen/schreiben ohne UI) - noch NICHT
+dekompiliert/verifiziert. Workflow sobald geklaert: User oeffnet
+Benutzermakros, Strg+F5-Dump + Strg+F2, Log an Claude.
+
+---
+
+## STAND 2026-07-17 frueher (V4.75 gebaut + deployed)
+
+### Neu in V4.75: Skill-Browser - Aktionsleiste 1 per Tastatur umbelegen
+User-Auftrag: Hotbars barrierefrei machen, Skills auf Tasten 1-8 aendern.
+Das Spiel hat dafuer KEINEN Tastatur-Weg (Sehende ziehen Actions per Maus
+aus "Aktionen & Traits") -> Plugin-Tasten gerechtfertigt.
+
+Alles ilspycmd-verifiziert (game-api.md -> "Hotbar UMBELEGEN"):
+- RaptureHotbarModule.SetAndSaveSlot = spieleigener Speicher-Pfad
+  (identisch mit Drag-and-drop, je Job persistent)
+- Skill-Liste aus Lumina Action-Sheet: !IsPvP, ClassJobLevel 1..Stufe,
+  ClassJobCategory enthaelt Job (Spalten-Aufloesung wiederverwendet:
+  GearInfoService.AllowsJob jetzt public), UnlockLink-Quest-Gate via
+  UIState.IsUnlockLinkUnlockedOrQuestCompleted
+- Read-back nach dem Setzen: Erfolg wird NUR gemeldet, wenn der Slot
+  danach wirklich die neue Action traegt
+
+NEUE TASTEN (Umschalt+F7-F10, laut Keybind-Dump frei; kein Config-
+Migrations-Bedarf, neue Felder bekommen Defaults):
+- Umschalt+F7 / Umschalt+F8 = Skill-Browser zurueck / vor
+  ("5 von 24: Vollschlag, Stufe 4", + "liegt auf Taste 2" falls belegt;
+  Liste nach Stufe sortiert wie das Aktionen-Fenster, baut sich bei
+  Job-/Stufenwechsel neu)
+- Umschalt+F9 = Ziel-Taste weiterschalten ("Ziel-Taste 3: Vollschlag" /
+  "leer" - man hoert, was ueberschrieben wuerde)
+- Umschalt+F10 = zuweisen ("X liegt jetzt auf Taste 3.")
+Strg+F9 (Leiste vorlesen) unveraendert. Hilfe-Text (Strg+F1) ergaenzt.
+
+### Beim naechsten Start testen (V4.75)
+1. "Version 4 Punkt 75 bereit".
+2. Umschalt+F8 mehrmals: kommen die Skills deines Jobs mit Stufe, nach
+   Stufe sortiert? Passt die ANZAHL grob zum Aktionen-Fenster?
+   (Log-Zeile "[Hotbar] Skill-Liste gebaut" zeigt die Zahl.)
+3. Umschalt+F9 mehrmals: "Ziel-Taste 1..." mit aktueller Belegung?
+4. Skill waehlen, Ziel-Taste waehlen, Umschalt+F10: "X liegt jetzt auf
+   Taste Y"? Danach Taste Y druecken: feuert der neue Skill? Strg+F9
+   liest die neue Belegung? Nach Neustart noch da (SetAndSaveSlot
+   speichert je Job)?
+5. Offene Punkte von V4.73/74: Braillezeile, Strg+F6 Stufen-Ansage,
+   Einstellungs-Reiter mit Enter.
+
+---
+
+## STAND 2026-07-16 abends (V4.72 gebaut + deployed)
 
 ### Neuinstallation: Installer aktivierte Plugins nicht (16.07. spaet abends, GEFIXT)
 User hat alles neu installiert; Plugins (FF14Accessibility + vnavmesh)

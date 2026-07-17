@@ -155,6 +155,32 @@ public sealed class KeybindService
             _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpSaved(boundCount, conflictCount));
     }
 
+    /// <summary>
+    /// The key currently bound to a game action ("Strg+3"), looked up by
+    /// InputId name (e.g. "HOTBAR_2_3") in the LIVE keybind table - same
+    /// source as DumpKeybinds (Index == InputId, game-api.md "Keybind-
+    /// System"). Null when the action is unbound or the table is not ready.
+    /// </summary>
+    public unsafe string? GetBoundKey(string inputIdName)
+    {
+        if (!Enum.TryParse(inputIdName, out InputId id)) return null;
+        var uiInput = UIInputData.Instance();
+        if (uiInput == null || uiInput->InputData.Keybinds == null) return null;
+        var index = (int)id;
+        if (index < 0 || index >= uiInput->InputData.NumKeybinds) return null;
+
+        foreach (var setting in uiInput->InputData.GetKeybindSpan()[index].KeySettings)
+        {
+            var formatted = FormatKeySetting(setting);
+            if (formatted.Length > 0) return PrettifyKeyName(formatted);
+        }
+        return null;
+    }
+
+    /// <summary>"Strg+KEY_3" -> "Strg+3": the SeVirtualKey enum prefixes
+    /// number/letter keys with "KEY_", which is noise for TTS.</summary>
+    private static string PrettifyKeyName(string key) => key.Replace("KEY_", "");
+
     /// <summary>Formats one key setting as e.g. "Strg+Umschalt+F1"; empty string if unbound.</summary>
     private static string FormatKeySetting(KeySetting setting)
     {

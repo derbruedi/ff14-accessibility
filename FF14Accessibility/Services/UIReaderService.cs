@@ -923,6 +923,17 @@ public sealed class UIReaderService : IDisposable
         {
             text = _lastFocusedItemName;
         }
+        else if (TryReadConfigKeybindFocusRow(node, out var keybindRow))
+        {
+            // Tastenbelegung: arrow keys move the GLOBAL focus, the list
+            // index fields never move (log 2026-07-17 13:12: only [Focus]
+            // lines, a single List-Navigation at open) - the V4.77 fix in
+            // the list path therefore never ran. The generic tree reader
+            // also drops single-char key labels ("W", "1"): GetTextFromNode-
+            // Tree discards texts of length 1, which is exactly why hotbar
+            // rows were spoken without their keys.
+            text = keybindRow;
+        }
         else
         {
             // Focus often sits on a child (collision node) of the actual
@@ -2586,7 +2597,12 @@ public sealed class UIReaderService : IDisposable
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null || !addon->IsVisible) return;
         var text = ReadFirstText(addon);
-        if (!string.IsNullOrWhiteSpace(text)) _tolk.SpeakInterrupt(text);
+        if (string.IsNullOrWhiteSpace(text)) return;
+        // Info toasts arrive via IToastGui first (ToastService, V4.80); the
+        // _WideText/_ScreenText addon draw follows moments later with the
+        // same text - skip the echo.
+        if (_tolk.WasRecentlySpoken(text, 4)) return;
+        _tolk.SpeakInterrupt(text);
     }
 
     // -- Charaktererstellung: Volk & Geschlecht ----------------------
@@ -3688,6 +3704,120 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
+    /// <summary>
+    /// ConfigKeybind (Tastenbelegung) row: "command, Taste key" / ", keine
+    /// Taste". The bound keys live in button COMPONENTS inside the row
+    /// (binding 1 = component id=6, binding 2 = id=5, key label = text id=5
+    /// inside each; command label = direct text id=2 - F5 dump 2026-07-17).
+    /// The generic reader only sees direct text nodes, so rows were announced
+    /// without their keys ("Vorwärts" instead of "Vorwärts, Taste W").
+    /// Returns "" when the structure does not match (caller falls back).
+    /// </summary>
+    private unsafe string ReadConfigKeybindRow(AtkComponentList* list, int idx)
+    {
+        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
+        try
+        {
+            var rendererSlot = &list->ItemRendererList[idx];
+            if (!IsReadable(rendererSlot)) return string.Empty;
+            var renderer = (*rendererSlot).AtkComponentListItemRenderer;
+            if (renderer == null || !IsReadable(renderer)) return string.Empty;
+            return ReadConfigKeybindRenderer((AtkComponentBase*)renderer);
+        }
+        catch (Exception ex) { _log.Warning($"[Accessibility] ConfigKeybind-Zeile: {ex.Message}"); }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Reads one Tastenbelegung row from its ListItemRenderer component.
+    /// Rows without binding button components (section headers like
+    /// "Laufen und Steuern") return just their label - only real command
+    /// rows get ", Taste X" / ", keine Taste" appended.
+    /// </summary>
+    private unsafe string ReadConfigKeybindRenderer(AtkComponentBase* renderer)
+    {
+        try
+        {
+            var nodeCount = renderer->UldManager.NodeListCount;
+            var nodeList = renderer->UldManager.NodeList;
+            if (nodeList == null || nodeCount == 0 || nodeCount > 128 || !IsReadable(nodeList))
+                return string.Empty;
+
+            string label = string.Empty, key1 = string.Empty, key2 = string.Empty;
+            var sawBindingButton = false;
+            for (uint i = 0; i < nodeCount; i++)
+            {
+                var node = nodeList[i];
+                if (node == null) continue;
+                if (node->Type == NodeType.Text && node->NodeId == 2 && node->IsVisible())
+                {
+                    label = ((AtkTextNode*)node)->NodeText.ToString();
+                }
+                else if ((int)node->Type >= 1000 && node->NodeId is 5 or 6)
+                {
+                    var comp = ((AtkComponentNode*)node)->Component;
+                    if (comp == null) continue;
+                    sawBindingButton = true;
+                    var keyText = ReadComponentTextById(comp, 5);
+                    if (node->NodeId == 6) key1 = keyText;
+                    else key2 = keyText;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(label)) return string.Empty;
+            if (!sawBindingButton) return label;
+            var keys = new List<string>(2);
+            if (!string.IsNullOrWhiteSpace(key1)) keys.Add(key1);
+            if (!string.IsNullOrWhiteSpace(key2)) keys.Add(key2);
+            return keys.Count > 0
+                ? $"{label}, Taste {string.Join(", ", keys)}"
+                : $"{label}, keine Taste";
+        }
+        catch (Exception ex) { _log.Warning($"[Accessibility] ConfigKeybind-Zeile: {ex.Message}"); }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// While Tastenbelegung is open, resolves the globally focused node to
+    /// its list row and reads it with the dedicated row reader (command plus
+    /// bound key). False when the window is closed or the node belongs to no
+    /// row (tabs, close button) - the caller falls back to the generic
+    /// reader. Runs per frame on purpose: the list scrolls UNDER a fixed
+    /// focus node (same node ptr, new row content, log 2026-07-17 13:12),
+    /// so the row text must be re-read even without a focus change.
+    /// </summary>
+    private unsafe bool TryReadConfigKeybindFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible("ConfigKeybind")) return false;
+        var renderer = ClimbToItemRenderer(node);
+        if (renderer == null)
+        {
+            // Log once per focus change (_lastFocusedNodePtr is still the
+            // previous node here), not per frame.
+            if ((nint)node != _lastFocusedNodePtr)
+                _log.Info($"[Focus] ConfigKeybind: Node id={node->NodeId} liegt in keinem ListItemRenderer.");
+            return false;
+        }
+        text = ReadConfigKeybindRenderer((AtkComponentBase*)renderer);
+        return !string.IsNullOrEmpty(text);
+    }
+
+    /// <summary>First visible, non-empty text node with the given id inside a
+    /// component (direct children only).</summary>
+    private static unsafe string ReadComponentTextById(AtkComponentBase* comp, uint textNodeId)
+    {
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var node = comp->UldManager.NodeList[i];
+            if (node == null || node->Type != NodeType.Text || node->NodeId != textNodeId) continue;
+            if (!node->IsVisible()) continue;
+            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            if (!string.IsNullOrEmpty(text)) return text;
+        }
+        return string.Empty;
+    }
+
     // -- List index probe (which field tracks keyboard navigation?) --
 
     private static unsafe (int Sel, int Hov, int Hov2, int Hov3, int Held, string Hl) ReadListIndices(AtkComponentList* list)
@@ -3736,7 +3866,10 @@ public sealed class UIReaderService : IDisposable
             idx = int.Parse(state.Hl.Split(' ')[0]);
         if (idx < 0) return;
 
-        var text = ReadListItemText(list, idx);
+        // Tastenbelegung: dedicated row reader so the bound key is announced
+        // with the command; generic reader as fallback if the structure drifts.
+        var text = name == "ConfigKeybind" ? ReadConfigKeybindRow(list, idx) : string.Empty;
+        if (string.IsNullOrEmpty(text)) text = ReadListItemText(list, idx);
         if (string.IsNullOrEmpty(text)) return;
         var announce = $"{idx}|{text}";
         if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;

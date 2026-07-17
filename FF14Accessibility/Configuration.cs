@@ -39,6 +39,13 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyBestiary      = "Strg+F4";         // Bestiarium (Jagdtagebuch) komplett vorlesen (Strg+F4 laut Keybind-Dump frei)
     public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
     public string KeyEquipBest     = "Strg+F7";         // Empfohlene Ausrüstung anlegen - Spiel-eigener Optimierer (Strg+F7 laut Keybind-Dump frei)
+    // Skill-Browser (V4.75): Aktionsleiste 1 per Tastatur umbelegen. Umschalt+F7-F10
+    // laut Keybind-Dump frei (Umschalt+F1-F12 alle frei, F3-F6 nutzt das Plugin schon).
+    public string KeySkillPrev     = "Umschalt+F7";     // Skill-Browser: vorheriger gelernter Skill
+    public string KeySkillNext     = "Umschalt+F8";     // Skill-Browser: nächster gelernter Skill
+    public string KeySkillSlot     = "Umschalt+F9";     // Ziel-Taste weiterschalten (sagt aktuelle Belegung an)
+    public string KeySkillAssign   = "Umschalt+F10";    // Gewählten Skill auf die Ziel-Taste legen
+    public string KeySkillBar      = "Umschalt+F11";    // Ziel-Leiste weiterschalten (Kommandomenü 1-10; Umschalt+F11 laut Keybind-Dump frei)
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -67,6 +74,11 @@ public sealed class Configuration : IPluginConfiguration
         KeyBestiary      = defaults.KeyBestiary;
         KeyReadEquipment = defaults.KeyReadEquipment;
         KeyEquipBest     = defaults.KeyEquipBest;
+        KeySkillPrev     = defaults.KeySkillPrev;
+        KeySkillNext     = defaults.KeySkillNext;
+        KeySkillSlot     = defaults.KeySkillSlot;
+        KeySkillAssign   = defaults.KeySkillAssign;
+        KeySkillBar      = defaults.KeySkillBar;
     }
 
     // Chat
@@ -78,6 +90,15 @@ public sealed class Configuration : IPluginConfiguration
     public bool ReadFCChat         = true;
     public bool ReadSystemMessages = true;
     public bool ReadCombatMessages = false;
+
+    // Toasts (V4.80): Bildschirm-Popups des Spiels via IToastGui. Fehler-Toasts
+    // ("Das Ziel ist zu weit entfernt.") leben NUR im _TextError-Overlay:
+    // PostRefresh feuert dafuer nie (Log 2026-07-17: einziges Lifecycle-Event
+    // war das leere PostSetup beim Login) und die meisten werden auch nicht
+    // in den Chat gespiegelt - ohne Toast-Events blieben sie komplett stumm
+    // (User-Meldung 2026-07-17).
+    public bool AnnounceErrorToasts = true;  // Fehler-Popups ("zu weit entfernt", "noch nicht bereit")
+    public bool AnnounceInfoToasts  = true;  // normale + Quest-Toasts (Gebiets-/Fortschritts-Meldungen)
 
     // Navigation
     public float NearbyDistance = 30f;
