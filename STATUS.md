@@ -3,7 +3,255 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-18, V4.91 released + Installer 1.1.0 mit Selbst-Update)
+## STAND JETZT (2026-07-18, V4.97: Untertitel)
+
+### User-Meldung: "die Untertitel werden auch mehrfach vorgelesen"
+LOG-BEWEIS (Dialog-Nodes-Probe, 11:20-11:34) - ZWEI Ursachen:
+1. TalkSubtitle haelt JEDE Zeile in DREI Text-Nodes (id2, id3, id4) mit
+   identischem Inhalt. Der Join hat daraus
+   'Hoer hin .... Hoer hin .... Hoer hin ...' gemacht.
+2. Zwischensequenz-Untertitel WACHSEN im selben Node:
+   11:20:23 'Hoer hin ...' -> 11:20:33 'Hoer hin ... Fuehl es ...' ->
+   11:21:06 'Hoer hin ... Fuehl es ... Denk nach ...'. Jede Erweiterung
+   wurde komplett neu vorgelesen, der Anfang also drei Mal.
+
+FIX (beides):
+1. OnTalkUpdate joint Segmente jetzt ueber JoinDistinctParts (wie Listen);
+   ReadAllTexts ebenso (Separator ". ").
+2. Waechst der Text und beginnt mit dem zuletzt Gesprochenen, wird NUR der
+   neue Teil angesagt (_lastSpokenDialog je Addon, beim Schliessen
+   geleert). Eine komplett neue Zeile ist nicht betroffen und wird voll
+   vorgelesen. Geloggt als "nur der neue Teil wird gesprochen".
+
+Build 0/0, deployt (4.97.0.0).
+
+### Beim naechsten Test (V4.97)
+1. "Version 4 Punkt 97 bereit".
+2. Zwischensequenz mit Untertiteln: jede Zeile genau EINMAL, und bei
+   wachsenden Zeilen nur der neue Teil?
+3. Normale NPC-Dialoge weiterhin vollstaendig (Sprechername + Text)?
+
+---
+
+## STAND 2026-07-18 (V4.96: Doppel-/Dreifach-Ansagen entfernt)
+
+### User-Meldung: "manche Meldungen kommen doppelt bis dreifach"
+LOG-BEFUND (11:24 / 11:26, Antwort-Auswahl im Gespraech mit Brennan) -
+eine einzige Antwortzeile erzeugte VIER Ansagen:
+1. 'Ja, 2 Eintraege'      (Menue-Kopf beim Oeffnen)
+2. 'Ja'                   (Listen-/Fokus-Leser)
+3. 'Ja, Ja, Ja, Ja'       (!)
+4. 'Ja'
+Gleiches Muster bei 'Um Staerke zu erlangen.' (4x).
+
+ZWEI URSACHEN, beide gefixt:
+1. WIEDERHOLTER TEXT INNERHALB EINER ANSAGE: FFXIV-Listenzeilen enthalten
+   dasselbe Label mehrfach als Text-Node (Schatten-/Highlight-Kopien im
+   ListItemRenderer). GetTextFromNodeTree und ReadListItemText haben stumpf
+   alle zusammengehaengt. Neu: JoinDistinctParts behaelt je Teil nur das
+   erste Vorkommen -> aus 'Ja, Ja, Ja, Ja' wird 'Ja'.
+   (Danach greift der bestehende 0,5-s-Debounce fuer die Wiederholungen.)
+2. KOPFZEILE + NACKTES LABEL: 'Ja, 2 Eintraege' gefolgt von 'Ja' ist fuer
+   den Debounce nicht identisch. Neu in TolkService.SpeakInterrupt:
+   beginnt die vorige Ansage (< 1 s) mit genau diesem Text plus Komma,
+   wird die nackte Wiederholung unterdrueckt ([Speak] TEIL-DEBOUNCED).
+   Wirkt auch bei 'Elezen, maennlich' -> 'Elezen'.
+
+Build 0/0, deployt (4.96.0.0). V4.95 (Beschreibungs-Reihenfolge) ist darin
+enthalten und weiterhin ungetestet.
+
+### V4.94-4.96 BESTAETIGT (User, 2026-07-18: "ok funktioniert")
+Damit ist der Charaktererstellungs-Block abgeschlossen:
+- Volksbeschreibung kommt beim Blaettern (Hover-Nachstellung)
+- Reihenfolge "Volk, Geschlecht" -> vollstaendige Beschreibung, kein Abbruch
+- keine Doppel-/Dreifach-Ansagen mehr (Zeilen-Dedup + TEIL-DEBOUNCE)
+NOCH NICHT COMMITTET/RELEASED - letzter Release ist v4.73.
+
+### Offen / naechste Kandidaten
+- Commit + Release v4.96 (Ablauf steht in der Release-Notiz zu v4.73)
+- Login-Geplapper (User: "nicht so schlimm", zurueckgestellt)
+- _StatusCustom0-Countdown + _FlyText-Spamfilter (nie beauftragt)
+- Sounds austauschen (User-Wunsch "bei Gelegenheit", Sinus -> angenehmer)
+
+---
+
+## STAND 2026-07-18 (V4.95: Beschreibung wird nicht mehr abgeschnitten)
+
+### V4.94 BESTAETIGT (Log 11:08-11:09) - Hover-Hypothese war richtig
+Alle 8 Voelker liefern beim Blaettern jetzt ihren Beschreibungstext
+(Hyuran 493 / Elezen 482 / Lalafell 392 / Miqo'te 437 / Roegadyn 537 /
+Au Ra 707 / Hrothgar 545 / Viera 655 Zeichen), danach auch der
+Volksstamm-Schritt (Wieslaender inkl. Attributen). Beide Events waren
+vorhanden - Event-Inventar der Zeile: MouseOver, MouseOut, ButtonClick.
+
+### ABER: Ansage-Reihenfolge zerschnitt den Text (deshalb hoerte der User nichts)
+Log 11:08:56: .881 Beschreibung (Speak) -> .886 SpeakInterrupt
+"Elezen, maennlich". Die Kopfansage kam 5 ms SPAETER und hat die
+Beschreibung sofort abgewuergt. Dazu wurde der Volksname doppelt gesagt
+(Fokus-Leser "Elezen" + RaceGender "Elezen, maennlich").
+
+### V4.95 (gebaut + deployt, 0/0)
+1. OnCharaMakeHelpUpdate spricht nicht mehr sofort, sondern PUFFERT den
+   Text; die RaceGender-Ansage gibt ihn direkt nach der Kopfzeile frei
+   (Speak, nicht interruptend). Reihenfolge jetzt:
+   "Elezen, maennlich" -> vollstaendige Beschreibung.
+2. Fallback: der Frame-Tick (UpdateGlobalFocus) spricht einen Puffer, dem
+   nach 250 ms keine Kopfzeile folgt - deckt das Oeffnen des Fensters und
+   den Volksstamm-Schritt ab, wo die Beschreibung allein kommt.
+3. Doppelter Volksname weg: TrySelectFocusedCharaMakeRow gibt jetzt bool
+   zurueck; bei echter Auswahl schweigt der generische Fokus-Leser.
+
+### Beim naechsten Test (V4.95)
+1. "Version 4 Punkt 95 bereit".
+2. Volk & Geschlecht durchblaettern: pro Volk EINMAL "Volk, Geschlecht"
+   und danach die KOMPLETTE Beschreibung, ohne Abbruch?
+3. Ist die Beschreibung beim schnellen Blaettern zu lang/stoerend, koennen
+   wir sie auf Wunsch auf eine Taste legen statt automatisch zu sprechen.
+
+---
+
+## STAND 2026-07-18 (V4.94: Hover-Nachstellung fuer die Beschreibung)
+
+### V4.93-TEST AUSGEWERTET (Log 10:58-10:59)
+User: "liest Namen und Geschlecht vor, aber nicht die Beschreibung".
+
+BEWIESEN, dass V4.93 im Kern FUNKTIONIERT - der synthetische Klick bewegt
+die ECHTE Auswahl, nicht nur ein Anzeige-Bit:
+- "Vorschau sichtbar" wechselt beim Blaettern das 3D-Modell mit:
+  [200]=Hyuran m, [204]=Elezen m, [208]=Lalafell m, [201]/[205] weiblich.
+- Beim Fokus zurueck auf Hyuran wird ERNEUT geklickt - das geht nur, wenn
+  die Auswahl vorher wirklich auf Elezen stand (Gleichheits-Guard).
+- Geschlecht bleibt beim Volkswechsel erhalten (Slot-Trick greift).
+
+EINZIGE Luecke: _CharaMakeHelp id=4 behaelt konstant den Hyuran-Text
+(len=493, [HelpProbe] "Text unveraendert"), auch wenn die Auswahl steht.
+Der Beschreibungstext haengt also NICHT am Auswahl-Zustand.
+
+### V4.94: Maus-Hover nachgestellt (HYPOTHESE, markiert)
+Vermutung: das Spiel fuellt den Hilfetext aus dem MouseOver-Handler der
+Zeile - ein Klick direkt auf die Checkbox erreicht ihn nie.
+TrySelectFocusedCharaMakeRow feuert jetzt vor dem Klick
+MouseOut (alte Zeile) + MouseOver (neue Zeile), gesucht auf der Zeile und
+ihren Komponenten-Kindern (Tiefe 2, Enthaltensein statt ParentNode-Aufstieg).
+AtkEventType-Werte ilspycmd-verifiziert (MouseOver=6, MouseOut=7).
+Einmal pro Sitzung wird das Event-Inventar der Zeile geloggt
+([RaceSelect] Events der Zeile: [...]) - bleibt es stumm, nennt das Log die
+tatsaechlich vorhandenen Events statt uns erneut raten zu lassen.
+Build 0 Fehler / 0 Warnungen, deployt (4.94.0.0).
+
+### Beim naechsten Test (V4.94)
+1. "Version 4 Punkt 94 bereit".
+2. Volk & Geschlecht durchblaettern: kommt nach Name + Geschlecht jetzt
+   auch die Beschreibung?
+3. Falls nicht: Log-Zeile "[RaceSelect] Events der Zeile: [...]" schicken.
+   FALLBACK ist schon recherchiert: Beschreibungen koennten als Spieldaten
+   im Lumina-Sheet "Lobby" liegen (Spalten Text/Unknown0/Unknown1,
+   Zuordnung ueber CharaMakeType.CharaMakeStruct[].Menu) - dann lesen wir
+   sie direkt statt die UI zum Umschreiben zu zwingen.
+
+---
+
+## STAND 2026-07-18 (V4.93: Volk-Auswahl folgt dem Fokus)
+
+### URSACHE BEWIESEN (V4.92-Proben, Log 10:34-10:35)
+- 10:34:31 [HelpProbe] "Text unveraendert (Laenge 493)" = Hyuran-Text.
+  Danach blaettert der User 10:34:33-39 durch ALLE 8 Voelker (Elezen,
+  Lalafell, Miqo'te, Roegadyn, Au Ra, Hrothgar, Viera) -> KEINE einzige
+  Zustandsaenderung. _CharaMakeHelp bleibt auf dem GEWAEHLTEN Volk stehen.
+- [DescProbe] bei der Stamm-Auswahl listet ALLE CharaMake-Addons: nur
+  _CharaMakeHelp id=4 traegt einen echten Beschreibungstext, alle anderen
+  nur statische Hilfetexte ("Bestimme das Aussehen deines Charakters").
+  Beim Blaettern existiert also NIRGENDWO ein Text zum markierten Volk.
+- Gegenprobe: 10:35:09 echte Stamm-AUSWAHL -> Beschreibung kam sofort
+  ("Der Volksstamm der Wieslaender ..."), begleitet von "Tribe gewaehlt".
+  Blaettern zu "Hochlaender" danach -> wieder nichts.
+- Fokus-Pfad geklaert: [Focus] id=5, pro Volk eigener Node-Pointer. Die
+  Pfeiltasten bewegen NUR den globalen Fokus, nicht die Auswahl.
+
+FAZIT: kein kaputter Handler. Das Spiel schreibt Beschreibung + Vorschau
+nur bei echter AUSWAHL um. Mit der Maus faellt das nicht auf (ein Klick
+waehlt sofort aus); bei Tastaturnavigation klafft die Luecke.
+
+### V4.93: Auswahl zieht dem Fokus nach (User-Entscheid)
+User waehlte "Blaettern waehlt aus" - Paritaet zum Mausklick.
+TrySelectFocusedCharaMakeRow (aufgerufen aus UpdateGlobalFocus, nur bei
+echtem Fokuswechsel):
+1. Ermittelt, welcher Checkbox-SLOT (Node id=3 oder 4) aktuell gecheckt ist.
+2. Findet die Zeile, in der der Fokus-Node sitzt (Fokus liegt auf id=5,
+   also innerhalb der Zeilen-Komponente - Parent-Kette wird hochgeklettert).
+3. Klickt in DIESER Zeile die Checkbox mit DEMSELBEN Slot, per Dispatch des
+   registrierten Klick-Events (bewaehrter PressFocusedOk-Pfad).
+Ist die fokussierte Zeile schon die gewaehlte, passiert nichts (kein
+Klick-Sturm). Fehlende Checkbox/fehlendes Event werden geloggt statt still
+verschluckt ([RaceSelect]-Zeilen).
+CLEVER DABEI: das Geschlecht bleibt erhalten, OHNE die bis heute ungeklaerte
+Symbol-Zuordnung (U+00AE / U+00A9) zu kennen - es wird schlicht derselbe
+Node-Slot geklickt, der vorher gecheckt war.
+Build 0/0, deployt (Manifest 4.93.0.0). Die V4.92-Proben bleiben drin.
+
+### Beim naechsten Test (V4.93)
+1. "Version 4 Punkt 93 bereit".
+2. Volk & Geschlecht, mit Pfeiltasten blaettern: kommt jetzt nach jedem
+   Volksnamen die Beschreibung? Wechselt das Geschlecht dabei NICHT?
+3. Log-Kontrolle bei Problemen: [RaceSelect] zeigt jeden Klick;
+   "Kein Klick-Event registriert" hiesse, der Dispatch-Pfad passt nicht
+   (dann Checkbox-Kind statt Komponenten-Node anklicken).
+4. Volksstamm-Schritt: dort blaettert es weiterhin ohne Auswahl (Fix ist
+   bewusst erst nur fuer Volk & Geschlecht) - sagt der User, dass es dort
+   genauso stoeren soll, ziehen wir es nach.
+
+---
+
+## STAND 2026-07-18 (V4.92 = Diagnose-Proben, gebaut + deployed)
+
+### User-Meldung: Beschreibung kommt "wieder nicht" nach dem Rassennamen
+
+LOG-AUSWERTUNG (dalamud.log 2026-07-18 10:26, [Speak] zeigt jede Ansage):
+- 10:26:43.873 Beschreibung Hyuran WIRD gesprochen (einmal, beim Oeffnen)
+- 10:26:45.416 INT 'Elezen'  -> KEINE Beschreibung
+- 10:26:46.183 INT 'Hyuran'  -> KEINE Beschreibung
+Es gibt NUR EINE "CharaMake-Beschreibung"-Zeile im ganzen Log. Der Handler
+feuert also beim Oeffnen und danach nie wieder.
+
+ZWEITER BEFUND (wichtig): beim Blaettern folgt KEIN "RaceGender gewaehlt"-
+Log. Die Ansage 'Elezen' kam ueber den Event-Target-/Hover-Pfad, die
+CHECKBOX-AUSWAHL blieb auf Hyuran stehen.
+
+VERMUTUNG (NICHT BEWIESEN, deshalb Probe statt Fix): das Spiel schreibt
+_CharaMakeHelp id=4 nur um, wenn ein Volk wirklich AUSGEWAEHLT wird, nicht
+beim blossen Durchblaettern/Hovern. Dann gaebe es beim Blaettern schlicht
+keinen Elezen-Text zu lesen, und der V4.83/84-Ansatz waere prinzipiell an
+die Auswahl gebunden - beim damaligen Test hat der User die Voelker
+vermutlich tatsaechlich ausgewaehlt. Alternativen (Text steht woanders,
+Node/Addon unsichtbar) sind ebenso moeglich; der Handler hatte DREI stille
+Ausstiege, aus dem Log war der Grund nicht ableitbar (Diagnose-Falle).
+
+### V4.92: zwei Audit-Proben (kein Fix - erst Ursache belegen)
+1. [HelpProbe] in OnCharaMakeHelpUpdate: jeder bisher stille Ausstieg loggt
+   jetzt seinen Grund ("Addon unsichtbar" / "Node id=4 fehlt" / "Node id=4
+   unsichtbar" / "Text unveraendert (Laenge n)" / "gesprochen"). Nur bei
+   ZUSTANDSWECHSEL, kein Frame-Spam.
+2. [DescProbe] ProbeDescriptionLocation: durchsucht bei jedem Volk-/Stamm-
+   Wechsel ALLE geladenen CharaMake-Addons nach sichtbaren Text-Nodes ab 40
+   Zeichen und loggt Addon, Node-Id, Sichtbarkeit, Laenge, Textanfang.
+   Trigger: Hover-Ansage (Event-Target) UND echte Auswahl - so ist
+   unterscheidbar, ob der Text nur bei Auswahl erscheint.
+Build 0/0, deployt (Manifest 4.92.0.0).
+
+### Beim naechsten Test (V4.92)
+1. "Version 4 Punkt 92 bereit".
+2. Charaktererstellung -> Volk & Geschlecht. Erst NUR BLAETTERN (mehrere
+   Voelker durchgehen, ohne auszuwaehlen).
+3. Dann ein Volk WIRKLICH AUSWAEHLEN (Enter/Bestaetigen) und hoeren, ob
+   die Beschreibung dabei kommt. Das ist der entscheidende Vergleich.
+4. Danach Log an Claude. Die [HelpProbe]- und [DescProbe]-Zeilen zeigen,
+   ob der Text beim Blaettern ueberhaupt existiert - daraus folgt der Fix:
+   entweder anderen Node/anderes Addon lesen, oder die Beschreibung aus
+   Lumina holen und selbst beim Blaettern ansagen.
+
+---
+
+## STAND 2026-07-18 (V4.91 released + Installer 1.1.0 mit Selbst-Update)
 
 ### INSTALLER 1.1.0: Selbst-Update (User-Wunsch, END-TO-END VERIFIZIERT)
 User: "kann man in den installer auch einbauen das er wenns vom installer

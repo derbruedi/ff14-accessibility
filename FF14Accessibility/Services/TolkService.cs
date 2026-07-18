@@ -143,6 +143,18 @@ public sealed class TolkService : IDisposable
             return;
         }
 
+        // A row is often announced twice by two handlers: the richer one first
+        // ("Ja, 2 Einträge" / "Elezen, männlich"), the bare label right after
+        // (log 2026-07-18 11:26:00 - "Ja" spoken three more times). When the
+        // previous announcement already STARTED with this exact text plus a
+        // comma, the new one adds nothing - it would only repeat the word the
+        // user just heard. Distinct texts are never affected.
+        if (elapsed < 1.0 && _lastSpoken.StartsWith(text + ", ", StringComparison.Ordinal))
+        {
+            _log.Info($"[Speak] TEIL-DEBOUNCED '{Short(text)}' (steckt in '{Short(_lastSpoken)}')");
+            return;
+        }
+
         _lastSpoken = text;
         _lastSpokenTick = now;
 

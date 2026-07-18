@@ -673,6 +673,15 @@ public sealed class UIReaderService : IDisposable
         if (interrupt) _tolk.SpeakInterrupt(text);
         else           _tolk.Speak(text);
         _log.Info($"[Accessibility] {addonName} Fokus via Event-Target: '{text}' (node id={key})");
+
+        // AUDIT-PROBE (V4.92): genau hier hoert der Nutzer den Volksnamen und
+        // erwartet die Beschreibung. Log 2026-07-18 zeigte, dass beim Blaettern
+        // KEIN "RaceGender gewaehlt" folgt (die Auswahl bleibt stehen, nur der
+        // Hover wandert) - die Probe belegt, ob dabei irgendwo ein passender
+        // Beschreibungstext existiert.
+        if (addonName is "_CharaMakeRaceGender" or "_CharaMakeTribe")
+            ProbeDescriptionLocation($"Fokus:{text}");
+
         return true;
     }
 
@@ -726,6 +735,10 @@ public sealed class UIReaderService : IDisposable
     // every page; the log line finally makes the speech output diagnosable.
     private readonly Dictionary<string, string> _lastDialogTexts = [];
 
+    // What was last SPOKEN per dialog addon (not the dedup key): lets a growing
+    // subtitle announce only its new tail. Cleared when the window closes.
+    private readonly Dictionary<string, string> _lastSpokenDialog = [];
+
     private unsafe void OnTalkUpdate(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
@@ -734,6 +747,7 @@ public sealed class UIReaderService : IDisposable
         if (!addon->IsVisible)
         {
             _lastDialogTexts.Remove(name);
+            _lastSpokenDialog.Remove(name); // next scene starts fresh, no tail logic
             return;
         }
 
@@ -766,12 +780,35 @@ public sealed class UIReaderService : IDisposable
         var nameSeg = name == "Talk" ? segments.FirstOrDefault(s => s.Id == 2) : default;
         if (nameSeg.Text != null && segments.Count >= 2)
         {
-            var body = string.Join(". ", segments.Where(s => s.Id != 2).Select(s => s.Text));
+            var body = JoinDistinctParts(segments.Where(s => s.Id != 2).Select(s => s.Text).ToList(), ". ");
             spoken = $"{nameSeg.Text}: {body}";
         }
         else
         {
-            spoken = string.Join(". ", segments.Select(s => s.Text));
+            // TalkSubtitle keeps the SAME line in three text nodes (id2/id3/id4,
+            // log 2026-07-18 11:20-11:34) - joining them read every subtitle
+            // three times over ("Hoer hin .... Hoer hin .... Hoer hin ...").
+            spoken = JoinDistinctParts(segments.Select(s => s.Text).ToList(), ". ");
+        }
+
+        // Cutscene subtitles GROW line by line inside the same node ("Hoer hin
+        // ..." -> "... Fuehl es ..." -> "... Denk nach ...", log 11:20:23 ->
+        // 11:20:33 -> 11:21:06). Repeating the whole text each time makes the
+        // user hear the opening lines over and over, so only the new tail is
+        // announced. A subtitle that does not extend the previous one (the
+        // normal case: a fresh line) is unaffected and spoken in full.
+        if (_lastSpokenDialog.TryGetValue(name, out var previous) && previous.Length > 0 &&
+            spoken.Length > previous.Length && spoken.StartsWith(previous, StringComparison.Ordinal))
+        {
+            var tail = spoken[previous.Length..].TrimStart(' ', '.');
+            _lastSpokenDialog[name] = spoken;
+            if (tail.Length == 0) return;
+            _log.Info($"[Accessibility] {name}: nur der neue Teil wird gesprochen ('{TolkService.Sanitize(tail)}')");
+            spoken = tail;
+        }
+        else
+        {
+            _lastSpokenDialog[name] = spoken;
         }
 
         var probe = string.Join(" ", segments.Select(s => $"[id{s.Id}]='{(s.Text.Length > 40 ? s.Text[..40] + "..." : s.Text)}'"));
@@ -919,6 +956,8 @@ public sealed class UIReaderService : IDisposable
 
     public unsafe void UpdateGlobalFocus()
     {
+        FlushPendingRaceDescription();
+
         var stage = AtkStage.Instance();
         if (stage == null) return;
         var input = stage->AtkInputManager;
@@ -1019,6 +1058,21 @@ public sealed class UIReaderService : IDisposable
         _lastFocusedNodePtr  = (nint)node;
         _lastFocusedNodeText = text;
         _log.Info($"[Focus] id={node->NodeId} ptr=0x{(nint)node:X} Text='{text}'");
+
+        // Charaktererstellung: der Fokus allein waehlt nichts aus - das Spiel
+        // schreibt Beschreibung und Vorschau nur bei echter AUSWAHL um (belegt
+        // durch die V4.92-Proben: beim Blaettern ueber alle 8 Voelker blieb
+        // _CharaMakeHelp unveraendert auf dem gewaehlten Volk stehen, und in
+        // KEINEM CharaMake-Addon existierte ein Text zum markierten Volk).
+        // Ein Mausklick macht beides in einem Schritt; hier zieht die Auswahl
+        // dem Fokus nach, damit Tastatur- und Mausbedienung gleich viel liefern.
+        // When the selection moved, the dedicated RaceGender handler announces
+        // the full "<race>, <gender>" plus the description - the bare focus text
+        // ("Elezen") would only duplicate its first word and, being an
+        // interrupting announcement, cut the description short (log 2026-07-18
+        // 11:08: description spoken, then interrupted 5 ms later).
+        if (TrySelectFocusedCharaMakeRow(node)) return;
+
         // Just after a dialog opens the focus settles onto its default button;
         // announcing it here would interrupt the opening question. Stay silent
         // during the guard window (state is already updated, so the user's next
@@ -1041,6 +1095,235 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
             _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
         }
+    }
+
+    // -- Charaktererstellung: Auswahl folgt dem Fokus (V4.93) ----------------
+
+    /// <summary>
+    /// Selects the race row the focus just moved onto, by dispatching the click
+    /// event of its gender checkbox - the same path a mouse click takes.
+    ///
+    /// The gender is preserved WITHOUT relying on the unresolved symbol mapping
+    /// (game-api.md: which of the glyphs U+00AE / U+00A9 means male is still
+    /// open): whichever checkbox NODE ID is currently checked is the one clicked
+    /// in the new row. Node ids are stable per row (id=3 / id=4, dumps
+    /// 2026-07-09), so "same slot" keeps the gender even if the labels lie.
+    ///
+    /// Only runs on a real focus change (the caller is already change-gated) and
+    /// only when the focused row is not the selected one - so no click storm.
+    /// </summary>
+    /// <returns>True when a row was actually selected - the caller then stays
+    /// silent, because the RaceGender handler speaks the complete text.</returns>
+    private unsafe bool TrySelectFocusedCharaMakeRow(AtkResNode* focused)
+    {
+        if (focused == null) return false;
+
+        var ptr = _gameGui.GetAddonByName("_CharaMakeRaceGender");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return false;
+
+        // 1. Which checkbox slot carries the current selection?
+        uint activeSlot = 0;
+        AtkResNode* selectedRow = null;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var row = addon->UldManager.NodeList[i];
+            if (!IsRaceRow(row)) continue;
+            var comp = ((AtkComponentNode*)row)->Component;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null || (int)child->Type < 1000) continue;
+                if (child->NodeId is not (3 or 4)) continue;
+                var cc = ((AtkComponentNode*)child)->Component;
+                if (cc == null || cc->GetComponentType() != ComponentType.CheckBox) continue;
+                if (((AtkComponentCheckBox*)cc)->IsChecked)
+                {
+                    activeSlot  = child->NodeId;
+                    selectedRow = row;
+                }
+            }
+        }
+        if (activeSlot == 0 || selectedRow == null) return false;   // nothing selected yet
+
+        // 2. Which row does the focused node sit in?
+        var focusedRow = FindRaceRowContaining(addon, focused);
+        if (focusedRow == null || focusedRow == selectedRow) return false;
+
+        // 3. Replay the hover switch a mouse would have produced BEFORE clicking.
+        //    Proven by the log of 2026-07-18 (10:58/10:59): the synthetic click
+        //    does move the real selection - the visible preview model switched
+        //    per race (index 200=Hyuran m, 204=Elezen m, 208=Lalafell m, 201/205
+        //    the female ones) and the checkbox state followed. The ONLY thing
+        //    that never changed is the description text in _CharaMakeHelp id=4.
+        //    HYPOTHESIS (marked, unproven): the game fills that help text from
+        //    the row's MouseOver handler - a click dispatched straight at the
+        //    checkbox never reaches it. The registered event types are logged
+        //    once per session, so a silent run names what really exists instead
+        //    of leaving us guessing again.
+        DispatchRowEvent(selectedRow, AtkEventType.MouseOut,  "MouseOut/alte Zeile");
+        DispatchRowEvent(focusedRow,  AtkEventType.MouseOver, "MouseOver/neue Zeile");
+
+        // 4. Click the same-slot checkbox in the focused row.
+        var target = FindRowCheckBoxNode(focusedRow, activeSlot);
+        if (target == null)
+        {
+            _log.Info($"[RaceSelect] Zeile fokussiert, aber keine Checkbox id={activeSlot} darin gefunden.");
+            return false;
+        }
+
+        if (!DispatchClick(target))
+        {
+            _log.Info($"[RaceSelect] Kein Klick-Event auf Checkbox id={activeSlot} registriert - Auswahl nicht ausgeloest.");
+            return false;
+        }
+
+        _log.Info($"[RaceSelect] Auswahl folgt dem Fokus (Checkbox id={activeSlot} geklickt).");
+        return true;
+    }
+
+    /// <summary>True for a race row: component node of type Base holding the
+    /// two gender checkboxes (structure per game-api.md).</summary>
+    private static unsafe bool IsRaceRow(AtkResNode* node)
+    {
+        if (node == null || (int)node->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)node)->Component;
+        if (comp == null || comp->GetComponentType() != ComponentType.Base) return false;
+
+        var boxes = 0;
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child == null || (int)child->Type < 1000) continue;
+            if (child->NodeId is not (3 or 4)) continue;
+            var cc = ((AtkComponentNode*)child)->Component;
+            if (cc != null && cc->GetComponentType() == ComponentType.CheckBox) boxes++;
+        }
+        return boxes == 2;
+    }
+
+    /// <summary>Finds the race row that contains the given node (the focus sits
+    /// on an inner node - id=5 per log 2026-07-18 - not on the row itself).</summary>
+    private static unsafe AtkResNode* FindRaceRowContaining(AtkUnitBase* addon, AtkResNode* node)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var row = addon->UldManager.NodeList[i];
+            if (!IsRaceRow(row)) continue;
+            if (row == node) return row;
+
+            var comp = ((AtkComponentNode*)row)->Component;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                if (comp->UldManager.NodeList[j] == node) return row;
+            }
+
+            // Focus may sit deeper (collision child of a checkbox) - walk the
+            // node's parents up to the row instead of scanning every level.
+            var cur = node;
+            for (var up = 0; up < 6 && cur != null; up++)
+            {
+                if (cur == row) return row;
+                cur = cur->ParentNode;
+            }
+        }
+        return null;
+    }
+
+    private static unsafe AtkResNode* FindRowCheckBoxNode(AtkResNode* row, uint slotId)
+    {
+        var comp = ((AtkComponentNode*)row)->Component;
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child == null || child->NodeId != slotId || (int)child->Type < 1000) continue;
+            var cc = ((AtkComponentNode*)child)->Component;
+            if (cc != null && cc->GetComponentType() == ComponentType.CheckBox) return child;
+        }
+        return null;
+    }
+
+    // Diagnostics for the hover replay: the event inventory of a race row is
+    // written once per session, not per keypress (arrow keys fire several times
+    // per second - a per-press log would flood the file like _LimitBreak did).
+    private bool _raceRowEventsLogged;
+
+    /// <summary>
+    /// Dispatches ONE specific event type of a race row to its listener. Hover
+    /// events usually sit on an inner collision node, so the row's component
+    /// children are searched too (depth 2, same containment logic as
+    /// FindTopLevelOwner - never a ParentNode climb, see game-api.md).
+    /// </summary>
+    private unsafe bool DispatchRowEvent(AtkResNode* row, AtkEventType wanted, string label)
+    {
+        if (row == null) return false;
+
+        var registered = new List<string>();
+        var evt = FindEventOfType(row, wanted, registered, 2);
+
+        if (!_raceRowEventsLogged)
+        {
+            _raceRowEventsLogged = true;
+            _log.Info($"[RaceSelect] Events der Zeile: [{string.Join(", ", registered)}]");
+        }
+
+        if (evt == null || evt->Listener == null || !IsReadable(evt->Listener))
+        {
+            _log.Info($"[RaceSelect] {label}: kein {wanted}-Event registriert - nicht ausgeloest.");
+            return false;
+        }
+
+        var data = default(AtkEventData);
+        evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
+        return true;
+    }
+
+    /// <summary>Finds the first event of a given type on a node or its component
+    /// children, collecting every registered type for the diagnostic log.</summary>
+    private unsafe AtkEvent* FindEventOfType(AtkResNode* node, AtkEventType wanted, List<string> registered, int depth)
+    {
+        if (node == null) return null;
+
+        AtkEvent* found = null;
+        var evt   = node->AtkEventManager.Event;
+        var guard = 0;
+        while (evt != null && guard++ < 32)
+        {
+            if (!IsReadable(evt)) break;
+            registered.Add($"{node->NodeId}:{evt->State.EventType}");
+            if (found == null && evt->State.EventType == wanted) found = evt;
+            evt = evt->NextEvent;
+        }
+
+        if (depth <= 0 || (int)node->Type < 1000) return found;
+        var comp = ((AtkComponentNode*)node)->Component;
+        if (comp == null || !IsReadable(comp)) return found;
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var sub = FindEventOfType(comp->UldManager.NodeList[j], wanted, registered, depth - 1);
+            if (found == null) found = sub;
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Dispatches a node's registered click event to its listener - the same
+    /// path PressFocusedOk uses (AtkEvent linked list, ReceiveEvent with a
+    /// zeroed AtkEventData). Returns false when the node carries no click event.
+    /// </summary>
+    private unsafe bool DispatchClick(AtkResNode* node)
+    {
+        var registered = new List<string>();
+        AtkEvent* best = null;
+        var bestRank = int.MaxValue;
+        ScanClickCandidates(node, registered, ref best, ref bestRank);
+
+        if (best == null || best->Listener == null) return false;
+
+        var data = default(AtkEventData);
+        best->Listener->ReceiveEvent(best->State.EventType, (int)best->Param, best, &data);
+        return true;
     }
 
     /// <summary>True for text that is only digits and separators (a currency
@@ -2754,7 +3037,9 @@ public sealed class UIReaderService : IDisposable
 
         var msg = genderOnly ? gender : $"{race}, {gender}";
         _tolk.SpeakInterrupt(msg);
+        FlushPendingRaceDescription(force: true); // headline first, then the text
         _log.Info($"[Accessibility] RaceGender gewählt: Volk='{race}' Geschlecht='{gender}'");
+        ProbeDescriptionLocation($"Auswahl:{race}");
     }
 
     /// <summary>
@@ -2923,6 +3208,7 @@ public sealed class UIReaderService : IDisposable
         _lastTribe = tribe;
         _tolk.SpeakInterrupt(tribe);
         _log.Info($"[Accessibility] Tribe gewaehlt: '{tribe}'");
+        ProbeDescriptionLocation($"Stamm:{tribe}");
     }
 
     /// <summary>
@@ -2964,21 +3250,106 @@ public sealed class UIReaderService : IDisposable
     /// queues behind the race/gender announcement; the next SpeakInterrupt
     /// (arrowing on) cuts it off.
     /// </summary>
+    // AUDIT-PROBE (V4.92): der Handler hatte drei stille Ausstiege, deshalb war
+    // aus dem Log nicht ableitbar, WARUM beim Blaettern keine Beschreibung kam
+    // (Log 2026-07-18 10:26: Ansage nur beim Oeffnen, danach nie wieder).
+    // Der zuletzt geloggte Grund wird gemerkt, damit pro Zustandswechsel genau
+    // eine Zeile entsteht statt einer pro Frame.
+    private string _lastHelpProbeState = string.Empty;
+
+    private void ProbeHelpState(string state)
+    {
+        if (state == _lastHelpProbeState) return;
+        _lastHelpProbeState = state;
+        _log.Info($"[HelpProbe] {state}");
+    }
+
     private unsafe void OnCharaMakeHelpUpdate(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null || !addon->IsVisible) return;
+        if (addon == null) { ProbeHelpState("Addon-Zeiger null"); return; }
+        if (!addon->IsVisible) { ProbeHelpState("Addon unsichtbar"); return; }
 
         var node = addon->GetNodeById(4);
-        if (node == null || node->Type != NodeType.Text || !node->IsVisible()) return;
+        if (node == null) { ProbeHelpState("Node id=4 fehlt"); return; }
+        if (node->Type != NodeType.Text) { ProbeHelpState($"Node id=4 ist kein Text (Type={node->Type})"); return; }
+        if (!node->IsVisible()) { ProbeHelpState("Node id=4 unsichtbar"); return; }
 
         var text = ((AtkTextNode*)node)->NodeText.ToString().Trim();
-        if (text == _lastCharaMakeHelpText) return;
+        if (text == _lastCharaMakeHelpText)
+        {
+            ProbeHelpState($"Text unveraendert (Laenge {text.Length})");
+            return;
+        }
         _lastCharaMakeHelpText = text;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text)) { ProbeHelpState("Text leer"); return; }
 
-        _tolk.Speak(text);
+        // NOT spoken here: _CharaMakeHelp rewrites its text a few milliseconds
+        // BEFORE the RaceGender handler announces "<race>, <gender>", and that
+        // announcement interrupts (log 2026-07-18 11:08:56.881 description ->
+        // .886 interrupt). Buffered instead, so the order is headline first,
+        // description after - and the description is never cut off.
+        _pendingRaceDescription = text;
+        _pendingRaceDescriptionAt = Environment.TickCount64;
+        ProbeHelpState($"gepuffert (Laenge {text.Length})");
         _log.Info($"[Accessibility] CharaMake-Beschreibung: '{TolkService.Sanitize(text)}'");
+    }
+
+    // Buffered race/tribe description (see OnCharaMakeHelpUpdate).
+    private string _pendingRaceDescription = string.Empty;
+    private long   _pendingRaceDescriptionAt;
+
+    /// <summary>Speaks a buffered description. Called right after the
+    /// "<race>, <gender>" headline; the frame tick flushes it as a fallback when
+    /// no headline follows (e.g. the window just opened, or the tribe step where
+    /// the description arrives on its own).</summary>
+    private void FlushPendingRaceDescription(bool force = false)
+    {
+        if (_pendingRaceDescription.Length == 0) return;
+        if (!force && Environment.TickCount64 - _pendingRaceDescriptionAt < 250) return;
+
+        var text = _pendingRaceDescription;
+        _pendingRaceDescription = string.Empty;
+        _tolk.Speak(text); // queued, never interrupting
+    }
+
+    /// <summary>
+    /// AUDIT-PROBE (V4.92): sucht den Beschreibungstext in ALLEN sichtbaren
+    /// CharaMake-Addons. Wird bei jedem Wechsel von Volk/Volksstamm einmal
+    /// aufgerufen und loggt jeden sichtbaren Text-Node ab 40 Zeichen mit
+    /// Addon-Name und Node-Id. Damit ist belegbar, wo die Beschreibung beim
+    /// Blaettern wirklich steht - statt zu vermuten, dass sie weiter in
+    /// _CharaMakeHelp id=4 landet.
+    /// </summary>
+    private unsafe void ProbeDescriptionLocation(string trigger)
+    {
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return;
+
+        var found = 0;
+        for (var u = 0; u < mgr->AllLoadedUnitsList.Count && u < 256; u++)
+        {
+            var a = mgr->AllLoadedUnitsList.Entries[u].Value;
+            if (a == null) continue;
+            var name = a->NameString;
+            if (!name.Contains("CharaMake", StringComparison.Ordinal)) continue;
+
+            var vis = a->IsVisible;
+            var nodes = a->UldManager.NodeListCount;
+            for (var i = 0; i < nodes; i++)
+            {
+                var n = a->UldManager.NodeList[i];
+                if (n == null || n->Type != NodeType.Text) continue;
+                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                if (t.Length < 40) continue;
+                found++;
+                var head = t.Length > 60 ? t[..60] : t;
+                _log.Info($"[DescProbe/{trigger}] {name} (sichtbar={vis}) id={n->NodeId} " +
+                          $"nodeVis={n->IsVisible()} len={t.Length}: '{TolkService.Sanitize(head)}'");
+            }
+        }
+        if (found == 0)
+            _log.Info($"[DescProbe/{trigger}] KEIN Textknoten ab 40 Zeichen in irgendeinem CharaMake-Addon gefunden.");
     }
 
     // -- Textfeld-Echo (Charaktererstellung: Kommentar beim Speichern) --
@@ -4219,7 +4590,7 @@ public sealed class UIReaderService : IDisposable
                 var text = textNode->NodeText.ToString();
                 if (!string.IsNullOrEmpty(text)) (parts ??= []).Add(text);
             }
-            if (parts != null) return string.Join(", ", parts);
+            if (parts != null) return JoinDistinctParts(parts);
         }
         catch (Exception ex) { _log.Warning($"[Accessibility] ListItem-Fehler: {ex.Message}"); }
         return string.Empty;
@@ -4878,19 +5249,36 @@ public sealed class UIReaderService : IDisposable
 
         // CheckBox, RadioButton, ListItemRenderer und alle weiteren:
         // Kind-Nodes rekursiv durchsuchen � ergibt automatisch Label + Wert/Status.
-        var sb = new StringBuilder();
+        var parts = new List<string>();
         for (var j = 0; j < comp->UldManager.NodeListCount; j++)
         {
             var child = comp->UldManager.NodeList[j];
             if (child == null) continue;
             var childText = GetTextFromNodeTree(child, depth + 1);
-            if (!string.IsNullOrWhiteSpace(childText))
-            {
-                if (sb.Length > 0) sb.Append(", ");
-                sb.Append(childText);
-            }
+            if (!string.IsNullOrWhiteSpace(childText)) parts.Add(childText);
         }
-        return sb.ToString();
+        return JoinDistinctParts(parts);
+    }
+
+    /// <summary>
+    /// Joins row parts with ", ", keeping only the first occurrence of each.
+    /// FFXIV renders the same label several times per row (the list item
+    /// renderer holds shadow/highlight copies of a text node), which turned a
+    /// single answer into "Ja, Ja, Ja, Ja" (log 2026-07-18 11:26:00). A
+    /// repeated label carries no information for a screen reader - a repeated
+    /// VALUE would, but two identical values in one row are the same rendered
+    /// number, not two facts.
+    /// </summary>
+    private static string JoinDistinctParts(List<string> parts, string separator = ", ")
+    {
+        var kept = new List<string>(parts.Count);
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length == 0 || kept.Contains(trimmed)) continue;
+            kept.Add(trimmed);
+        }
+        return string.Join(separator, kept);
     }
 
     private unsafe string ReadFirstText(AtkUnitBase* addon)
@@ -5003,16 +5391,19 @@ public sealed class UIReaderService : IDisposable
         // Only VISIBLE texts: hidden nodes carry stale/conditional content -
         // JournalDetail spoke "Du kannst den Auftrag nicht annehmen..." from
         // an invisible error label on open (log 2026-07-11 10:35).
-        var sb = new StringBuilder();
+        // Duplicates are dropped for the same reason as in list rows: subtitle
+        // windows hold the same line in several visible text nodes, which read
+        // back as "Im Suedwesten Eorzeas ... . Im Suedwesten Eorzeas ... ."
+        // (log 2026-07-18 11:32:38, user report "Untertitel mehrfach").
+        var parts = new List<string>();
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
             var text = ((AtkTextNode*)node)->NodeText.ToString();
-            if (!string.IsNullOrWhiteSpace(text) && text.Length > 1)
-                sb.Append(text).Append(". ");
+            if (!string.IsNullOrWhiteSpace(text) && text.Length > 1) parts.Add(text);
         }
-        return sb.ToString().Trim();
+        return JoinDistinctParts(parts, ". ");
     }
 
     // -- Window diagnosis (F2 / "/acc win") --------------------------

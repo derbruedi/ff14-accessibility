@@ -53,8 +53,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.91";
-    private const string PluginVersionTag = "Chat bestaetigt (Tipp-Echo, Kanal-Ansage, Nachlese-Browser); Kampflog-Vorlesen aus V4.90 wieder entfernt (kam in-game nie an)";
+    private const string PluginVersion    = "4.97";
+    private const string PluginVersionTag = "Untertitel: keine Dreifach-Ansage, wachsende Zeilen nur einmal";
 
     public Plugin()
     {
