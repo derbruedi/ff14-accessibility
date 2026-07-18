@@ -24,9 +24,21 @@ cues — including braille display output and automatic walking.
   e.g. "Target is too far away."
 - NPC dialogues with the speaker's name first ("Miounne: …"); with the
   journal open, Ctrl+F10 reads the quest description and objectives.
-- Chat is read aloud (each channel can be turned off: say, shout, party,
-  alliance, tell, free company, system).
 - Every announcement is also sent to the **braille display**.
+
+### Chat
+
+- **Receiving**: incoming messages are read aloud, and each channel can be
+  turned off individually (say, shout, party, alliance, tell, free
+  company, system).
+- **Writing**: opening the chat input announces the active channel ("Chat
+  input, Say"), and so does switching channels while typing. Every typed
+  character is spoken, as are deletions — because a screen reader cannot
+  read the game's own input field.
+- **Catching up**: a history browser with eight separate categories
+  (dialogues, say, shout, party, alliance, tell, free company, system),
+  50 messages each. This lets you review what you missed at your own pace
+  without disturbing the live chat.
 
 ### Navigation and walking
 
@@ -177,6 +189,14 @@ below use Ctrl/Shift.
 - **Shift+F11** — cycle the target bar (bar 1 to 10)
 - **Shift+F9** — cycle the target slot on the bar (announces what is on it)
 - **Shift+F10** — place the chosen skill on the target slot
+
+### Reading back chat
+
+- **Ctrl+Period** / **Ctrl+Comma** — next / previous category (dialogues,
+  say, shout, party, alliance, tell, free company, system); announced with
+  the category name and its message count
+- **Comma** / **Period** — step to the older / newer message inside the
+  selected category ("3 of 12: …")
 
 ### Emotes
 

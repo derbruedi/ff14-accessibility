@@ -24,9 +24,21 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   z. B. „Das Ziel ist zu weit entfernt."
 - NPC-Dialoge mit Sprechername zuerst („Miounne: …"); bei offenem Journal
   liest Strg+F10 die Quest-Beschreibung und Ziele vor.
-- Chat wird vorgelesen (je Kanal abschaltbar: Sagen, Rufen, Gruppe,
-  Allianz, Flüstern, Freie Gesellschaft, System).
 - Alle Ansagen erscheinen zusätzlich auf der **Braillezeile**.
+
+### Chat
+
+- **Empfangen**: eingehende Nachrichten werden vorgelesen, je Kanal
+  abschaltbar (Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie
+  Gesellschaft, System).
+- **Schreiben**: beim Öffnen der Chat-Eingabe wird der aktive Kanal
+  angesagt („Chat-Eingabe, Sagen"), ein Kanalwechsel während des Tippens
+  ebenso. Jedes getippte Zeichen wird gesprochen, ebenso Gelöschtes —
+  denn das Eingabefeld des Spiels liest ein Screenreader nicht.
+- **Nachlesen**: ein Verlaufs-Browser mit acht getrennten Kategorien
+  (Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
+  System) — je 50 Nachrichten. So lässt sich Verpasstes in Ruhe
+  nachhören, ohne den laufenden Chat zu stören.
 
 ### Navigation und Laufen
 
@@ -174,6 +186,14 @@ Strg+F1 sagt jederzeit die aktuelle Hilfe an.
 - **Umschalt+F11** — Ziel-Leiste wechseln (Leiste 1 bis 10)
 - **Umschalt+F9** — Ziel-Taste auf der Leiste wählen (sagt an, was dort liegt)
 - **Umschalt+F10** — gewählten Skill auf die Ziel-Taste legen
+
+### Chat nachlesen
+
+- **Strg+Punkt** / **Strg+Komma** — Kategorie vor / zurück (Dialoge,
+  Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft, System);
+  angesagt wird der Name mit der Anzahl der Nachrichten
+- **Komma** / **Punkt** — in der gewählten Kategorie zur älteren /
+  neueren Nachricht blättern („3 von 12: …")
 
 ### Emotes
 
