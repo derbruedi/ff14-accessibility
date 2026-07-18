@@ -67,7 +67,10 @@ public sealed class AutoWalkService : IDisposable
     private ushort _startTerritory;    // announce success when the player crosses into a new zone
     private Vector3 _lastPosition;     // where the character last moved (for stall detection)
     private DateTime _lastMoveAt;
-    private DateTime _lastProgressSpeak;
+    // Remaining distance at the last spoken progress line - the next one waits
+    // until another AutoWalkProgressStep metres are behind us (never the clock,
+    // or a slow/blocked walk chatters while nothing happens).
+    private float _lastProgressDistance;
     private bool _diagLoggedPath;      // DIAGNOSTIC: full waypoint route logged once per walk
     private DateTime _lastDiagAt;      // DIAGNOSTIC: throttles the per-second position log
 
@@ -217,6 +220,80 @@ public sealed class AutoWalkService : IDisposable
         BeginWalk();
     }
 
+    // ── Wegenetz-Aufbau mitverfolgen ──
+
+    private float _lastMeshProgress = -1f;   // -1 = kein Aufbau läuft
+    private int _lastSpokenMeshStep = -1;    // last announced 20 % step (0..4)
+    private bool _meshMonitorOff;            // IPC unavailable - reported once, then quiet
+
+    /// <summary>
+    /// Announces the navmesh build in 20 % steps and reports when it is done
+    /// (user request 2026-07-18). Without it the player has no way to tell
+    /// "still loading" from "broken" - the auto-walk simply refuses to start.
+    ///
+    /// vnavmesh semantics verified by decompiling NavmeshManager (2026-07-18):
+    /// LoadTaskProgress is -1 while no build runs, set to 0 when one starts,
+    /// grows to 1 via BuildTiles, and is reset to -1 in an OnDispose when the
+    /// task ends - so completion shows up as the drop back to -1, and only
+    /// Nav.IsReady tells success (mesh present) from cancellation.
+    /// Loads served from the tile cache can finish so fast that no intermediate
+    /// step is ever seen; then only start and finish speak. That is correct.
+    /// </summary>
+    private void MonitorMeshBuild()
+    {
+        if (_meshMonitorOff || !_config.AnnounceMeshProgress) return;
+
+        float progress;
+        bool ready;
+        // try-catch: IPC into a foreign plugin (vnavmesh may be missing).
+        try
+        {
+            progress = _navBuildProgress.InvokeFunc();
+            ready    = _navIsReady.InvokeFunc();
+        }
+        catch (Exception ex)
+        {
+            // Never per frame: report once, then stay off. A missing vnavmesh is
+            // already announced properly when a walk is actually attempted.
+            _meshMonitorOff = true;
+            _log.Warning(ex, "[Nav] Wegenetz-Fortschritt nicht lesbar - Überwachung aus.");
+            return;
+        }
+
+        var wasBuilding = _lastMeshProgress >= 0f;
+        var isBuilding  = progress >= 0f;
+        _lastMeshProgress = progress;
+
+        if (isBuilding)
+        {
+            if (!wasBuilding)
+            {
+                // Step 0 counts as spoken, so 0 % never announces itself.
+                _lastSpokenMeshStep = 0;
+                _log.Info("[Nav] Wegenetz-Aufbau gestartet.");
+                _tolk.SpeakInterrupt("Wegenetz wird geladen.");
+                return;
+            }
+
+            var step = (int)(progress * 5); // 0..4 = 0/20/40/60/80 %
+            if (step > _lastSpokenMeshStep && step < 5)
+            {
+                _lastSpokenMeshStep = step;
+                _log.Info($"[Nav] Wegenetz-Aufbau: {step * 20} % (progress={progress:F2})");
+                _tolk.SpeakInterrupt($"Wegenetz {step * 20} Prozent.");
+            }
+            return;
+        }
+
+        if (!wasBuilding) return;
+
+        _lastSpokenMeshStep = -1;
+        _log.Info($"[Nav] Wegenetz-Aufbau beendet, bereit={ready}");
+        _tolk.SpeakInterrupt(ready
+            ? "Wegenetz fertig geladen."
+            : "Wegenetz-Aufbau abgebrochen.");
+    }
+
     /// <summary>Queues the vnavmesh path. False (with announcement) when vnavmesh is not ready.</summary>
     private bool TryStartPath(Vector3 destination, float stopRange)
     {
@@ -257,7 +334,9 @@ public sealed class AutoWalkService : IDisposable
         _startTerritory = (ushort)_clientState.TerritoryType;
         _lastPosition = _objectTable.LocalPlayer?.Position ?? default;
         _lastMoveAt = DateTime.UtcNow;
-        _lastProgressSpeak = DateTime.UtcNow;
+        // Baseline for the progress lines: the first one is due once we are a
+        // full step closer than the start, so short walks never speak at all.
+        _lastProgressDistance = Vector3.Distance(_lastPosition, _destPosition);
         _diagLoggedPath = false;
         _lastDiagAt = DateTime.UtcNow;
         _log.Info($"[Nav] Auto-Lauf: gestartet zu {_targetName} (id={_targetId:X}, stopRange={_stopRange:F1}, " +
@@ -292,6 +371,10 @@ public sealed class AutoWalkService : IDisposable
     /// <summary>Watches the running walk. Called every frame from Plugin.OnFrameworkUpdate.</summary>
     public void Update()
     {
+        // Runs even when no walk is active: the player wants to know when the
+        // navmesh finishes loading, precisely BECAUSE they cannot walk yet.
+        MonitorMeshBuild();
+
         if (!_active) return;
 
         var player = _objectTable.LocalPlayer;
@@ -371,11 +454,10 @@ public sealed class AutoWalkService : IDisposable
                 var last = waypoints[^1];
                 var route = string.Join(" -> ", waypoints.Select(w => $"({w.X:F1}|{w.Y:F1}|{w.Z:F1})"));
                 _log.Info($"[NavDiag] Pfad: {waypoints.Count} Wegpunkte, letzter->Ziel={Vector3.Distance(last, _destPosition):F1} m. Route: {route}");
-                // Queued (not interrupting) so it follows "Laufe zu ..."; push
-                // the 3 s progress timer back so "Noch X Meter" does not cut
-                // the preview off mid-sentence.
+                // Queued (not interrupting) so it follows "Laufe zu ...". The
+                // progress lines are distance-gated now, so nothing has to be
+                // pushed back to protect the preview from being cut off.
                 _tolk.Speak(_routes.DescribeRoute(_targetName, waypoints));
-                _lastProgressSpeak = DateTime.UtcNow.AddSeconds(5);
             }
             if ((now - _lastDiagAt).TotalSeconds >= 1)
             {
@@ -393,11 +475,17 @@ public sealed class AutoWalkService : IDisposable
             _log.Error(ex, "[NavDiag] Waypoint-IPC fehlgeschlagen");
         }
 
-        // Spoken progress every 3 s so the walk is clearly working (the beacon
-        // tone alone left the user unsure and cancelling; report 2026-07-11).
-        if ((now - _lastProgressSpeak).TotalSeconds >= 3)
+        // Spoken progress. Originally every 3 s, because the beacon tone alone
+        // left the user unsure and cancelling walks (report 2026-07-11) - but on
+        // a long walk that is a wall of "Noch X Meter" (report 2026-07-18).
+        // Now tied to PROGRESS instead of the clock: one line per
+        // ProgressStepMetres covered, so a short hop stays silent and a long run
+        // reports a handful of times. The reassurance survives, the chatter does
+        // not. ProgressStepMetres = 0 turns it off entirely.
+        var step = _config.AutoWalkProgressStep;
+        if (step > 0 && distance <= _lastProgressDistance - step)
         {
-            _lastProgressSpeak = now;
+            _lastProgressDistance = distance;
             _tolk.SpeakInterrupt($"Noch {FormatRemaining(distance)}.");
             _log.Info($"[Nav] Auto-Lauf: läuft, dist={distance:F1} running={running} computing={computing}");
         }

@@ -89,6 +89,8 @@ public sealed class NavigationService
             return;
         }
 
+        PollMapFlag(player);
+
         // Announce only when the ACTUAL target changes. V4.24 compared against
         // the id CycleObject WANTED to set - when the game rejected the set
         // (SetHardTarget returns bool, log 2026-07-10 16:39), every N press
@@ -101,12 +103,9 @@ public sealed class NavigationService
             var isOwnSelection = targetId != 0 && targetId == _ownSelectionId;
             if (isOwnSelection) _ownSelectionId = 0;
 
-            // Enemy tone: a short blip whenever a hostile becomes the target
-            // (Tab, F11 or N), even when the spoken announcement is suppressed
-            // for an own selection. Muted during auto-walk via announceTargetChanges.
-            if (target != null && announceTargetChanges && target.ObjectKind == ObjectKind.BattleNpc)
-                _cue.PlayTargetTone();
-
+            // No mod tone on targeting an enemy: the GAME already plays one
+            // (user report 2026-07-18) - a second blip on top of it is noise,
+            // not information. The spoken announcement below stays.
             if (target != null && announceTargetChanges && !isOwnSelection)
             {
                 var name = target.Name.TextValue;
@@ -309,6 +308,11 @@ public sealed class NavigationService
         // apart from side quests (a sighted player sees a distinct marker).
         var story = dest.IsMainStory ? "Story: " : string.Empty;
 
+        // The list is level-ordered, so the level has to be audible - otherwise
+        // the order is a silent rule the player cannot act on. Omitted when the
+        // game gave us no level rather than announcing a made-up "Stufe 0".
+        var level = dest.Level > 0 ? $"Stufe {dest.Level}, " : string.Empty;
+
         // Current objective ("what is still missing", e.g. "Aurelias erlegen 0/3")
         // from the on-screen quest tracker. Only tracked quests have one; the
         // marker tooltip stays as a fallback for the rest.
@@ -320,7 +324,7 @@ public sealed class NavigationService
         string text;
         if (dest.InCurrentZone)
         {
-            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}{todo}, " +
+            text = $"{_cycleIndex + 1} von {count}: {level}{story}{dest.QuestName}{todo}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
                    $"{CalculateDirection(player, dest.Position)}.{detail}";
         }
@@ -330,7 +334,7 @@ public sealed class NavigationService
             // and the transition that leads there (BFS over the map graph).
             var zone = _places.GetMapName(dest.MapId);
             var hop  = _places.FindFirstHopToMap(dest.MapId, out var hops);
-            text = $"{_cycleIndex + 1} von {count}: {story}{dest.QuestName}{todo}, " +
+            text = $"{_cycleIndex + 1} von {count}: {level}{story}{dest.QuestName}{todo}, " +
                    (string.IsNullOrEmpty(zone) ? "in einem anderen Gebiet." : $"im Gebiet {zone}.");
             if (hop != null)
             {
@@ -344,6 +348,44 @@ public sealed class NavigationService
         }
         _log.Info($"[Quest] Auswahl: {text}");
         _tolk.SpeakInterrupt(text);
+    }
+
+    // ── Karten-Markierung: neue Flagge ansagen ──
+
+    // Last flag position seen, so only a NEW or MOVED flag speaks. Null means
+    // "no flag in this map" - re-entering the map re-arms the announcement.
+    private Vector3? _lastFlagPosition;
+
+    /// <summary>
+    /// Announces a newly placed map flag ("Neue Markierung, 120 Meter,
+    /// Nordosten"). In a party the flag is the moment everyone is expected to
+    /// react, and a blind player cannot see it appear on the map. Compass
+    /// bearing on purpose: the flag is a destination to plan around, not a
+    /// steering instruction (see route-guidance guide, section 4).
+    /// </summary>
+    private void PollMapFlag(IGameObject player)
+    {
+        var flag = _places.GetFlagMarker();
+        if (flag == null)
+        {
+            _lastFlagPosition = null;
+            return;
+        }
+
+        // A flag re-placed on nearly the same spot is not news. The threshold
+        // also absorbs the millimetre rounding SetFlagMapMarker applies.
+        if (_lastFlagPosition != null
+            && Distance2D(_lastFlagPosition.Value, flag.Position) < 1f) return;
+
+        _lastFlagPosition = flag.Position;
+
+        var distance = Distance2D(player.Position, flag.Position);
+        var compass  = RouteService.CompassWord(player.Position, flag.Position);
+        _log.Info($"[Nav] Neue Karten-Markierung: pos={flag.Position.X:F1}/{flag.Position.Z:F1} " +
+                  $"dist={distance:F1} {compass}");
+
+        if (!_config.AnnounceMapFlag) return;
+        _tolk.SpeakInterrupt($"Neue Markierung, {FormatDistance(distance)}, {compass}.");
     }
 
     // ── Wegpunkte: durch die Karten-Symbole des Gebiets blättern ──
@@ -400,8 +442,14 @@ public sealed class NavigationService
             ? _questMarkers.GetUnacceptedDestinations()
             : _questMarkers.GetDestinations();
 
+        // Level is the primary order within a zone (user request 2026-07-18):
+        // it answers "which of these can I actually do next?", which distance
+        // never did. Reachability still wins over it - a level-appropriate quest
+        // three zones away is not the next thing to walk to. Unknown levels (0)
+        // sort last so they never masquerade as level 1.
         var ordered = source
             .OrderByDescending(d => d.InCurrentZone)
+            .ThenBy(d => d.Level == 0 ? int.MaxValue : d.Level)
             .ThenBy(d => EffectiveWalkDistance(player.Position, d))
             .ThenBy(d => d.QuestName, StringComparer.Ordinal);
 

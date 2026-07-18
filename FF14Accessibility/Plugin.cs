@@ -53,8 +53,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.97";
-    private const string PluginVersionTag = "Untertitel: keine Dreifach-Ansage, wachsende Zeilen nur einmal";
+    private const string PluginVersion    = "5.11";
+    private const string PluginVersionTag = "Kein Mod-Ton mehr beim Anvisieren von Gegnern";
 
     public Plugin()
     {
@@ -125,7 +125,7 @@ public sealed class Plugin : IDalamudPlugin
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _history    = new MessageHistoryService(_tolk);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config);
-        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history);
+        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -229,6 +229,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
             ("Bestiarium",     _config.KeyBestiary),
+            ("Benachrichtigung", _config.KeyNotification),
             ("Ausrüstung",     _config.KeyReadEquipment),
             ("Beste Ausrüstung", _config.KeyEquipBest),
             ("Zufälliges Aussehen", _config.KeyRandomLook),
@@ -433,6 +434,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
         if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
+        if (IsJustPressed(_config.KeyNotification))  _uiReader.ActivateNotification();
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();

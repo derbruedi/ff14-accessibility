@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Excel.Sheets;
 
 namespace FF14Accessibility.Services;
@@ -54,12 +55,51 @@ public sealed class PlacesService
     private static float PixelToWorld(float pixel, ushort sizeFactor, short offset)
         => (pixel - 1024f) * 100f / sizeFactor - offset;
 
+    /// <summary>Spoken type label of the player-set map flag.</summary>
+    public const string FlagTypeLabel = "Markierung";
+
+    /// <summary>
+    /// The player-set / party map flag of the CURRENT map, or null when no flag
+    /// is set or it belongs to another map. In group play the flag is how
+    /// sighted players direct each other ("go to the flag"), so it is the most
+    /// socially important coordinate in the game for a blind player.
+    ///
+    /// Verified via ilspycmd (FFXIVClientStructs, 2026-07-18):
+    /// AgentMap.FlagMarkerCount (byte @23294) counts the set flags,
+    /// AgentMap.FlagMapMarkers is a Span of one FlagMapMarker with
+    /// TerritoryId@56, MapId@60, XFloat@64, YFloat@68. Unlike the static map
+    /// symbols these are WORLD coordinates, not map pixels: AgentMap's own
+    /// SetFlagMapMarker(territoryId, mapId, Vector3 world) stores world.X in
+    /// XFloat and world.Z in YFloat. Height is still unknown (the map is 2D)
+    /// and resolved via navmesh before walking, like every other waypoint.
+    /// </summary>
+    public unsafe PlaceDestination? GetFlagMarker()
+    {
+        var agent = AgentMap.Instance();
+        if (agent == null || agent->FlagMarkerCount == 0) return null;
+
+        var flag = agent->FlagMapMarkers[0];
+        if (flag.MapId != _clientState.MapId) return null;
+
+        return new PlaceDestination(
+            FlagTypeLabel,
+            FlagTypeLabel,
+            new Vector3(flag.XFloat, 0f, flag.YFloat),
+            IsZoneTransition: false,
+            TargetMapId: 0);
+    }
+
     /// <summary>All named waypoints of the current map. Read fresh per call.</summary>
     public List<PlaceDestination> GetPlaces()
     {
         var result = new List<PlaceDestination>();
         var mapId = _clientState.MapId;
         if (mapId == 0) return result;
+
+        // The flag is a waypoint like any other, so it flows into the browser,
+        // the walk guide and the auto-walk through the existing path.
+        var flag = GetFlagMarker();
+        if (flag != null) result.Add(flag);
 
         var mapSheet = _data.GetExcelSheet<Map>();
         if (!mapSheet.TryGetRow(mapId, out var map))

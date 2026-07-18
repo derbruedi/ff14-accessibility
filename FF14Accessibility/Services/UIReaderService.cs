@@ -365,6 +365,13 @@ public sealed class UIReaderService : IDisposable
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
 
+        // Invitation popups: say HOW to answer, not just that something opened.
+        if (InviteNotificationAddons.Contains(name))
+        {
+            OnNotificationOpen(name, addon);
+            return;
+        }
+
         _noListCache.Remove(name);
 
         // Invisible at PostSetup: the game pre-creates windows on zone-in
@@ -399,6 +406,20 @@ public sealed class UIReaderService : IDisposable
             // Alle Eintr�ge zu iterieren kann bei langen Listen zu Crashes f�hren
             // (uninitialisierte Renderer bei virtuell scrollenden Listen).
             var count = GetListEntryCount(list);
+
+            // Empty at this instant usually means "not filled yet", not "empty"
+            // - decided a few frames later by AnnounceLateFilledList.
+            if (count <= 0)
+            {
+                _emptyListSince[name] = DateTime.UtcNow;
+                _log.Info($"[Accessibility] {name}: Liste noch leer, Ansage aufgeschoben.");
+                return;
+            }
+
+            // Child of the online window while its tab is being announced: the
+            // tab sentence carries this content itself.
+            if (IsSocialChildDuringGrace(name, addon)) return;
+
             var sel   = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
             var msg   = sel.Length > 0
                 ? $"{sel}, {count} Einträge"
@@ -436,6 +457,7 @@ public sealed class UIReaderService : IDisposable
         _lastListAnnounce.Remove(name);
         _lastDialogButtonFlags.Remove(name);
         _lastDialogButtonAnnounce.Remove(name);
+        _emptyListSince.Remove(name);
 
         // Reset race/gender dedup so the selection is re-announced on reopen
         if (name == "_CharaMakeRaceGender")
@@ -476,10 +498,195 @@ public sealed class UIReaderService : IDisposable
             if (top.Name == name) break;
         }
         _noListCache.Remove(name);
+        // Re-arm the tab announcement so reopening the window names its tab again.
+        if (name == "Social")
+        {
+            _lastSocialTab          = -1;
+            _pendingSocialTab       = null;
+            _outgoingSocialChildId  = 0;
+        }
         _log.Info($"[Accessibility] Men� geschlossen: {name}, Stack-Tiefe: {_menuStack.Count}");
     }
 
     // -- Universal: Listenfokus per PostUpdate erkennen --------------
+
+    // Last announced Social tab index, -1 = window closed / nothing announced.
+    private int _lastSocialTab = -1;
+    private DateTime _socialTabSpokenAt = DateTime.MinValue;
+
+    // Grace window after a tab announcement in which the generic focus/list
+    // path stays quiet for this addon. Not a game-logic workaround - purely an
+    // ordering rule in the speech layer: the tab name is the context, and a
+    // context that gets cut off by its own content is worse than useless.
+    private const double SocialTabGraceS = 1.0;
+
+    // Tab announcement held back until its content exists, plus the deadline
+    // after which it is spoken bare. 0.7 s covers the observed ~0.1 s build-up
+    // with room to spare without feeling laggy.
+    private string? _pendingSocialTab;
+    private DateTime _pendingSocialTabSince = DateTime.MinValue;
+    private const double SocialTabContentWaitS = 0.7;
+
+    // Id of the child window belonging to the tab we just left - ignored while
+    // looking for the new tab's content (see FindListInHostOrChild).
+    private ushort _outgoingSocialChildId;
+
+    // Addons that opened with an EMPTY list, and when. The game pre-creates the
+    // window and fills the list a few frames later (FriendList: Len=0 at
+    // PostSetup, entries 35 ms later - log 2026-07-18), so announcing "0
+    // Eintraege" right away told the player "nothing here, move on" about a
+    // list that was about to be filled. Announcement is deferred until the
+    // entries arrive, or until the deadline confirms the list is truly empty.
+    private readonly Dictionary<string, DateTime> _emptyListSince = [];
+    private const double EmptyListWaitS = 1.0;
+
+    // Fallback labels, used only when the game's own button text is empty.
+    // Order MUST match the radio-button order in AddonSocial.
+    private static readonly string[] SocialTabFallback =
+        ["Gruppenmitglieder", "Freundesliste", "Schwarze Liste", "Spielersuche"];
+
+    /// <summary>
+    /// Announces which tab of the online window (key O, addon "Social") is
+    /// active, on opening and on every switch. A sighted player sees the four
+    /// tabs at a glance; without this the window is an unlabelled list.
+    ///
+    /// Verified via ilspycmd (2026-07-19): AddonSocial holds four
+    /// AtkComponentRadioButton pointers - PartyMembersRadioButton @680,
+    /// FriendListRadioButton @688, BlacklistRadioButton @696,
+    /// PlayerSearchRadioButton @704. The active one is the one whose
+    /// AtkComponentButton.IsChecked is set (bit 18 of Flags). The spoken label
+    /// comes from the button's own ButtonTextNode, so it is the game's
+    /// localised text rather than a hardcoded translation; the fallback array
+    /// only fills in when that node is empty.
+    /// </summary>
+    /// <returns>True when a tab change was just announced.</returns>
+    private unsafe bool AnnounceSocialTabIfChanged(AtkUnitBase* addon)
+    {
+        var social = (AddonSocial*)addon;
+        AtkComponentRadioButton*[] tabs =
+        [
+            social->PartyMembersRadioButton,
+            social->FriendListRadioButton,
+            social->BlacklistRadioButton,
+            social->PlayerSearchRadioButton,
+        ];
+
+        var active = -1;
+        for (var i = 0; i < tabs.Length; i++)
+        {
+            if (tabs[i] == null) continue;
+            if (tabs[i]->AtkComponentButton.IsChecked) { active = i; break; }
+        }
+
+        if (active < 0 || active == _lastSocialTab) return false;
+
+        var first = _lastSocialTab < 0;
+        _lastSocialTab = active;
+        _socialTabSpokenAt = DateTime.UtcNow;
+
+        var textNode = tabs[active]->AtkComponentButton.ButtonTextNode;
+        var label = textNode != null ? textNode->NodeText.ToString() : string.Empty;
+        var fromNode = !string.IsNullOrWhiteSpace(label);
+        if (!fromNode) label = SocialTabFallback[active];
+
+        var text = $"{label}, Registerkarte {active + 1} von {tabs.Length}";
+        if (first) text = $"Online-Fenster. {text}";
+
+        // The content does NOT exist yet at this moment: the game attaches the
+        // tab's own window a moment later and fills its list after that (log
+        // 2026-07-18: tab switch 17:05:54.929 -> FriendList opens .994 with
+        // Len=0 -> entries readable .029). Speaking now would either say
+        // "keine Eintraege" wrongly or get cut off by the child window.
+        // So the announcement is held back and completed by
+        // FlushPendingSocialTab once the entries are there.
+        _pendingSocialTab      = text;
+        _pendingSocialTabSince = DateTime.UtcNow;
+
+        // Remember the child window that belongs to the tab we are LEAVING. It
+        // stays open and full for a few more frames; ignoring it is what stops
+        // the announcement from reading the previous tab's entries.
+        FindListInHostOrChild(addon, out _, out _outgoingSocialChildId);
+
+        _log.Info($"[Social] Registerkarte {active + 1}/{tabs.Length}: '{label}' " +
+                  $"(Label aus {(fromNode ? "ButtonTextNode" : "Fallback-Liste")}, " +
+                  $"warte auf Inhalt; altes Kind-Fenster Id={_outgoingSocialChildId})");
+        return true;
+    }
+
+    /// <summary>
+    /// Speaks the pending tab announcement together with its content, as ONE
+    /// sentence: "Freunde, Registerkarte 2 von 4, 12 Einträge: &lt;erster&gt;."
+    /// Waits for the attached child window to fill its list, but never longer
+    /// than <see cref="SocialTabContentWaitS"/> - a tab that stays silent
+    /// because its content never arrived would be worse than one announced
+    /// bare, so after the deadline the name goes out on its own.
+    /// </summary>
+    /// <summary>
+    /// Delivers the announcement for a window whose list was still empty when
+    /// it opened: either the entries once they arrive, or an honest
+    /// "keine Einträge" once <see cref="EmptyListWaitS"/> proves the list stays
+    /// empty. Without this a slow-filling window would simply stay silent.
+    /// </summary>
+    private unsafe void AnnounceLateFilledList(string name, AtkUnitBase* addon, AtkComponentList* list)
+    {
+        if (!_emptyListSince.TryGetValue(name, out var since)) return;
+
+        var count = GetListEntryCount(list);
+        if (count <= 0)
+        {
+            if ((DateTime.UtcNow - since).TotalSeconds < EmptyListWaitS) return;
+            _emptyListSince.Remove(name);
+            _log.Info($"[Accessibility] {name}: Liste bleibt leer.");
+            if (!IsSocialChildDuringGrace(name, addon)) _tolk.Speak("Keine Einträge");
+            return;
+        }
+
+        _emptyListSince.Remove(name);
+        var sel = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
+        _log.Info($"[Accessibility] {name}: Liste nachtraeglich gefuellt ({count} Eintraege)");
+        if (IsSocialChildDuringGrace(name, addon)) return;
+        _tolk.Speak(sel.Length > 0 ? $"{sel}, {count} Einträge" : $"Menü, {count} Einträge");
+    }
+
+    private unsafe void FlushPendingSocialTab(AtkUnitBase* addon)
+    {
+        if (_pendingSocialTab == null) return;
+
+        var list    = FindListInHostOrChild(addon, out var source, out var childId, _outgoingSocialChildId);
+        var count   = list != null ? GetListEntryCount(list) : 0;
+        var expired = (DateTime.UtcNow - _pendingSocialTabSince).TotalSeconds >= SocialTabContentWaitS;
+
+        if (count <= 0 && !expired) return;
+
+        var text = _pendingSocialTab;
+        _pendingSocialTab = null;
+
+        // The tab sentence carries this window's content, so its own deferred
+        // announcement must not repeat it a second later ("Menü, 2 Einträge"
+        // one second after the tab line - log 2026-07-18 17:14:45.599).
+        var childName = FindSocialChildName(addon, childId);
+        if (childName.Length > 0) _emptyListSince.Remove(childName);
+
+        if (count > 0)
+        {
+            var sel = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
+            text += $", {count} Einträge{(sel.Length > 0 ? $": {sel}" : string.Empty)}";
+        }
+        else if (list != null)
+        {
+            // List exists and is genuinely empty (no friends, no party) - that
+            // is an answer to "what can I do here", not a failure.
+            text += ", keine Einträge";
+        }
+
+        _log.Info($"[Social] Ansage: '{text}' (Liste " +
+                  (list != null ? $"aus {source}, {count} Eintraege" : "NICHT gefunden") + ")");
+
+        // Re-arm the grace window: the child's own focus announcement must not
+        // interrupt the sentence we are starting right now.
+        _socialTabSpokenAt = DateTime.UtcNow;
+        _tolk.SpeakInterrupt(text + ".");
+    }
 
     private unsafe void OnAnyAddonUpdate(AddonEvent type, AddonArgs args)
     {
@@ -501,6 +708,21 @@ public sealed class UIReaderService : IDisposable
         if (name == "ConfigSystem")
         {
             AnnounceConfigSystemFocusIfChanged(currentAddon);
+            return;
+        }
+
+        // Online-Fenster (Taste O): Registerkarte ansagen. KEIN return - die
+        // generische Listen-Navigation muss danach weiterlaufen, sie liest den
+        // Inhalt der gewaehlten Karte (Freundesliste usw.).
+        if (name == "Social")
+        {
+            AnnounceSocialTabIfChanged(currentAddon);
+            FlushPendingSocialTab(currentAddon);
+            if (_pendingSocialTab != null) return;
+            if ((DateTime.UtcNow - _socialTabSpokenAt).TotalSeconds < SocialTabGraceS) return;
+        }
+        else if (IsSocialChildDuringGrace(name, currentAddon))
+        {
             return;
         }
 
@@ -551,7 +773,10 @@ public sealed class UIReaderService : IDisposable
         {
             var list = FindListInAddon(currentAddon);
             if (list != null)
+            {
+                AnnounceLateFilledList(name, currentAddon, list);
                 TrackListIndices(name, list);
+            }
         }
 
         // 5. Generischer Text-Scanner (f�r �nderungen im Addon-Inhalt)
@@ -567,8 +792,12 @@ public sealed class UIReaderService : IDisposable
                 _noListCache.Remove(name);
                 PushMenu(name, lateList->SelectedItemIndex);
                 var count = GetListEntryCount(lateList);
-                var sel   = ReadListItemText(lateList, Math.Max(0, lateList->SelectedItemIndex));
                 _log.Info($"[Accessibility] {name}: Liste nach PostSetup aufgebaut ({count} Eintraege)");
+                // Still empty: hand over to the deferred path instead of
+                // announcing a count that is only true for this frame.
+                if (count <= 0) { _emptyListSince[name] = DateTime.UtcNow; return; }
+                if (IsSocialChildDuringGrace(name, currentAddon)) return;
+                var sel = ReadListItemText(lateList, Math.Max(0, lateList->SelectedItemIndex));
                 _tolk.Speak(sel.Length > 0 ? $"{sel}, {count} Einträge" : $"Menü, {count} Einträge");
                 return;
             }
@@ -1078,6 +1307,13 @@ public sealed class UIReaderService : IDisposable
         // during the guard window (state is already updated, so the user's next
         // navigation is still detected and announced).
         if (InDialogOpenGuard) return;
+
+        // Online window: the tab announcement is the context for everything the
+        // player is about to hear. This frame-driven focus path is NOT covered
+        // by the per-addon guard and cut the tab line off 92 ms after it started
+        // (log 2026-07-18 17:14:54.081 -> .173, 'HSH, Thal-Kreuzgang...').
+        if (IsSocialAnnouncementInFlight()) return;
+
         if (!string.IsNullOrEmpty(text))
         {
             // The quest-completion reward summary is spoken in full when
@@ -1324,6 +1560,127 @@ public sealed class UIReaderService : IDisposable
         var data = default(AtkEventData);
         best->Listener->ReceiveEvent(best->State.EventType, (int)best->Param, best, &data);
         return true;
+    }
+
+    // -- Benachrichtigungen / Einladungen (V5.9) ---------------------
+    //
+    // Invitations (free company, party, friend list) arrive as a popup that a
+    // sighted player clicks. There is no keybind for it in the game's own list
+    // (checked against the keybind dump), so for the user the invitation simply
+    // expired: log 2026-07-18, invite at 18:15:47, "wurde abgebrochen" at
+    // 18:20:48 - five minutes of counting down and no way to answer.
+    //
+    // The window names are taken from the log (_NotificationFcJoin,
+    // _NotificationFriend, _NotificationParty, _Notification), not guessed.
+    private static readonly string[] InviteNotificationAddons =
+        ["_NotificationFcJoin", "_NotificationParty", "_NotificationFriend", "_Notification"];
+
+    /// <summary>Name of the visible notification window, or empty.</summary>
+    private unsafe string FindOpenNotification(out AtkUnitBase* addon)
+    {
+        addon = null;
+        foreach (var n in InviteNotificationAddons)
+        {
+            var ptr = _gameGui.GetAddonByName(n);
+            if (ptr.IsNull) continue;
+            var a = (AtkUnitBase*)(nint)ptr;
+            if (a == null || !a->IsVisible) continue;
+            addon = a;
+            return n;
+        }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Activates the open notification - the keyboard equivalent of clicking
+    /// the popup. Dispatches the registered click event of the best candidate
+    /// node, the same path <see cref="DispatchClick"/> uses for the character
+    /// creation rows, so the game runs its own handler (a confirmation dialog
+    /// usually follows, and those the plugin already reads).
+    ///
+    /// The structure of these windows is NOT dumped yet, so the whole node tree
+    /// is searched and every registered event is logged - after the first real
+    /// invitation the log names the exact button and this can be narrowed down.
+    /// The text of the node being pressed is announced BEFORE pressing, so a
+    /// wrong target (e.g. "Ablehnen") is audible rather than silent.
+    /// </summary>
+    public unsafe void ActivateNotification()
+    {
+        var name = FindOpenNotification(out var addon);
+        if (name.Length == 0)
+        {
+            _tolk.SpeakInterrupt("Keine offene Benachrichtigung.");
+            _log.Info("[Notify] Aktivierung angefordert, aber kein Benachrichtigungsfenster sichtbar.");
+            return;
+        }
+
+        var registered = new List<string>();
+        AtkEvent* best = null;
+        var bestRank = int.MaxValue;
+        var bestText = string.Empty;
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null) continue;
+
+            var before = bestRank;
+            ScanClickCandidates(node, registered, ref best, ref bestRank);
+            if (bestRank < before) bestText = GetTextFromNodeTree(node);
+
+            if ((int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child == null) continue;
+                var childBefore = bestRank;
+                ScanClickCandidates(child, registered, ref best, ref bestRank);
+                if (bestRank < childBefore)
+                {
+                    var t = GetTextFromNodeTree(child);
+                    bestText = t.Length > 0 ? t : GetTextFromNodeTree(node);
+                }
+            }
+        }
+
+        _log.Info($"[Notify] {name}: Events=[{string.Join(", ", registered.Distinct())}], " +
+                  $"Kandidat={(best != null ? best->State.EventType.ToString() : "KEINER")}, " +
+                  $"Text='{bestText}'");
+
+        if (best == null || best->Listener == null)
+        {
+            _tolk.SpeakInterrupt("Benachrichtigung reagiert nicht.");
+            return;
+        }
+
+        _tolk.SpeakInterrupt(bestText.Length > 0 ? $"Aktiviere: {bestText}" : "Benachrichtigung aktiviert");
+
+        var data = default(AtkEventData);
+        best->Listener->ReceiveEvent(best->State.EventType, (int)best->Param, best, &data);
+    }
+
+    /// <summary>
+    /// Announces an incoming notification and how to answer it, and logs its
+    /// full text inventory once so the window's structure becomes known without
+    /// asking the user for a Strg+F5 dump during the five-minute window.
+    /// </summary>
+    private unsafe void OnNotificationOpen(string name, AtkUnitBase* addon)
+    {
+        var texts = new List<string>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
+            var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            if (t.Length > 0) texts.Add($"id{node->NodeId}:'{t}'");
+        }
+        _log.Info($"[Notify] {name} geoeffnet. Sichtbare Texte: {(texts.Count > 0 ? string.Join(" | ", texts) : "keine")}");
+
+        // The invitation message itself already came through chat and toast;
+        // what is missing is the way to answer it.
+        _tolk.Speak($"Benachrichtigung. Mit {_config.KeyNotification} annehmen.");
     }
 
     /// <summary>True for text that is only digits and separators (a currency
@@ -2510,6 +2867,15 @@ public sealed class UIReaderService : IDisposable
     /// isInit=true: bef�llt nur den Cache, sagt nichts an (beim �ffnen).
     /// isInit=false: sagt ge�nderte Texte an (in PostUpdate).
     /// </summary>
+    // BARE NUMBERS ARE NEVER SPOKEN HERE (they are still logged): a text node
+    // that changes to nothing but a number is a counter, and a counter read out
+    // by the scanner is a per-second interruption. _NotificationFcJoin (free
+    // company invite) counted 300 -> 0 out loud, one number per second for five
+    // minutes (log 2026-07-18 18:15-18:20). The invite MESSAGE itself is
+    // unaffected - it arrives through chat and toast ("Du wurdest von ... in
+    // eine Freie Gesellschaft eingeladen"), which is where the meaning is.
+    // A number without its label ("298") carries no information anyway: what it
+    // counts is only visible on screen.
     private unsafe void ScanAddonTexts(string addonName, AtkUnitBase* addon, bool isInit)
     {
         if (!_genericTextCache.TryGetValue(addonName, out var cache))
@@ -2533,8 +2899,9 @@ public sealed class UIReaderService : IDisposable
                 cache[n->NodeId] = t;
                 if (!isInit && hasKey)
                 {
-                    _log.Info($"[Scan] {addonName} id={n->NodeId}: '{(t.Length > 60 ? t[..60] + "..." : t)}'");
-                    _tolk.SpeakInterrupt(t);
+                    _log.Info($"[Scan] {addonName} id={n->NodeId}: '{(t.Length > 60 ? t[..60] + "..." : t)}'"
+                              + (IsBareNumber(t) ? " (Zaehler, nicht gesprochen)" : string.Empty));
+                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(t);
                 }
                 continue;
             }
@@ -2554,8 +2921,9 @@ public sealed class UIReaderService : IDisposable
                 cache[key] = t;
                 if (!isInit && hasKey)
                 {
-                    _log.Info($"[Scan] {addonName} key={key}: '{(t.Length > 60 ? t[..60] + "..." : t)}'");
-                    _tolk.SpeakInterrupt(t);
+                    _log.Info($"[Scan] {addonName} key={key}: '{(t.Length > 60 ? t[..60] + "..." : t)}'"
+                              + (IsBareNumber(t) ? " (Zaehler, nicht gesprochen)" : string.Empty));
+                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(t);
                 }
             }
         }
@@ -4124,7 +4492,92 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Kein Listen-/Dialogfenster: das fokussierte Fenster komplett vorlesen.
+        if (TryReadWholeWindow()) return;
+
         _tolk.SpeakInterrupt("Kein aktives Men�.");
+    }
+
+    /// <summary>
+    /// Reads the focused window completely - every visible text plus the names
+    /// of its input fields. Covers windows that are neither a list nor a dialog
+    /// and were therefore answered with "Kein aktives Menü" (user request
+    /// 2026-07-18 for the free company profile: "ich will wissen was da
+    /// angezeigt wird also alles auch das eingabefelder benannt werden").
+    ///
+    /// READ BACKWARDS through the node list: FFXIV keeps labels AFTER their
+    /// content in node order (Z-order, already documented in game-api.md for
+    /// JournalDetail). The dump of FreeCompanyProfile confirms it - "29" then
+    /// "Rang", "Soluna Stella" then "Meister" - so reading in reverse yields
+    /// "Rang, 29" / "Meister, Soluna Stella", i.e. label before value.
+    /// </summary>
+    private unsafe bool TryReadWholeWindow()
+    {
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return false;
+
+        AtkUnitBase* addon = null;
+        var name = string.Empty;
+        for (var i = 0; i < mgr->FocusedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->FocusedUnitsList.Entries[i].Value;
+            if (a == null || !a->IsVisible || a->UldManager.NodeListCount == 0) continue;
+            addon = a;
+            name  = a->NameString;
+        }
+        if (addon == null) return false;
+
+        var parts = new List<string>();
+        for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || !node->IsVisible()) continue;
+            CollectWindowText(node, parts);
+        }
+
+        if (parts.Count == 0) return false;
+
+        var text = JoinDistinctParts(parts, ", ");
+        _log.Info($"[Fenster] {name}: {parts.Count} Teile - {text}");
+        _tolk.SpeakInterrupt(text);
+        return true;
+    }
+
+    /// <summary>
+    /// Collects the readable content of one node into <paramref name="parts"/>:
+    /// visible text, or "&lt;Label&gt;, Eingabefeld" for a text input so the
+    /// player learns that something can be TYPED here, not just read.
+    /// </summary>
+    private unsafe void CollectWindowText(AtkResNode* node, List<string> parts)
+    {
+        if (node->Type == NodeType.Text)
+        {
+            var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            // Character counters ("1/2", "3/40") sit inside input fields and
+            // carry no meaning without their box - the field itself is named
+            // below instead.
+            if (t.Length > 1 && !IsBareNumber(t)) parts.Add(t);
+            return;
+        }
+
+        if ((int)node->Type < 1000) return;
+        var comp = ((AtkComponentNode*)node)->Component;
+        if (comp == null) return;
+
+        if (comp->GetComponentType() == ComponentType.TextInput)
+        {
+            // EvaluatedString = the field's current content (AtkComponentInputBase,
+            // ilspycmd 2026-07-17; same field the chat and CharaMake echo use).
+            var typed = ((AtkComponentTextInput*)comp)->AtkComponentInputBase.EvaluatedString.ToString().Trim();
+            parts.Add(typed.Length > 0 ? $"Eingabefeld: {typed}" : "Eingabefeld, leer");
+            return;
+        }
+
+        for (var j = comp->UldManager.NodeListCount - 1; j >= 0; j--)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child != null && child->IsVisible()) CollectWindowText(child, parts);
+        }
     }
 
     /// <summary>
@@ -4834,6 +5287,118 @@ public sealed class UIReaderService : IDisposable
     // is safe and SelectedItemIndex/ListLength work for both.
     private static bool IsListComponent(ComponentType type) =>
         type is ComponentType.List or ComponentType.TreeList;
+
+    /// <summary>
+    /// Finds the list belonging to a window, looking inside its ATTACHED CHILD
+    /// windows as well. The online window (Social) is the reason: switching a
+    /// tab attaches a separate addon (FriendList / SocialList / PartyMemberList,
+    /// "Social ReceiveEvent: type=ChildAddonAttached" - log 2026-07-18 17:05)
+    /// and the entries live THERE, so searching only the host found nothing
+    /// ("Liste NICHT gefunden") and the tab was announced without its content.
+    ///
+    /// The link is by id, not by name: AtkUnitBase carries Id, ParentId and
+    /// HostId (ilspycmd 2026-07-18). Which of the two back-references the game
+    /// sets for this window family is not documented, so both are accepted and
+    /// the log names the one that matched - no hardcoded child-name list.
+    /// </summary>
+    /// <param name="excludeId">
+    /// Id of a child window to ignore. During a tab switch the OLD child is
+    /// still open and still full while the new one does not exist yet (log
+    /// 2026-07-18 17:14:54: switch at .081, FriendList opens .152,
+    /// PartyMemberList closes .189) - without this the announcement picked up
+    /// the previous tab's entries, so every tab was read with the content of
+    /// the one before it. A non-empty list is not proof that it is the RIGHT
+    /// list.
+    /// </param>
+    private unsafe AtkComponentList* FindListInHostOrChild(
+        AtkUnitBase* host, out string source, out ushort childId, ushort excludeId = 0)
+    {
+        source  = string.Empty;
+        childId = 0;
+
+        var own = FindListInAddon(host);
+        if (own != null) { source = host->NameString; return own; }
+
+        var hostId = host->Id;
+        // Id 0 would match every unrelated addon whose back-reference is unset.
+        if (hostId == 0) return null;
+
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return null;
+
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var child = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (child == null || child == host || !child->IsVisible) continue;
+            if (excludeId != 0 && child->Id == excludeId) continue;
+
+            var viaHost   = child->HostId   == hostId;
+            var viaParent = child->ParentId == hostId;
+            if (!viaHost && !viaParent) continue;
+
+            var list = FindListInAddon(child);
+            if (list == null) continue;
+
+            childId = child->Id;
+            source  = $"{child->NameString} (via {(viaHost ? "HostId" : "ParentId")})";
+            return list;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Name of the currently attached child window of the online window, or an
+    /// empty string. Used to clear its deferred "list was empty" announcement
+    /// once the tab sentence has already spoken its content.
+    /// </summary>
+    private unsafe string FindSocialChildName(AtkUnitBase* host, ushort childId)
+    {
+        if (childId == 0) return string.Empty;
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return string.Empty;
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var child = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (child != null && child->Id == childId) return child->NameString;
+        }
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// True while a Social tab announcement is in flight and this addon is one
+    /// of the online window's attached children. Those children speak through
+    /// the generic focus path with SpeakInterrupt and cut the tab name off
+    /// 87 ms after it started (log 2026-07-18 17:05:54.929 -> .016): the player
+    /// heard a friend's name but never which tab they had landed on.
+    /// This is an ordering rule in the speech layer, not a game-logic bypass -
+    /// the child speaks again as soon as the context has been delivered.
+    /// </summary>
+    /// <summary>
+    /// True while a Social tab announcement is being prepared or has just been
+    /// spoken - covers both the wait for the content and the grace window after
+    /// it. Only meaningful while the online window is actually open.
+    /// </summary>
+    private bool IsSocialAnnouncementInFlight()
+    {
+        if (_pendingSocialTab == null
+            && (DateTime.UtcNow - _socialTabSpokenAt).TotalSeconds >= SocialTabGraceS)
+            return false;
+        return IsAddonVisible("Social");
+    }
+
+    private unsafe bool IsSocialChildDuringGrace(string name, AtkUnitBase* addon)
+    {
+        if (name == "Social" || addon == null) return false;
+        if (!IsSocialAnnouncementInFlight()) return false;
+
+        var socialPtr = _gameGui.GetAddonByName("Social");
+        if (socialPtr.IsNull) return false;
+
+        var socialId = ((AtkUnitBase*)(nint)socialPtr)->Id;
+        if (socialId == 0) return false;
+
+        return addon->HostId == socialId || addon->ParentId == socialId;
+    }
 
     private static unsafe AtkComponentList* FindListInAddon(AtkUnitBase* addon)
     {

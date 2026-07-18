@@ -415,6 +415,80 @@ Zeichen selbst (V4.90). Quelle:
 - Spieler-Blickrichtung: rot=0 ⇒ Blickvektor (sin 0, cos 0) = (0,0,1) =
   +Z = SÜDEN (folgt aus obiger Konvention + verifiziertem Blickvektor).
 
+### Online-Fenster / Social (ilspycmd-verifiziert 2026-07-19)
+Taste O = `MENU_PARTY_MEMBER (271)` laut Keybind-Dump; Addon-Name „Social".
+- `FFXIVClientStructs.FFXIV.Client.UI.AddonSocial` (Size 816,
+  [Addon("Social")], erbt AtkUnitBase) hat die vier Registerkarten als
+  `AtkComponentRadioButton*`: `PartyMembersRadioButton`@680,
+  `FriendListRadioButton`@688, `BlacklistRadioButton`@696,
+  `PlayerSearchRadioButton`@704.
+- AKTIVE Karte = die, deren `AtkComponentButton.IsChecked` gesetzt ist.
+  IsChecked ist Bit 18 von `AtkComponentButton.Flags` (dekompiliert:
+  `BitOps.GetBit(Flags, 18)`); RadioButton erbt AtkComponentButton@0.
+- LABEL: `AtkComponentButton.ButtonTextNode` (AtkTextNode) trägt den
+  lokalisierten Karten-Text — nie selbst übersetzen, den Node lesen.
+- Verwandte Structs falls der Inhalt gebraucht wird: `AddonFriendList`,
+  `InfoProxyFriendList`, `SocialListNumberArray`/`SocialListStringArray`,
+  `AgentFriendlist`.
+- WICHTIG — der INHALT liegt NICHT im Social-Addon (Log 2026-07-18 17:05):
+  ein Tab-Wechsel hängt ein eigenes Fenster an (`Social ReceiveEvent:
+  type=ChildAddonAttached param=126/127`) und öffnet je nach Karte
+  `PartyMemberList`, `FriendList` oder `SocialList`. Eine Listen-Suche im
+  Social-Addon selbst findet daher NICHTS. Beobachtete Zuordnung:
+  Karte 1 „Gruppe"→PartyMemberList, 2 „Freunde"→FriendList,
+  3 „Suche"→SocialList (Karte 4 noch nicht gesehen).
+  ACHTUNG: Karte 3 trug das Label „Suche", obwohl das Struct-Feld an
+  Slot 3 `BlacklistRadioButton` heißt — die Feldnamen der ClientStructs-
+  Version stimmen hier offenbar nicht mit der UI-Reihenfolge überein.
+  Deshalb Label immer aus dem ButtonTextNode lesen, nie aus dem Feldnamen
+  ableiten.
+
+### Einladungen / Benachrichtigungen (2026-07-18)
+- Popup-Fenster (Namen aus dem Log, nicht geraten): `_NotificationFcJoin`
+  (Freie Gesellschaft), `_NotificationParty`, `_NotificationFriend`,
+  `_Notification`. Laufzeit 300 s, dann bricht das Spiel die Einladung ab
+  („Die Einladung von ... wurde abgebrochen", SystemMessage 57).
+- Das Fenster enthält einen Sekunden-Zähler (bei FcJoin Node key=20005),
+  der sich jede Sekunde ändert — generische Text-Scanner müssen nackte
+  Zahlen unterdrücken, sonst zählt der Screenreader 300 → 0 mit.
+- Die Einladungs-MELDUNG selbst kommt unabhängig davon über Chat
+  (SystemMessage) UND Toast — nicht aus dem Popup lesen.
+- Im Keybind-Dump des Spiels gibt es KEINE Aktion für Benachrichtigungen;
+  ohne Mausklick ist eine Einladung per Tastatur nicht beantwortbar.
+- SPIELFUNKTION zum Antworten (Reserve, ungetestet):
+  `InfoProxyFreeCompanyInvite` (InfoProxyId.FreeCompanyInvite) und die
+  Basis `InfoProxyInvitedList` haben beide in der vtable @104
+  `RespondToInvitation(CStringPointer inviterName, bool accept)`.
+  ACHTUNG: braucht den Namen des Einladenden; im Proxy stehen dafür nur
+  private `UnkString`-Felder (@72 / @176) — unverifiziert.
+
+### Addon-Verwandtschaft: Kind-/Host-Fenster (ilspycmd 2026-07-18)
+`AtkUnitBase` trägt drei Id-Felder direkt hintereinander (nach
+`AtkValuesCount`): `Id` (ushort), `ParentId`, `HostId`, dazu
+`BlockedParentId`. Damit lässt sich ein angehängtes Kind-Fenster ohne
+hartcodierte Namensliste finden: `AllLoadedUnitsList` durchlaufen und
+`child->HostId == host->Id || child->ParentId == host->Id` prüfen.
+Welches der beiden Felder das Spiel je Fensterfamilie setzt, ist NICHT
+dokumentiert — deshalb beide prüfen und das Ergebnis loggen.
+FALLE: `Id == 0` als Suchschlüssel matcht jedes Addon mit ungesetztem
+Rückverweis — vorher abfangen.
+- LISTEN-TIMING: ein frisch geöffnetes Listenfenster hat oft `Len=0` und
+  wird erst ein paar Frames später gefüllt (FriendList: leer bei
+  PostSetup, Einträge 35 ms später). „0 Einträge" beim Öffnen ist also
+  in der Regel keine leere Liste, sondern eine zu früh gestellte Frage.
+
+### Quest-Stufe (ilspycmd-verifiziert 2026-07-18)
+- ERSTE WAHL: `MapMarkerData.RecommendedLevel` (ushort @64) — der Marker
+  trägt die Stufe selbst, kein Namensabgleich nötig. Gegenprobe im Struct:
+  `SetData(.., ushort recommendedLevel, sbyte eventState)`.
+- FALLBACK: Lumina `Quest.ClassJobLevel` (Collection<ushort>, Index 0) —
+  die Stufe, die auch das Journal zeigt. Nur per Quest-NAMEN zuordenbar
+  und damit unpräzise: FFXIV vergibt Namen mehrfach (Wiederholbare).
+  Weitere Felder falls je gebraucht: `QuestLevelOffset` (byte @2764),
+  `LevelMax` (byte @2786), `SortKey` (ushort @2760).
+- OFFEN (Laufzeit): ob RecommendedLevel im Marker überhaupt gefüllt ist.
+  QuestMarkerService loggt pro Marker `lvlMarker=` und `lvlSheet=`.
+
 ### Quest-Marker mit Welt-Position (ilspycmd-verifiziert 2026-07-10)
 Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,
 `Map.Instance()` via StaticAddressPointers).
@@ -486,6 +560,19 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   `CurrentTerritoryId` @23072, `CurrentMapId` @23076,
   `CurrentMapSizeFactor(Float)` + `CurrentOffsetX/Y` @22892–22906,
   `MapMarkerCount` (byte) @23291.
+- KARTEN-MARKIERUNG („Flagge", Recherche 2026-07-18, ilspycmd):
+  `AgentMap.FlagMarkerCount` (byte @23294) = Anzahl gesetzter Flaggen,
+  `AgentMap.FlagMapMarkers` = Span<FlagMapMarker> (1 Element, Feld
+  `_flagMapMarkers` FixedSizeArray1). FlagMapMarker (Size 72):
+  MapMarkerBase@0, `TerritoryId`@56, `MapId`@60, `XFloat`@64, `YFloat`@68.
+  WICHTIG: XFloat/YFloat sind WELT-Koordinaten (X und Z), KEINE Karten-
+  Pixel — die Pixel→Welt-Formel darf hier NICHT angewandt werden. Beweis:
+  `AgentMap.SetFlagMapMarker(territoryId, mapId, Vector3 worldPosition)`
+  schreibt worldPosition.X → x und worldPosition.Z → y (auf 3 Nachkomma-
+  stellen gerundet) und reicht sie an die Member-Funktion durch. Höhe (Y)
+  gibt es nicht — wie bei allen Kartendaten via Navmesh auflösen.
+  Vor dem Lesen `MapId` gegen die aktuelle Karte prüfen: die Flagge bleibt
+  beim Zonenwechsel stehen und gehört dann zu einer anderen Karte.
 - Map (Client.Game.UI) hat NUR Quest-artige Marker: QuestMarkers[30],
   LevequestMarkers[16], HousingMarkers[62], UnacceptedQuestMarkers,
   GuildLeveAssignment/GuildOrderGuide/TripleTriad/CustomTalk/

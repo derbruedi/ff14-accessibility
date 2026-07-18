@@ -5,12 +5,14 @@ using NAudio.Wave;
 namespace FF14Accessibility.Services;
 
 /// <summary>
-/// Plays short one-shot audio cues (not the continuous walk-guide beacon).
-/// Currently used for the "enemy targeted" tone: a quick blip the moment an
-/// enemy becomes the current target, so a blind player hears they have a
-/// hostile in their sights without waiting for the spoken announcement.
-/// The output device is opened lazily on the first cue and kept open (a cue
-/// can fire many times per combat); the provider feeds silence between cues.
+/// Plays short one-shot audio cues (not the continuous walk-guide beacon):
+/// waypoint reached and final arrival during the walk guide.
+/// The output device is opened lazily on the first cue and kept open; the
+/// provider feeds silence between cues.
+///
+/// There is deliberately NO cue for targeting an enemy: the game plays its own
+/// sound for that, and doubling it up added noise instead of information
+/// (removed 2026-07-18 on user report).
 /// </summary>
 public sealed class CueService : IDisposable
 {
@@ -25,17 +27,6 @@ public sealed class CueService : IDisposable
     {
         _config = config;
         _log = log;
-    }
-
-    /// <summary>
-    /// Plays the "enemy targeted" cue: a short two-note rising blip. No-op when
-    /// the cue is disabled in the config or the audio device is unavailable.
-    /// </summary>
-    public void PlayTargetTone()
-    {
-        if (!_config.EnableTargetTone) return;
-        if (!EnsureOutput()) return;
-        _provider!.Trigger(_config.TargetToneVolume, 990f, 1320f);
     }
 
     /// <summary>

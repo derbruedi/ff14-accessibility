@@ -3,7 +3,653 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-18, V4.97: Untertitel)
+## STAND JETZT (2026-07-18, V5.11: Ziel-Ton entfernt)
+
+User: "wenn man einen gegner anvisiert gibts ein piepen von der mod mach
+das weg man hoert vom spiel einen ton wenn man einen gegner im visier
+hat".
+
+QUELLE: NavigationService Zeile 110, `_cue.PlayTargetTone()` - ein
+zweitoeniger Blip bei jedem Zielwechsel auf einen BattleNpc. Das Spiel
+spielt fuer dasselbe Ereignis bereits einen eigenen Ton, der Mod-Ton war
+also reine Doppelung.
+
+WICHTIG - warum nicht einfach der Config-Schalter: es GAB bereits
+`EnableTargetTone`, aber ein geaenderter Default haette nichts bewirkt.
+Die Konfiguration ist gespeichert, der abgelegte Wert (true) haette den
+neuen Default ueberschrieben und es haette weiter gepiept. Deshalb ist
+der Aufruf ersatzlos entfernt.
+
+RUECKGEBAUT: Aufruf in NavigationService, `CueService.PlayTargetTone()`,
+Config-Felder `EnableTargetTone` + `TargetToneVolume`.
+UNBERUEHRT: die gesprochene Ziel-Ansage ("Ziel: Name, Art, Entfernung,
+Richtung") und die Gehhilfe-Toene (Wegpunkt erreicht / angekommen) - die
+haben kein Gegenstueck im Spiel und bleiben.
+
+Build 0/0, deployt (5.11.0.0). Versionen csproj + Plugin.cs synchron.
+V5.10 (Fenster vorlesen) ist enthalten und weiterhin UNGETESTET.
+
+### Beim naechsten Test (V5.11)
+1. "Version 5 Punkt 11 bereit".
+2. Gegner anvisieren (Tab / F11 / N): nur noch der Spielton, kein
+   Mod-Piepen mehr - aber die gesprochene Ziel-Ansage kommt weiter?
+3. Gehhilfe/Auto-Lauf: Wegpunkt- und Ankunftston noch da?
+
+---
+
+## STAND 2026-07-18 (V5.10: ganzes Fenster vorlesen)
+
+User-Wunsch nach einem Dump des Gesuch-Fensters: "ich will wissen was da
+angezeigt wird also alles auch das eingabefelder benannt werden".
+
+DUMP-ANALYSE (Desktop\FFXIV_UI_Dump.txt, 18:46) - drei Fenster:
+FriendList, `FreeCompanyProfile` (64 Nodes) und
+`FreeCompanyInputMessage` (7 Nodes).
+
+INHALT `FreeCompanyProfile` ("PROFIL DER FREIEN GESELLSCHAFT"):
+HOME SWEET HOME «HSH», Grossgesellschaft "Legion der Unsterblichen",
+Meister Soluna Stella, Rang 29, Mitglieder "Auf Stammwelt online: 26 von
+171", gegruendet 10.6.2026, "Keine Unterkunft vorhanden.", Wahlspruch
+"»Deutsch & English« | »Newbies & Veterans« | »One BIG family« Raids,
+Events, ...", Aktiv "Jeden Tag", Rekrutierung "Nimmt Gesuche an",
+Knoepfe "Gesuch stellen" und "Schliessen".
+
+LUECKE, die der Dump zeigt: "Aktivitaeten" (9 Komponenten) und "Sucht"
+(5 Komponenten) tragen NUR Bilder, keinen Text - die zugehoerigen
+Texte "Keine Angabe" sind unsichtbar geschaltet (F=0x2023 ohne V), d.h.
+es IST etwas eingetragen, aber ausschliesslich als Icon. Fuer diese
+beiden Zeilen gibt es also nichts vorzulesen; das braeuchte eine
+Icon-ID->Name-Aufloesung wie beim Inventar. NICHT gebaut, nicht geraten.
+
+INHALT `FreeCompanyInputMessage` ("BEITRITTSGESUCH") - das ist das
+Bewerbungsfenster: Label "Nachricht", ein TextInput(7) mit
+Zeichenzaehler ("1/2"), Knoepfe "Ok" und "Abbrechen".
+
+WAS NEU IST (V5.10): Strg+F10 liest jetzt auch Fenster vor, die WEDER
+Liste noch Dialog sind - vorher kam dort "Kein aktives Menue"
+(ReadCurrentFocus hatte keinen Zweig dafuer). TryReadWholeWindow nimmt
+das oberste fokussierte sichtbare Fenster und liest alle sichtbaren
+Texte.
+- RUECKWAERTS durch die Node-Liste: FFXIV stellt Labels in der
+  Node-Reihenfolge HINTER ihren Inhalt (Z-Order). Das Muster war fuer
+  JournalDetail schon dokumentiert, der Dump bestaetigt es exakt ("29"
+  dann "Rang", "Soluna Stella" dann "Meister"). Rueckwaerts gelesen
+  ergibt das von selbst "Rang, 29" statt "29, Rang".
+- EINGABEFELDER WERDEN BENANNT: eine TextInput-Komponente wird als
+  "Eingabefeld: <Inhalt>" bzw. "Eingabefeld, leer" ausgegeben - zusammen
+  mit dem davor stehenden Label also "Nachricht, Eingabefeld, leer".
+  Ohne das ist ein leeres Textfeld schlicht unsichtbar, und man weiss
+  nicht, dass hier etwas getippt werden KANN.
+  Inhalt aus `AtkComponentInputBase.EvaluatedString` - dasselbe Feld,
+  das Chat- und CharaMake-Echo schon benutzen (ilspycmd-verifiziert).
+- Zeichenzaehler ("1/2") werden uebersprungen (IsBareNumber): sie sitzen
+  im Eingabefeld und sagen ohne ihren Kasten nichts aus.
+
+Build 0/0, deployt (5.10.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.10)
+1. "Version 5 Punkt 10 bereit".
+2. FC-Profil oeffnen, Strg+F10: kommt das ganze Profil (Name, Meister,
+   Rang, Mitglieder, Wahlspruch, Rekrutierung, Knoepfe)?
+3. "Gesuch stellen" -> Beitrittsgesuch-Fenster, Strg+F10: kommt
+   "Nachricht, Eingabefeld, leer" und "Ok"/"Abbrechen"?
+4. Beim Tippen im Feld: kommt das Zeichen-Echo (das laeuft ueber einen
+   anderen Pfad und ist fuer DIESES Fenster ungetestet)?
+5. Ist die Reihenfolge verstaendlich, oder klingt etwas verdreht? Das Log
+   zeigt unter "[Fenster] <Name>: N Teile - ..." genau die Reihenfolge.
+6. Falls ein Fenster stumm bleibt: es war nicht in FocusedUnitsList -
+   dann brauche ich den Namen aus Strg+F2.
+
+---
+
+## STAND 2026-07-18 (V5.9: Einladungen per Tastatur annehmen)
+
+User-Frage: "ich habe grad die einladung zu einer freien gesellschaft
+bekommen wo koennte ich die annehmen und wie?"
+
+BEFUND: Es gab keinen Weg. Die Einladung vom 18:15:47 lief um 18:20:48 ab
+("Die Einladung von Soluna Stella ... wurde abgebrochen"). Im
+Keybind-Dump des Spiels existiert KEINE Aktion fuer Benachrichtigungen -
+ein Sehender klickt das Popup an, und genau dieser eine Schritt fehlte.
+
+WAS NEU IST:
+1. Beim Eintreffen einer Einladung sagt das Plugin, WIE man antwortet:
+   "Benachrichtigung. Mit Strg+F12 annehmen." Die Meldung selbst kam schon
+   vorher ueber Chat und Toast - was fehlte, war der Handlungsweg.
+2. Strg+F12 (KeyNotification, laut Keybind-Dump frei) aktiviert die offene
+   Benachrichtigung: Klick-Event des besten Kandidaten wird an den
+   Listener dispatcht - derselbe Pfad wie beim Mausklick und wie bei der
+   Volksauswahl (DispatchClick). Danach uebernimmt das Spiel; ein
+   folgender Ja/Nein-Dialog wird vom Plugin bereits vorgelesen.
+3. Vor dem Druecken wird angesagt, WAS gedrueckt wird ("Aktiviere: ..."),
+   damit ein falsches Ziel (etwa "Ablehnen") hoerbar ist statt still.
+
+QUELLENLAGE (ilspycmd 2026-07-18):
+- Fenster-Namen aus dem LOG, nicht geraten: _NotificationFcJoin,
+  _NotificationParty, _NotificationFriend, _Notification.
+- Die Node-Struktur dieser Fenster ist NICHT bekannt (nie gedumpt).
+  Deshalb wird der ganze Node-Baum nach registrierten Klick-Events
+  durchsucht und ALLES ins Log geschrieben ("[Notify] ... Events=[...]
+  Kandidat=... Text='...'"). Beim Oeffnen wird zusaetzlich das
+  Text-Inventar geloggt - damit klaert sich die Struktur bei der naechsten
+  echten Einladung von selbst, ohne dass der User im 5-Minuten-Fenster
+  einen Strg+F5-Dump machen muss.
+- ALTERNATIVE, falls der UI-Weg scheitert (recherchiert, NICHT gebaut):
+  `InfoProxyFreeCompanyInvite.RespondToInvitation(inviterName, accept)`
+  (vtable @104, auch in InfoProxyInvitedList). Das ist die Spielfunktion
+  selbst, braucht aber den Namen des Einladenden - im Proxy stehen dafuer
+  nur private "UnkString"-Felder (@72/@176), also unverifiziert. Der
+  UI-Weg braucht den Namen gar nicht, das Spiel kennt ihn selbst.
+
+Build 0/0, deployt (5.9.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.9) - braucht eine ECHTE Einladung
+1. "Version 5 Punkt 9 bereit".
+2. Einladung schicken lassen: kommt "Benachrichtigung. Mit Strg+F12
+   annehmen."?
+3. Strg+F12 druecken: was wird angesagt ("Aktiviere: ...")? Passiert
+   danach etwas - ein Dialog, eine Systemmeldung?
+4. WICHTIG unabhaengig vom Ergebnis: die "[Notify]"-Zeilen im Log
+   schicken. Sie enthalten das Text-Inventar und alle gefundenen Events -
+   daraus laesst sich der richtige Knopf exakt bestimmen, falls der erste
+   Versuch daneben greift.
+5. Falls "Benachrichtigung reagiert nicht": das Popup traegt keine
+   Klick-Events auf den durchsuchten Knoten -> dann auf den
+   InfoProxy-Weg wechseln (siehe oben).
+
+---
+
+## STAND 2026-07-18 (V5.8: kein Sekunden-Countdown mehr)
+
+User-Meldung: "es gibt irgendwas was runterzaehlt ich weiss aber nicht
+was das eritiert aber die meldung soll bleiben das runterzaehlen nervt".
+
+QUELLE (Log 18:15:47-18:20, eindeutig): Addon `_NotificationFcJoin` - die
+Benachrichtigung ueber eine Einladung in eine Freie Gesellschaft. Sie
+enthaelt eine Ablauffrist von 300 Sekunden, und der generische
+Text-Scanner hat deren Zaehler-Node (key=20005) bei JEDER Aenderung
+vorgelesen: 300, 299, 298 ... eine Zahl pro Sekunde, fuenf Minuten lang,
+jeweils mit SpeakInterrupt (schneidet also auch alles andere ab).
+
+DIE MELDUNG BLEIBT, wie gewuenscht - sie kommt aus einer ANDEREN Quelle
+und ist vom Fix nicht beruehrt (Log 18:15:47.740/.741):
+"System: Du wurdest von Soluna Stella in eine Freie Gesellschaft
+eingeladen." ueber Chat UND Toast.
+
+FIX V5.8: ScanAddonTexts spricht nackte Zahlen nicht mehr; geloggt werden
+sie weiter, jetzt mit dem Zusatz "(Zaehler, nicht gesprochen)". Regel gilt
+generell, nicht nur fuer dieses Addon - ein Text-Node, der sich in eine
+reine Zahl aendert, ist ein Zaehler (Timer, fps, Fortschritt). Eine Zahl
+ohne ihr Label traegt ohnehin keine Information: was "298" zaehlt, steht
+nur auf dem Bildschirm. Dieselbe Regel gilt im Fokus-Pfad schon punktuell
+(IsBareNumber bei JournalResult/CharaMakeDataInputString).
+
+Build 0/0, deployt (5.8.0.0). Versionen csproj + Plugin.cs synchron.
+V5.7 (Online-Fenster) ist enthalten und weiterhin UNGETESTET.
+
+### Beim naechsten Test (V5.8)
+1. "Version 5 Punkt 8 bereit".
+2. FC-Einladung (oder aehnliche Benachrichtigung mit Frist): kommt die
+   Einladungs-Meldung noch, aber ohne das Sekundengezaehle?
+3. Faellt woanders eine Ansage weg, die vorher nuetzlich war? Im Log
+   stehen die unterdrueckten Faelle als "(Zaehler, nicht gesprochen)" -
+   daran ist ablesbar, ob die Regel zu breit greift.
+4. AUSSERDEM offen aus V5.7: das Online-Fenster (Punkt 2 unten).
+
+---
+
+## STAND 2026-07-18 (V5.7: Inhalt der NEUEN Karte, nicht der alten)
+
+User-Meldung zu V5.6: "es wird immer gleich der erste eintrag vorgelesen
+wenn ich die registerkarte wechsel".
+
+ROOT CAUSE (Log 17:14:54, eindeutig): Es war der Eintrag der VORHERIGEN
+Karte. Zeitlicher Ablauf eines Tab-Wechsels:
+- .081 Tab-Wechsel erkannt, Ansage vorbereitet
+- .152 das NEUE Kind-Fenster (FriendList) oeffnet sich erst jetzt
+- .189 das ALTE (PartyMemberList) schliesst sich sogar noch spaeter
+Mein Flush hat bei .081 die erstbeste nicht-leere Liste genommen - und
+das war die noch offene, noch gefuellte Liste der ALTEN Karte. Belegt im
+Log: "Freunde ... 2 Eintraege (Liste aus PartyMemberList)" und
+"Suche ... 1 Eintraege: HSH... (Liste aus FriendList)".
+DENKFEHLER: Ich habe "count > 0" als Beweis genommen, dass der Inhalt da
+ist. Nicht-leer heisst aber nicht NEU.
+
+FIX V5.7:
+1. Beim Tab-Wechsel wird die Id des Kind-Fensters der VERLASSENEN Karte
+   gemerkt und bei der Inhaltssuche uebersprungen
+   (FindListInHostOrChild(.., excludeId)). Die Ansage wartet damit
+   zwingend auf das Fenster der neuen Karte - oder faellt nach 0,7 s auf
+   den blossen Kartennamen zurueck.
+2. Der globale Fokus-Pfad schweigt waehrend der Tab-Ansage. Er ist
+   frame-getrieben und lief am Addon-Guard aus V5.6 vorbei: im Log kam
+   'HSH, Thal-Kreuzgang...' 92 ms nach der Tab-Ansage und hat sie
+   abgeschnitten - derselbe Fehler wie in V5.5, nur eine Ebene tiefer.
+3. Keine Doppel-Ansage mehr: hat die Tab-Ansage den Inhalt eines
+   Kind-Fensters gesprochen, wird dessen aufgeschobene eigene Ansage
+   verworfen (im Log kam "Menue, 2 Eintraege" eine Sekunde hinterher).
+
+Build 0/0, deployt (5.7.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.7)
+1. "Version 5 Punkt 7 bereit".
+2. O druecken, Karten durchwechseln: gehoert jetzt der Inhalt der Karte,
+   auf der du GERADE stehst? Gegenprobe: "Gruppe" muss Gruppenmitglieder
+   nennen, "Freunde" die Freundesliste - vorher war es genau verschoben.
+3. Kommt nach der Tab-Ansage noch etwas hinterhergeschoben, oder ist es
+   ein sauberer Satz?
+4. Log-Kontrolle: die Zeile "[Social] Ansage: ..." nennt in Klammern, aus
+   welchem Fenster die Liste kam. Dort muss das Fenster stehen, das zur
+   angesagten Karte gehoert (Gruppe->PartyMemberList,
+   Freunde->FriendList).
+
+### Offene Frage fuer spaeter (nicht geraten, nicht gebaut)
+Das Spiel meldet den Wechsel selbst: "Social ReceiveEvent:
+type=ChildAddonAttached param=126/127". Sehr wahrscheinlich ist param die
+Addon-Id des neuen Kind-Fensters - dann koennte die Zuordnung exakt vom
+Spiel kommen statt ueber den Ausschluss des alten Fensters. UNVERIFIZIERT,
+deshalb bewusst nicht darauf gebaut.
+
+---
+
+## STAND 2026-07-18 (V5.6: Inhalt der Registerkarte gefunden)
+
+V5.5-TEST AUSGEWERTET (Log 17:05-17:06, User hat getestet):
+- Die Registerkarten-Ansage KAM sauber und ohne Abschneiden: "Freunde,
+  Registerkarte 2 von 4", "Suche, 3 von 4", "Gruppe, 1 von 4" - Label
+  jedes Mal aus dem echten ButtonTextNode, nie aus der Fallback-Liste.
+- Der Inhalt fehlte, und das Log nennt den Grund selbst:
+  "(... Liste NICHT gefunden)". Der Dump war nicht noetig.
+
+ROOT CAUSE: Der Inhalt liegt NICHT im Social-Fenster. Beim Tab-Wechsel
+haengt das Spiel ein eigenes Addon an ("Social ReceiveEvent:
+type=ChildAddonAttached") und oeffnet FriendList / SocialList /
+PartyMemberList als separates Fenster. Wir haben nur im Host gesucht und
+dort korrekt nichts gefunden.
+
+ZWEITER BEFUND: Jedes dieser Kind-Fenster sagte beim Oeffnen "Menue, 0
+Eintraege" - und das war falsch. [ListProbe] zeigt Len=0 beim PostSetup,
+35 ms spaeter stehen die Freunde drin. "0 Eintraege" heisst fuer einen
+blinden Spieler "hier ist nichts, geh weiter" - die schlimmere Sorte
+Falschmeldung, weil sie ihn von funktionierendem Inhalt wegschickt.
+
+FIX V5.6:
+1. FindListInHostOrChild sucht die Liste auch in den ANGEHAENGTEN
+   Kind-Fenstern. Verknuepft wird ueber Ids, nicht ueber Namen:
+   AtkUnitBase traegt Id/ParentId/HostId (ilspycmd-verifiziert
+   2026-07-18); beide Rueckverweise werden akzeptiert und das Log nennt
+   den, der gematcht hat ("via HostId"/"via ParentId"). Keine
+   hartcodierte Kind-Namensliste.
+2. Die Tab-Ansage wartet jetzt auf ihren Inhalt, statt ihn zu verpassen:
+   AnnounceSocialTabIfChanged legt den Text nur zurueck,
+   FlushPendingSocialTab spricht ihn, sobald Eintraege da sind -
+   spaetestens nach 0,7 s auch ohne. Ergebnis: EIN Satz,
+   "Freunde, Registerkarte 2 von 4, 12 Eintraege: <erster Eintrag>."
+3. Die Kind-Fenster schweigen waehrend der Ansage (IsSocialChildDuringGrace,
+   ueber dieselbe Id-Verknuepfung). Im Log lag ihre Fokus-Ansage 87 ms
+   nach der Tab-Ansage und hat sie mit SpeakInterrupt abgeschnitten -
+   genau das war der V5.5-Fehler, nur eine Ebene tiefer.
+4. "0 Eintraege" wird nirgends mehr sofort gesagt: leere Listen landen in
+   _emptyListSince und werden von AnnounceLateFilledList nachgereicht,
+   sobald sie gefuellt sind. Bleibt eine Liste 1 s lang leer, kommt ein
+   ehrliches "Keine Eintraege". Das gilt fuer ALLE Fenster, nicht nur
+   fuer das Online-Fenster.
+
+Build 0/0, deployt (5.6.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.6)
+1. "Version 5 Punkt 6 bereit".
+2. O druecken, Registerkarten wechseln: kommt jetzt die VOLLE Ansage
+   "<Karte>, Registerkarte X von 4, N Eintraege: <erster Eintrag>"?
+3. Pfeiltasten durch die Eintraege: werden sie einzeln angesagt, und
+   schneidet nichts mehr die Tab-Ansage ab?
+4. Kommt beim Oeffnen irgendwo noch "Menue, 0 Eintraege"?
+5. Log-Kontrolle bei Problemen: "[Social] Ansage: ... (Liste aus
+   FriendList (via HostId), 12 Eintraege)". Steht dort "Liste NICHT
+   gefunden", greift die Id-Verknuepfung nicht - dann brauche ich einen
+   Strg+F5-Dump bei offenem Fenster.
+
+### Nebenbefund aus dem Log (nicht beauftragt)
+Emotes kommen an, werden aber verworfen: "[Chat] kind=StandardEmote (29)
+... gelesen=False text='Chriss Yorha schnippt mit den Fingern.'". Falls
+gewuenscht, ist das eine Zeile in ShouldRead.
+
+---
+
+## STAND 2026-07-19 (V5.5: Registerkarte wird nicht uebersprochen)
+
+User-Meldung zu V5.4: "wenn ich auf die registerkarte gehe wird der
+spieler gleich angesagt aber nicht welche registerkarte das grad ist bzw
+die eintraege - ich weiss also nicht was ich noch machen kann".
+
+ROOT CAUSE: Die Tab-Ansage KAM, wurde aber sofort abgeschnitten. Der
+generische Listen-/Fokus-Pfad laeuft im selben Frame direkt danach und
+spricht den ersten Listeneintrag mit SpeakInterrupt - das unterbricht die
+laufende Ansage. Gehoert wurde also nur noch der Spielername. Genau
+deshalb war "kein return" in V5.4 falsch gedacht: der Inhalt darf nicht
+NACH dem Kontext kommen, er muss MIT ihm kommen.
+
+FIX:
+1. Die Tab-Ansage nimmt den Listeninhalt gleich mit, in EINER Ansage:
+   "Freundesliste, Registerkarte 2 von 4, 12 Eintraege: <erster Eintrag>."
+   Bei leerer Liste "keine Eintraege" - auch das ist eine Antwort auf
+   "was kann ich hier machen".
+2. Nach einem Tab-Wechsel bleibt der generische Pfad fuer 1 Sekunde still
+   (SocialTabGraceS), damit ihm nicht doch noch etwas dazwischenfunkt.
+   Das ist KEINE Umgehung von Spiellogik, sondern eine Reihenfolge-Regel
+   im Sprachlayer: ein Kontext, der von seinem eigenen Inhalt
+   abgeschnitten wird, ist schlimmer als nutzlos.
+3. Das Log sagt jetzt zusaetzlich, ob im Fenster ueberhaupt eine Liste
+   gefunden wurde ("Liste gefunden/NICHT gefunden").
+
+Build 0/0, deployt (5.5.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.5)
+1. "Version 5 Punkt 5 bereit".
+2. O druecken und Registerkarte wechseln: kommt jetzt die VOLLE Ansage
+   "<Karte>, Registerkarte X von 4, N Eintraege: <Eintrag>"?
+3. Danach mit den Pfeiltasten durch die Eintraege: werden sie einzeln
+   angesagt?
+4. Falls im Log "Liste NICHT gefunden" steht, ist die Freundesliste
+   anders aufgebaut als unsere Listen-Erkennung erwartet - dann brauche
+   ich einen Strg+F5-Dump bei offenem Fenster.
+
+### Noch offen / Idee fuer danach
+Eine Abfragetaste "wo bin ich" fuer das Online-Fenster (Strg+F10 koennte
+die aktive Registerkarte mit ansagen). Nicht gebaut, weil der Kernfix
+Vorrang hatte.
+
+---
+
+## STAND 2026-07-19 (V5.4: Online-Fenster, Registerkarten)
+
+User-Wunsch: "das online menue barrierefrei machen was man mit o aufmacht
+so das ich weis was welche registerkarte ist wie freunde gruppen usw".
+
+WAS NEU IST:
+Beim Oeffnen des Fensters kommt "Online-Fenster. <Karte>, Registerkarte
+X von 4."; bei jedem Wechsel die neue Karte. Die generische
+Listen-Navigation laeuft danach WEITER (kein return im Handler), liest
+also weiterhin den Inhalt der gewaehlten Karte.
+
+QUELLENLAGE (ilspycmd, ohne Dump ermittelt - in docs/game-api.md):
+- Taste O = MENU_PARTY_MEMBER (271) laut Keybind-Dump, Addon "Social".
+- `AddonSocial` haelt die vier Karten als AtkComponentRadioButton*:
+  PartyMembersRadioButton@680, FriendListRadioButton@688,
+  BlacklistRadioButton@696, PlayerSearchRadioButton@704.
+- Aktiv = `AtkComponentButton.IsChecked` (Bit 18 der Flags).
+- Das gesprochene Label kommt aus `ButtonTextNode`, ist also die
+  LOKALISIERTE Spielbeschriftung, keine eigene Uebersetzung. Die
+  Fallback-Liste (Gruppenmitglieder/Freundesliste/Schwarze Liste/
+  Spielersuche) greift nur, wenn der Textknoten leer ist - das Log sagt
+  pro Ansage, welche Quelle benutzt wurde.
+
+Build 0/0, deployt (5.4.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.4)
+1. "Version 5 Punkt 4 bereit".
+2. O druecken: kommt "Online-Fenster. <Karte>, Registerkarte X von 4"?
+3. Karte wechseln: wird die neue jedes Mal angesagt?
+4. Stimmen die Namen mit dem ueberein, was im Spiel steht? Das Log zeigt
+   unter "[Social]", ob das Label aus dem ButtonTextNode kam oder aus der
+   Fallback-Liste (letzteres waere ein Hinweis, dass wir den falschen
+   Textknoten lesen).
+5. Wird der INHALT der Karte vorgelesen (Freundesliste durchblaettern)?
+   Falls nicht: das ist der naechste Schritt - dann brauche ich einen
+   Strg+F5-Dump bei offenem Fenster.
+
+---
+
+## STAND 2026-07-19 (V5.3: eigener Name statt Empfaengername)
+
+User-Meldung: "beim chat soll wenn ich was geschrieben hab mein name
+kommen nicht der name an den ich schreibe".
+
+URSACHE: Bei einem AUSGEHENDEN Tell traegt das Spiel den EMPFAENGER im
+Sender-Feld. Der Nachrichten-Puffer hat dieses Feld ungeprueft als
+Absender uebernommen (Zeile "archived = senderText: text") - die eigene
+Zeile sah im Verlauf also aus, als haette sie der andere geschrieben.
+
+FIX: Die Eigen-Erkennung (isOwn) wird jetzt VOR dem Archivieren
+bestimmt, damit Puffer und Sprachansage dieselbe Wahrheit benutzen.
+- Puffer: eigene Zeilen stehen unter dem EIGENEN Charakternamen.
+- Der Empfaenger geht nicht verloren, sondern wird zum Adressaten:
+  "<mein Name> an <Empfaenger>: <Text>" - beim Nachlesen eines Gespraechs
+  ist sonst nicht mehr erkennbar, wem man geantwortet hat.
+- Sprachansage entsprechend: "Du fluesterst an <Empfaenger>: <Text>".
+
+Build 0/0, deployt (5.3.0.0). Versionen in csproj UND Plugin.cs geprueft
+synchron (der Fehler aus V4.98-V5.0).
+
+### Beim naechsten Test (V5.3)
+1. "Version 5 Punkt 3 bereit".
+2. /tell an jemanden: kommt "Du fluesterst an <Name>: <Text>"?
+3. Im Puffer nachlesen: steht dort DEIN Name vorne, nicht der des
+   Empfaengers?
+4. /say: kommt "Du sagst: <Text>" und im Puffer dein Name?
+
+### V5.2 (in V5.3 enthalten)
+Vier fehlende Kanaele ergaenzt: TellOutgoing (12), Yell (30),
+CrossParty (32), Echo (56) - sie fielen vorher in den `_ => false`-Zweig
+und wurden weder gesprochen noch archiviert. Dazu die [Chat]-Probe im
+Log (kind/sender/gelesen/text), mit der ein stummer Kanal ablesbar wird.
+
+---
+
+## STAND 2026-07-19 (V5.2: eigene Chat-Nachrichten)
+
+User-Wunsch: "wenn ich in den chats schreibe soll meine nachricht auch
+wieder gegeben werden wenn ich enter druecke und im buffer landen".
+
+GEFUNDENE URSACHE (ilspycmd Dalamud XivChatType, 2026-07-19):
+In ShouldRead fehlten VIER Kanaele komplett - sie fielen in den
+`_ => false`-Zweig und wurden weder gesprochen NOCH archiviert:
+- `TellOutgoing` (12) = eigenes /tell
+- `Yell` (30) = /yell
+- `CrossParty` (32) = welteruebergreifende Gruppe
+- `Echo` (56) = /echo
+Eigene Say/Party/Shout/FC-Nachrichten dagegen kommen als der normale
+Kanal-Typ mit dem eigenen Namen als Sender an und sollten schon vorher
+funktioniert haben - ob sie es taten, klaert jetzt die Probe (siehe unten).
+
+WAS NEU IST:
+1. Die vier Kanaele sind ergaenzt, in ShouldRead, MapCategory (Buffer!)
+   und den Prefixen.
+2. Eigene Nachrichten werden als solche angesagt: "Du sagst: ...",
+   "Du fluesterst: ...", "Du zur Gruppe: ..." statt "Sagt von <eigener
+   Name>: ...". Erkennung: TellOutgoing, oder Sender == eigener
+   Charaktername (ObjectTable.LocalPlayer). Ohne Zeichen-Echo in der
+   Eingabezeile ist diese Zeile die EINZIGE Bestaetigung, dass das
+   Getippte rausgegangen ist - sie muss sofort von fremder Rede
+   unterscheidbar sein.
+3. PROBE (bleibt drin): jede Nicht-Kampf-Chatzeile wird geloggt als
+   "[Chat] kind=<Name> (<Zahl>) sender='..' gelesen=True/False text='..'".
+   Damit ist ein stummer Kanal kuenftig ablesbar statt Ratesache.
+   Kampflog ist vorher schon herausgefiltert, also keine Log-Flut.
+
+Build 0/0, deployt (5.2.0.0).
+
+### Beim naechsten Test (V5.2)
+1. "Version 5 Punkt 2 bereit".
+2. Etwas in /say schreiben, Enter: kommt "Du sagst: <Text>"?
+3. Ein /tell an jemanden: kommt "Du fluesterst: <Text>"?
+4. Landen beide im Nachrichten-Puffer (Verlauf durchblaettern)?
+5. Falls weiterhin still: die "[Chat]"-Zeilen im Log zeigen, welcher
+   kind= beim Enter-Druecken ankommt und ob gelesen=False steht.
+
+---
+
+## STAND 2026-07-18 (V5.1: Wegenetz-Ladefortschritt wird angesagt)
+
+User-Wunsch: "wenn das wegenetz laed das es alle 20% angesagt wird damit
+man weiss das es geladen bzw fertig ist".
+
+WAS NEU IST (AutoWalkService.MonitorMeshBuild):
+- Aufbau startet -> "Wegenetz wird geladen."
+- danach "Wegenetz 20/40/60/80 Prozent."
+- Ende -> "Wegenetz fertig geladen." bzw. "Wegenetz-Aufbau abgebrochen."
+  (unterschieden ueber Nav.IsReady)
+Laeuft auch OHNE aktiven Auto-Lauf - der Sinn ist ja gerade zu wissen,
+wann man wieder laufen kann. Abschaltbar: Config AnnounceMeshProgress.
+
+QUELLENLAGE (vnavmesh NavmeshManager dekompiliert, 2026-07-18):
+`LoadTaskProgress` ist -1 solange kein Aufbau laeuft, wird beim Start auf
+0 gesetzt, waechst in BuildTiles auf 1 und wird in einem OnDispose wieder
+auf -1 gesetzt. Fertig = der Ruecksprung auf -1; ob erfolgreich oder
+abgebrochen sagt NUR Nav.IsReady. Aus dem Tile-Cache bediente Ladevorgaenge
+koennen so schnell sein, dass keine Zwischenstufe sichtbar wird - dann
+kommen nur Start und Ende. Das ist korrekt und kein Fehler.
+
+Build 0/0, deployt (5.1.0.0).
+
+### WICHTIG: Versionsansage war seit V4.98 falsch (mein Fehler)
+Die csproj-Version und die Konstante `PluginVersion` in Plugin.cs muessen
+synchron sein (steht als Kommentar in der csproj) - ich habe bei V4.98,
+V4.99 und V5.0 nur die csproj angehoben. Das Plugin hat deshalb weiter
+"Version 4 Punkt 97 bereit" gesagt, obwohl der neue Code lief. Ab V5.1
+sind beide wieder synchron. Merke fuer kuenftige Versionsspruenge: BEIDE
+Stellen aendern, und die csproj NICHT per PowerShell-Ersetzung anfassen
+(zerstoert Umlaute und trifft auch "DalamudPackager 15.0.0").
+
+### Beim naechsten Test (V5.1)
+1. "Version 5 Punkt 1 bereit" - jetzt stimmt die Zahl wieder.
+2. Zonenwechsel: kommt "Wegenetz wird geladen", dann Prozentschritte,
+   dann "Wegenetz fertig geladen"?
+3. Falls nur Start und Ende kommen: war der Aufbau aus dem Cache (schnell)?
+   Das Log zeigt die Schritte mit progress-Werten.
+4. Nervt die Ansage bei jedem Zonenwechsel? Dann AnnounceMeshProgress aus.
+
+### V5.0 BESTAETIGT (User, 2026-07-18: "das mit dem automatisch laufen
+### ist auch ok")
+Auto-Lauf sagt nur noch alle 50 zurueckgelegten Meter "Noch X Meter".
+
+---
+
+## STAND 2026-07-18 (V5.0: Auto-Lauf spricht nur noch bei Fortschritt)
+
+User-Meldung: "was wir weg machen muessen ist bei auto laufen die
+staendige meter ansage".
+
+WAS GEAENDERT WURDE:
+"Noch X Meter" haengt nicht mehr an der Uhr (alle 3 s), sondern am
+zurueckgelegten Weg: eine Zeile pro 50 zurueckgelegten Metern
+(Config `AutoWalkProgressStep`, 0 = ganz aus). Kurze Laeufe bleiben
+damit komplett still, ein langer Lauf meldet sich eine Handvoll Mal.
+
+WARUM NICHT ERSATZLOS RAUS: die Ansage wurde am 2026-07-11 GENAU DESHALB
+eingebaut, weil der Beacon-Ton allein den User im Unklaren liess und er
+Laeufe abgebrochen hat (steht als Kommentar im Code). Die Rueckmeldung
+"es geht voran" bleibt also erhalten, nur die Dauerbeschallung faellt
+weg. Nebeneffekt der Distanz-Kopplung: ein blockierter oder sehr
+langsamer Lauf plappert nicht mehr, waehrend gar nichts passiert -
+Stille bedeutet jetzt "kein Fortschritt" und ist selbst ein Signal.
+
+Build 0/0, deployt (5.0.0.0).
+
+### Beim naechsten Test (V5.0)
+1. "Version 5 Punkt 0 bereit".
+2. Langer Auto-Lauf: kommt "Noch X Meter" nur noch alle ~50 m?
+3. Kurzer Auto-Lauf (unter 50 m): komplett still bis "angekommen"?
+4. Reicht das als Rueckmeldung, oder fuehlt es sich zu still an? Falls zu
+   still: AutoWalkProgressStep auf 25 setzen. Falls immer noch zu viel:
+   auf 100 oder auf 0 (ganz aus).
+
+### V4.99 BESTAETIGT (User, 2026-07-18: "ok funktioniert")
+Quests nach Stufe sortiert, Stufe wird angesagt. OFFEN BLEIBT die
+Log-Frage: stehen bei "lvlMarker=" echte Werte oder ueberall 0? Davon
+haengt ab, ob der ungenaue Namens-Fallback bleiben muss.
+
+---
+
+## STAND 2026-07-18 (V4.99: Quests nach Stufe sortiert)
+
+User-Wunsch: die Quests nach Stufe sortieren - annehmbare Quests UND
+Quest-Ziele, beide im Objekt-Browser (das Journal des Spiels ist davon
+NICHT betroffen, dessen Reihenfolge legt das Spiel fest).
+
+WAS NEU IST:
+1. Beide Quest-Kategorien sind jetzt nach Stufe sortiert. Reihenfolge:
+   erst was im aktuellen Gebiet liegt, dann Stufe aufsteigend, dann
+   Entfernung. Erreichbarkeit schlaegt Stufe bewusst - eine passende
+   Quest drei Gebiete weiter ist nicht das naechste Laufziel.
+   Unbekannte Stufe (0) sortiert ans ENDE, nicht als "Stufe 1".
+2. Die Stufe wird angesagt: "1 von 5: Stufe 15, Story: <Quest>, ...".
+   Ohne Ansage waere die Sortierung eine stumme Regel. Bei unbekannter
+   Stufe entfaellt der Teil - kein erfundenes "Stufe 0".
+
+QUELLENLAGE (ilspycmd-verifiziert, 2026-07-18):
+- `MapMarkerData.RecommendedLevel` (ushort @64) - der Marker traegt die
+  Stufe SELBST, kein Raten ueber den Quest-Namen noetig. Gegenprobe im
+  Struct: SetData(.., ushort recommendedLevel, ..).
+- FALLBACK Lumina `Quest.ClassJobLevel[0]` per Namensabgleich, falls das
+  Spiel RecommendedLevel auf 0 laesst (Laufzeitverhalten UNBEKANNT).
+  Namensabgleich ist unpraezise (FFXIV vergibt Quest-Namen mehrfach,
+  z.B. Wiederholbare) - deshalb nur Rueckfall, nie erste Wahl.
+- Beide Werte stehen pro Marker im Log ("lvlMarker=.. lvlSheet=..") -
+  daraus laesst sich nach dem Test entscheiden, ob der Fallback ueberhaupt
+  je greift und ob die Werte uebereinstimmen.
+
+Build 0/0, deployt (4.99.0.0).
+
+### Beim naechsten Test (V4.99)
+1. "Version 4 Punkt 99 bereit".
+2. Kategorie "Annehmbare Quests" durchblaettern: kommen die Stufen mit,
+   und steigen sie an?
+3. Dasselbe in "Quest-Ziele".
+4. Stimmen die Stufen mit dem ueberein, was im Journal steht?
+5. LOG-FRAGE (wichtiger als sie klingt): stehen in den "[Quest]"- bzw.
+   "[OpenQuest]"-Zeilen bei lvlMarker echte Werte oder ueberall 0? Davon
+   haengt ab, ob der ungenaue Namens-Fallback ueberhaupt bleiben muss.
+
+---
+
+## STAND 2026-07-18 (V4.98: Karten-Markierung als Ziel)
+
+Aufgegriffen aus `docs-de/ideen/ff14-small-hints.md` Punkt 2 (Vorschlag des
+KOTOR-Accessibility-Mods). Die Flagge ist in Gruppen die Art, wie sich
+Spieler dirigieren ("geh zur Markierung") - fuer einen blinden Spieler war
+sie bisher unsichtbar.
+
+WAS NEU IST:
+1. Die gesetzte Karten-Markierung erscheint als Wegpunkt "Markierung" in
+   der Kategorie Wegpunkte. Damit ist sie ohne Sonderweg auch Ziel fuer
+   Gehhilfe und Auto-Lauf - sie laeuft durch denselben Pfad wie jeder
+   andere Wegpunkt (PlacesService.GetPlaces).
+2. Wird eine NEUE Markierung gesetzt, wird sie angesagt:
+   "Neue Markierung, 120 Meter, Nordosten." Kompassrichtung, weil die
+   Flagge ein Ziel zum Planen ist, keine Lenkanweisung. Nur bei echter
+   Neuplatzierung (>= 1 m Abstand zur vorigen), Zonenwechsel schaerft die
+   Ansage neu. Abschaltbar via Config AnnounceMapFlag.
+
+QUELLENLAGE (ilspycmd-verifiziert, in docs/game-api.md):
+AgentMap.FlagMarkerCount + FlagMapMarkers[0] mit TerritoryId/MapId/
+XFloat/YFloat. XFloat/YFloat sind WELT-Koordinaten (X und Z), NICHT
+Karten-Pixel - bewiesen durch AgentMap.SetFlagMapMarker(.., Vector3 world),
+das world.X/world.Z genau dorthin schreibt. Die Pixel-Umrechnung der
+anderen Wegpunkte gilt hier also ausdruecklich nicht.
+
+Build 0/0, deployt (4.98.0.0).
+
+### Beim naechsten Test (V4.98)
+1. "Version 4 Punkt 98 bereit".
+2. Markierung auf der Karte setzen (oder von einem Gruppenmitglied setzen
+   lassen): kommt "Neue Markierung, X Meter, <Kompassrichtung>"?
+3. Stimmt die Richtung? Gegenprobe: hinlaufen und pruefen, ob die Distanz
+   faellt. Falls die Richtung gespiegelt ist, steht der Rohwert im Log
+   unter "[Nav] Neue Karten-Markierung: pos=.. dist=.. <Richtung>".
+4. Kategorie Wegpunkte durchblaettern: taucht "Markierung, Markierung"
+   auf, und fuehrt Numpad 3 dorthin?
+5. Wird die Ansage NICHT wiederholt, solange die Flagge liegen bleibt?
+
+### V4.97 BESTAETIGT (User, 2026-07-18: "das mit den untertiteln
+### funktioniert")
+Untertitel-Fix haelt: jede Zeile genau einmal, bei wachsenden Zeilen nur
+der neue Teil. Damit ist der Dialog-/Untertitel-Block abgeschlossen -
+JoinDistinctParts und die _lastSpokenDialog-Praefixlogik sind bewaehrt.
+
+---
+
+## STAND 2026-07-18 (V4.97: Untertitel)
 
 ### User-Meldung: "die Untertitel werden auch mehrfach vorgelesen"
 LOG-BEWEIS (Dialog-Nodes-Probe, 11:20-11:34) - ZWEI Ursachen:

@@ -76,6 +76,15 @@ public sealed class RouteService
         return ((sector % 8) + 8) % 8;
     }
 
+    /// <summary>
+    /// The compass word for the bearing from <paramref name="from"/> to
+    /// <paramref name="to"/> ("Nordosten"). Compass, not relative-to-heading:
+    /// used for things the player plans around rather than steers towards right
+    /// now - see the compass-vs-relative note in the route-guidance guide.
+    /// </summary>
+    public static string CompassWord(Vector3 from, Vector3 to)
+        => CompassWords[SectorOf(to.X - from.X, to.Z - from.Z)];
+
     /// <summary>One spoken route segment: metres in one compass direction.</summary>
     public readonly record struct RouteSegment(float Distance, int Sector);
 

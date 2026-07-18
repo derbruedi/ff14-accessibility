@@ -17,6 +17,7 @@ namespace FF14Accessibility.Services;
 /// <param name="MapId">Map the marker belongs to (for cross-zone routing).</param>
 /// <param name="InCurrentZone">Whether the marker is in the player's current zone.</param>
 /// <param name="IsMainStory">Whether the quest belongs to the Main Scenario.</param>
+/// <param name="Level">Required quest level, 0 when unknown.</param>
 public sealed record QuestDestination(
     string QuestName,
     string Detail,
@@ -25,7 +26,8 @@ public sealed record QuestDestination(
     ushort TerritoryTypeId,
     uint MapId,
     bool InCurrentZone,
-    bool IsMainStory);
+    bool IsMainStory,
+    int Level);
 
 /// <summary>
 /// Reads the objective markers of ACCEPTED quests from the game's map
@@ -72,6 +74,33 @@ public sealed class QuestMarkerService
         _mainStoryNames = set;
         _log.Info($"[Quest] Hauptszenario-Namen geladen: {set.Count}");
         return set;
+    }
+
+    private Dictionary<string, int>? _questLevels;
+
+    /// <summary>
+    /// Quest name -> required level, built once from the Quest sheet. Used only
+    /// as a FALLBACK: the marker carries its own RecommendedLevel, and matching
+    /// by name is imprecise (FFXIV reuses quest names, e.g. for repeatables -
+    /// the first row wins here). Level = ClassJobLevel[0], the field the journal
+    /// shows; both sources are logged per marker so a mismatch is visible.
+    /// </summary>
+    private Dictionary<string, int> QuestLevels()
+    {
+        if (_questLevels != null) return _questLevels;
+
+        var levels = new Dictionary<string, int>();
+        foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
+        {
+            var name = quest.Name.ExtractText();
+            if (string.IsNullOrWhiteSpace(name) || levels.ContainsKey(name)) continue;
+            if (quest.ClassJobLevel.Count > 0)
+                levels[name] = quest.ClassJobLevel[0];
+        }
+
+        _questLevels = levels;
+        _log.Info($"[Quest] Quest-Stufen aus dem Sheet geladen: {levels.Count}");
+        return levels;
     }
 
     /// <summary>
@@ -189,6 +218,10 @@ public sealed class QuestMarkerService
         if (string.IsNullOrWhiteSpace(questName)) return; // empty slot
 
         var isMainStory = MainStoryNames().Contains(questName);
+        // The marker's own level beats the name lookup; the sheet only fills in
+        // when the game leaves RecommendedLevel at 0 (runtime behaviour unknown,
+        // hence both values in the log below).
+        var sheetLevel = QuestLevels().GetValueOrDefault(questName, 0);
 
         var locations = marker.MarkerData.Count;
         if (locations is < 0 or > 100)
@@ -206,9 +239,11 @@ public sealed class QuestMarkerService
             _log.Info($"[{tag}] Marker '{questName}' [{i + 1}/{locations}]: tt='{tooltip}' " +
                       $"pos=({data.Position.X:F1}|{data.Position.Y:F1}|{data.Position.Z:F1}) " +
                       $"r={data.Radius:F1} terr={data.TerritoryTypeId} (aktuell={currentTerritory}) " +
-                      $"map={data.MapId} icon={data.IconId} render={marker.ShouldRender}");
+                      $"map={data.MapId} icon={data.IconId} render={marker.ShouldRender} " +
+                      $"lvlMarker={data.RecommendedLevel} lvlSheet={sheetLevel}");
+            var level = data.RecommendedLevel > 0 ? data.RecommendedLevel : sheetLevel;
             result.Add(new QuestDestination(questName, tooltip, data.Position,
-                data.Radius, data.TerritoryTypeId, data.MapId, inZone, isMainStory));
+                data.Radius, data.TerritoryTypeId, data.MapId, inZone, isMainStory, level));
         }
     }
 }

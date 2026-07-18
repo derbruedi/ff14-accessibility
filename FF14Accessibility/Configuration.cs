@@ -54,6 +54,11 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyChatCatNext   = "Strg+.";          // Nachlese: nächste Kategorie
     public string KeyChatReadOlder = ",";               // Nachlese: ältere Nachricht in der Kategorie
     public string KeyChatReadNewer = ".";               // Nachlese: neuere Nachricht in der Kategorie
+    // Benachrichtigungen (V5.9): Einladungen (Freie Gesellschaft, Gruppe,
+    // Freundesliste) erscheinen als Popup, das ein Sehender anklickt. Ohne
+    // Tastaturweg lief die Einladung fuer den User schlicht ab (Log 2026-07-18
+    // 18:20:48). Strg+F12 laut Keybind-Dump frei.
+    public string KeyNotification  = "Strg+F12";        // Offene Benachrichtigung aktivieren (Einladung annehmen)
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -119,7 +124,17 @@ public sealed class Configuration : IPluginConfiguration
     // Navigation
     public float NearbyDistance = 30f;
     public bool AnnounceTargetChanges = true;   // Zielwechsel (Tab/F1-F12) ansagen
+    public bool AnnounceMapFlag = true;         // neu gesetzte Karten-Markierung ansagen
     public float BeaconVolume = 0.35f;          // Gehhilfe-Ton: 0 = stumm, 1 = volle Lautstärke
+
+    // Auto-Lauf: "Noch X Meter" erst nach so vielen zurückgelegten Metern
+    // wieder ansagen (0 = gar nicht). Früher alle 3 Sekunden - das war auf
+    // langen Strecken eine Dauerbeschallung (User 2026-07-18).
+    public float AutoWalkProgressStep = 50f;
+
+    // Wegenetz-Aufbau (vnavmesh) in 20-Prozent-Schritten ansagen, plus
+    // "fertig geladen" am Ende (User-Wunsch 2026-07-18).
+    public bool AnnounceMeshProgress = true;
 
     // Gehhilfe (V4.63): Beacon und Ansagen folgen der vnavmesh-Wegpunkt-Route
     // (um Hindernisse herum) statt der Luftlinie. false = alte Luftlinien-Führung.
@@ -133,8 +148,8 @@ public sealed class Configuration : IPluginConfiguration
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
-    public bool EnableTargetTone = true;        // Kurzer Ton wenn ein Gegner anvisiert wird
-    public float TargetToneVolume = 0.4f;       // Ziel-Ton: 0 = stumm, 1 = volle Lautstärke
+    // Ziel-Ton bei anvisiertem Gegner ENTFERNT (2026-07-18, User): das Spiel
+    // spielt selbst einen Ton - ein zweiter obendrauf war nur Lärm.
 
     // Ansage-Spam-Filter (V4.62, STATUS.md V4.60/61 dokumentiert): _StatusCustom0
     // (Buff-Leiste) sagte den Sprint-Countdown im Sekundentakt an ("20s".."1s") -

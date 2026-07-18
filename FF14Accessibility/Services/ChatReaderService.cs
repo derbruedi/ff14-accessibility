@@ -11,13 +11,18 @@ public sealed class ChatReaderService : IDisposable
     private readonly TolkService _tolk;
     private readonly Configuration _config;
     private readonly MessageHistoryService _history;
+    private readonly IObjectTable _objectTable;
+    private readonly IPluginLog _log;
 
-    public ChatReaderService(IChatGui chatGui, TolkService tolk, Configuration config, MessageHistoryService history)
+    public ChatReaderService(IChatGui chatGui, TolkService tolk, Configuration config,
+        MessageHistoryService history, IObjectTable objectTable, IPluginLog log)
     {
         _chatGui = chatGui;
         _tolk = tolk;
         _config = config;
         _history = history;
+        _objectTable = objectTable;
+        _log = log;
 
         _chatGui.ChatMessage += OnChatMessage;
     }
@@ -27,17 +32,41 @@ public sealed class ChatReaderService : IDisposable
         // Kampflog-Zeilen werden verworfen (siehe IsCombatLogLine).
         if (IsCombatLogLine(msg.LogKind)) return;
 
-        if (!ShouldRead(msg.LogKind)) return;
-
         var senderText = msg.Sender?.TextValue ?? string.Empty;
         var messageText = msg.Message?.TextValue ?? string.Empty;
 
+        // Probe: every non-combat line with its raw LogKind, so an unread
+        // channel can be identified from the log instead of guessed at. Kept
+        // permanently - combat traffic (the only real volume) is already gone.
+        _log.Info($"[Chat] kind={msg.LogKind} ({(int)msg.LogKind}) sender='{senderText}' " +
+                  $"gelesen={ShouldRead(msg.LogKind)} text='{messageText}'");
+
+        if (!ShouldRead(msg.LogKind)) return;
+
         if (string.IsNullOrWhiteSpace(messageText)) return;
+
+        // Own message? Decided BEFORE archiving, because the archive has to use
+        // the same name the announcement does.
+        var ownName = _objectTable.LocalPlayer?.Name.TextValue ?? string.Empty;
+        var isOwn = msg.LogKind == XivChatType.TellOutgoing
+                    || (!string.IsNullOrEmpty(ownName) && senderText == ownName);
+
+        // For an OUTGOING tell the game puts the RECIPIENT in Sender - archiving
+        // that made the player's own line look like it came from the other person
+        // (user report 2026-07-19). Own lines are stored under the player's own
+        // name; the recipient is kept as an addressee so the entry stays useful
+        // when reading back a conversation.
+        var archiveName = isOwn ? ownName : senderText;
+        var addressee = msg.LogKind == XivChatType.TellOutgoing && !string.IsNullOrWhiteSpace(senderText)
+            ? $" an {senderText}"
+            : string.Empty;
 
         // Nachlese-Archiv füllen (BEVOR der Echo-Schutz greift, damit auch
         // eine live nicht erneut gesprochene Toast-Dublette im Verlauf steht).
         // Der Kanal-Prefix entfällt hier - die Kategorie trägt ihn schon.
-        var archived = string.IsNullOrWhiteSpace(senderText) ? messageText : $"{senderText}: {messageText}";
+        var archived = string.IsNullOrWhiteSpace(archiveName)
+            ? messageText
+            : $"{archiveName}{addressee}: {messageText}";
         _history.Add(MapCategory(msg.LogKind), archived);
 
         // Many toast notifications (_TextError etc.) the UIReader already spoke
@@ -47,12 +76,26 @@ public sealed class ChatReaderService : IDisposable
         if (_tolk.WasRecentlySpoken(messageText, 6)) return;
 
         var prefix = GetChatPrefix(msg.LogKind);
-        var fullText = string.IsNullOrWhiteSpace(senderText)
-            ? $"{prefix}: {messageText}"
-            : $"{prefix} von {senderText}: {messageText}";
+
+        // The player's OWN messages are announced as "Du sagst: ..." instead of
+        // "Sagt von <eigener Name>: ..." (user request 2026-07-19): without a
+        // character echo in the game's input line, this line is the only
+        // confirmation that what was typed actually went out, and it has to be
+        // instantly distinguishable from someone else talking. For an outgoing
+        // tell the recipient follows ("Du flüsterst an X: ...") - never as the
+        // speaker, which is what the game's Sender field would have suggested.
+        string fullText;
+        if (isOwn)
+            fullText = $"{GetOwnChatPrefix(msg.LogKind)}{addressee}: {messageText}";
+        else if (string.IsNullOrWhiteSpace(senderText))
+            fullText = $"{prefix}: {messageText}";
+        else
+            fullText = $"{prefix} von {senderText}: {messageText}";
 
         var interrupt = msg.LogKind is XivChatType.Say or XivChatType.Shout or XivChatType.Party
-                                    or XivChatType.Alliance or XivChatType.TellIncoming;
+                                    or XivChatType.Alliance or XivChatType.TellIncoming
+                                    or XivChatType.Yell or XivChatType.CrossParty
+                                    or XivChatType.TellOutgoing;
 
         if (interrupt)
             _tolk.SpeakInterrupt(fullText);
@@ -70,6 +113,14 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.FreeCompany      => _config.ReadFCChat,
         XivChatType.SystemMessage    => _config.ReadSystemMessages,
         XivChatType.ErrorMessage     => true,
+        // Verified via ilspycmd (Dalamud XivChatType, 2026-07-19): these were
+        // missing entirely, so the player's own outgoing tells and everything
+        // in /yell, cross-world party and /echo was silently dropped - neither
+        // spoken nor archived.
+        XivChatType.TellOutgoing     => _config.ReadTellChat,
+        XivChatType.Yell             => _config.ReadShoutChat,
+        XivChatType.CrossParty       => _config.ReadPartyChat,
+        XivChatType.Echo             => true,
         _                            => false
     };
 
@@ -99,7 +150,11 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.Party         => MessageHistoryService.Category.Party,
         XivChatType.Alliance      => MessageHistoryService.Category.Alliance,
         XivChatType.TellIncoming  => MessageHistoryService.Category.Tell,
+        XivChatType.TellOutgoing  => MessageHistoryService.Category.Tell,
         XivChatType.FreeCompany   => MessageHistoryService.Category.FreeCompany,
+        XivChatType.Yell          => MessageHistoryService.Category.Shout,
+        XivChatType.CrossParty    => MessageHistoryService.Category.Party,
+        XivChatType.Echo          => MessageHistoryService.Category.Say,
         _                         => MessageHistoryService.Category.System
     };
 
@@ -113,7 +168,25 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.FreeCompany   => "FC",
         XivChatType.SystemMessage => "System",
         XivChatType.ErrorMessage  => "Fehler",
+        XivChatType.TellOutgoing  => "Flüstert an",
+        XivChatType.Yell          => "Brüllt",
+        XivChatType.CrossParty    => "Gruppe",
+        XivChatType.Echo          => "Echo",
         _                         => "Chat"
+    };
+
+    /// <summary>Prefix for the player's own messages ("Du sagst: ...").</summary>
+    private static string GetOwnChatPrefix(XivChatType type) => type switch
+    {
+        XivChatType.Say          => "Du sagst",
+        XivChatType.Shout        => "Du rufst",
+        XivChatType.Yell         => "Du brüllst",
+        XivChatType.Party        => "Du zur Gruppe",
+        XivChatType.CrossParty   => "Du zur Gruppe",
+        XivChatType.Alliance     => "Du zur Allianz",
+        XivChatType.FreeCompany  => "Du zur FC",
+        XivChatType.TellOutgoing => "Du flüsterst",
+        _                        => "Du"
     };
 
     public void Dispose() => _chatGui.ChatMessage -= OnChatMessage;
