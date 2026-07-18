@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 namespace FF14AccessibilityInstaller;
@@ -36,6 +35,11 @@ public sealed class InstallerService
     private const string XivLauncherRepoName = "FFXIVQuickLauncher";
     private const string VnavmeshRepositoryJsonUrl = "https://puni.sh/api/repository/veyn";
 
+    // Selbst-Update: kleines Manifest-Asset im Release, das die Installer-Version
+    // trägt. Der EXE-Dateiname bleibt bewusst versionslos (stabiler Download-Link).
+    private const string InstallerManifestAssetName = "installer.json";
+    private const string InstallerExeAssetName = "FF14AccessibilityInstaller.exe";
+
     private static readonly string XivLauncherRoot =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XIVLauncher");
     private static readonly string DevPluginsRoot = Path.Combine(XivLauncherRoot, "devPlugins");
@@ -51,6 +55,10 @@ public sealed class InstallerService
     /// aufgerufen, daher laufen alle Fortsetzungen auf dem UI-Thread).</summary>
     public Func<string, bool>? AskYesNo { get; set; }
 
+    /// <summary>Wird ausgelöst, wenn ein Selbst-Update läuft und sich dieser
+    /// Prozess gleich beenden muss. Die GUI schließt daraufhin das Fenster.</summary>
+    public event Action? RestartRequested;
+
     public InstallerService()
     {
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("FF14AccessibilityInstaller/1.0");
@@ -63,11 +71,19 @@ public sealed class InstallerService
     private void Error(string message) => Log(Loc.Get("ErrorPrefix") + message);
 
     /// <summary>Führt den kompletten Installations-/Update-Ablauf aus. Ein einziger
-    /// Codepfad für Erstinstallation und Update (siehe Architektur-Doc Abschnitt 4.1).</summary>
-    public async Task RunAsync()
+    /// Codepfad für Erstinstallation und Update (siehe Architektur-Doc Abschnitt 4.1).
+    /// Gibt true zurück, wenn ein Selbst-Update eingeleitet wurde und sich der
+    /// Prozess gleich beendet - der Aufrufer zeigt dann keine Abschlussmeldung.</summary>
+    public async Task<bool> RunAsync()
     {
         var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Loc.Get("UnknownVersion");
         Info(Loc.Get("InstallerHeader", ownVersion));
+        Info(string.Empty);
+
+        // Zuerst der Installer selbst: sonst würde erst installiert und danach
+        // neu gestartet, und der Nutzer müsste den ganzen Ablauf zweimal hören.
+        if (await TrySelfUpdateAsync(ownVersion))
+            return true;
         Info(string.Empty);
 
         try
@@ -76,7 +92,7 @@ public sealed class InstallerService
             if (!Directory.Exists(XivLauncherRoot))
             {
                 await HandleMissingXivLauncherAsync();
-                return; // Nutzer muss erst einloggen/Dalamud aktivieren/Spiel starten.
+                return false; // Nutzer muss erst einloggen/Dalamud aktivieren/Spiel starten.
             }
             Info(Loc.Get("XivLauncherFound"));
             Info(string.Empty);
@@ -98,6 +114,7 @@ public sealed class InstallerService
             Error(Loc.Get("UnexpectedError", ex.Message));
             Error(Loc.Get("NoPartialWrite"));
         }
+        return false;
     }
 
     // ── XIVLauncher ────────────────────────────────────────────────────────
@@ -194,9 +211,6 @@ public sealed class InstallerService
         try
         {
             var release = await GetLatestReleaseAsync(AccessibilityRepoOwner, AccessibilityRepoName);
-
-            var hint = CheckInstallerUpdateHint(ownVersion, release);
-            if (hint != null) Info(hint);
 
             var asset = PickAsset(release, n =>
                 n.StartsWith("FF14Accessibility-v", StringComparison.OrdinalIgnoreCase) &&
@@ -570,6 +584,21 @@ public sealed class InstallerService
         return JsonNode.Parse(json);
     }
 
+    /// <summary>Wie <see cref="PickAsset"/>, liefert aber den ganzen Asset-Knoten
+    /// (für Felder wie "size", die das Tupel nicht trägt).</summary>
+    private static JsonNode? PickAssetNode(JsonNode? release, Func<string, bool> pick)
+    {
+        var assets = release?["assets"]?.AsArray();
+        if (assets == null) return null;
+
+        foreach (var a in assets)
+        {
+            var name = a?["name"]?.GetValue<string>();
+            if (name != null && pick(name)) return a;
+        }
+        return null;
+    }
+
     private static (string tag, string url, string name)? PickAsset(JsonNode? release, Func<string, bool> pick)
     {
         var tag = release?["tag_name"]?.GetValue<string>() ?? "";
@@ -586,32 +615,159 @@ public sealed class InstallerService
         return null;
     }
 
-    /// <summary>Sucht im selben Release ein Asset mit "Installer" im Namen und
-    /// vergleicht dessen Versionsnummer mit der eigenen. Kein Selbst-Update -
-    /// nur ein Hinweistext (siehe Architektur-Doc Abschnitt 4.3).</summary>
-    private static string? CheckInstallerUpdateHint(string ownVersion, JsonNode? release)
+    // ── Selbst-Update des Installers ───────────────────────────────────────
+
+    /// <summary>
+    /// Prüft, ob im neuesten Release eine neuere Installer-Version liegt, fragt
+    /// den Nutzer, lädt sie und startet Phase 2 (siehe <see cref="SelfUpdate"/>).
+    /// Gibt true zurück, wenn der Neustart eingeleitet wurde.
+    ///
+    /// Versionsquelle ist das Release-Asset "installer.json", NICHT der
+    /// Dateiname der EXE: die heißt bewusst unveränderlich
+    /// FF14AccessibilityInstaller.exe, damit der Download-Link und die
+    /// Anleitung in der README stabil bleiben. (Der frühere Hinweis-Code las
+    /// die Version per Regex aus dem Asset-Namen und konnte deshalb nie
+    /// anschlagen.)
+    ///
+    /// Jeder Fehler ist hier unkritisch: das Selbst-Update entfällt dann still
+    /// und die normale Plugin-Installation läuft weiter.
+    /// </summary>
+    private async Task<bool> TrySelfUpdateAsync(string ownVersion)
     {
-        var assets = release?["assets"]?.AsArray();
-        if (assets == null) return null;
+        Info(Loc.Get("CheckingInstallerVersion"));
 
-        foreach (var a in assets)
+        JsonNode? manifest;
+        JsonNode? release;
+        try
         {
-            var name = a?["name"]?.GetValue<string>();
-            if (name == null || !name.Contains("Installer", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var m = Regex.Match(name, @"([0-9]+(?:\.[0-9]+){1,3})");
-            if (!m.Success) continue;
-
-            var remote = ParseVersionLoose(m.Groups[1].Value);
-            var own = ParseVersionLoose(ownVersion);
-            if (remote != null && own != null && remote > own)
+            release = await GetLatestReleaseAsync(AccessibilityRepoOwner, AccessibilityRepoName);
+            var manifestAsset = PickAsset(release, n =>
+                n.Equals(InstallerManifestAssetName, StringComparison.OrdinalIgnoreCase));
+            if (manifestAsset == null)
             {
-                var url = a!["browser_download_url"]?.GetValue<string>() ?? "";
-                return Loc.Get("InstallerUpdateHint", m.Groups[1].Value, url);
+                // Releases vor Installer 1.1 haben kein installer.json.
+                Info(Loc.Get("NoInstallerManifest"));
+                return false;
             }
+
+            var json = await _http.GetStringAsync(manifestAsset.Value.url);
+            manifest = JsonNode.Parse(json);
         }
-        return null;
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or FormatException)
+        {
+            Warn(Loc.Get("InstallerCheckFailed", ex.Message));
+            return false;
+        }
+
+        var remoteVersion = manifest?["InstallerVersion"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(remoteVersion))
+        {
+            Warn(Loc.Get("InstallerManifestUnreadable"));
+            return false;
+        }
+
+        if (!IsNewer(remoteVersion, ownVersion))
+        {
+            Info(Loc.Get("InstallerUpToDate", ownVersion));
+            return false;
+        }
+
+        var exeAssetName = manifest?["AssetName"]?.GetValue<string>() ?? InstallerExeAssetName;
+        var exeAsset = PickAssetNode(release, n => n.Equals(exeAssetName, StringComparison.OrdinalIgnoreCase));
+        if (exeAsset == null)
+        {
+            Warn(Loc.Get("InstallerAssetMissing", exeAssetName));
+            return false;
+        }
+
+        var targetPath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            Warn(Loc.Get("InstallerOwnPathUnknown"));
+            return false;
+        }
+
+        var sizeMb = (exeAsset["size"]?.GetValue<long>() ?? 0L) / (1024 * 1024);
+        Info(Loc.Get("InstallerUpdateAvailable", remoteVersion, ownVersion));
+
+        if (AskYesNo == null || !AskYesNo(Loc.Get("InstallerUpdateQuestion", remoteVersion, sizeMb)))
+        {
+            Info(Loc.Get("InstallerUpdateDeclined"));
+            return false;
+        }
+
+        var downloadUrl = exeAsset["browser_download_url"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(downloadUrl))
+        {
+            Warn(Loc.Get("InstallerAssetMissing", exeAssetName));
+            return false;
+        }
+
+        var newExePath = Path.Combine(Path.GetTempPath(), SelfUpdate.DownloadFilePrefix + Guid.NewGuid() + ".exe");
+        try
+        {
+            Info(Loc.Get("DownloadingInstaller", remoteVersion));
+            await DownloadFileAsync(downloadUrl, newExePath, Loc.Get("InstallerDownloadLabel"));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        {
+            Warn(Loc.Get("InstallerDownloadFailed", ex.Message));
+            TryDelete(newExePath);
+            return false;
+        }
+
+        // Integritätsprüfung, damit niemals eine abgebrochene oder veränderte
+        // Datei gestartet wird. Fehlt der Hash im Manifest, wird nur geloggt -
+        // dann gilt dieselbe Vertrauensbasis wie beim manuellen Download.
+        var expectedHash = manifest?["Sha256"]?.GetValue<string>();
+        if (!string.IsNullOrWhiteSpace(expectedHash))
+        {
+            var actual = ComputeSha256(newExePath);
+            if (!string.Equals(actual, expectedHash.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                Error(Loc.Get("InstallerHashMismatch"));
+                TryDelete(newExePath);
+                return false;
+            }
+            Info(Loc.Get("InstallerHashOk"));
+        }
+        else
+        {
+            Info(Loc.Get("InstallerNoHash"));
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(newExePath)
+            {
+                Arguments = $"{SelfUpdate.ApplyUpdateArg} \"{targetPath}\" {Environment.ProcessId}",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Warn(Loc.Get("InstallerStartFailed", ex.Message));
+            TryDelete(newExePath);
+            return false;
+        }
+
+        Info(Loc.Get("InstallerRestarting", remoteVersion));
+        RestartRequested?.Invoke();
+        return true;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { /* Temp-Datei bleibt liegen - unkritisch. */ }
+        catch (UnauthorizedAccessException) { /* dito */ }
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(stream));
     }
 
     // ── Download / Entpacken ───────────────────────────────────────────────
@@ -690,11 +846,22 @@ public sealed class InstallerService
         return !string.Equals(remote, local, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Parst eine Versionsangabe und füllt sie IMMER auf vier Stellen auf.
+    /// Ohne das Auffüllen gilt "1.1.0" als KLEINER als "1.1.0.0" (nicht gesetzte
+    /// Stellen zählen bei <see cref="Version"/> als -1) - eine dreistellige
+    /// Angabe in installer.json würde das Selbst-Update also still nie auslösen.
+    /// </summary>
     private static Version? ParseVersionLoose(string s)
     {
-        s = s.TrimStart('v', 'V');
+        s = s.TrimStart('v', 'V').Trim();
         var parts = s.Split('.');
-        if (parts.Length < 2) s += ".0";
+        if (parts.Length > 4) return null;
+        while (parts.Length < 4)
+        {
+            s += ".0";
+            parts = s.Split('.');
+        }
         return Version.TryParse(s, out var v) ? v : null;
     }
 

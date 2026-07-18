@@ -138,8 +138,46 @@ public static class Loc
             ["LoginHint2"] = "Dalamud und starte das Spiel EINMAL. Führe diesen Installer danach erneut",
             ["LoginHint3"] = "aus, um das Barrierefreiheits-Plugin einzurichten.",
 
+            // Selbst-Update des Installers
+            ["CheckingInstallerVersion"] = "Prüfe, ob es eine neuere Installer-Version gibt ...",
+            ["NoInstallerManifest"] = "Keine Installer-Versionsangabe im Release gefunden - überspringe die Prüfung.",
+            ["InstallerCheckFailed"] = "Installer-Version konnte nicht geprüft werden ({0}). Der Installer arbeitet normal weiter.",
+            ["InstallerManifestUnreadable"] = "Installer-Versionsangabe war nicht lesbar - überspringe die Prüfung.",
+            ["InstallerUpToDate"] = "Der Installer ist aktuell (Version {0}).",
+            ["InstallerAssetMissing"] = "Die neue Installer-Datei ({0}) fehlt im Release - überspringe das Update.",
+            ["InstallerOwnPathUnknown"] = "Eigener Programmpfad nicht ermittelbar - überspringe das Installer-Update.",
+            ["InstallerUpdateAvailable"] = "Neue Installer-Version verfügbar: {0} (installiert ist {1}).",
+            ["InstallerUpdateQuestion"] =
+                "Es gibt eine neuere Version des Installers ({0}).\n\n" +
+                "Soll sie jetzt heruntergeladen und gestartet werden? Der Download ist etwa {1} Megabyte groß.\n\n" +
+                "Der Installer schließt sich dabei kurz und öffnet sich automatisch neu. " +
+                "Danach läuft die Installation von selbst weiter.\n\n" +
+                "Ja = jetzt aktualisieren, Nein = mit der aktuellen Version weiterarbeiten.",
+            ["InstallerUpdateDeclined"] = "Installer-Update übersprungen. Es geht mit der vorhandenen Version weiter.",
+            ["DownloadingInstaller"] = "Lade Installer-Version {0} herunter ...",
+            ["InstallerDownloadLabel"] = "Installer",
+            ["InstallerDownloadFailed"] = "Installer-Update konnte nicht geladen werden ({0}). Es geht mit der vorhandenen Version weiter.",
+            ["InstallerHashOk"] = "Prüfsumme der neuen Installer-Datei stimmt.",
+            ["InstallerNoHash"] = "Keine Prüfsumme im Release hinterlegt - Download wird ungeprüft übernommen.",
+            ["InstallerHashMismatch"] = "Die Prüfsumme der geladenen Installer-Datei stimmt NICHT. Update abgebrochen, es geht mit der vorhandenen Version weiter.",
+            ["InstallerStartFailed"] = "Der neue Installer konnte nicht gestartet werden ({0}). Es geht mit der vorhandenen Version weiter.",
+            ["InstallerRestarting"] = "Installer wird auf Version {0} aktualisiert. Das Fenster schließt sich jetzt und öffnet sich gleich automatisch neu ...",
+            ["InstallerUpdatedTo"] = "Installer wurde auf Version {0} aktualisiert. Die Installation läuft automatisch weiter.",
+            ["InstallerUpdatedMessage"] =
+                "Der Installer wurde auf Version {0} aktualisiert und neu gestartet.\n\n" +
+                "Die Installation läuft nach dem Bestätigen automatisch weiter - du musst nichts weiter tun.",
+            ["SelfUpdateNoOwnPath"] =
+                "Der eigene Programmpfad war nicht ermittelbar. Die alte Installer-Datei bleibt bestehen; " +
+                "dieses Fenster arbeitet aus dem temporären Ordner weiter.",
+            ["SelfUpdateReplaceFailed"] =
+                "Die vorhandene Installer-Datei konnte nicht ersetzt werden:\n{0}\n\nGrund: {1}\n\n" +
+                "Die Installation kann trotzdem weiterlaufen. Wenn du die neue Version dauerhaft behalten willst, " +
+                "lade FF14AccessibilityInstaller.exe einmal von Hand aus dem neuesten Release herunter.",
+            ["SelfUpdateRestartFailed"] =
+                "Die Installer-Datei wurde aktualisiert, konnte aber nicht automatisch gestartet werden:\n{0}\n\nGrund: {1}\n\n" +
+                "Bitte starte sie von Hand.",
+
             ["CheckingAccessibilityVersion"] = "Prüfe neueste Version von FF14 Accessibility ...",
-            ["InstallerUpdateHint"] = "Hinweis: Eine neuere Installer-Version ({0}) ist verfügbar: {1}",
             ["NoAccessibilityAssetFound"] = "Kein passendes Release-Paket für FF14 Accessibility gefunden.",
             ["ErrorNoReleaseAsset"] = "Fehler (kein Release-Asset gefunden)",
             ["AccessibilityUpToDate"] = "FF14 Accessibility ist aktuell (Version {0}).",
@@ -260,8 +298,46 @@ public static class Loc
             ["LoginHint2"] = "and start the game ONCE. Then run this installer again",
             ["LoginHint3"] = "to set up the accessibility plugin.",
 
+            // Installer self-update
+            ["CheckingInstallerVersion"] = "Checking whether a newer installer version exists ...",
+            ["NoInstallerManifest"] = "No installer version info found in the release - skipping the check.",
+            ["InstallerCheckFailed"] = "Could not check the installer version ({0}). Carrying on as usual.",
+            ["InstallerManifestUnreadable"] = "The installer version info could not be read - skipping the check.",
+            ["InstallerUpToDate"] = "The installer is up to date (version {0}).",
+            ["InstallerAssetMissing"] = "The new installer file ({0}) is missing from the release - skipping the update.",
+            ["InstallerOwnPathUnknown"] = "Could not determine this program's own path - skipping the installer update.",
+            ["InstallerUpdateAvailable"] = "A newer installer version is available: {0} (you have {1}).",
+            ["InstallerUpdateQuestion"] =
+                "A newer version of the installer is available ({0}).\n\n" +
+                "Download and start it now? The download is about {1} megabytes.\n\n" +
+                "The installer will close briefly and reopen automatically. " +
+                "The installation then continues on its own.\n\n" +
+                "Yes = update now, No = keep using the current version.",
+            ["InstallerUpdateDeclined"] = "Installer update skipped. Continuing with the current version.",
+            ["DownloadingInstaller"] = "Downloading installer version {0} ...",
+            ["InstallerDownloadLabel"] = "Installer",
+            ["InstallerDownloadFailed"] = "Could not download the installer update ({0}). Continuing with the current version.",
+            ["InstallerHashOk"] = "Checksum of the new installer file matches.",
+            ["InstallerNoHash"] = "No checksum published in the release - the download is accepted unverified.",
+            ["InstallerHashMismatch"] = "The checksum of the downloaded installer does NOT match. Update aborted, continuing with the current version.",
+            ["InstallerStartFailed"] = "The new installer could not be started ({0}). Continuing with the current version.",
+            ["InstallerRestarting"] = "Updating the installer to version {0}. This window closes now and reopens automatically in a moment ...",
+            ["InstallerUpdatedTo"] = "The installer was updated to version {0}. The installation continues automatically.",
+            ["InstallerUpdatedMessage"] =
+                "The installer was updated to version {0} and restarted.\n\n" +
+                "After you confirm, the installation continues automatically - there is nothing else you need to do.",
+            ["SelfUpdateNoOwnPath"] =
+                "Could not determine this program's own path. The old installer file stays as it is; " +
+                "this window continues from the temporary folder.",
+            ["SelfUpdateReplaceFailed"] =
+                "Could not replace the existing installer file:\n{0}\n\nReason: {1}\n\n" +
+                "The installation can still continue. If you want to keep the new version permanently, " +
+                "download FF14AccessibilityInstaller.exe manually from the latest release once.",
+            ["SelfUpdateRestartFailed"] =
+                "The installer file was updated but could not be started automatically:\n{0}\n\nReason: {1}\n\n" +
+                "Please start it manually.",
+
             ["CheckingAccessibilityVersion"] = "Checking for the latest version of FF14 Accessibility ...",
-            ["InstallerUpdateHint"] = "Note: A newer installer version ({0}) is available: {1}",
             ["NoAccessibilityAssetFound"] = "No matching release package found for FF14 Accessibility.",
             ["ErrorNoReleaseAsset"] = "Error (no release asset found)",
             ["AccessibilityUpToDate"] = "FF14 Accessibility is up to date (version {0}).",

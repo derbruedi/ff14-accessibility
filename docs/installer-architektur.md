@@ -267,7 +267,48 @@ Dateitypen (`*.dll`, `*.json`, `*.pdb`) löschen oder gezielt überschreiben.
 
 ### 4.3 Selbst-Update des Installers
 
-**Empfehlung: kein separates Selbst-Update-Feature für die erste Version.**
+> **NACHTRAG 2026-07-18 (Installer 1.1.0): umgesetzt.** Der Nutzer wollte
+> den Handgriff "neue EXE selbst herunterladen" loswerden. Der unten
+> empfohlene Hinweistext war zudem toter Code: `CheckInstallerUpdateHint`
+> las die Version per Regex aus dem Asset-NAMEN, und das Asset heißt
+> versionslos `FF14AccessibilityInstaller.exe` — der Regex traf nie.
+>
+> Umgesetzter Ablauf (`InstallerService.TrySelfUpdateAsync` + `SelfUpdate.cs`):
+> 1. Beim Start Release-Asset `installer.json` lesen
+>    (`{ InstallerVersion, AssetName, Sha256 }`). Fehlt es (ältere Releases),
+>    wird die Prüfung still übersprungen. Versionsquelle ist bewusst dieses
+>    Manifest und NICHT der Dateiname, damit der Download-Link und die
+>    Anleitung in der README stabil bleiben.
+> 2. Ist die Version höher: Rückfrage per MessageBox inkl. Downloadgröße.
+>    Bei "Nein" läuft alles normal weiter.
+> 3. Download nach `%TEMP%`, SHA256-Abgleich gegen das Manifest (fehlt der
+>    Hash, wird nur geloggt), Start der neuen EXE mit
+>    `--apply-update "<Zielpfad>" <PID>`, dann beendet sich die alte Instanz.
+> 4. Phase 2 (neue EXE aus `%TEMP%`): wartet auf das Ende der alten PID,
+>    kopiert sich über die Original-EXE (20 Versuche à 500 ms, weil Windows
+>    die Datei kurz gesperrt hält) und startet diese mit `--updated`.
+> 5. Die neu gestartete Original-EXE überspringt den Sprachdialog, meldet
+>    das Update per Dialog und führt die Installation automatisch aus.
+>    Beim Start räumt sie außerdem alte `FF14AccInstaller_*.exe` aus `%TEMP%`
+>    (je ~160 MB).
+>
+> Scheitert das Ersetzen (Schreibschutz, fehlende Rechte), meldet Phase 2 das
+> ehrlich und arbeitet aus `%TEMP%` weiter — die Installation gelingt dann
+> trotzdem, nur die Datei des Nutzers bleibt alt.
+>
+> Fallstrick, abgesichert in `ParseVersionLoose`: `Version` behandelt nicht
+> gesetzte Stellen als -1, "1.1.0" gilt also als KLEINER als "1.1.0.0". Eine
+> dreistellige Angabe in `installer.json` hätte das Update still nie
+> ausgelöst; deshalb füllt der Parser jetzt immer auf vier Stellen auf.
+>
+> End-to-End verifiziert am 2026-07-18 mit einem künstlichen 1.0.0-Build
+> gegen das echte Release v4.91: Erkennung, Dialog, Download (~20 s),
+> Hash-Prüfung, Ersetzen der Originaldatei, Neustart, Auto-Installation und
+> "Der Installer ist aktuell" beim Folgelauf (keine Endlosschleife).
+>
+> Der ursprüngliche Abschnitt bleibt als Entscheidungshistorie stehen:
+
+**Empfehlung (überholt): kein separates Selbst-Update-Feature für die erste Version.**
 Begründung:
 - Der Installer ändert sich viel seltener als das Plugin (reine
   Infrastruktur: Download+Kopieren+Config-Patch). Ein Update ist nur nötig,

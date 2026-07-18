@@ -130,6 +130,21 @@ auszuführen und wieder den Button „Installieren oder Aktualisieren" zu
 aktivieren. Er überschreibt die Plugin-Dateien, und der nächste Spielstart
 lädt die neue Version.
 
+**Der Installer aktualisiert auch sich selbst** (ab Installer-Version 1.1).
+Liegt eine neuere Installer-Version vor, fragt er nach:
+
+1. Es erscheint eine Ja/Nein-Abfrage mit der Downloadgröße. „Ja" holt die
+   neue Version, „Nein" arbeitet mit der vorhandenen weiter.
+2. Bei „Ja" lädt er sie, schließt sich kurz und öffnet sich automatisch
+   wieder — die Datei an deinem Speicherort wird dabei ersetzt, du musst
+   also nichts von Hand herunterladen.
+3. Nach dem Neustart meldet er „Der Installer wurde auf Version … 
+   aktualisiert" und führt die Installation von selbst weiter aus. Ein
+   Bestätigen mit Enter genügt.
+
+Falls die Datei nicht ersetzt werden kann (z. B. wegen Schreibschutz),
+sagt er das und macht trotzdem normal weiter.
+
 ### Was der Installer macht
 
 - Prüft, ob **XIVLauncher** installiert ist, und bietet sonst an, das

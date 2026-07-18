@@ -3,7 +3,55 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-18, V4.91 gebaut + deployed, UNCOMMITTET)
+## STAND JETZT (2026-07-18, V4.91 released + Installer 1.1.0 mit Selbst-Update)
+
+### INSTALLER 1.1.0: Selbst-Update (User-Wunsch, END-TO-END VERIFIZIERT)
+User: "kann man in den installer auch einbauen das er wenns vom installer
+updates gibt den auch nachlaed den alten beendet und den neuen gleich
+startet? so das man nichts per hand runterladen muss?"
+
+BEFUND VORAB: der vorhandene Hinweis-Mechanismus war TOTER CODE.
+CheckInstallerUpdateHint las die Version per Regex aus dem Asset-NAMEN,
+das Asset heisst aber versionslos "FF14AccessibilityInstaller.exe" - der
+Regex traf nie, der Hinweis erschien nie. Ersatzlos entfernt.
+
+UMGESETZT (Details + Entscheidungshistorie: docs/installer-architektur.md
+Abschnitt 4.3):
+- Versionsquelle ist das neue Release-Asset "installer.json"
+  ({InstallerVersion, AssetName, Sha256}), NICHT der Dateiname - so bleibt
+  der Download-Link stabil und die README-Anleitung stimmt weiter.
+- Phase 1 (TrySelfUpdateAsync): Manifest lesen, bei hoeherer Version per
+  MessageBox mit Downloadgroesse fragen (User-Entscheid: vorher fragen),
+  Download nach %TEMP%, SHA256-Abgleich, neue EXE mit
+  "--apply-update <Zielpfad> <PID>" starten, alte Instanz beenden.
+- Phase 2 (SelfUpdate.cs): auf Ende der alten PID warten, sich selbst ueber
+  die Original-EXE kopieren (20 Versuche a 500ms - Windows haelt die Datei
+  kurz gesperrt), diese mit "--updated" starten.
+- Neustart: Sprachdialog wird uebersprungen, Update wird per Dialog gemeldet,
+  Installation laeuft automatisch weiter (User-Entscheid: sofort weiter).
+  Ausserdem werden alte Downloads (je ~160 MB) aus %TEMP% geloescht.
+- Scheitert das Ersetzen (Schreibschutz), wird das ehrlich gemeldet und der
+  Installer arbeitet aus %TEMP% weiter - die Installation gelingt trotzdem.
+- ParseVersionLoose fuellt jetzt IMMER auf 4 Stellen auf: "1.1.0" gilt sonst
+  als KLEINER als "1.1.0.0" (nicht gesetzte Stellen = -1) und ein
+  dreistelliger Manifest-Eintrag haette das Update still nie ausgeloest.
+
+VERIFIKATION (nicht nur gebaut - real durchgespielt): kuenstlicher
+1.0.0-Build gegen das echte Release v4.91, via UI-Automation gesteuert:
+Erkennung -> Dialog ("1.1.0.0 ... etwa 154 Megabyte") -> Ja -> Download
+(~20s) -> Hash ok -> Originaldatei von 1.0.0.0 auf 1.1.0.0 ersetzt ->
+Neustart aus dem ORIGINALPFAD -> "Installer wurde auf 1.1.0.0 aktualisiert"
+-> Installation lief automatisch durch -> Folgelauf meldet "Der Installer
+ist aktuell" (KEINE Endlosschleife) -> Temp-Download aufgeraeumt.
+Getestet wurde exakt die EXE, die im Release liegt.
+
+WICHTIG FUER DEN UEBERGANG: die im Umlauf befindliche 1.0.0-EXE kennt den
+Mechanismus noch nicht. Sie muss EINMAL von Hand ersetzt werden; ab 1.1.0
+laeuft es automatisch.
+
+---
+
+## STAND 2026-07-18 (V4.91 gebaut + deployed)
 
 ### V4.90-CHAT BESTAETIGT (User 2026-07-18): "das mit dem chat funktioniert"
 Damit sind in-game bestaetigt: Tipp-Echo im Chat-Eingabefeld, Kanal-Ansage

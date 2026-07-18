@@ -129,6 +129,21 @@ To update, simply run `FF14AccessibilityInstaller.exe` again and activate
 the "Install or update" button once more. It overwrites the plugin files,
 and the next game start loads the new version.
 
+**The installer also updates itself** (from installer version 1.1 onwards).
+When a newer installer version exists, it asks first:
+
+1. A Yes/No prompt appears, including the download size. "Yes" fetches the
+   new version, "No" carries on with the current one.
+2. On "Yes" it downloads, closes briefly and reopens automatically — the
+   file at your own location is replaced, so there is nothing to download
+   by hand.
+3. After the restart it announces "The installer was updated to version …"
+   and continues the installation on its own. Confirming with Enter is all
+   it takes.
+
+If the file cannot be replaced (write protection, for example), it says so
+and carries on normally.
+
 ### What the installer does
 
 - Checks whether **XIVLauncher** is installed and otherwise offers to

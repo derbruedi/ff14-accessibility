@@ -16,9 +16,16 @@ public sealed class MainForm : Form
     private readonly Button _installButton;
     private readonly Button _exitButton;
     private readonly InstallerService _service = new();
+    private readonly bool _justUpdated;
+    private bool _restarting;
 
-    public MainForm()
+    /// <param name="justUpdated">true, wenn dieser Start aus einem Selbst-Update
+    /// des Installers stammt. Dann meldet das Fenster das Update und startet die
+    /// Installation ohne weiteren Tastendruck.</param>
+    public MainForm(bool justUpdated = false)
     {
+        _justUpdated = justUpdated;
+
         var ownVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Loc.Get("UnknownVersion");
 
         Text = Loc.Get("WindowTitle");
@@ -89,8 +96,34 @@ public sealed class MainForm : Form
 
         _service.LogMessage += OnServiceLogMessage;
         _service.AskYesNo = OnServiceAskYesNo;
+        _service.RestartRequested += OnRestartRequested;
 
         Load += (_, _) => _installButton.Focus();
+
+        // Shown statt Load: der Hinweis-Dialog soll ueber einem bereits sichtbaren
+        // Fenster erscheinen, sonst haengt er vor einem noch leeren Bildschirm.
+        Shown += async (_, _) =>
+        {
+            if (!_justUpdated) return;
+
+            // Screenreader lesen den Dialog vor, bevor die Installation loslegt -
+            // so weiss der Nutzer, dass der Neustart Absicht war.
+            AppendLog(Loc.Get("InstallerUpdatedTo", ownVersion));
+            MessageBox.Show(
+                Loc.Get("InstallerUpdatedMessage", ownVersion),
+                Loc.Get("WindowTitle"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            await OnInstallClickedAsync();
+        };
+    }
+
+    private void OnRestartRequested()
+    {
+        // Das Fenster schliessen, damit die neue Instanz die Datei ersetzen kann.
+        _restarting = true;
+        if (InvokeRequired) BeginInvoke(new Action(Close));
+        else Close();
     }
 
     private void OnServiceLogMessage(string message)
@@ -128,7 +161,10 @@ public sealed class MainForm : Form
         _exitButton.Enabled = false;
         try
         {
-            await _service.RunAsync();
+            var restarting = await _service.RunAsync();
+            if (restarting || _restarting)
+                return;   // Selbst-Update laeuft: keine Abschlussmeldung, Fenster schliesst sich.
+
             MessageBox.Show(
                 Loc.Get("OperationCompleted"),
                 Loc.Get("WindowTitle"),

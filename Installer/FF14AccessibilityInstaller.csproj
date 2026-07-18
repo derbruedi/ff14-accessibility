@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -7,12 +7,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>FF14AccessibilityInstaller</AssemblyName>
-    <!-- Eigene Installer-Version. Wird im Fenster angezeigt und gegen ein
-         etwaiges Installer-Release-Asset im ff14-accessibility-Repo verglichen
-         (nur Hinweistext, kein Selbst-Update - siehe InstallerService). -->
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <!-- Eigene Installer-Version. Wird im Fenster angezeigt und beim Start gegen
+         das Release-Asset "installer.json" im ff14-accessibility-Repo verglichen.
+         Ist dort eine hoehere Version hinterlegt, aktualisiert sich der Installer
+         nach Rueckfrage selbst (InstallerService.TrySelfUpdateAsync + SelfUpdate).
+         MUSS beim Release mit dem Feld InstallerVersion in installer.json
+         uebereinstimmen, sonst bietet der Installer das Update endlos erneut an. -->
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
     <!-- Barrierefreiheit: WinForms-GUI. Standardcontrols (Label, TextBox, Button)
          setzen automatisch die klassischen Win32/UIA-Properties, NVDA/JAWS lesen
          sie ohne Zusatzaufwand vor. Status-Updates gehen zusaetzlich in ein
@@ -37,3 +40,7 @@
   </ItemGroup>
 
 </Project>
+
+
+
+
