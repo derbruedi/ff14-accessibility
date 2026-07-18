@@ -3,7 +3,32 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-18, V5.11: Ziel-Ton entfernt)
+## RELEASE v5.11 VEROEFFENTLICHT (2026-07-18 abends)
+
+Commits 303fbc3 (Code V4.98-V5.11) + b47853f (repo.json 5.11) auf main
+gepusht. GitHub-Release v5.11 mit allen vier Assets:
+latest.zip / FF14Accessibility-v5.11.0.zip (je 530718 Bytes,
+Release-Build, Manifest 5.11.0.0 im ZIP geprueft) +
+FF14AccessibilityInstaller.exe + installer.json.
+Alle drei latest-Download-Links verifiziert (HTTP 200).
+
+INSTALLER unveraendert uebernommen (Code seit 9fc809a nicht angefasst):
+EXE + installer.json aus dem v4.97-Release kopiert, SHA256 gegen das
+Manifest geprueft - stimmt ueberein. Damit bleiben der README-Link und
+das Selbst-Update funktionsfaehig; ohne diese beiden Assets im NEUESTEN
+Release waeren beide tot gewesen.
+
+NICHT committet: uia_test.ps1 (loses Testskript, gehoert nicht zum
+Projekt).
+
+ACHTUNG - im Release steckt UNGETESTETER Code: V5.7 (Online-Fenster),
+V5.9 (Einladung per Strg+F12) und V5.10 (Fenster vorlesen) sind gebaut,
+aber nie in-game bestaetigt. Die Testpunkte stehen unten bei den
+jeweiligen Versionen.
+
+---
+
+## STAND (2026-07-18, V5.11: Ziel-Ton entfernt)
 
 User: "wenn man einen gegner anvisiert gibts ein piepen von der mod mach
 das weg man hoert vom spiel einen ton wenn man einen gegner im visier
