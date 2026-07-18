@@ -3,7 +3,132 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-17 abends, V4.89 COMMITTET + RELEASED v4.89)
+## STAND JETZT (2026-07-18, V4.91 gebaut + deployed, UNCOMMITTET)
+
+### V4.90-CHAT BESTAETIGT (User 2026-07-18): "das mit dem chat funktioniert"
+Damit sind in-game bestaetigt: Tipp-Echo im Chat-Eingabefeld, Kanal-Ansage
+beim Oeffnen/Wechseln, und der Nachlese-Browser inkl. der Tasten Komma und
+Punkt (Strg+,/Strg+. Kategorie, ,/. blaettern). Der offene
+VERIFIKATIONSPUNKT "sieht Dalamud VK 0xBC/0xBE?" ist damit erledigt: JA.
+
+### V4.91: Kampflog-Vorlesen wieder ENTFERNT (User-Entscheid)
+User: "ausser die kampf meldungen aber das mit dem kampf koennen wir auch
+erstmal raus nehmen". Die V4.90-Fassung (Aktions-Zeilen Typ 43 vorlesen +
+Roh-Log fuer den Eigen-Filter) kam in-game nie an; statt zu debuggen wurde
+sie auf Wunsch zurueckgebaut. Rueckgebaut wurde:
+- ChatReaderService: TryHandleCombat -> IsCombatLogLine (verwirft
+  Kampflog-Zeilen 41-49 still, keine Ansage, kein [Combat]-Log, kein
+  History-Eintrag). Der Filter bleibt bewusst drin, damit Kampflog-Verkehr
+  hier explizit aussortiert wird statt durch ShouldRead zu fallen.
+  IPluginLog-Abhaengigkeit des Service damit entfallen.
+- Configuration: ReadCombatMessages entfernt.
+- MessageHistoryService: Kategorie "Kampf" raus (Enum + Durchschalt-
+  Reihenfolge + Name), damit beim Blaettern keine tote Kategorie kommt.
+  Nachlese hat jetzt 8 Kategorien: Dialoge, Sagen, Rufen, Gruppe, Allianz,
+  Fluestern, Freie Gesellschaft, System.
+Build 0 Fehler/0 Warnungen, deployt (Manifest 4.91.0.0 verifiziert).
+UNBERUEHRT: Chat-Empfang, Tipp-Echo, Kanal-Ansage, Nachlese-Browser.
+
+### Beim naechsten Test (V4.91)
+1. "Version 4 Punkt 91 bereit".
+2. Chat wie gehabt: Empfangen, Tippen, Kanal, Nachlese - alles noch da?
+3. Beim Durchschalten der Nachlese-Kategorien kommt KEIN "Kampf" mehr?
+4. Im Kampf: keine Aktions-Ansagen mehr (Ruhe), aber HP/Ziel-Ansagen des
+   CombatService (Strg+H, Kampf/Kampf vorbei) laufen weiter?
+FALLS spaeter doch gewuenscht: der Weg ueber IChatGui war grundsaetzlich
+richtig, die offene Frage war nur, ob Typ-43-Zeilen ueberhaupt ankommen -
+das klaert ein Log mit aktiver Roh-Probe.
+
+---
+
+## STAND 2026-07-17 abends (V4.90 gebaut + deployed, UNCOMMITTET)
+
+### Chat-EMPFANGEN BESTAETIGT (User 2026-07-17)
+Eingehende Nachrichten werden vorgelesen — der ChatReaderService
+(IChatGui.ChatMessage, Say/Ruf/Gruppe/Allianz/Fluester/FC/System/Fehler)
+funktioniert in-game. War bis dahin nie bestaetigt.
+
+### V4.90: Chat-SENDEN (Tipp-Echo + Kanal) + Chat NACHLESEN
+User-Auftrag: "die chats barrierefrei machen". Empfangen laeuft (s.o.),
+also SENDEN + Nachlesen. KEIN programmatisches Senden (ToS): das Spiel
+oeffnet/tippt/sendet selbst (Enter/Tab/Alt), wir sagen nur an.
+
+TEIL 1 - Tipp-Echo (BEIDES per Log 21:37 schon belegt):
+- AddonChatLog.TextInput @608 (Direktzeiger), AtkComponentTextInput.
+  IsActive = Gate "Eingabemodus offen", EvaluatedString = Text.
+- OnChatLogUpdate (PostUpdate "ChatLog"), gegated auf IsActive; Tipp-Echo
+  via SpeakTextEchoDiff. LOG-BEWEIS 21:37: 'f'->'ff'->'fff'->'ffff' und
+  Loeschen zurueck bis '' -> Echo funktioniert.
+- Generischer Fokus-Leser stumm bei IsChatInputActive().
+- Config EchoChatInput (Default true).
+
+TEIL 2 - Kanal-Ansage (GELOEST, User-Meldung "hoere nur chat eingabe"):
+- AddonChatLog.CurrentChannelTextNode @335 (AtkTextNode) = Kanal-Label
+  wie das Spiel es rendert (lokalisiert, kein int-Raten!). ReadChatChannel
+  liest ->NodeText, sanitized. Ansage beim Oeffnen "Chat-Eingabe, <Kanal>"
+  und bei Kanalwechsel waehrend des Tippens (Tab/Alt) der neue Kanal.
+- (RaptureShellModule.ChatType lieferte im Test 1/2/4, aber der Textnode
+  ist die verlaessliche Quelle - int->Name bleibt ungenutzt/ungesichert.)
+
+TEIL 3 - Nachlese-BROWSER mit Kategorien (User-Wunsch, praezisiert):
+"kanalwechsel mit strg+, und ., nachrichten im kanal lesen , und .,
+buffer fuer dialoge und system getrennt".
+- Neuer MessageHistoryService: pro Kategorie ein Ringpuffer (50).
+  Kategorien (Durchschalt-Reihenfolge): Dialoge, Sagen, Rufen, Gruppe,
+  Allianz, Fluestern, Freie Gesellschaft, System(+Fehler).
+- ChatReaderService schreibt Chat rein (Kategorie per XivChatType, ohne
+  Kanal-Prefix - Kategorie traegt ihn); UIReaderService.OnTalkUpdate
+  spiegelt NPC-Dialoge in "Dialoge".
+- Tasten (Komma/Punkt im Spiel NICHT belegt, Dump 2026-07-17):
+  Strg+, / Strg+. = Kategorie zurueck/vor ("Gruppe, 4 Nachrichten" /
+  "..., leer"); , / . = aeltere/neuere Nachricht ("i von n: text",
+  Grenzen "Anfang/Ende des Verlaufs").
+- Config KeyChatCatPrev/Next + KeyChatReadOlder/Newer. ERSETZT das
+  V4.90-Provisorium Umschalt+F1/F2 (war uncommittet/ungetestet).
+- ABSICHERUNG: KeyNameToVK += ","=0xBC "."=0xBE; UpdateKeyEdges prueft
+  IKeyState.IsVirtualKeyValid (kein Crash) + loggt einmalig, falls das
+  Spiel Komma/Punkt nicht trackt -> dann greifen die Tasten nicht und wir
+  brauchen andere (VERIFIKATIONSPUNKT).
+
+TEIL 4 - Kampflog: eigene Aktion vorlesen (User-Wunsch "wenn ein zauber
+ausgefuehrt wird die meldung vom spiel hoeren"):
+- Weg gewaehlt: echte Spiel-Meldung "Du wirkst X." aus dem Kampflog
+  (via IChatGui, NICHT synthetisch). ChatReaderService.TryHandleCombat
+  laeuft VOR ShouldRead. XivChatType-Basis (Low-7-Bits) Action=43 =
+  Aktion eingesetzt (game-api.md "Kampflog").
+- Erste Fassung liest ALLE Aktions-Zeilen (Typ 43, eigen UND fremd) +
+  loggt jede roh ([Combat] Aktion type=0x…). PROBE: aus dem Log filtere
+  ich dann den EIGEN-Code (hohe Bits) heraus, damit nur deine Aktionen
+  kommen. Auch neue Nachlese-Kategorie "Kampf". Config ReadCombatMessages
+  jetzt Default true.
+Build 0/0, deployt (Manifest 4.90.0.0).
+
+### Beim naechsten Test (V4.90)
+1. "Version 4 Punkt 90 bereit".
+2. Enter (Chat oeffnen): kommt "Chat-Eingabe, <Kanal>" MIT Kanalname
+   (Sagen/Gruppe/...)? Kanal vorher wechseln (Alt+S/G/P/R): stimmt er?
+   Wechsel WAEHREND offen (Tab): wird der neue Kanal angesagt?
+3. Tippen: jedes Zeichen? Ruecktaste/"leer"? Enter senden: eigene
+   Nachricht kommt als Vorlesung zurueck?
+4. NACHLESE-BROWSER (WICHTIG - klaert ob Komma/Punkt greifen):
+   - Strg+. mehrmals: schaltet die Kategorie durch (Dialoge -> Sagen ->
+     ... -> System) mit Anzahl-Ansage? Strg+, zurueck?
+   - In einer Kategorie mit Nachrichten , und . druecken: blaettert es
+     "i von n: text"? Grenzen angesagt?
+   - Falls GAR NICHTS passiert: Log-Warnung "VK 0xBC/0xBE wird nicht
+     getrackt"? Dann sieht Dalamud Komma/Punkt nicht -> andere Tasten.
+5. Falls Kanal leer bleibt (nur "Chat-Eingabe"): Log an Claude -
+   CurrentChannelTextNode evtl. anders auszulesen.
+6. KAMPFLOG: eine Aktion einsetzen/Zauber wirken -> kommt "Du wirkst X."?
+   WICHTIG fuers Filtern: ein paar EIGENE Aktionen + (falls moeglich) eine
+   FREMDE (Gegner/Gruppe) ausloesen, dann Log an Claude - die [Combat]-
+   Zeilen (type=0x…) zeigen, wie eigen vs. fremd codiert ist, damit ich auf
+   nur DEINE Aktionen filtere. Zu geschwaetzig? Sag Bescheid (dann nur
+   Zauber mit Cast, oder Ein/Aus-Schalter).
+
+---
+
+## STAND 2026-07-17 abends (V4.89 COMMITTET + RELEASED v4.89)
 
 ### RELEASE v4.89 VEROEFFENTLICHT (17.07. abends)
 Code-Commit 1e4ee57 (V4.82-V4.89) + repo.json-Commit 44ec959 (Version

@@ -249,6 +249,51 @@ Zusammenfassung des offiziellen Handbuchs. VORBEHALT: Sonderzeichen-Tasten
 ### Chat
 - Enter: Chat öffnen; X: Textkommando; Alt+S/G/R/…: Chatmodi
 
+#### Kampflog / eigene Aktionen vorlesen (V4.90)
+Beim Einsetzen einer Aktion schreibt das Spiel "Du wirkst X." ins Kampflog;
+das kommt über `IChatGui.ChatMessage` als eigener `XivChatType`.
+- Benannte Basis-LogKinds (Dalamud `XivChatType`, = Low-7-Bits des Wertes):
+  Damage=41, Miss=42, **Action=43** ("setzt Aktion ein"), Item=44,
+  Healing=45, GainBuff=46, GainDebuff=47, LoseBuff=48, LoseDebuff=49.
+- Reale Nachrichten können als KOMBINIERTE Werte ankommen (Quell-/Ziel-Bits
+  im höheren Byte), darum `(int)type & 0x7F` auf die Basis maskieren
+  (robust, egal ob flach oder kombiniert).
+- OFFEN/PROBE: ob "eigene" vs. "fremde" Aktion über die hohen Bits
+  unterscheidbar ist, ist NICHT verifiziert - ChatReaderService.TryHandleCombat
+  loggt jede Aktions-Zeile roh ([Combat] Aktion type=0x…), damit der
+  Eigen-Code aus einem Live-Log gefiltert werden kann. Bis dahin werden ALLE
+  Aktions-Zeilen gelesen (Config ReadCombatMessages). Auch Nachlese-Kategorie
+  "Kampf".
+
+#### Chat SENDEN (Tipp-Echo im Eingabefeld) — ilspycmd-verifiziert 2026-07-17
+NVDA liest das Spiel-Chatfeld nicht; das Plugin spricht die getippten
+Zeichen selbst (V4.90). Quelle:
+- `AddonChatLog` (Addon-Name „ChatLog", IMMER sichtbar).
+  - `TextInput` @608 = `AtkComponentTextInput*` (Direktzeiger, kein
+    Node-Scan nötig).
+  - `TabIndex` @684 / `TabCount` @685 / `TabNames` (FixedSizeArray5) =
+    die Chat-REITER (Allgemein/Kampf/…), NICHT der Sende-Kanal.
+- `AtkComponentTextInput`:
+  - `IsActive` (bool) = true, solange der Eingabemodus offen ist
+    (Enter geöffnet). DAS Gate, damit das Echo nicht jeden Frame läuft.
+  - `AtkComponentInputBase.EvaluatedString` = getippter Text (wie beim
+    CharaMake-Feld). Dazu `CursorPos`, `SelectionStart/End` für späteren
+    Feinschliff (Editieren mittendrin).
+- Aktiver Kanal (Ansage): `AddonChatLog.CurrentChannelTextNode` @335
+  (`AtkTextNode*`) trägt das Kanal-Label, wie das Spiel es rendert -
+  lokalisiert und immer korrekt (via `->NodeText.ToString()`, dann
+  sanitizen). DAS ist die Quelle für die Kanal-Ansage - KEIN int→Name-Raten
+  nötig. (V4.90 nutzt genau das.)
+  - `RaptureShellModule.Instance()->ChatType` @4048 (int) ist der Kanal als
+    Zahl; Testwerte 2026-07-17: 1/2/4 bei Alt-Umschaltung. `TempChatType`
+    @4284; Flüster-Ziel `TellName` @4056 / `TellWorld` @4160 / `TellWorldId`
+    @4280. Die int→Name-Zuordnung ist NICHT verifiziert (Agent-Enum
+    `ChatChannel` nur Say=1/Party=2/Alliance=3, evtl. andere Nummerierung) -
+    darum wird für die Ansage der Textnode genutzt, nicht die Zahl.
+- Senden (Enter) und Kanalwechsel (Tab/Alt+Taste) bleiben spieleigen —
+  das Plugin sagt nur an. Gesendetes echot der ChatReaderService zurück
+  (eigene /say-Nachricht kommt als XivChatType.Say).
+
 ### Menüs (Auswahl)
 - NUM0 bestätigen, NUM, (Komma) abbrechen, NUM* Unterkommando
 - NUM8/2/4/6 Cursor, NUM9/NUM7 Reiter, NUM+ Hauptmenü, NUM- System

@@ -45,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
+    private readonly MessageHistoryService _history;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly EmoteService       _emote;
@@ -52,8 +53,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "4.89";
-    private const string PluginVersionTag = "Namenseingabe: Vorname/Nachname werden beim Fokuswechsel angesagt (Label per Naehe zum Feld) + Tipp-Echo pro Feld; Zaehler-Spam stumm";
+    private const string PluginVersion    = "4.91";
+    private const string PluginVersionTag = "Chat bestaetigt (Tipp-Echo, Kanal-Ansage, Nachlese-Browser); Kampflog-Vorlesen aus V4.90 wieder entfernt (kam in-game nie an)";
 
     public Plugin()
     {
@@ -122,8 +123,9 @@ public sealed class Plugin : IDalamudPlugin
         _routes       = new RouteService(PluginInterface, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _config);
-        _chatReader = new ChatReaderService(ChatGui, _tolk, _config);
+        _history    = new MessageHistoryService(_tolk);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config);
+        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -235,6 +237,10 @@ public sealed class Plugin : IDalamudPlugin
             ("Skill-Ziel-Taste", _config.KeySkillSlot),
             ("Skill belegen",  _config.KeySkillAssign),
             ("Skill-Ziel-Leiste", _config.KeySkillBar),
+            ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
+            ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
+            ("Nachlese älter", _config.KeyChatReadOlder),
+            ("Nachlese neuer", _config.KeyChatReadNewer),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -260,6 +266,10 @@ public sealed class Plugin : IDalamudPlugin
         // Buchstabe). H und L sind bare belegt (MENU_CRAFT / MENU_LINKSHELL),
         // aber mit Modifier frei - nur so (Strg+H, Strg+L) konfiguriert.
         ["N"] = 0x4E, ["H"] = 0x48, ["L"] = 0x4C, ["Numpad3"] = 0x63, ["Numpad5"] = 0x65,
+        // Nachlese-Browser (V4.90): Komma/Punkt sind im Spiel nicht belegt
+        // (Keybind-Dump 2026-07-17). VK_OEM_COMMA=0xBC, VK_OEM_PERIOD=0xBE.
+        // Gueltigkeit prueft UpdateKeyEdges via IKeyState.IsVirtualKeyValid.
+        [","] = 0xBC, ["."] = 0xBE,
     };
 
     private readonly bool[] _keyWasDown     = new bool[256];
@@ -272,10 +282,24 @@ public sealed class Plugin : IDalamudPlugin
 
     // Edge detection once per frame and per VK: multiple bindings can share one
     // physical key (N, Strg+N, ...) and must all see the same "just pressed" edge.
+    private readonly HashSet<int> _warnedInvalidVk = new();
+
     private void UpdateKeyEdges()
     {
         foreach (var vk in KeyNameToVK.Values)
         {
+            // Dalamud's IKeyState only tracks keys the game itself indexes;
+            // reading an unsupported VK throws. Guard so a key the game does
+            // not track (verify comma/period at runtime) never crashes the
+            // frame - it just stays unpressed, logged once for diagnosis.
+            if (!KeyState.IsVirtualKeyValid(vk))
+            {
+                if (_warnedInvalidVk.Add(vk))
+                    Log.Warning($"Taste VK 0x{vk:X2} wird von Dalamud/dem Spiel nicht getrackt - Belegung bleibt wirkungslos.");
+                _keyJustPressed[vk] = false;
+                _keyWasDown[vk] = false;
+                continue;
+            }
             var down = KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk];
             _keyJustPressed[vk] = down && !_keyWasDown[vk];
             _keyWasDown[vk] = down;
@@ -417,6 +441,10 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeySkillSlot))     _hotbar.CycleTargetSlot();
         if (IsJustPressed(_config.KeySkillAssign))   _hotbar.AssignSelectedSkill();
         if (IsJustPressed(_config.KeySkillBar))      _hotbar.CycleTargetBar();
+        if (IsJustPressed(_config.KeyChatCatPrev))   _history.SwitchCategory(-1);
+        if (IsJustPressed(_config.KeyChatCatNext))   _history.SwitchCategory(+1);
+        if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
+        if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 — UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)

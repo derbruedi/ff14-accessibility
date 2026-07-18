@@ -30,6 +30,7 @@ public sealed class UIReaderService : IDisposable
     private readonly InventoryService _inventory;
     private readonly GearInfoService _gearInfo;
     private readonly BestiaryService _bestiary;
+    private readonly MessageHistoryService _history;
     private readonly Configuration   _config;
     private readonly List<string>    _titleMenuItems = [];
 
@@ -227,7 +228,7 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, Configuration config)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -237,6 +238,7 @@ public sealed class UIReaderService : IDisposable
         _inventory      = inventory;
         _gearInfo       = gearInfo;
         _bestiary       = bestiary;
+        _history        = history;
         _config         = config;
         RegisterHooks();
     }
@@ -336,6 +338,12 @@ public sealed class UIReaderService : IDisposable
         // beim Feldwechsel das Label an + Tipp-Echo pro Feld.
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "_CharaMakeCharaName", OnCharaMakeNameOpen);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "_CharaMakeCharaName", OnCharaMakeNameUpdate);
+
+        // Chat-Senden: Tipp-Echo im immer sichtbaren ChatLog-Eingabefeld.
+        // Gate im Handler auf AddonChatLog.TextInput->IsActive (nur waehrend
+        // der Eingabemodus offen ist). ChatLog steht in HudNoiseAddons, der
+        // generische Scanner ist dort also ohnehin still.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ChatLog", OnChatLogUpdate);
 
         // -- Benachrichtigungen -----------------------------------
         foreach (var name in NotificationAddons)
@@ -769,6 +777,7 @@ public sealed class UIReaderService : IDisposable
         var probe = string.Join(" ", segments.Select(s => $"[id{s.Id}]='{(s.Text.Length > 40 ? s.Text[..40] + "..." : s.Text)}'"));
         _log.Info($"[Accessibility] {name} Dialog-Nodes: {probe}");
         _tolk.SpeakInterrupt(spoken);
+        _history.Add(MessageHistoryService.Category.Dialogue, spoken);
     }
 
     // -- ArmouryBoard (Arsenalkammer) ---------------------------------
@@ -944,6 +953,17 @@ public sealed class UIReaderService : IDisposable
         // (Knoepfe wie "Bestaetigen" liegen NICHT in einem TextInput und werden
         // weiter generisch gelesen).
         if (IsFocusInsideNameField(node))
+        {
+            _lastFocusedNodePtr  = (nint)node;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
+        // Chat-Eingabe: der dedizierte OnChatLogUpdate macht das Tipp-Echo.
+        // Solange das Chatfeld Eingaben annimmt, schweigt der generische
+        // Fokus-Leser (er wuerde sonst den Chat-Zeilen-/Zaehler-Node lesen).
+        if (IsChatInputActive())
         {
             _lastFocusedNodePtr  = (nint)node;
             _lastFocusedNodeText = string.Empty;
@@ -2989,6 +3009,104 @@ public sealed class UIReaderService : IDisposable
         SpeakTextEchoDiff(_lastTextInputEcho, text);
         _lastTextInputEcho = text;
         _log.Info($"[Echo] Textfeld: '{TolkService.Sanitize(text)}'");
+    }
+
+    // -- Chat-Senden: Tipp-Echo im Chat-Eingabefeld ------------------
+    // Der ChatLog ist IMMER sichtbar; das Eingabefeld nimmt nur nach dem
+    // Oeffnen (Enter) Text an. Gate: AddonChatLog.TextInput->IsActive
+    // (ilspycmd 2026-07-17: AtkComponentTextInput.IsActive, AddonChatLog.
+    // TextInput @608). Text aus EvaluatedString wie beim CharaMake-Feld.
+    // Senden/Kanalwechsel bleibt spieleigen - wir sagen nur an.
+    // Kanal-Name: RaptureShellModule.ChatType (@4048) ist der aktive Kanal,
+    // aber die int->Name-Zuordnung ist noch UNVERIFIZIERT (nur der Agent-
+    // Enum Say/Party/Alliance ist gesichert, und er teilt sich die Nummerierung
+    // moeglicherweise NICHT mit ChatType). Darum wird der Rohwert nur geloggt
+    // und noch NICHT gesprochen - die Kanal-Ansage folgt nach dem Test.
+
+    private string _lastChatEcho = string.Empty;
+    private bool   _chatInputWasActive;
+    private string _lastChatChannel = string.Empty;
+
+    /// <summary>
+    /// True while the game's chat input box is accepting text
+    /// (AddonChatLog.TextInput-&gt;IsActive). Used to mute the generic focus
+    /// reader while the dedicated echo handles the field.
+    /// </summary>
+    private unsafe bool IsChatInputActive()
+    {
+        var ptr = _gameGui.GetAddonByName("ChatLog");
+        if (ptr.IsNull) return false;
+        var input = ((AddonChatLog*)(nint)ptr)->TextInput;
+        return input != null && input->IsActive;
+    }
+
+    /// <summary>
+    /// Typing echo for the game's chat input (AddonChatLog.TextInput). Fires
+    /// every frame while the chat log is visible, but only speaks while the
+    /// input is active. Announces "Chat-Eingabe" on open and speaks the diff
+    /// (chars / "X gelöscht" / "leer") via SpeakTextEchoDiff while typing.
+    /// </summary>
+    private unsafe void OnChatLogUpdate(AddonEvent type, AddonArgs args)
+    {
+        if (!_config.EchoChatInput) return;
+
+        var addon = (AddonChatLog*)(nint)args.Addon;
+        if (addon == null) return;
+        var input = addon->TextInput;
+        if (input == null) return;
+
+        if (!input->IsActive)
+        {
+            if (_chatInputWasActive)
+            {
+                _chatInputWasActive = false;
+                _lastChatEcho       = string.Empty;
+                _lastChatChannel    = string.Empty;
+            }
+            return;
+        }
+
+        var text    = input->AtkComponentInputBase.EvaluatedString.ToString();
+        var channel = ReadChatChannel(addon);
+
+        if (!_chatInputWasActive)
+        {
+            _chatInputWasActive = true;
+            _lastChatEcho       = text;
+            _lastChatChannel    = channel;
+            var head = channel.Length > 0 ? $"Chat-Eingabe, {channel}" : "Chat-Eingabe";
+            _tolk.SpeakInterrupt(text.Length > 0 ? $"{head}, {text}" : head);
+            _log.Info($"[Chat] Eingabe offen. Kanal='{channel}' Inhalt='{TolkService.Sanitize(text)}'");
+            return;
+        }
+
+        // Kanalwechsel waehrend des Tippens (Tab/Alt+Taste): ansagen.
+        if (channel.Length > 0 && channel != _lastChatChannel)
+        {
+            _lastChatChannel = channel;
+            _tolk.SpeakInterrupt(channel);
+            _log.Info($"[Chat] Kanalwechsel: '{channel}'");
+        }
+
+        if (text != _lastChatEcho)
+        {
+            SpeakTextEchoDiff(_lastChatEcho, text);
+            _lastChatEcho = text;
+            _log.Info($"[Chat] Echo: '{TolkService.Sanitize(text)}'");
+        }
+    }
+
+    /// <summary>
+    /// The current send channel's label as the game renders it
+    /// (AddonChatLog.CurrentChannelTextNode @335, ilspycmd 2026-07-17) -
+    /// localized and always correct, so no int-&gt;name mapping is needed.
+    /// Sanitized (strips glyph/icon prefixes) and trimmed.
+    /// </summary>
+    private static unsafe string ReadChatChannel(AddonChatLog* addon)
+    {
+        var node = addon->CurrentChannelTextNode;
+        if (node == null) return string.Empty;
+        return TolkService.Sanitize(node->NodeText.ToString()).Trim();
     }
 
     /// <summary>
@@ -5219,6 +5337,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "CharaMakeDataInputString", OnCharaMakeInputUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_CharaMakeCharaName", OnCharaMakeNameOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeCharaName", OnCharaMakeNameUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "ChatLog", OnChatLogUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "TitleDCWorldMap", OnDCWorldMapOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "TitleDCWorldMap", OnDCWorldMapUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "TitleDCWorldMap", OnDCWorldMapReceive);

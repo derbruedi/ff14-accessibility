@@ -47,6 +47,13 @@ public sealed class Configuration : IPluginConfiguration
     public string KeySkillSlot     = "Umschalt+F9";     // Ziel-Taste weiterschalten (sagt aktuelle Belegung an)
     public string KeySkillAssign   = "Umschalt+F10";    // Gewählten Skill auf die Ziel-Taste legen
     public string KeySkillBar      = "Umschalt+F11";    // Ziel-Leiste weiterschalten (Kommandomenü 1-10; Umschalt+F11 laut Keybind-Dump frei)
+    // Nachlese-Browser (V4.90): kategorisierter Chat-/Dialog-/System-Verlauf.
+    // Komma und Punkt sind im Spiel NICHT belegt (Keybind-Dump 2026-07-17) und
+    // werden bei aktivem Textfeld vom Spiel verbraucht (dann kein Fehlauslösen).
+    public string KeyChatCatPrev   = "Strg+,";          // Nachlese: vorherige Kategorie (Kanal/Dialoge/System)
+    public string KeyChatCatNext   = "Strg+.";          // Nachlese: nächste Kategorie
+    public string KeyChatReadOlder = ",";               // Nachlese: ältere Nachricht in der Kategorie
+    public string KeyChatReadNewer = ".";               // Nachlese: neuere Nachricht in der Kategorie
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -80,6 +87,10 @@ public sealed class Configuration : IPluginConfiguration
         KeySkillSlot     = defaults.KeySkillSlot;
         KeySkillAssign   = defaults.KeySkillAssign;
         KeySkillBar      = defaults.KeySkillBar;
+        KeyChatCatPrev   = defaults.KeyChatCatPrev;
+        KeyChatCatNext   = defaults.KeyChatCatNext;
+        KeyChatReadOlder = defaults.KeyChatReadOlder;
+        KeyChatReadNewer = defaults.KeyChatReadNewer;
     }
 
     // Chat
@@ -90,7 +101,11 @@ public sealed class Configuration : IPluginConfiguration
     public bool ReadTellChat       = true;
     public bool ReadFCChat         = true;
     public bool ReadSystemMessages = true;
-    public bool ReadCombatMessages = false;
+    // (V4.91: ReadCombatMessages entfernt - das Kampflog-Vorlesen aus V4.90 kam
+    // in-game nie an und wurde samt Nachlese-Kategorie "Kampf" zurueckgebaut.)
+    // Tipp-Echo im Chat-Eingabefeld (Senden): NVDA liest das Spiel-Chatfeld
+    // nicht, daher spricht das Plugin die getippten Zeichen (V4.90).
+    public bool EchoChatInput      = true;
 
     // Toasts (V4.80): Bildschirm-Popups des Spiels via IToastGui. Fehler-Toasts
     // ("Das Ziel ist zu weit entfernt.") leben NUR im _TextError-Overlay:
