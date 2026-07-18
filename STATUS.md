@@ -49,6 +49,9 @@ WICHTIG FUER DEN UEBERGANG: die im Umlauf befindliche 1.0.0-EXE kennt den
 Mechanismus noch nicht. Sie muss EINMAL von Hand ersetzt werden; ab 1.1.0
 laeuft es automatisch.
 
+VOM USER BESTAETIGT (2026-07-18): "ok funktioniert" - das Selbst-Update
+laeuft auch beim Nutzer auf echtem Weg durch.
+
 ---
 
 ## STAND 2026-07-18 (V4.91 gebaut + deployed)
