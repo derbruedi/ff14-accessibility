@@ -59,7 +59,7 @@ public sealed class DalamudPluginsService
         }
 
         _index = ((_index + direction) % _plugins.Count + _plugins.Count) % _plugins.Count;
-        _tolk.Speak($"{_index + 1} von {_plugins.Count}: {Describe(_plugins[_index])}");
+        _tolk.Speak($"{Describe(_plugins[_index])}, {_index + 1} von {_plugins.Count}");
     }
 
     /// <summary>

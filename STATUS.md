@@ -3,7 +3,95 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-19, V5.23: Deklinations-Namen aufgeloest)
+## STAND JETZT (2026-07-19, V5.25: HP-Ansage weg von Strg+H)
+
+USER-MELDUNG: Strg+H (HP/MP) funktioniert nicht mehr, seit das
+Handwerker-Notizbuch da ist.
+
+URSACHE IM LOG BEWIESEN (nicht vermutet), ein einziger Tastendruck:
+  19:19:00.837  [Speak] 'HP 100 Prozent, MP 100 Prozent.'
+  19:19:00.850  RecipeNote Fokus: HANDWERKER-NOTIZBUCH
+  19:19:00.850  [Speak] 'HANDWERKER-NOTIZBUCH'
+Die HP-Ansage FEUERT also - sie wird 13 ms spaeter von der
+Fenster-Ansage (SpeakInterrupt) abgeschnitten. Fuer den User klingt das
+wie "geht nicht".
+
+Da IsJustPressed exakt auf gedruecktes Strg prueft, MUSS Strg gehalten
+worden sein - das Spiel loeste MENU_CRAFT (Grundtaste H) trotzdem aus.
+Der Keybind-Dump listet Strg+H zwar als "frei"; das Spiel wertet hier
+aber nur die Grundtaste.
+
+OFFEN GEBLIEBEN (ehrlich): Strg+L laeuft sauber (Log 19:16:49, 19:18:35,
+19:18:42 "Stufe 11 ..."), obwohl L = MENU_LINKSHELL ist. VERMUTUNG: der
+User hat keine Linkshell freigeschaltet, das Notizbuch aber schon -
+passt zu "seit man das Notizbuch HAT". NICHT belegt.
+
+FIX (User-Wahl): HP/MP liegt jetzt auf **Strg+Entf**. Entf taucht im
+Keybind-Dump NIRGENDS auf - damit kann sich kein Spielfenster
+dazwischenschieben. Config-Migration V6->V7 stellt alte Konfigurationen
+automatisch von "Strg+H" um; KeyNameToVK kennt jetzt "Entf" (VK 0x2E);
+Hilfetext angepasst.
+
+VERWORFEN und WARUM: Umschalt+Numpad3 kommt bei aktivem NumLock gar nicht
+beim Plugin an (steht schon in Migration V5->V6). Strg+Umschalt+H waere
+wirkungslos - die Grundtaste H bleibt das Problem. Einfg ist NVDAs
+eigene Modifiertaste.
+
+Enthaelt V5.24 (Zaehler ans Ende), siehe unten. Beides noch ungetestet.
+Build 0/0, deployt (5.25.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.25)
+1. "Version 5 Punkt 25 bereit".
+2. Strg+Entf: muss HP und MP ansagen, OHNE dass ein Fenster aufgeht.
+3. Gegenprobe: Strg+H darf jetzt nichts mehr ausloesen (ausser dem
+   Notizbuch, das ist die Spiel-Taste).
+4. Offen aus V5.24: Taste N - Name zuerst, "1 von 30" am Schluss?
+5. Offen aus V5.23: sagen "Gefraessiger Yarzon" und "Rostiger Kobalos"
+   jetzt ihren Fundort?
+
+---
+
+## STAND (2026-07-19, V5.24: Zaehler ans ENDE der Ansage)
+
+USER-WUNSCH: bei den NPC-Ansagen "und so" soll das "1 von 30" nicht mehr
+vorne stehen, sondern zum Schluss. Der Name ist das, worauf der User
+wartet - der Zaehler haelt ihn nur auf.
+
+GEAENDERT - Objekt-Browser (Taste N) und die gleichartigen Zykel-Browser:
+  vorher: "1 von 30: Ulta, NPC, 12 Meter, vorne links."
+  jetzt : "Ulta, NPC, 12 Meter, vorne links, 1 von 30."
+
+Betroffen:
+  - NavigationService: Objekte/NPCs, Quest-Ziele, Wegpunkte (Taste N)
+  - EmoteService, HotbarService, MessageHistoryService,
+    DalamudPluginsService - gleiches Muster, mitgezogen damit es
+    ueberall gleich klingt
+
+DETAIL Objekt-Browser: die Warnung "Achtung, nicht anvisiert" bleibt GANZ
+am Schluss, hinter dem Zaehler - eine Warnung soll das letzte sein, was
+haengen bleibt.
+DETAIL Quest-Ziele: der Zaehler wird erst nach den Wegbeschreibungen
+("Dorthin ueber ...") angehaengt, sonst stuende er mitten im Satz.
+
+NICHT ANGEFASST: die Listen-Navigation in SPIELMENUES (UIReaderService).
+Das ist ein anderer Mechanismus, und der Wunsch bezog sich auf die
+Objekt-Ansagen. Im Bestiarium ist der Zaehler seit V5.21 ohnehin weg.
+Falls es dort auch stoert, ist es dieselbe Umstellung.
+
+Build 0/0, deployt (5.24.0.0). Versionen csproj + Plugin.cs synchron.
+NICHT releast - v5.23 ist der letzte veroeffentlichte Stand.
+
+### Beim naechsten Test (V5.24)
+1. "Version 5 Punkt 24 bereit".
+2. Taste N druecken: Name muss ZUERST kommen, "1 von 30" am Schluss.
+3. Ebenso pruefen: Quest-Ziele und Wegpunkte (Kategorie mit Strg+N),
+   Emotes, Faehigkeiten, Nachrichtenverlauf, Plugin-Liste.
+4. Offen aus V5.23 (noch ungetestet): sagen "Gefraessiger Yarzon" und
+   "Rostiger Kobalos" im Bestiarium jetzt ihren Fundort?
+
+---
+
+## STAND (2026-07-19, V5.23: Deklinations-Namen aufgeloest)
 
 V5.21-FILTER BESTAETIGT (Log 18:27:34-18:28:11): Im Bestiarium wurden
 NUR Monster gesprochen - keine "Verguetung", keine "Thaumaturg 01".

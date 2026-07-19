@@ -44,8 +44,9 @@ public sealed class EmoteService
 
         _index = ((_index + direction) % _emotes.Count + _emotes.Count) % _emotes.Count;
         var (_, name, command) = _emotes[_index];
-        var msg = $"{_index + 1} von {_emotes.Count}: {name}";
+        var msg = name;
         if (!string.IsNullOrEmpty(command)) msg += $", Befehl {command}";
+        msg += $", {_index + 1} von {_emotes.Count}";
         _tolk.SpeakInterrupt(msg);
     }
 

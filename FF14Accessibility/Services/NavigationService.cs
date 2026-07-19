@@ -286,9 +286,13 @@ public sealed class NavigationService
             ? DescribeGatheringPoint(obj)
             : $"{NpcPrefix(obj)}{obj.Name.TextValue}, {DescribeKind(obj.ObjectKind)}";
 
-        var text = $"{_cycleIndex + 1} von {count}: {description}, " +
+        // Position goes LAST: the name is what the user is listening for, the
+        // counter only tells them how far they have cycled (user wish
+        // 2026-07-19). The rejection warning stays at the very end.
+        var text = $"{description}, " +
                    $"{FormatDistance(distance)}, " +
-                   $"{CalculateDirection(player, obj.Position)}." +
+                   $"{CalculateDirection(player, obj.Position)}, " +
+                   $"{_cycleIndex + 1} von {count}." +
                    (rejected ? " Achtung, nicht anvisiert." : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
         _tolk.SpeakInterrupt(text);
@@ -339,7 +343,7 @@ public sealed class NavigationService
         string text;
         if (dest.InCurrentZone)
         {
-            text = $"{_cycleIndex + 1} von {count}: {level}{story}{dest.QuestName}{todo}, " +
+            text = $"{level}{story}{dest.QuestName}{todo}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
                    $"{CalculateDirection(player, dest.Position)}.{detail}";
         }
@@ -349,7 +353,7 @@ public sealed class NavigationService
             // and the transition that leads there (BFS over the map graph).
             var zone = _places.GetMapName(dest.MapId);
             var hop  = _places.FindFirstHopToMap(dest.MapId, out var hops);
-            text = $"{_cycleIndex + 1} von {count}: {level}{story}{dest.QuestName}{todo}, " +
+            text = $"{level}{story}{dest.QuestName}{todo}, " +
                    (string.IsNullOrEmpty(zone) ? "in einem anderen Gebiet." : $"im Gebiet {zone}.");
             if (hop != null)
             {
@@ -361,6 +365,8 @@ public sealed class NavigationService
             }
             text += detail;
         }
+        // Counter last, after the route hints - see CycleObject.
+        text += $" {_cycleIndex + 1} von {count}.";
         _log.Info($"[Quest] Auswahl: {text}");
         _tolk.SpeakInterrupt(text);
     }
@@ -434,9 +440,10 @@ public sealed class NavigationService
         SelectedPlaceDestination = place;
 
         // Direction uses X/Z only - the placeholder Y does not affect it.
-        var text = $"{_cycleIndex + 1} von {count}: {place.Name}, {place.TypeLabel}, " +
+        var text = $"{place.Name}, {place.TypeLabel}, " +
                    $"{FormatDistance(Distance2D(player.Position, place.Position))}, " +
-                   $"{CalculateDirection(player, place.Position)}.";
+                   $"{CalculateDirection(player, place.Position)}, " +
+                   $"{_cycleIndex + 1} von {count}.";
         _log.Info($"[Orte] Auswahl: {text} pos=({place.Position.X:F1}|{place.Position.Z:F1})");
         _tolk.SpeakInterrupt(text);
     }

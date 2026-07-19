@@ -195,9 +195,10 @@ public sealed class HotbarService
         _skillIndex = ((_skillIndex + direction) % _skills.Count + _skills.Count) % _skills.Count;
         var (id, name, level) = _skills[_skillIndex];
 
-        var msg = $"{_skillIndex + 1} von {_skills.Count}: {name}, Stufe {level}";
+        var msg = $"{name}, Stufe {level}";
         var location = FindSlotLocationFor(id);
         if (location != null) msg += $", liegt auf {location}";
+        msg += $", {_skillIndex + 1} von {_skills.Count}";
         _tolk.SpeakInterrupt(msg);
     }
 

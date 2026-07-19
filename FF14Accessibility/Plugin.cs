@@ -54,8 +54,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.23";
-    private const string PluginVersionTag = "Positions-RÃ¼ckfall statt Ersatz, Reihenfolge korrigiert";
+    private const string PluginVersion    = "5.25";
+    private const string PluginVersionTag = "Zaehler ans Ende, HP-Ansage auf Strg+Entf";
 
     public Plugin()
     {
@@ -107,6 +107,18 @@ public sealed class Plugin : IDalamudPlugin
             if (_config.KeyRoutePreview == "Strg+Numpad3") _config.KeyRoutePreview = "Strg+Numpad5";
             if (_config.KeyWalkGuide == "Umschalt+Numpad3") _config.KeyWalkGuide = "Strg+Numpad3";
             _config.Version = 6;
+            PluginInterface.SavePluginConfig(_config);
+        }
+        if (_config.Version < 7)
+        {
+            // V5.25: Strg+H opened the crafting log ON TOP of the HP readout.
+            // Log-verified 2026-07-19 (19:19:00.837 'HP 100 Prozent' -> .850
+            // RecipeNote opens and its announcement cuts the HP one off): the
+            // game acts on the BASE key H (MENU_CRAFT) and ignores the Ctrl
+            // modifier here. Only a key the game leaves unbound entirely is
+            // safe, so the readout moves to Ctrl+Delete.
+            if (_config.KeyCombatStatus == "Strg+H") _config.KeyCombatStatus = "Strg+Entf";
+            _config.Version = 7;
             PluginInterface.SavePluginConfig(_config);
         }
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
@@ -276,6 +288,9 @@ public sealed class Plugin : IDalamudPlugin
         // (Keybind-Dump 2026-07-17). VK_OEM_COMMA=0xBC, VK_OEM_PERIOD=0xBE.
         // Gueltigkeit prueft UpdateKeyEdges via IKeyState.IsVirtualKeyValid.
         [","] = 0xBC, ["."] = 0xBE,
+        // V5.25: Entf ist im Keybind-Dump NIRGENDS belegt - anders als H, wo
+        // das Spiel trotz Strg-Modifier MENU_CRAFT ausloeste. VK_DELETE=0x2E.
+        ["Entf"] = 0x2E,
     };
 
     private readonly bool[] _keyWasDown     = new bool[256];
@@ -660,7 +675,7 @@ public sealed class Plugin : IDalamudPlugin
             "Strg+F2, aktives Fenster. " +
             "Strg+F10, MenÃ¼ vorlesen. " +
             "Strg+F11, Sprache stoppen. " +
-            "Strg+H, HP und MP ansagen. " +
+            "Strg+Entfernen, HP und MP ansagen. " +
             "Strg+F9, gewÃ¤hlte Aktionsleiste vorlesen. " +
             "Strg+F6, angelegte AusrÃ¼stung vorlesen. " +
             "Strg+F7, empfohlene AusrÃ¼stung anlegen. " +

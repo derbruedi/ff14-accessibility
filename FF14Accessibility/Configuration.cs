@@ -26,7 +26,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyRoutePreview = "Strg+Numpad5";     // Routen-Vorschau: Weg ansagen ohne zu laufen (Numpad5 hat die tastbare Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 frei)
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
-    public string KeyCombatStatus = "Strg+H";           // HP/MP ansagen (H=Health; bare H ist im Spiel MENU_CRAFT, Modifier+H laut Keybind-Dump frei)
+    public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt
     public string KeyDumpUI       = "Strg+F5";          // Node-Tree des aktuellen Addons auf Desktop speichern
     public string KeyWhereAmI     = "Strg+F2";          // Aktives Fenster ansagen + sichtbare Fenster ins Log
     public string KeyReadHotbar   = "Strg+F9";          // Aktionsleiste 1 vorlesen (was liegt auf Taste 1-0)

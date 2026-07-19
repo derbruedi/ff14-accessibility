@@ -102,5 +102,5 @@ public sealed class MessageHistoryService
         => _tolk.SpeakInterrupt($"{Names[Order[_catIndex]]}, leer");
 
     private void Announce(List<string> buf)
-        => _tolk.SpeakInterrupt($"{_cursor + 1} von {buf.Count}: {buf[_cursor]}");
+        => _tolk.SpeakInterrupt($"{buf[_cursor]}, {_cursor + 1} von {buf.Count}");
 }
