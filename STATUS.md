@@ -3,7 +3,36 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-19, V5.25: HP-Ansage weg von Strg+H)
+## STAND JETZT (2026-07-19, V5.25 RELEASET - alles bestaetigt)
+
+v5.25 ist veroeffentlicht. ALLE offenen Testpunkte sind abgehakt:
+
+1. HP/MP auf Strg+Entf BESTAETIGT (Log 19:30:48 'HP 100 Prozent, MP 100
+   Prozent.', KEIN RecipeNote danach).
+2. Zaehler am Ende BESTAETIGT (Log 19:30:51 'Vanille Farron, Spieler,
+   direkt neben dir, rechts, 1 von 138.').
+3. Bestiarium-Fundort BESTAETIGT (Log 19:18:04/05):
+     'Rostiger Kobalos, 3 von 3. Lebt in Westliches Thanalan, Haemmerweide'
+     'Gefraessiger Yarzon, 3 von 3. Lebt in Westliches Thanalan, Haemmerweide'
+   Keine MISS- und keine MEHRDEUTIG-Zeile mehr - die Platzhalter-
+   Aufloesung greift und sie greift eindeutig.
+4. Bestiarium-Filter + Rang-Auswahl BESTAETIGT (siehe V5.23-Abschnitt).
+
+### Aufraeum-Kandidat fuers naechste Mal
+`ProbeBestiaryRow` in UIReaderService loggt bei JEDEM Zeilenwechsel im
+Bestiarium alle Textknoten ("[Bestiary] Probe rendererId=..."). Die Sonde
+hat ihren Zweck erfuellt (sie hat die Deklinations-Namen aufgedeckt) und
+ist jetzt nur noch Log-Ballast. Kann raus, sobald ohnehin an der Stelle
+gearbeitet wird. Dasselbe gilt fuer ProbeMiss in BestiaryService -
+DIESE aber besser BEHALTEN: sie meldet kuenftige Namens-Faelle.
+
+### Nicht im Repo, absichtlich
+`uia_test.ps1` liegt im Arbeitsverzeichnis, soll dort bleiben, gehoert
+aber nicht ins Repo (User 2026-07-19). Nicht committen, nicht loeschen.
+
+---
+
+## STAND (2026-07-19, V5.25: HP-Ansage weg von Strg+H)
 
 USER-MELDUNG: Strg+H (HP/MP) funktioniert nicht mehr, seit das
 Handwerker-Notizbuch da ist.
