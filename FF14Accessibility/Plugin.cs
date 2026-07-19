@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -50,11 +50,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CombatService      _combat;
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
+    private readonly DalamudPluginsService _dalamudPlugins;
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.11";
-    private const string PluginVersionTag = "Kein Mod-Ton mehr beim Anvisieren von Gegnern";
+    private const string PluginVersion    = "5.23";
+    private const string PluginVersionTag = "Positions-RÃ¼ckfall statt Ersatz, Reihenfolge korrigiert";
 
     public Plugin()
     {
@@ -124,11 +125,12 @@ public sealed class Plugin : IDalamudPlugin
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _history    = new MessageHistoryService(_tolk);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
+        _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
@@ -139,10 +141,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private void RegisterCommands()
     {
-        // /acc nav  → Richtung zum Ziel
-        // /acc set  → Aktuelles Spielziel verfolgen
-        // /acc near → Objekte in der Nähe
-        // /acc stop → Sprache stoppen
+        // /acc nav  â†’ Richtung zum Ziel
+        // /acc set  â†’ Aktuelles Spielziel verfolgen
+        // /acc near â†’ Objekte in der NÃ¤he
+        // /acc stop â†’ Sprache stoppen
         CommandManager.AddHandler("/acc", new CommandInfo(OnCommand)
         {
             HelpMessage = "FF14 Accessibility: nav, set, near, keys, stop, help"
@@ -153,7 +155,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         var trimmed = args.Trim();
 
-        // "dump" nimmt einen optionalen Addon-Namen — muss vor dem switch geprüft werden
+        // "dump" nimmt einen optionalen Addon-Namen â€” muss vor dem switch geprÃ¼ft werden
         if (trimmed.StartsWith("dump", StringComparison.OrdinalIgnoreCase))
         {
             var dumpArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
@@ -194,13 +196,13 @@ public sealed class Plugin : IDalamudPlugin
                 AnnounceHelp();
                 break;
             default:
-                _tolk.SpeakInterrupt("Unbekannter Befehl. Tippe /acc help für Hilfe.");
+                _tolk.SpeakInterrupt("Unbekannter Befehl. Tippe /acc help fÃ¼r Hilfe.");
                 break;
         }
     }
 
     /// <summary>
-    /// All plugin hotkeys from the config as (function, key label, VK code) —
+    /// All plugin hotkeys from the config as (function, key label, VK code) â€”
     /// input for the keybind conflict check (/acc keys).
     /// </summary>
     private List<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> GetPluginKeys()
@@ -209,14 +211,14 @@ public sealed class Plugin : IDalamudPlugin
         foreach (var (function, keyName) in new[]
         {
             ("Hilfe",             _config.KeyHelp),
-            ("Nächstes Objekt",   _config.KeyNextObject),
+            ("NÃ¤chstes Objekt",   _config.KeyNextObject),
             ("Vorheriges Objekt", _config.KeyPrevObject),
             ("Kategorie",         _config.KeyCategory),
-            ("Kategorie zurück",  _config.KeyCategoryPrev),
+            ("Kategorie zurÃ¼ck",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Routen-Vorschau",   _config.KeyRoutePreview),
-            ("Menü vorlesen",  _config.KeyReadUI),
+            ("MenÃ¼ vorlesen",  _config.KeyReadUI),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("UI-Dump",        _config.KeyDumpUI),
@@ -226,22 +228,25 @@ public sealed class Plugin : IDalamudPlugin
             ("Gil",            _config.KeyReadGil),
             ("Stufe",          _config.KeyLevelExp),
             ("Emote weiter",   _config.KeyEmoteNext),
-            ("Emote zurück",   _config.KeyEmotePrev),
-            ("Emote ausführen", _config.KeyEmoteDo),
+            ("Emote zurÃ¼ck",   _config.KeyEmotePrev),
+            ("Emote ausfÃ¼hren", _config.KeyEmoteDo),
             ("Bestiarium",     _config.KeyBestiary),
             ("Benachrichtigung", _config.KeyNotification),
-            ("Ausrüstung",     _config.KeyReadEquipment),
-            ("Beste Ausrüstung", _config.KeyEquipBest),
-            ("Zufälliges Aussehen", _config.KeyRandomLook),
-            ("Skill zurück",   _config.KeySkillPrev),
+            ("AusrÃ¼stung",     _config.KeyReadEquipment),
+            ("Beste AusrÃ¼stung", _config.KeyEquipBest),
+            ("ZufÃ¤lliges Aussehen", _config.KeyRandomLook),
+            ("Skill zurÃ¼ck",   _config.KeySkillPrev),
             ("Skill weiter",   _config.KeySkillNext),
             ("Skill-Ziel-Taste", _config.KeySkillSlot),
             ("Skill belegen",  _config.KeySkillAssign),
             ("Skill-Ziel-Leiste", _config.KeySkillBar),
-            ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
+            ("Nachlese Kategorie zurÃ¼ck", _config.KeyChatCatPrev),
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
-            ("Nachlese älter", _config.KeyChatReadOlder),
+            ("Nachlese Ã¤lter", _config.KeyChatReadOlder),
             ("Nachlese neuer", _config.KeyChatReadNewer),
+            ("Plugin-Liste weiter",  _config.KeyPluginsNext),
+            ("Plugin-Liste zurÃ¼ck",  _config.KeyPluginsPrev),
+            ("Plugin-Einstellungen", _config.KeyPluginsConfig),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -260,7 +265,7 @@ public sealed class Plugin : IDalamudPlugin
         ["Up"]     = 0x26, ["Down"]   = 0x28,
         ["Left"]   = 0x25, ["Right"]  = 0x27,
         ["Return"] = 0x0D,
-        // Nummernblock — TitleDCWorldMap Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
+        // Nummernblock â€” TitleDCWorldMap Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         ["Numpad2"] = 0x62, ["Numpad4"] = 0x64,
         ["Numpad6"] = 0x66, ["Numpad8"] = 0x68,
         // Freie Tasten laut Keybind-Dump 2026-07-10 (N = einziger freier BARE
@@ -434,6 +439,9 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
         if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
+        if (IsJustPressed(_config.KeyPluginsNext))   _dalamudPlugins.CycleNext();
+        if (IsJustPressed(_config.KeyPluginsPrev))   _dalamudPlugins.CyclePrev();
+        if (IsJustPressed(_config.KeyPluginsConfig)) _dalamudPlugins.OpenConfigOfSelected();
         if (IsJustPressed(_config.KeyNotification))  _uiReader.ActivateNotification();
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
@@ -448,10 +456,10 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
         if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
-        // F5 — UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
-        // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
+        // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
+        // (kein Chat-Fenster nÃ¶tig, funktioniert auch auf dem Titelbildschirm)
         if (IsJustPressed(_config.KeyDumpUI))        _uiReader.DumpFocusedAddon();
-        // F2 — aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
+        // F2 â€” aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
@@ -468,7 +476,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // DC-Auswahl: Nummernblock-Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         // Nummernblock-Tasten werden vom Spiel intern verarbeitet und feuern keine
-        // AddonReceiveEvent-Hooks — deshalb hier abfangen und ForceDCMapRead() aufrufen.
+        // AddonReceiveEvent-Hooks â€” deshalb hier abfangen und ForceDCMapRead() aufrufen.
         if (_uiReader.IsDCMapOpen)
         {
             var np2 = IsJustPressed("Numpad2");
@@ -479,7 +487,7 @@ public sealed class Plugin : IDalamudPlugin
                 _uiReader.ForceDCMapRead();
         }
 
-        // Menü-Navigation: nur wenn ein Menü aktiv ist
+        // MenÃ¼-Navigation: nur wenn ein MenÃ¼ aktiv ist
         if (_uiReader.HasActiveMenu)
         {
             var up    = IsJustPressed("Up");
@@ -500,7 +508,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (IsJustPressed("Return")) _uiReader.HandleConfirmKey();
 
-        // Controller D-Pad Links/Rechts: SelectYesno Ja↔Nein
+        // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein
         if (GamepadState.Pressed(GamepadButtons.DpadLeft)  > 0) _uiReader.NavigateGamepad(-1);
         if (GamepadState.Pressed(GamepadButtons.DpadRight) > 0) _uiReader.NavigateGamepad(+1);
     }
@@ -541,7 +549,7 @@ public sealed class Plugin : IDalamudPlugin
                 var hop = _places.FindFirstHopToMap(quest.MapId, out _);
                 if (hop == null)
                 {
-                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.");
+                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Ãœbergang dorthin.");
                     return MarkerResolve.Failed;
                 }
                 var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
@@ -623,8 +631,8 @@ public sealed class Plugin : IDalamudPlugin
         {
             var habitat = _bestiary.GetHabitat(monsterName);
             _tolk.SpeakInterrupt(habitat != null
-                ? $"Kein {monsterName} in der Nähe. Lebt in {habitat}."
-                : $"Kein {monsterName} in der Nähe.");
+                ? $"Kein {monsterName} in der NÃ¤he. Lebt in {habitat}."
+                : $"Kein {monsterName} in der NÃ¤he.");
             return;
         }
 
@@ -640,34 +648,34 @@ public sealed class Plugin : IDalamudPlugin
     {
         _tolk.SpeakInterrupt(
             "Tasten: " +
-            "N, nächstes Objekt ansagen und anvisieren. " +
+            "N, nÃ¤chstes Objekt ansagen und anvisieren. " +
             "Umschalt+N, vorheriges Objekt. " +
-            "Strg+N, Kategorie vorwärts. " +
-            "Strg+Umschalt+N, Kategorie zurück. " +
+            "Strg+N, Kategorie vorwÃ¤rts. " +
+            "Strg+Umschalt+N, Kategorie zurÃ¼ck. " +
             "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
             "Nummernblock 3, automatisch zum Ziel laufen. " +
             "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
             "F, zum Ziel hindrehen. W, laufen. " +
             "Strg+F1, diese Hilfe. " +
             "Strg+F2, aktives Fenster. " +
-            "Strg+F10, Menü vorlesen. " +
+            "Strg+F10, MenÃ¼ vorlesen. " +
             "Strg+F11, Sprache stoppen. " +
             "Strg+H, HP und MP ansagen. " +
-            "Strg+F9, gewählte Aktionsleiste vorlesen. " +
-            "Strg+F6, angelegte Ausrüstung vorlesen. " +
-            "Strg+F7, empfohlene Ausrüstung anlegen. " +
-            "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
-            "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
+            "Strg+F9, gewÃ¤hlte Aktionsleiste vorlesen. " +
+            "Strg+F6, angelegte AusrÃ¼stung vorlesen. " +
+            "Strg+F7, empfohlene AusrÃ¼stung anlegen. " +
+            "Strg+F8, zufÃ¤lliges Aussehen in der Charaktererschaffung. " +
+            "Umschalt+F7 und F8, Skill-Browser zurÃ¼ck und vor. " +
             "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
-            "Umschalt+F9, Ziel-Taste der Leiste wählen. " +
-            "Umschalt+F10, gewählten Skill auf die Ziel-Taste legen. " +
+            "Umschalt+F9, Ziel-Taste der Leiste wÃ¤hlen. " +
+            "Umschalt+F10, gewÃ¤hlten Skill auf die Ziel-Taste legen. " +
             "Befehle: " +
             "/acc nav, Richtung zum Ziel. " +
             "/acc set, Aktuelles Ziel verfolgen. " +
             "/acc clear, Ziel aufheben. " +
-            "/acc near, Objekte in der Nähe. " +
+            "/acc near, Objekte in der NÃ¤he. " +
             "/acc status, HP und MP ansagen. " +
-            "/acc ui, Menü vorlesen. " +
+            "/acc ui, MenÃ¼ vorlesen. " +
             "/acc win, Aktives Fenster ansagen. " +
             "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
             "/acc stop, Sprache stoppen."

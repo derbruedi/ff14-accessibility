@@ -59,6 +59,13 @@ public sealed class Configuration : IPluginConfiguration
     // Tastaturweg lief die Einladung fuer den User schlicht ab (Log 2026-07-18
     // 18:20:48). Strg+F12 laut Keybind-Dump frei.
     public string KeyNotification  = "Strg+F12";        // Offene Benachrichtigung aktivieren (Einladung annehmen)
+    // Dalamud-Plugin-Liste (V5.13): Dalamuds eigener Plugin-Installer ist ImGui
+    // und damit weder vom Screenreader noch vom UIReader lesbar. Gelesen wird
+    // deshalb die Datenquelle dahinter (IDalamudPluginInterface.InstalledPlugins).
+    // Umschalt+F1/F2/F12 sind die letzten laut Keybind-Dump freien F-Kombis.
+    public string KeyPluginsNext    = "Umschalt+F1";     // Plugin-Liste: naechstes Plugin (1. Druck = Uebersicht)
+    public string KeyPluginsPrev    = "Umschalt+F2";     // Plugin-Liste: vorheriges Plugin
+    public string KeyPluginsConfig  = "Umschalt+F12";    // Einstellungen des gewaehlten Plugins oeffnen (ImGui, nicht vorlesbar)
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()

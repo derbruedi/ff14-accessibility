@@ -3,6 +3,707 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-07-19, V5.23: Deklinations-Namen aufgeloest)
+
+V5.21-FILTER BESTAETIGT (Log 18:27:34-18:28:11): Im Bestiarium wurden
+NUR Monster gesprochen - keine "Verguetung", keine "Thaumaturg 01".
+GEGENPROBE EBENFALLS BESTANDEN: die Rang-Auswahl sagt weiter an
+("1, 5 von 10", 18:27:34 und 18:28:11). Die befuerchtete Regression ist
+ausgeblieben.
+
+SONDE HAT GELIEFERT (Log 18:27:41 / 18:27:44) - Ursache belegt, nicht
+mehr vermutet:
+  MISS 'gefraessiger yarzon' -> Sheet: 'gefraessig[a] yarzon'
+  MISS 'rostiger kobalos'    -> Sheet: 'rostig[a] kobalos'
+`[a]` ist ein Platzhalter fuer die Adjektivendung, den das Spiel je nach
+Fall einsetzt. Der UI-Name kann darum NIE woertlich passen. Die frueher
+vermutete Erklaerung (ExtractText liefere nur den Wortkern) war FALSCH -
+der Platzhalter bleibt im Text stehen.
+
+FIX (BestiaryService): Sheet-Namen mit Platzhalter werden zu verankerten
+Mustern - "gefraessig[a] yarzon" -> ^gefraessig\w*\ yarzon$. Greift erst
+NACH dem exakten Lookup. Bei MEHR als einem passenden Muster wird
+NICHTS gesagt und "[Bestiary] MEHRDEUTIG" geloggt: ein falscher
+Lebensraum schickt den User in die falsche Zone, das waere schlimmer als
+Stille.
+
+MUSTER GEGEN DIE ECHTEN LOG-NAMEN GEPRUEFT (PowerShell-Regex, alle
+Kandidaten aus der Sonde): 'gefraessiger yarzon' und 'gefraessige
+yarzon' treffen; 'aas-yarzon', 'wald-yarzon', 'kupfer-kobalos',
+'blei-kobalos' werden korrekt abgelehnt. Der Wortstamm muss weiter
+passen, die Wildcard deckt nur die Endung.
+
+Build 0/0, deployt (5.23.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.23)
+1. "Version 5 Punkt 23 bereit".
+2. Bestiarium oeffnen, ueber "Gefraessiger Yarzon" und "Rostiger
+   Kobalos" laufen. Erwartet: beide sagen jetzt "Lebt in ...".
+3. Im Log pruefen: Zeile "Lebensraum-Tabelle: N Monster ..., davon M mit
+   Deklinations-Platzhalter" zeigt, wie verbreitet das Muster ist.
+   Bleiben "MISS"- oder "MEHRDEUTIG"-Zeilen uebrig, gibt es noch einen
+   zweiten Namens-Fall - dann weiter mit denselben Daten arbeiten.
+
+---
+
+## STAND (2026-07-19, V5.22: Sonde fuer fehlende Lebensraeume)
+
+USER-MELDUNG: nicht bei allen Monstern kommt der Fundort.
+
+BELEG IM LOG (5 Treffer, 2 verschiedene Monster):
+  [Bestiary] Kein Lebensraum fuer 'Gefraessiger Yarzon'
+  [Bestiary] Kein Lebensraum fuer 'Rostiger Kobalos'
+Beide tragen ein VORANGESTELLTES ADJEKTIV - Muster, kein Zufall. An
+Gross-/Kleinschreibung liegt es nicht, der Lookup normalisiert bereits
+auf ToLowerInvariant.
+
+ilspycmd-VERIFIZIERT (2026-07-19, Lumina.Excel.Sheets.BNpcName): das
+Sheet hat NUR `Singular`/`Plural` als Text; `Adjective`, `Article`,
+`Pronoun`, `StartsWithVowel` sind sbyte-GRAMMATIKCODES, kein Text. Der
+Name kann also nur aus `Singular` kommen.
+
+HYPOTHESE, NOCH NICHT BELEGT: deutsche Namen tragen die Deklination als
+eingebettete SeString-Bausteine, und `ExtractText()` liefert davon nur
+den Kern ("Yarzon" statt "Gefraessiger Yarzon"). NICHT als Fix gebaut -
+ein falsch zugeordneter Lebensraum schickt den User in die falsche Zone.
+
+WAS NEU IST (nur Diagnose, kein Verhalten geaendert): BestiaryService.
+ProbeMiss loggt bei jedem Fehlschlag die Sheet-Eintraege, die ein Wort
+(>=4 Zeichen) mit dem UI-Namen teilen:
+  [Bestiary] MISS 'gefraessiger yarzon' - N Sheet-Kandidat(en): '...'
+Die ANZAHL entscheidet ueber den Fix: genau 1 Kandidat = eindeutig, ein
+gelockerter Abgleich waere sicher. Mehrere ("rostiger Kobalos" vs.
+"eisiger Kobalos" mit verschiedenen Zonen) = gelockerter Abgleich waere
+gefaehrlich, dann braucht es einen anderen Weg.
+
+Build 0/0, deployt (5.22.0.0). Versionen csproj + Plugin.cs synchron.
+Enthaelt den V5.21-Filter (siehe unten), der noch UNGETESTET ist.
+
+### Beim naechsten Test (V5.22)
+1. "Version 5 Punkt 22 bereit".
+2. Bestiarium oeffnen, durch die Liste laufen - moeglichst ueber die
+   Monster MIT Adjektiv im Namen. Dann Log schicken; entscheidend sind
+   die "[Bestiary] MISS ..."-Zeilen.
+3. Weiterhin offen aus V5.21 (mitpruefen): nur Monster werden gesprochen?
+   Und laesst sich der RANG noch wechseln und wird er angesagt?
+
+---
+
+## STAND (2026-07-19, V5.21: Bestiarium zeigt nur noch Monster)
+
+USER-WUNSCH: im Bestiarium nur die Monster und ihren Fundort hoeren, die
+uebrigen Zeilen irritieren.
+
+BEFUND AUS DUMP + LOG (nicht geraten): Die TreeList von `MonsterNote`
+mischt drei Zeilentypen, im Log 17:38:48-52 alle belegt:
+  - Comp(1015) Rang-Ueberschrift -> "1 von 30, Erledigt!, Thaumaturg 01"
+  - Comp(1017) MONSTER           -> "2 von 30, Marienkaefer, 3 von 3.
+                                     Lebt in Zentrales La Noscea, ..."
+  - Comp(1018) Verguetung        -> "3 von 30, 75, Verguetung"
+
+Der Fundort lief schon vorher: BestiaryService laedt 403 Monster aus dem
+Sheet `MonsterNoteTarget`. Es fehlte nur der Filter.
+
+GEAENDERT (OnMonsterNoteUpdate): Nicht-Monster-Zeilen INNERHALB der
+TreeList bleiben stumm (User-Entscheid: komplett stumm, kein Signalton).
+Positionspraefix "x von 30" entfaellt bei Monstern - die 30 zaehlte die
+weggefilterten Zeilen mit.
+
+WICHTIGE ABGRENZUNG, sonst waere die Rang-Auswahl kaputtgegangen: Die
+Rang-Zeilen ("1, 2 von 10", Log rendererId=2) liegen AUSSERHALB der
+TreeList und kommen mit index<0 an. Die werden weiter angesagt - sonst
+liesse sich kein Rang mehr waehlen. Filter greift nur bei index>=0.
+
+Ebenso gefiltert: AnnounceBestiaryOverview (Uebersichtstaste) liest jetzt
+nur noch Monster, sagt "Bestiarium, N Monster".
+
+Build 0/0, deployt (5.21.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.21)
+1. "Version 5 Punkt 21 bereit".
+2. Bestiarium oeffnen, mit den Pfeiltasten durch die Liste. Erwartet:
+   nur Monster werden gesprochen ("Marienkaefer, 3 von 3. Lebt in ..."),
+   dazwischen Stille wo Rang-Ueberschriften und Verguetungen liegen.
+3. GEGENPROBE: laesst sich der RANG noch wechseln und wird er angesagt?
+   Das ist die Stelle, die durch den Filter kaputtgehen koennte.
+4. Uebersichtstaste im Bestiarium: sollte "Bestiarium, N Monster" sagen.
+
+---
+
+## STAND (2026-07-19, V5.20: Icon-Knoepfe - Tooltip tot, Events dran)
+
+DIE TOOLTIP-IDEE AUS V5.19 IST WIDERLEGT. Sauber, mit Daten:
+alle 20 stummen Faelle im Log (15:45:18-33) tragen `tooltip=[]`. Das ist
+NICHT "leerer Text" - es war ueberhaupt KEIN Tooltip-Fenster sichtbar,
+waehrend der Tastatur-Fokus auf den Knoepfen sass (die Sonde listet
+sichtbare Fenster auch dann, wenn ihr Text leer ist - die Liste war ganz
+leer). Das Spiel oeffnet Tooltips bei MAUS-Hover, nicht bei
+Tastatur-Fokus. Es wurde nie eine falsche Beschriftung gesprochen.
+
+ZWEITE TUER ZU: `AddonCharacter` existiert in FFXIVClientStructs (anders
+als AddonMainCommand), traegt aber nur TabIndex und TabCount - keine
+benannten Knopf-Felder. ilspycmd-verifiziert 2026-07-19.
+
+DER DUMP BESTAETIGT DIE LAGE ENDGUELTIG: die stummen Knoepfe sind
+Comp(1010)/(1011)/(1013)/(1015) = Buttons und Comp(1017)-(1021) =
+CheckBoxen. Jeder traegt ausschliesslich einen Collision- und einen
+Image-Knoten. Kein Text, nirgends, `nachbarn=[]` ebenfalls leer.
+
+USER-PRAEZISIERUNG: es geht um die ICON-KNOEPFE ("wie aktualisieren und
+so"), NICHT um die Ausruestungsplaetze. Solche Knoepfe gibt es in vielen
+Fenstern - deshalb zaehlt ein GENERISCHER Weg mehr als eine Loesung nur
+fuer das Charakter-Fenster.
+
+WAS NEU IST (nur Diagnose, kein Verhalten geaendert): Die STUMM-Zeile
+nennt statt `tooltip=[...]` jetzt `events=[...]` - jedes am Knopf und
+seinen Eltern registrierte Event mit seinem Parameter, und zu jedem
+Parameter die Zeile, die er in den Sheets `Addon` (das UI-Beschriftungs-
+Sheet des Spiels) und `MainCommand` treffen wuerde.
+
+WARUM DIESER WEG: Es ist exakt der, der sich in V5.18 BEWAEHRT hat. Die
+_MainCommand-Knoepfe waren genauso textlos, und ihr ButtonClick-Parameter
+war die MainCommand-Sheet-Zeile - damals durch drei unabhaengige Proben
+bestaetigt. Beide Kandidaten-Sheets werden geloggt, damit die DATEN
+entscheiden, welches passt, statt dass ich eines vorab rate.
+
+BEWUSST NOCH KEINE ANSAGE: Ein falscher Name schickt einen blinden
+Spieler ins falsche Fenster - schlimmer als Stille. Erst wenn die
+Zuordnung gegen das steht, was die Knoepfe TATSAECHLICH tun, wird
+gesprochen. Dann ist es ein Zweizeiler.
+
+Build 0/0, deployt (5.20.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.20)
+1. "Version 5 Punkt 20 bereit".
+2. Charakter-Fenster oeffnen, mit den Pfeiltasten ueber die Icon-Knoepfe
+   oben laufen (die stummen), dann das Log schicken. Entscheidend sind
+   die "[Focus] STUMM ... events=[...]"-Zeilen.
+3. WICHTIG dazu, sonst ist das Log nicht auswertbar: Sag mir, welche
+   Knoepfe es in dem Fenster WIRKLICH gibt und in welcher Reihenfolge -
+   also welcher davon "Aktualisieren" ist. Nur der Abgleich mit der
+   Wirklichkeit beweist die Zuordnung; das Sheet allein tut es nicht.
+4. Gern auch in ANDEREN Fenstern mit Icon-Knoepfen durchlaufen. Je mehr
+   stumme Faelle im Log, desto sicherer wird der generische Weg.
+5. Falls "events=[]" leer bleibt: die Knoepfe tragen gar keine
+   registrierten Events - dann ist auch dieser Weg tot und es bleibt nur
+   noch, ein MouseOver an den Knopf zu schicken, damit das Spiel seinen
+   eigenen Tooltip fuellt. Das waere ein Eingriff und braucht dein OK.
+
+---
+
+## STAND (2026-07-19, V5.19: Sonde fuer das Charakter-Fenster)
+
+V5.18 BESTAETIGT (User: "das erste menue funktioniert jetzt") - die
+Namensansage im _MainCommand-Menue laeuft.
+
+NEUER DUMP: `Character`, 83 Knoten (Desktop\FFXIV_UI_Dump.txt, 15:41). Das
+ist das Charakter-/Ausruestungsfenster.
+
+WAS DARIN SCHON LESBAR IST (Textknoten vorhanden): Titel "CHARAKTER",
+Name "Perrox Torran", Klasse "Goldschmied", "Stufe 3", "Ausruestungsset",
+und die vier Registerkarten als RadioButtons MIT Text - Attribute, Profil,
+Klassen/Jobs, Ansehen (letztere unsichtbar geschaltet).
+
+WAS STUMM IST - und das ist im Log belegt, nicht vermutet:
+  [Focus] STUMM addon='Character' id=3 typ=8 eltern=[14:1013 ...] nachbarn=[]
+  [Focus] STUMM addon='Character' id=4 typ=8 eltern=[73:1021 ...] nachbarn=[]
+  [Focus] STUMM addon='Character' id=4 typ=8 eltern=[74:1018 ...] nachbarn=[]
+Der Fokus lief ueber die ICON-KNOEPFE oben (Comp 1010-1021: Buttons und
+Checkboxen). Der Dump bestaetigt warum: die tragen ausschliesslich
+Collision- und Image-Knoten, keinen Text. `nachbarn=[]` wieder leer.
+Dasselbe Muster wie _MainCommand - nur ohne dessen Rettungsanker, denn
+diese Knoepfe haben keine MainCommand-Sheet-Zeile.
+
+WARUM HIER NICHTS GEBAUT WURDE: Der naheliegende Weg ist der TOOLTIP - ein
+Sehender erfaehrt genau so, was so ein Icon tut. Aber ob das Tooltip-Fenster
+sich fuellt, waehrend der TASTATUR-Fokus auf dem Knopf sitzt, ist NICHT
+belegt. Im Log steht dazu genau eine Zeile ("Addon: Tooltip") - und zwar
+deshalb, weil V5.14 diese Fenster als HUD-Laerm stummgeschaltet hat. Es
+gibt also schlicht keine Daten. Ein geratener Fix wuerde hier JEDEN
+Icon-Knopf im Spiel betreffen.
+
+WAS NEU IST (nur Diagnose, kein Verhalten geaendert): Die STUMM-Zeile
+nennt jetzt zusaetzlich "tooltip=[...]" - Inhalt der offenen
+Tooltip-Fenster (Tooltip / ItemDetail / ActionDetail) im Moment des
+stummen Fokus. Faellt die Antwort positiv aus, loest das textlose
+Icon-Knoepfe GENERISCH, im ganzen Spiel, nicht nur hier. Faellt sie
+negativ aus, ist die Idee widerlegt, ohne dass je eine falsche
+Beschriftung gesprochen wurde.
+
+Build 0/0, deployt (5.19.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.19)
+1. "Version 5 Punkt 19 bereit".
+2. Charakter-Fenster oeffnen und mit den Pfeiltasten ueber die
+   Icon-Knoepfe oben laufen, bis es stumm bleibt. Dann das Log schicken.
+   Entscheidend sind die "[Focus] STUMM ... tooltip=[...]"-Zeilen.
+3. GEGENPROBE, damit klar wird was schon geht: Auf den Registerkarten
+   (Attribute / Profil / Klassen-Jobs) - werden die angesagt? Die haben
+   echten Text, sollten also laufen.
+4. Strg+F10 im offenen Charakter-Fenster: kommen Name, Klasse und Stufe?
+5. ZUR ERINNERUNG, weil es schon existiert: Was du traegst, liest der
+   EquipmentService komplett vor ("Waffe: ..., Kopf: ...") - dafuer
+   braucht es das Fenster gar nicht.
+
+### Noch ungeklaert
+Die 13 Ausruestungsplaetze (DragDrop, Comp 1023/1024) sind ebenfalls
+textlos. Der Weg dorthin waere Slot-Index -> EquippedItems -> Item-Sheet.
+NICHT gebaut: welcher Knoten welchem Slot-Index entspricht, ist nicht
+verifiziert, und ein verschobener Index benennt jedes Ruestungsteil falsch.
+Klaert sich mit derselben Tooltip-Antwort - oder braucht eine eigene Sonde.
+
+---
+
+## STAND (2026-07-19, V5.18: Menue-Eintraege haben NAMEN)
+
+Der User hat einen frischen Strg+F5-Dump gemacht (Desktop\FFXIV_UI_Dump.txt,
+15:33) und die V5.16-Sonde hat im selben Moment geliefert. Damit ist die
+Frage, an der V5.16/V5.17 haengengeblieben sind, ENTSCHIEDEN.
+
+DER DUMP BESTAETIGT DIE DIAGNOSE ENDGUELTIG: `_MainCommand` hat 15 Knoten -
+sieben Buttons (id=2..8) und sonst nur Image-Knoten. KEIN EINZIGER
+Textknoten im ganzen Fenster. Es gab wirklich nichts zu lesen; die
+Kletterhoehe war nie das Problem.
+
+DIE ZUORDNUNG IST BEWIESEN, NICHT ANGENOMMEN. Die Sonde zeigte fuer alle
+sieben Knoepfe je ein ButtonClick-Event (typ=25):
+  id=2 param=1 -> Initiative          id=6 param=5 -> Timer
+  id=3 param=2 -> Charakter           id=7 param=6 -> Errungenschaften
+  id=4 param=3 -> Kommandoliste       id=8 param=7 -> Sammler-Notizbuch
+  id=5 param=4 -> Archiv
+Drei unabhaengige Belege, dass param die MainCommand-Sheet-Zeile ist:
+1. Die Params laufen lueckenlos 1..7 parallel zu den Knopf-Ids.
+2. Die aufgeloesten Namen ergeben zusammen eine echte, zusammenhaengende
+   FFXIV-Menuegruppe - kein Zufallstreffer aus dem Sheet.
+3. KREUZPROBE: id=2 steht in der Knotenliste GANZ HINTEN, bekommt durch die
+   Z-Order-Umkehr Position 1 - und traegt param 1. Position und Sheet-Zeile
+   laufen exakt parallel durch alle sieben. Die V5.17-Umkehrung und die
+   Namenszuordnung bestaetigen sich damit gegenseitig.
+
+WAS NEU IST: Der Fokus sagt jetzt "Charakter, 2 von 7" statt "2 von 7".
+Der Name kommt aus dem ButtonClick-Event des Knopfes selbst (ueber
+FindEventOfType, derselbe Pfad wie DispatchClick), nicht aus einer
+Positionsindizierung des Sheets - ein Menue, das Eintraege gewinnt,
+verliert oder umsortiert, sagt damit trotzdem richtig an. Fehlt Event oder
+Sheet-Zeile, bleibt die reine Position: duenn, aber nie falsch.
+
+SONDE ENTFERNT: ProbeMainCommandButton ist raus. Sie hat ihre Frage
+beantwortet und lief entgegen ihrem eigenen Kommentar ("once per focus
+change") pro FRAME - 40 identische Zeilen in einer Sekunde im Log.
+
+OFFEN GEBLIEBEN: Welches Menue das aus Spielersicht ist, sagt weiterhin
+niemand. Der User: "es ist nicht das hauptmenue". Jetzt weniger dringend -
+die Eintraege nennen sich selbst beim Namen, ein Fenstertitel ist Kuer.
+
+Build 0/0, deployt (5.18.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.18)
+1. "Version 5 Punkt 18 bereit".
+2. Das Menue oeffnen, mit den Pfeiltasten durch: kommt bei JEDEM Eintrag
+   Name und Position ("Initiative, 1 von 7" ... "Sammler-Notizbuch,
+   7 von 7")?
+3. ENTSCHEIDEND: Stimmen die Namen mit dem ueberein, was der Eintrag
+   tatsaechlich OEFFNET? Einmal draufdruecken und pruefen - ein falscher
+   Name schickt dich ins falsche Fenster.
+4. Stimmt die Reihenfolge (faengt es bei 1 an, nicht bei 7)?
+5. Regressionstest aus V5.17: kommen in ANDEREN Menues die Eintraege
+   weiter mit ihrem echten Namen? Der Namenszweig hier ist auf
+   _MainCommand begrenzt, sollte also nichts anderes beruehren.
+
+---
+
+## STAND (2026-07-19, V5.17: V5.16 war eine REGRESSION - zurueckgebaut)
+
+User-Meldung zu V5.16: "zum einen es ist falschrum es faengt mit 7 an und
+es ist nicht das hauptmenue das ding ist er liest es ja manchmal vor aber
+manchmal auch nicht jetzt sagt er nur hauptmenue".
+
+MEIN FEHLER, klar benannt: Ich habe den Positions-Zweig VOR den generischen
+Textleser gesetzt. Damit gewann die Position IMMER - auch in den Faellen,
+in denen vorher ein echter Name gefunden wurde. V5.16 hat also
+funktionierende Ansagen durch "Hauptmenü, X von 7" ERSETZT statt eine
+Luecke zu fuellen. Ein Rueckfall darf nie den echten Text ueberstimmen.
+Genau das erklaert auch, warum der User sagt "er liest es ja manchmal
+vor": es gab dort sehr wohl lesbare Faelle - ich habe sie zugedeckt.
+
+DREI KORREKTUREN IN V5.17:
+1. RUECKFALL STATT ERSATZ: Die Positionsansage laeuft jetzt erst, wenn der
+   generische Leser (eigener Baum + bis zu 3 Elternebenen) NICHTS gefunden
+   hat. Wo vorher ein Name kam, kommt wieder der Name.
+2. REIHENFOLGE UMGEDREHT: Der erste Eintrag meldete sich als "7 von 7".
+   Die Knotenliste laeuft der sichtbaren Reihenfolge ENTGEGEN - dieselbe
+   Z-Order-Umkehr, die fuer JournalDetail und FreeCompanyProfile schon
+   dokumentiert ist. Jetzt `position = Anzahl - Index`.
+3. NAME "HAUPTMENUE" RAUS: war schlicht falsch (User: "es ist nicht das
+   hauptmenue"). Der interne Addon-Name (_MainCommand) ist fuer einen
+   Spieler ebenfalls kein Begriff. Angesagt wird jetzt nur noch, was
+   wirklich bekannt ist: "3 von 7".
+
+AUSSERDEM, fuer die eigentliche Frage ("mal gehts, mal nicht"): JEDE
+[Focus]-Zeile nennt jetzt das Fenster, nicht nur die stummen. Bisher stand
+der Addon-Name nur in den STUMM-Zeilen - die gelungenen und die
+misslungenen Faelle waren damit nicht vergleichbar, und genau der
+Vergleich fehlt fuer die Diagnose.
+
+Build 0/0, deployt (5.17.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.17)
+1. "Version 5 Punkt 17 bereit".
+2. Das Menue von vorhin: kommen die Eintraege, die FRUEHER vorgelesen
+   wurden, wieder mit ihrem Namen? (Das ist der Regressionstest - wichtiger
+   als alles andere.)
+3. Wo gar kein Name existiert: kommt "1 von 7" beim ERSTEN Eintrag,
+   aufsteigend bis "7 von 7"? (Vorher genau andersherum.)
+4. WELCHES Menue ist es ueberhaupt? Das Log nennt es intern
+   `_MainCommand`, aber der User sagt, es ist nicht das Hauptmenue.
+   Offene Frage an den User: mit welcher TASTE oeffnest du es? Daraus
+   laesst sich der richtige Name bestimmen - im Keybind-Dump steht zu
+   jeder Taste die Spielaktion.
+5. Log: die "[Focus] addon='...'"-Zeilen zeigen jetzt bei JEDEM Eintrag
+   Fenster und Text. Daran ist ablesbar, welche Eintraege einen Namen
+   liefern und welche nicht - das klaert das "mal so, mal so" endgueltig.
+
+---
+
+## STAND (2026-07-19, V5.16: Positionsansage - siehe Regression oben)
+
+DIE SONDE HAT GELIEFERT. Alle 14 stummen Faelle (Log 12:41:04-08) kamen aus
+EINEM Fenster:
+
+  [Focus] STUMM addon='_MainCommand' id=6 typ=8 eltern=[2:1001 1:1] nachbarn=[]
+
+Auswertung:
+- `_MainCommand` = das HAUPTMENUE.
+- typ=8 = Collision-Knoten, Elternteil typ=1001 = Button.
+- Die Eltern-Id wandert 2,3,4,5,6,7,8 und dann wieder von vorn - der User
+  ist zweimal durch alle SIEBEN Eintraege gelaufen und hat KEIN EINZIGES
+  Mal etwas gehoert. Im ganzen Zeitfenster steht sonst nichts im Log:
+  keine Ansage, kein Tooltip, kein Scan.
+
+BEIDE MEINE HYPOTHESEN AUS V5.15 SIND WIDERLEGT - genau deshalb wurde
+nicht geraten:
+- Geschwister-Knoten: `nachbarn=[]` war bei allen 14 Faellen LEER.
+- Kletterhoehe: der Button liegt direkt daruber, 3 Ebenen reichten.
+Die Wahrheit ist simpler: die Hauptmenue-Knoepfe tragen NUR Symbole,
+ueberhaupt keinen Text. Es gab nichts zu finden.
+
+WAS NEU IST: Der Fokus im Hauptmenue sagt die POSITION an - "Hauptmenü,
+3 von 7". Das ist gemessen, nicht erfunden: die Knoepfe werden in der
+Knotenliste des Addons gezaehlt und der fokussierte per Identitaet
+lokalisiert. Dasselbe Muster nutzt der Aussehen-Picker der
+Charaktererstellung fuer seine textlosen Zeilen schon.
+
+WARUM NOCH KEINE NAMEN (bewusst): Die Namen stehen im Lumina-Sheet
+`MainCommand` (Name/Description/Icon, ilspycmd-verifiziert 2026-07-19).
+WIE ein Knopf auf eine Sheet-Zeile zeigt, ist aber NICHT geklaert -
+`AddonMainCommand` und `AgentMainCommand` existieren in
+FFXIVClientStructs NICHT (beide Lookups leer). Ein falscher Name schickt
+einen blinden Spieler ins falsche Fenster; das ist schlimmer als eine
+Position. Deshalb loggt V5.16 pro Knopf dessen registrierte Events und
+zu jedem Parameter die Sheet-Zeile, die er treffen wuerde:
+
+  [MainCmd] Knopf 3 id=4 events=[typ=25 param=3 -> 'Inventar' | ...]
+
+Stimmen diese Namen mit der tatsaechlichen Reihenfolge im Menue ueberein,
+ist die Zuordnung bewiesen und die Namensansage ist danach ein Zweizeiler.
+Stimmen sie nicht, ist die Idee widerlegt, ohne dass je ein falscher Name
+gesprochen wurde.
+
+Build 0/0, deployt (5.16.0.0). Versionen csproj + Plugin.cs synchron.
+UIReaderService bekommt dafuer neu IDataManager (Sheet-Zugriff).
+
+### Beim naechsten Test (V5.16)
+1. "Version 5 Punkt 16 bereit".
+2. Hauptmenue oeffnen, mit den Pfeiltasten durch: kommt jetzt bei JEDEM
+   Eintrag "Hauptmenü, X von 7"? (Vorher: komplett still.)
+3. Stimmt die Anzahl - hat dein Hauptmenue wirklich 7 Eintraege?
+4. LOG-FRAGE, die ueber die Namen entscheidet: In den "[MainCmd]"-Zeilen
+   steht pro Knopf ein aufgeloester Name. Bitte einmal durchgehen und
+   sagen, welcher Eintrag an welcher Position WIRKLICH steht (z.B. "1 ist
+   Charakterinfo, 2 ist Inventar, ..."). Passt das zur Log-Reihenfolge,
+   kommen die echten Namen in die naechste Version.
+5. Falls "[MainCmd]"-Zeilen ganz fehlen: der Knopf traegt keine
+   registrierten Events - dann brauche ich einen Strg+F5-Dump bei
+   offenem Hauptmenue.
+
+### Weiterhin offen
+- Die stummen Faelle betrafen NUR _MainCommand. Ob es in anderen Menues
+  ebenfalls klemmt, zeigt die "[Focus] STUMM"-Sonde - sie bleibt drin.
+- Overlay-Fenster: braucht den User EINGELOGGT (siehe V5.13-Abschnitt).
+
+---
+
+## STAND (2026-07-19, V5.15: Sonde fuer stumme Menues)
+
+User: "ich hab das fenomen das manchmal menues nicht vorgelesen werden
+obwohl es mal ging also mal gehts und mal nicht".
+
+DAS PHAENOMEN IST IM LOG BELEGT - es ist nicht Einbildung und nicht
+NVDA: von 40 Fokuswechseln am 2026-07-19 lieferten 19 einen LEEREN Text
+("[Focus] ... Text=''"). Bei leerem Text wird nichts gesprochen
+(UpdateGlobalFocus, `if (!string.IsNullOrEmpty(text))`). Fast die Haelfte
+aller Fokusbewegungen war also stumm. Sichtbar u.a. um 12:28:36-43 waehrend
+der SystemMenu-Navigation: einmal kam "Dalamud Plugins", danach dreimal
+nichts.
+
+WARUM ICH HIER NICHT GEFIXT HABE: Der Log nennt nur Node-Id und Zeiger -
+NICHT das Fenster und nicht den Knotentyp. Damit ist kein einziger der 19
+Faelle zuzuordnen. Ich habe zwei plausible Ursachen im Code gefunden:
+1. `GetTextFromNodeTree` verwirft Texte der LAENGE 1 (Zeile "t.Length > 1")
+   - im Code selbst schon als Ursache dokumentiert, warum Hotbar-Zeilen
+   ohne ihre Tastenbezeichnung angesagt wurden.
+2. Die Suche geht ins eigene Unterbaum und dann maximal 3 ELTERN hoch -
+   sitzt die Beschriftung in einem GESCHWISTER-Knoten (klassisch:
+   Collision-Knoten neben Text-Knoten), wird sie nie gefunden.
+BEIDES sind Hypothesen. Welche zutrifft - oder ob es eine dritte gibt -
+entscheidet das Log, nicht mein Bauchgefuehl. Ein geratener Fix an dieser
+Stelle trifft den gesamten Fokus-Pfad, also praktisch jedes Menue im Spiel.
+
+WAS NEU IST (nur Diagnose, kein Verhalten geaendert):
+Bei leerem Fokustext schreibt das Plugin jetzt eine Zeile
+"[Focus] STUMM addon='<Fenster>' id=<n> typ=<n> eltern=[...] nachbarn=[...]".
+- `addon` kommt aus einem IDENTITAETSvergleich (Wurzelknoten des Fokus
+  gegen RootNode aller geladenen Addons), nicht aus Namensraterei.
+- `eltern` zeigt die Typkette nach oben - daran ist ablesbar, ob 3 Ebenen
+  zu knapp waren.
+- `nachbarn` liest die Geschwisterknoten. Steht dort Text, ist Hypothese 2
+  bewiesen und der Fix ist exakt bestimmt.
+Laeuft NUR im Fehlerfall und einmal pro Fokuswechsel (die Dedup-Zeile
+darueber verhindert Frame-Spam).
+
+Build 0/0, deployt (5.15.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.15) - hier brauche ich ECHTE Daten
+1. "Version 5 Punkt 15 bereit".
+2. Genau das tun, was das Problem ausloest: Menues oeffnen und mit den
+   Pfeiltasten durchgehen, BIS es stumm bleibt. Ruhig mehrere Menues
+   (Systemmenue, Journal, Inventar, Optionen) - je mehr stumme Faelle im
+   Log, desto genauer der Fix.
+3. Danach das Log schicken. Interessant sind die "[Focus] STUMM"-Zeilen.
+4. NICHT noetig: raten, welches Menue es war. Die Zeile nennt das Fenster
+   jetzt selbst.
+
+### Danach (wenn die Daten da sind)
+Aus "nachbarn=" und "eltern=" ergibt sich der Fix direkt:
+- Text in `nachbarn` -> Geschwistersuche in die Textermittlung aufnehmen.
+- Text erst weit oben in `eltern` -> Kletterhoehe erhoehen.
+- Ueberall leer -> das Fenster traegt seine Beschriftung woanders
+  (Komponentendaten statt Textknoten), dann braucht es einen
+  Strg+F5-Dump dieses Fensters.
+
+---
+
+## STAND (2026-07-19, V5.14: Gegenstaende wurden uebertoent)
+
+User: "schau mal in die log da bekomme ich meldungen die stoeren und die
+items nicht richtig ansagen". Log-Auswertung hat BEIDES als EINEN Fehler
+entlarvt.
+
+ROOT CAUSE (Log 2026-07-19, 11:43:24, eindeutig): `ScanAddonTexts` spricht
+JEDEN geaenderten Text-Node EINZELN mit `SpeakInterrupt`. Der
+Gegenstands-Tooltip `ItemDetail` traegt 7-8 solcher Nodes. Der Ablauf pro
+Gegenstand sah so aus:
+- 'Hanf-Arbeitshandschuhe, Stufe 6, tragbar'  <- die RICHTIGE Ansage
+- 'Verkaufswert: 3' / 'Haendlerpreis: 145' / 'Farbe: Moosgruen' /
+  'Haende' / '(Besitz: 0 / 0)' / nochmal der Name
+- 'Strg HQ-Gegenstandsbeschreibung anzeigen　Alt Beschreibung ausblenden'
+Jede Ansage schnitt die vorherige ab. Hoerbar blieb nur die LETZTE - der
+BEDIENHINWEIS. Der Gegenstand war also nicht bloss verrauscht, er war
+faktisch nicht ansagbar, obwohl der Fokus-Pfad die korrekte Ansage
+("Name, Stufe, tragbar") die ganze Zeit erzeugt hat. Dasselbe Muster wie
+V5.5/V5.7: ein Kontext, den sein eigener Inhalt abschneidet.
+
+FIX 1: `ItemDetail` und `Tooltip` in HudNoiseAddons. Kein
+Informationsverlust - die uebertoenten Zeilen waren ohnehin unhoerbar.
+
+FIX 2 (damit die Details nicht verloren gehen): `TryReadItemDetail()` -
+Strg+F10 liest den offenen Tooltip als EINEN Satz, Name zuerst. Eingehaengt
+direkt hinter dem Journal-Zweig in ReadCurrentFocus, mit derselben Logik:
+Tooltip offen -> der User will den GEGENSTAND lesen.
+- RUECKWAERTS durch die Node-Liste (Name steht spaet in Node-Reihenfolge,
+  Z-Order - dasselbe Muster wie JournalDetail/FreeCompanyProfile).
+- NUR Top-Level-Text-Nodes. Das ist KEIN Textraten, sondern strukturell:
+  im Log stehen die echten Fakten als direkte Text-Nodes (id=33 Name,
+  id=34 Besitz, id=35 Slot, id=42/44/48 Farbe/Preise), der Bedienhinweis
+  dagegen als Komponenten-Kind (key=30002). Komponenten auszulassen wirft
+  den Hinweis raus, ohne eine Phrase hart zu verdrahten. Das Ergebnis wird
+  als "[Item] Tooltip: N Teile - ..." geloggt, damit die Annahme
+  ueberpruefbar bleibt (sie stuetzt sich bisher auf EIN Log-Beispiel).
+
+FIX 3 (der Log-Spam): `[Quest] JournalResult Belohnung` lief pro Frame -
+dieselbe Zeile alle ~75 ms, rund 2000 identische Eintraege um 11:44, die
+alles andere im Log begraben haben. Jetzt nur noch bei ECHTER Aenderung
+(_lastRewardLog).
+
+ZWEI EIGENE VERMUTUNGEN, DIE SICH BEIM PRUEFEN ALS FALSCH ERWIESEN
+(dokumentiert, damit sie nicht wiederkommen):
+- `amounts=[1435,194]` sah nach kaputten Werten aus, ist aber korrekt:
+  zwei Werte, Erfahrung 1435 und Gil 194.
+- Ein `\ WORKAROUND` in der Grep-Ausgabe sah nach Syntaxfehler aus, war
+  aber ein Artefakt der Ausgabe - im Code steht `//`.
+
+Build 0/0, deployt (5.14.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.14)
+1. "Version 5 Punkt 14 bereit".
+2. Im Inventar/Laden ueber Gegenstaende gehen: kommt jetzt "Name, Stufe,
+   tragbar" - und NICHT mehr "Strg HQ-Gegenstandsbeschreibung anzeigen"?
+3. Ist das Gerede dazwischen (Verkaufswert/Farbe/Besitz einzeln) weg?
+4. Auf einem Gegenstand Strg+F10: kommt der volle Tooltip als EIN Satz,
+   mit dem Namen zuerst?
+5. Falls bei Strg+F10 der Bedienhinweis doch mitkommt oder der Name fehlt:
+   die Zeile "[Item] Tooltip:" im Log zeigt genau, was gelesen wurde -
+   dann stimmt die Top-Level-Annahme nicht und ich brauche einen
+   Strg+F5-Dump bei offenem Tooltip.
+6. Ist der Name sauber, oder stecken Glyphen-Reste drin? Im Log stand der
+   Tooltip-Name als 'H?%I?&Hanf-Arbeitshandschuhe...' - Sanitize sollte das
+   abraeumen, ist fuer DIESEN Pfad aber ungetestet.
+
+### OFFEN aus der Log-Auswertung (nicht beauftragt, nicht gebaut)
+Der Scanner liest auch `CharacterStatus` (80x), `_AreaText` (41x),
+`Gathering` (20x), `_ToDoList` (12x) Node fuer Node - dasselbe
+Interrupt-Muster wie bei ItemDetail. Ob das stoert, weiss nur der User;
+bisher keine Meldung dazu.
+
+---
+
+## STAND (2026-07-19, V5.13: Dalamud-Plugin-Liste vorlesbar)
+
+User: "im menue gibt es dalamud plugins und dalamud einstellungen die sind
+auch nicht barrierefrei" (dazu: stoerende Fenster ueber dem Spiel - siehe
+OFFEN unten).
+
+WARUM DAS STUMM WAR (keine Luecke im Plugin): Dalamuds Oberflaeche -
+Plugin-Installer, Einstellungen, auch die vnavmesh-Fenster - ist ImGui.
+ImGui hat keinen AtkUnitBase, keine Nodes, keinen Baum. Unser gesamter
+Vorlese-Apparat haengt an genau diesem Baum, und NVDA findet dort ebenso
+wenig. Es gibt also nichts zu "reparieren"; ein UI-Scraping-Weg existiert
+schlicht nicht.
+
+DER WEG STATTDESSEN: nicht die UI lesen, sondern die DATEN dahinter.
+`IDalamudPluginInterface.InstalledPlugins` liefert `IExposedPlugin` je
+Plugin mit Name, Version, IsLoaded, IsOutdated, IsBanned, IsDev,
+HasConfigUi + `OpenConfigUi()` (ilspycmd-verifiziert 2026-07-19 gegen
+Dalamud.dll). Das ist OEFFENTLICHE, versionierte API - kein Reflection,
+kein Interna-Zugriff, kann durch ein Dalamud-Update nicht still brechen.
+
+WAS NEU IST (DalamudPluginsService.cs):
+- Umschalt+F1 blaettert vorwaerts. Der ERSTE Druck sagt zuerst die
+  Uebersicht: "12 Plugins, alle geladen." bzw. "12 Plugins, 1 nicht
+  geladen." Das beantwortet die eigentliche Frage ("laeuft alles?") ohne
+  eine zweite Taste zu verbrauchen.
+- Danach je Eintrag: "3 von 12: vnavmesh, Version 1.2.3.8, geladen, hat
+  Einstellungen." Auffaelliges wird ergaenzt: nicht geladen / veraltet /
+  gesperrt / Entwickler-Plugin. "nicht geladen" ist die wichtigste
+  Information - sie erklaert, warum ein Feature fehlt (Auto-Lauf ohne
+  vnavmesh).
+- Umschalt+F2 blaettert zurueck, Umschalt+F12 oeffnet die Einstellungen
+  des gewaehlten Plugins.
+- Die Liste wird bei JEDEM Druck neu gelesen (Plugins koennen zur Laufzeit
+  laden/entladen); der Cursor bleibt dabei auf demselben Plugin.
+
+EHRLICH DAZU - Umschalt+F12 nuetzt dir allein wenig: `OpenConfigUi()`
+oeffnet wieder ein ImGui-Fenster. Du kannst es oeffnen, aber nicht lesen.
+Deshalb sagt die Ansage das ausdruecklich mit ("Das Fenster ist nicht
+vorlesbar."). Sinnvoll ist es nur, wenn jemand Sehendes danebensitzt.
+
+BEWUSST NICHT GEBAUT (User-Entscheid 2026-07-19): installieren,
+aktualisieren, entfernen, an-/abschalten. Diese Methoden existieren
+(`InstallPluginAsync`, `UpdateSinglePluginAsync`, `UpdatablePlugins`,
+`RemovePlugin`), liegen aber in `Dalamud.Plugin.Internal.PluginManager` -
+internal, nur per Reflection erreichbar, bricht potenziell still bei jedem
+Dalamud-Update. Der User hat sich fuer den stabilen Nur-Lesen-Weg
+entschieden; Installation/Update laufen weiter ueber die Installer-EXE
+ausserhalb des Spiels (docs/installer-architektur.md).
+
+TASTEN: Umschalt+F1/F2/F12 sind die letzten freien F-Kombis - Strg+F1..F12
+sind komplett vergeben, Umschalt+F3..F11 ebenfalls (game-api.md -> Safe
+Mod Keys, Live-Dump).
+
+Build 0/0, deployt (5.13.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.13)
+1. "Version 5 Punkt 13 bereit".
+2. Umschalt+F1 druecken: kommt zuerst "N Plugins, alle geladen" und dann
+   der erste Eintrag?
+3. Weiter mit Umschalt+F1 / zurueck mit Umschalt+F2: kommen Name, Version
+   und Zustand? Taucht vnavmesh auf, und steht dort "geladen"?
+4. Stimmt die Zahl mit dem ueberein, was ein Sehender im Plugin-Installer
+   sieht?
+5. Umschalt+F12 auf einem Plugin mit Einstellungen: kommt die Bestaetigung?
+6. Log-Kontrolle bei Problemen: die "[DalamudPlugins]"-Zeilen zeigen
+   Uebersicht, geoeffnete Fenster und jede nicht lesbare Eigenschaft.
+
+### OFFEN: stoerende Fenster ueber dem Spiel
+Noch nicht angefasst, bewusst zurueckgestellt - der User kennt das Problem
+nur aus zweiter Hand ("jemand Sehendes hat es mir gesagt"), es stoert ihn
+selbst also nicht. Es sind ebenfalls ImGui-Overlays (vnavmesh-Fenster,
+Dalamud-Fenster). Zu pruefen, wenn es drankommt: Dalamuds eigener
+UI-Hide-Mechanismus und ob sich vnavmesh-Fenster ueber dessen Config
+geschlossen halten lassen. NICHT recherchiert, daher keine Aussage dazu.
+
+---
+
+## STAND (2026-07-19, V5.12: Lagerstaetten fuer Minenarbeiter)
+
+User ist jetzt Minenarbeiter und fragt, wie er Lagerstaetten findet;
+Wunsch: die Kategorie soll nur erscheinen, wenn die Sammler-Klasse aktiv
+ist.
+
+BEFUND: Die Kategorie "Sammelpunkte" (ObjectKind.GatheringPoint) gab es
+schon - aber mit zwei Problemen:
+1. STUMMER FILTER: GetCategoryObjects verwarf JEDES Objekt ohne Namen
+   (`!IsNullOrWhiteSpace(o.Name)`). Sammelpunkte tragen aber typisch einen
+   LEEREN Objektnamen - ihre Beschreibung steht in den Spieldaten hinter
+   der BaseId. Der Filter hat also genau das weggeworfen, wonach der User
+   sucht. UNBESTAETIGT, ob in-game wirklich alle namenlos sind - deshalb
+   ist der Filter nur fuer diese Kategorie gelockert, nicht global.
+2. Die Kategorie lief immer mit, auch als Kaempfer.
+
+WAS NEU IST:
+1. Sammelpunkte werden mit TYP UND STUFE angesagt: "1 von 3: Erzader,
+   Stufe 20, 15 Meter, Nordosten". Datenweg (ilspycmd-verifiziert):
+   GameObject.BaseId -> Sheet GatheringPoint -> GatheringPointBase ->
+   GatheringType.Name (lokalisiert!) + GatheringLevel (byte @36).
+   Der Typname wird GELESEN, nicht aus einer selbst erfundenen Id-Tabelle
+   abgeleitet - GatheringType hat KEINE Klassen-Spalte, jede Zuordnung
+   "0 = Minenarbeiter" waere unsere Erfindung. Ergebnis pro BaseId
+   gecached und einmal geloggt ("[Gather] DataId=... Typ=... Stufe=...").
+2. Die Kategorie wird beim Durchschalten UEBERSPRUNGEN, wenn keine
+   Sammler-Klasse aktiv ist. Sie bleibt aber sichtbar, solange Punkte in
+   Reichweite sind - so kann der Filter nie etwas verstecken, das es
+   wirklich gibt. Und als Sammler bleibt sie auch bei 0 Treffern
+   erreichbar, denn "hier ist nichts" ist eine gueltige Antwort.
+
+ANNAHME, ausdruecklich markiert: "ist Sammler" = ClassJob.DohDolJobIndex
+>= 0 und BattleClassIndex < 0. Dass diese Felder EXISTIEREN, ist
+ilspycmd-verifiziert; ihre konkreten WERTE stehen in Spieldaten, die
+offline nicht lesbar sind. Deshalb loggt IsGatheringClass bei jedem
+Klassenwechsel Name, Abkuerzung, RowId und beide Index-Felder. Faellt die
+Annahme, bricht nichts still zusammen - der Fallback "Punkte in
+Reichweite" haelt die Kategorie trotzdem verfuegbar.
+
+Build 0/0, deployt (5.12.0.0). Versionen csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.12)
+1. "Version 5 Punkt 12 bereit".
+2. Als Minenarbeiter mit Strg+N durch die Kategorien: kommt
+   "Sammelpunkte"? Und als Kaempfer (Klasse wechseln): faellt sie weg?
+3. In der Kategorie mit N blaettern: kommen Typ und Stufe
+   ("Erzader, Stufe 20") statt eines leeren Namens?
+4. Numpad 3 auf einem Sammelpunkt: laeuft er hin?
+5. LOG-FRAGE (entscheidet ueber die Annahme oben): Was steht in der Zeile
+   "[Gather] Klasse: ... DohDolJobIndex=... BattleClassIndex=...
+   -> Sammler=..."? Steht dort als Minenarbeiter "Sammler=True" und als
+   Kaempfer "Sammler=False", ist die Annahme bestaetigt und kann in
+   game-api.md als Fakt wandern.
+6. Falls die Kategorie als Minenarbeiter LEER bleibt, obwohl Erzadern in
+   Sicht sind: dann liegen Sammelpunkte nicht als GatheringPoint in der
+   ObjectTable - das zeigt sich daran, dass keine "[Gather] DataId"-Zeile
+   erscheint. Dann brauche ich einen Objekt-Dump an einer Erzader.
+
+---
+
 ## RELEASE v5.11 VEROEFFENTLICHT (2026-07-18 abends)
 
 Commits 303fbc3 (Code V4.98-V5.11) + b47853f (repo.json 5.11) auf main

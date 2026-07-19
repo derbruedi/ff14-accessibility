@@ -838,3 +838,26 @@ JournalCanvas enthält Belohnungs-Einträge als Multipurpose(21)-Komponenten:
 - MarkerInfo-Felder: ObjectiveId(uint), Label(Utf8String), MarkerData(StdVector),
   RecommendedLevel(ushort), ShouldRender(bool). MapMarkerData: IconId, Position,
   MapId, TerritoryTypeId, ObjectiveId, MarkerType(byte), Flags(byte), DataId.
+
+### Dalamud-eigene UI ist ImGui — nicht lesbar (verifiziert 2026-07-19, ilspycmd Dalamud.dll)
+- Dalamuds Plugin-Installer, Dalamud-Einstellungen und die Fenster fremder
+  Plugins (z.B. vnavmesh) werden in **ImGui** gezeichnet: kein AtkUnitBase,
+  keine Nodes, kein Baum. Weder UIReaderService noch NVDA können dort etwas
+  finden. Es gibt KEINEN UI-Scraping-Weg — nicht danach suchen.
+- Richtiger Weg: die DATEN hinter der UI lesen.
+  `IDalamudPluginInterface.InstalledPlugins` → `IEnumerable<IExposedPlugin>`.
+- `IExposedPlugin` (öffentlich, `Dalamud.Plugin`): Name, InternalName, Version,
+  IsLoaded, IsOutdated, IsTesting, IsOrphaned, IsDecommissioned, IsBanned,
+  IsDev, IsThirdParty, Manifest, HasMainUi, HasConfigUi,
+  `OpenMainUi()`, `OpenConfigUi()` (werfen InvalidOperationException, wenn das
+  jeweilige HasXUi false ist).
+- `IDalamudPluginInterface.OpenPluginInstallerTo(kind, searchText)` öffnet nur
+  das ImGui-Fenster → für blinde Nutzer wertlos. `CheckForUpdateAsync()` gilt
+  NUR fürs eigene Plugin.
+- NICHT öffentlich: Installieren/Updaten/Entfernen. `InstallPluginAsync`,
+  `UpdatePluginsAsync`, `UpdateSinglePluginAsync`, `RemovePlugin`,
+  `UpdatablePlugins` liegen in `Dalamud.Plugin.Internal.PluginManager`
+  (internal) — nur per Reflection erreichbar, bricht potenziell still bei
+  Dalamud-Updates. Bewusst nicht genutzt (User-Entscheid 2026-07-19);
+  Installation/Update laufen über die Installer-EXE.
+- Genutzt in `DalamudPluginsService.cs` (V5.13, Umschalt+F1/F2/F12).

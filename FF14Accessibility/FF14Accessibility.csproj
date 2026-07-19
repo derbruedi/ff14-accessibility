@@ -1,14 +1,14 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <DalamudApiLevel>15</DalamudApiLevel>
-    <!-- Plugin-Version für die Distribution. Dalamud vergleicht die AssemblyVersion,
-         um Updates im Custom-Repo zu erkennen - bei JEDEM Release erhöhen, sonst
+    <!-- Plugin-Version fÃ¼r die Distribution. Dalamud vergleicht die AssemblyVersion,
+         um Updates im Custom-Repo zu erkennen - bei JEDEM Release erhÃ¶hen, sonst
          zieht der Plugin-Installer keine neue Version. MUSS mit der PluginVersion-
          Konstante in Plugin.cs synchron bleiben (dort speist sie die Sprachansage). -->
-    <Version>5.11.0</Version>
-    <AssemblyVersion>5.11.0.0</AssemblyVersion>
-    <FileVersion>5.11.0.0</FileVersion>
+    <Version>5.23.0</Version>
+    <AssemblyVersion>5.23.0.0</AssemblyVersion>
+    <FileVersion>5.23.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -16,7 +16,7 @@
     <NoWarn>1705</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Klassenbibliotheken kopieren NuGet-DLLs (NAudio) sonst NICHT in den
-         Output - Dalamud lädt Abhängigkeiten aber aus dem Plugin-Verzeichnis. -->
+         Output - Dalamud lÃ¤dt AbhÃ¤ngigkeiten aber aus dem Plugin-Verzeichnis. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
@@ -26,7 +26,7 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
-  <!-- Native DLLs für Screenreader - müssen neben der Plugin-DLL liegen -->
+  <!-- Native DLLs fÃ¼r Screenreader - mÃ¼ssen neben der Plugin-DLL liegen -->
   <ItemGroup>
     <Content Include="nvdaControllerClient64.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -63,12 +63,12 @@
       <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).dll" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).dll')" />
       <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).pdb" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).pdb')" />
       <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).json" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).json')" />
-      <!-- NAudio-Laufzeit-DLLs müssen neben der Plugin-DLL liegen -->
+      <!-- NAudio-Laufzeit-DLLs mÃ¼ssen neben der Plugin-DLL liegen -->
       <DevPluginFiles Include="$(ResolvedOutDir)NAudio*.dll" />
     </ItemGroup>
 
     <Warning Condition="!Exists('$(XIVLauncherRoot)')"
-             Text="XIVLauncher-Verzeichnis nicht gefunden unter $(XIVLauncherRoot). Debug-Deploy nach devPlugins wird übersprungen." />
+             Text="XIVLauncher-Verzeichnis nicht gefunden unter $(XIVLauncherRoot). Debug-Deploy nach devPlugins wird Ã¼bersprungen." />
 
     <MakeDir Directories="$(DevPluginTargetDir)"
              Condition="Exists('$(XIVLauncherRoot)') and !Exists('$(DevPluginTargetDir)')" />

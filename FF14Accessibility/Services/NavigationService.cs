@@ -187,6 +187,13 @@ public sealed class NavigationService
     {
         var n = Categories.Length;
         _categoryIndex = ((_categoryIndex + direction) % n + n) % n;
+
+        // Skip categories that make no sense right now (gathering nodes while
+        // playing a fighting class). Bounded by n so a fully unavailable set
+        // can never spin forever.
+        for (var guard = 0; guard < n && !IsCategoryAvailable(_categoryIndex); guard++)
+            _categoryIndex = ((_categoryIndex + (direction >= 0 ? 1 : -1)) % n + n) % n;
+
         _cycleIndex = -1;
         SelectedQuestDestination = null;
         SelectedPlaceDestination = null;
@@ -271,8 +278,16 @@ public sealed class NavigationService
                       $"({obj.Name.TextValue}), ist weiterhin {actualId:X}");
 
         var distance = Vector3.Distance(player.Position, obj.Position);
-        var text = $"{_cycleIndex + 1} von {count}: {NpcPrefix(obj)}{obj.Name.TextValue}, " +
-                   $"{DescribeKind(obj.ObjectKind)}, {FormatDistance(distance)}, " +
+
+        // Gathering nodes: the type and required level ARE the useful content
+        // ("Erzader, Stufe 20"); their object name is usually empty and the
+        // kind ("Sammelpunkt") would just repeat the category.
+        var description = obj.ObjectKind == ObjectKind.GatheringPoint
+            ? DescribeGatheringPoint(obj)
+            : $"{NpcPrefix(obj)}{obj.Name.TextValue}, {DescribeKind(obj.ObjectKind)}";
+
+        var text = $"{_cycleIndex + 1} von {count}: {description}, " +
+                   $"{FormatDistance(distance)}, " +
                    $"{CalculateDirection(player, obj.Position)}." +
                    (rejected ? " Achtung, nicht anvisiert." : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
@@ -486,21 +501,145 @@ public sealed class NavigationService
     private static bool IsAetherytePlace(PlaceDestination p) =>
         p.TypeLabel is "Ätheryt" or "Aethernet";
 
-    private List<IGameObject> GetCategoryObjects()
+    /// <summary>
+    /// Whether a category is worth offering right now. Only the gathering
+    /// category is conditional: as a fighting class it is dead weight in the
+    /// rotation (user request 2026-07-19 - "soll sie nur sichtbar sein wenn die
+    /// klasse auf minenarbeiter steht").
+    ///
+    /// It stays available while a gathering class is active EVEN IF nothing is
+    /// in range - otherwise a miner could not check "is there anything here?",
+    /// and an empty answer is a real answer. Nodes in range also keep it
+    /// available regardless of class, so the filter can never hide something
+    /// that actually exists.
+    /// </summary>
+    private bool IsCategoryAvailable(int index)
+    {
+        var kinds = Categories[index].Kinds;
+        if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
+        return IsGatheringClass() || GetObjectsOfKinds(kinds).Count > 0;
+    }
+
+    // Last class the check logged, so the probe writes one line per change.
+    private uint _lastLoggedClassJob = uint.MaxValue;
+
+    /// <summary>
+    /// True while the player is on a gathering class (miner, botanist, fisher).
+    ///
+    /// ASSUMPTION, marked as such: ClassJob.DohDolJobIndex (sbyte @106,
+    /// ilspycmd-verified to EXIST) is >= 0 for the Hand/Land classes and
+    /// negative otherwise. The actual VALUES live in game data that cannot be
+    /// read offline, so the class name, its abbreviation and both index fields
+    /// are logged on every class change - the first in-game test settles it.
+    /// If the assumption is wrong, nothing breaks silently: the category also
+    /// stays available whenever nodes are in range.
+    /// </summary>
+    private bool IsGatheringClass()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return false;
+
+        var job = player.ClassJob.ValueNullable;
+        if (job == null) return false;
+
+        var isGatherer = job.Value.DohDolJobIndex >= 0 && job.Value.BattleClassIndex < 0;
+
+        if (player.ClassJob.RowId != _lastLoggedClassJob)
+        {
+            _lastLoggedClassJob = player.ClassJob.RowId;
+            _log.Info($"[Gather] Klasse: '{job.Value.Name.ExtractText()}' " +
+                      $"({job.Value.Abbreviation.ExtractText()}, RowId={player.ClassJob.RowId}) " +
+                      $"DohDolJobIndex={job.Value.DohDolJobIndex} " +
+                      $"BattleClassIndex={job.Value.BattleClassIndex} " +
+                      $"-> Sammler={isGatherer}");
+        }
+
+        return isGatherer;
+    }
+
+    /// <summary>Objects of the given kinds within browse range, distance-sorted.</summary>
+    private List<IGameObject> GetObjectsOfKinds(ObjectKind[] kinds)
     {
         var player = _objectTable.LocalPlayer;
         if (player == null) return new List<IGameObject>();
 
-        var kinds = Categories[_categoryIndex].Kinds;
-        if (kinds == null) return new List<IGameObject>();
-
+        var isGathering = kinds.Contains(ObjectKind.GatheringPoint);
         return _objectTable
             .Where(o => o.GameObjectId != player.GameObjectId
-                        && !string.IsNullOrWhiteSpace(o.Name.TextValue)
+                        && (isGathering || !string.IsNullOrWhiteSpace(o.Name.TextValue))
                         && kinds.Contains(o.ObjectKind)
                         && Vector3.Distance(player.Position, o.Position) <= CycleRange)
             .OrderBy(o => Vector3.Distance(player.Position, o.Position))
             .ToList();
+    }
+
+    // ── Sammelpunkte (Minenarbeiter / Gärtner) ──────────────────────
+    //
+    // Data path, all ilspycmd-verified (2026-07-19):
+    //   GameObject.DataId -> Sheet "GatheringPoint"
+    //   .GatheringPointBase -> "GatheringPointBase"
+    //   .GatheringType -> "GatheringType".Name  (localised: Erzader, Steinbruch,
+    //                                            Fällpunkt, Erntepunkt, ...)
+    //   .GatheringLevel (byte @36)              (required gathering level)
+    // The type name is READ, never derived from an id we made up: GatheringType
+    // has no class column, so any "0 = miner" table would be our invention.
+    private readonly Dictionary<uint, (string Type, int Level)> _gatheringCache = [];
+
+    /// <summary>
+    /// Type and required level of a gathering node, or null when the id is not
+    /// in the sheet. Cached per DataId - the sheet lookup must not run per frame.
+    /// </summary>
+    private (string Type, int Level)? GetGatheringInfo(uint dataId)
+    {
+        if (_gatheringCache.TryGetValue(dataId, out var hit))
+            return hit.Type.Length == 0 ? null : hit;
+
+        var sheet = _data.GetExcelSheet<Lumina.Excel.Sheets.GatheringPoint>();
+        if (sheet == null || !sheet.TryGetRow(dataId, out var row))
+        {
+            _gatheringCache[dataId] = (string.Empty, 0);
+            return null;
+        }
+
+        var baseRow = row.GatheringPointBase.ValueNullable;
+        if (baseRow == null)
+        {
+            _gatheringCache[dataId] = (string.Empty, 0);
+            return null;
+        }
+
+        var typeName = baseRow.Value.GatheringType.ValueNullable?.Name.ExtractText() ?? string.Empty;
+        var level    = baseRow.Value.GatheringLevel;
+        var info     = (Type: typeName, Level: (int)level);
+        _gatheringCache[dataId] = info;
+
+        _log.Info($"[Gather] DataId={dataId}: Typ='{typeName}' Stufe={level}");
+        return typeName.Length == 0 ? null : info;
+    }
+
+    /// <summary>
+    /// Describes a gathering node for the announcement: "Erzader, Stufe 20".
+    /// Falls back to the object's own name, then to a plain "Sammelpunkt" -
+    /// never to an invented type.
+    /// </summary>
+    private string DescribeGatheringPoint(IGameObject obj)
+    {
+        // BaseId, not DataId: Dalamud renamed it, the old name is deprecated.
+        var info = GetGatheringInfo(obj.BaseId);
+        var name = obj.Name.TextValue;
+
+        if (info == null)
+            return string.IsNullOrWhiteSpace(name) ? "Sammelpunkt" : name;
+
+        return info.Value.Level > 0
+            ? $"{info.Value.Type}, Stufe {info.Value.Level}"
+            : info.Value.Type;
+    }
+
+    private List<IGameObject> GetCategoryObjects()
+    {
+        var kinds = Categories[_categoryIndex].Kinds;
+        return kinds == null ? new List<IGameObject>() : GetObjectsOfKinds(kinds);
     }
 
     // ── Gehhilfe: manuell laufen, geführt von Beacon + Ansagen ──

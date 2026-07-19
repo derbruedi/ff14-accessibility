@@ -32,6 +32,7 @@ public sealed class UIReaderService : IDisposable
     private readonly BestiaryService _bestiary;
     private readonly MessageHistoryService _history;
     private readonly Configuration   _config;
+    private readonly IDataManager    _data;
     private readonly List<string>    _titleMenuItems = [];
 
     // SelectYesno: labels are read fresh from the dialog buttons on open -
@@ -53,6 +54,7 @@ public sealed class UIReaderService : IDisposable
 
     // _TitleMenu: zuletzt angesagter Button-Text
     private string _lastTitleMenuText = string.Empty;
+    private string _lastRewardLog     = string.Empty;
     private int _lastTitleMenuIndex = -1;
     // Gesetzt bei InputReceived � Dump wird im n�chsten PostUpdate ausgef�hrt,
     // NACHDEM das Spiel intern den Fokus verschoben hat (nicht davor).
@@ -169,6 +171,17 @@ public sealed class UIReaderService : IDisposable
         // Mal ungefragt (Log 2026-07-13 00:58). Gezielte Navigation dorthin sagt
         // weiterhin der globale FocusedNode-Leser an.
         "_CharaSelectReturn",
+        // ItemDetail/Tooltip (Log 2026-07-19, 11:43): der Gegenstands-Tooltip
+        // traegt 7-8 Text-Nodes (Verkaufswert, Haendlerpreis, Farbe, Slot,
+        // Besitz, Name, Bedienhinweis). Der generische Scanner sprach jeden
+        // EINZELN mit SpeakInterrupt - jede Ansage schnitt die vorherige ab, und
+        // hoerbar blieb nur die LETZTE: "Strg HQ-Gegenstandsbeschreibung
+        // anzeigen　Alt Beschreibung ausblenden". Die richtige Ansage
+        // ("Hanf-Arbeitshandschuhe, Stufe 6, tragbar") entsteht im Fokus-Pfad
+        // und wurde dadurch uebertoent - der Gegenstand war also nicht nur
+        // verrauscht, sondern faktisch nicht ansagbar.
+        // Details gibt es jetzt gesammelt auf Abruf (TryReadItemDetail, Strg+F10).
+        "ItemDetail", "Tooltip",
     ];
 
     // Seit V4.60/61 im Log dokumentierte, aber noch nicht gefixte Spam-Quellen
@@ -228,7 +241,7 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data)
     {
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -240,6 +253,7 @@ public sealed class UIReaderService : IDisposable
         _bestiary       = bestiary;
         _history        = history;
         _config         = config;
+        _data           = data;
         RegisterHooks();
     }
 
@@ -1281,12 +1295,40 @@ public sealed class UIReaderService : IDisposable
                 cur  = cur->ParentNode;
                 text = GetTextFromNodeTree(cur);
             }
+
+            // LAST resort only. V5.16 had this BEFORE the generic reader, which
+            // made the position win even where a real label existed - it replaced
+            // working announcements with "Hauptmenü, X von 7" (user 2026-07-19:
+            // "er liest es ja manchmal vor aber manchmal auch nicht jetzt sagt er
+            // nur hauptmenü"). A fallback must never outrank the real text.
+            if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
+                text = iconRow;
         }
 
         if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
         _lastFocusedNodePtr  = (nint)node;
         _lastFocusedNodeText = text;
-        _log.Info($"[Focus] id={node->NodeId} ptr=0x{(nint)node:X} Text='{text}'");
+        // Addon name on EVERY focus line: the user's report is that the same menu
+        // reads out sometimes and stays silent other times. Without the window in
+        // the successful lines too, the working and failing cases cannot be
+        // compared - which is exactly what the diagnosis needs.
+        _log.Info($"[Focus] addon='{FindAddonNameForNode(node)}' id={node->NodeId} ptr=0x{(nint)node:X} Text='{text}'");
+
+        // DIAGNOSE (V5.15): leerer Text heisst STUMM - der Fokus bewegt sich, der
+        // User hoert aber nichts. Genau das ist seine Meldung "mal gehts, mal
+        // nicht" (2026-07-19); im Log vom selben Tag war fast die HAELFTE aller
+        // Fokuswechsel textlos (19 von 40). Bisher stand dort nur Node-Id und
+        // Zeiger - ohne Fenstername und Knotentyp ist kein Fall zuzuordnen, und
+        // jede Korrektur an der Textsuche waere geraten.
+        // Laeuft nur im Fehlerfall und dank der Dedup-Zeile daruber einmal pro
+        // Fokuswechsel, nicht pro Frame.
+        if (string.IsNullOrEmpty(text))
+        {
+            _log.Info($"[Focus] STUMM addon='{FindAddonNameForNode(node)}' id={node->NodeId} "
+                      + $"typ={(int)node->Type} eltern=[{DescribeAncestorTypes(node)}] "
+                      + $"nachbarn=[{DescribeSiblingTexts(node)}] "
+                      + $"events=[{DescribeFocusEvents(node)}]");
+        }
 
         // Charaktererstellung: der Fokus allein waehlt nichts aus - das Spiel
         // schreibt Beschreibung und Vorschau nur bei echter AUSWAHL um (belegt
@@ -4454,10 +4496,57 @@ public sealed class UIReaderService : IDisposable
         _tolk.SpeakInterrupt("Zufälliges Aussehen gedrückt.");
     }
 
+    /// <summary>
+    /// Reads the item tooltip (ItemDetail) as ONE sentence: name first, then
+    /// slot, price and description. false if no tooltip is open.
+    ///
+    /// Only TOP-LEVEL text nodes are read. That is not a text-based guess but a
+    /// structural one: the log of 2026-07-19 shows the real facts as direct text
+    /// nodes (id=33 name, id=34 Besitz, id=35 slot, id=42/44/48 colour/prices)
+    /// while the keyboard hint "Strg HQ-Gegenstandsbeschreibung anzeigen" sits
+    /// inside a component (key=30002). Excluding components therefore drops the
+    /// hint without a hard-coded phrase. The result is logged so the assumption
+    /// stays checkable.
+    ///
+    /// Read BACKWARDS: FFXIV keeps the name late in node order (Z-order, same
+    /// pattern as JournalDetail/FreeCompanyProfile) - reversing puts it first.
+    /// </summary>
+    private unsafe bool TryReadItemDetail()
+    {
+        var ptr = _gameGui.GetAddonByName("ItemDetail");
+        if (ptr.IsNull) return false;
+
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible || addon->UldManager.NodeListCount == 0) return false;
+
+        var parts = new List<string>();
+        for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+
+            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
+            if (parts.Contains(t)) continue; // name appears twice in the tooltip
+            parts.Add(t);
+        }
+
+        if (parts.Count == 0) return false;
+
+        var msg = string.Join(", ", parts);
+        _log.Info($"[Item] Tooltip: {parts.Count} Teile - {msg}");
+        _tolk.SpeakInterrupt(msg);
+        return true;
+    }
+
     public unsafe void ReadCurrentFocus()
     {
         // Quest-Journal offen? Dann will der User die QUEST lesen, nicht die Liste.
         if (TryReadQuestDetail()) return;
+
+        // Gegenstands-Tooltip offen? Dann will der User den GEGENSTAND lesen -
+        // dieselbe Logik wie beim Journal eine Zeile darueber.
+        if (TryReadItemDetail()) return;
 
         // Aktives Men� aus dem Stack
         if (_menuStack.Count > 0)
@@ -4786,7 +4875,15 @@ public sealed class UIReaderService : IDisposable
         for (var k = 0; k < amounts.Count; k++)
             parts.Add($"{(k < labels.Length ? labels[k] : "weitere Vergütung")} {amounts[k]}");
 
-        _log.Info($"[Quest] JournalResult Belohnung: items=[{string.Join(" | ", items)}] amounts=[{string.Join(",", amounts)}]");
+        // Only log when the reward actually changed: this runs per frame, and the
+        // unconditional log wrote the same line every ~75 ms (log 2026-07-19,
+        // 11:44 - roughly 2000 identical lines that buried everything else).
+        var rewardLog = $"items=[{string.Join(" | ", items)}] amounts=[{string.Join(",", amounts)}]";
+        if (rewardLog != _lastRewardLog)
+        {
+            _lastRewardLog = rewardLog;
+            _log.Info($"[Quest] JournalResult Belohnung: {rewardLog}");
+        }
         return "Belohnung: " + string.Join(". ", parts);
     }
 
@@ -5482,24 +5579,34 @@ public sealed class UIReaderService : IDisposable
         _lastBestiaryRow = row;
         if (string.IsNullOrEmpty(row)) return;
 
-        var announce = index >= 0 && total > 0 ? $"{index + 1} von {total}, {row}" : row;
+        _selectedBestiaryMonster = null;
+
+        if (!TryExtractBestiaryMonster(row, out var monster))
+        {
+            // Inside the hunting log the cursor also crosses rank headers
+            // ("Thaumaturg 01") and reward rows ("75, Vergütung"). The user
+            // only wants the monsters, so those stay silent (decision
+            // 2026-07-19). Rows OUTSIDE the tree list are the rank picker -
+            // silencing those would make rank selection unusable.
+            if (index >= 0 && total > 0) return;
+            _tolk.SpeakInterrupt(row);
+            return;
+        }
 
         // Monster rows get their habitat appended (MonsterNoteTarget sheet) so
         // the user hears WHERE to hunt; the name also arms the auto-walk key.
-        _selectedBestiaryMonster = null;
-        if (TryExtractBestiaryMonster(row, out var monster))
+        // No "x von y" prefix: that count includes the rows filtered out above.
+        var announce = row;
+        var habitat = _bestiary.GetHabitat(monster);
+        if (habitat != null)
         {
-            var habitat = _bestiary.GetHabitat(monster);
-            if (habitat != null)
-            {
-                _selectedBestiaryMonster = monster;
-                announce += $". Lebt in {habitat}";
-            }
-            else
-            {
-                // Name mismatch UI vs. BNpcName sheet - log for ground truth.
-                _log.Info($"[Bestiary] Kein Lebensraum für '{monster}' (kein Sheet-Treffer).");
-            }
+            _selectedBestiaryMonster = monster;
+            announce += $". Lebt in {habitat}";
+        }
+        else
+        {
+            // Name mismatch UI vs. BNpcName sheet - log for ground truth.
+            _log.Info($"[Bestiary] Kein Lebensraum für '{monster}' (kein Sheet-Treffer).");
         }
         _tolk.SpeakInterrupt(announce);
     }
@@ -5567,20 +5674,22 @@ public sealed class UIReaderService : IDisposable
                 text = ReadRendererTexts(item->Renderer);
             text = FormatBestiaryRow(text);
             if (string.IsNullOrEmpty(text)) continue;
-            // Monsters get their habitat so the overview answers "where to go"
-            if (TryExtractBestiaryMonster(text, out var monster)
-                && _bestiary.GetHabitat(monster) is { } habitat)
+            // Monsters only - rank headers and rewards are skipped here for the
+            // same reason as in OnMonsterNoteUpdate.
+            if (!TryExtractBestiaryMonster(text, out var monster)) continue;
+            // Habitat so the overview answers "where to go"
+            if (_bestiary.GetHabitat(monster) is { } habitat)
                 text += $", lebt in {habitat}";
             rows.Add(text);
         }
 
-        _log.Info($"[Bestiary] Uebersicht: {rows.Count} Zeilen von {total} Items");
+        _log.Info($"[Bestiary] Uebersicht: {rows.Count} Monster von {total} Items");
         if (rows.Count == 0)
         {
-            _tolk.SpeakInterrupt("Bestiarium ist leer.");
+            _tolk.SpeakInterrupt("Keine Monster in dieser Liste.");
             return;
         }
-        _tolk.SpeakInterrupt($"Bestiarium, {rows.Count} Einträge. " + string.Join(". ", rows));
+        _tolk.SpeakInterrupt($"Bestiarium, {rows.Count} Monster. " + string.Join(". ", rows));
     }
 
     private static unsafe AtkComponentTreeList* FindTreeList(AtkUnitBase* addon)
@@ -5774,6 +5883,275 @@ public sealed class UIReaderService : IDisposable
     ///               Texte werden kombiniert (Label + Wert/Status)
     /// Depth-Limit = 6 verhindert Stack-Overflow bei tiefen B�umen.
     /// </summary>
+    /// <summary>
+    /// Main menu (_MainCommand): its buttons carry ONLY icons, no text, so the
+    /// generic tree reader returned "" and every arrow-key move was silent (log
+    /// 2026-07-19 12:41 - 14 silent focus changes across all seven entries, with
+    /// nachbarn=[] proving there is no label in a neighbouring node either).
+    ///
+    /// Announced is the entry's NAME plus its position ("Charakter, 2 von 7").
+    ///
+    /// The name comes from the button's own ButtonClick event: its parameter is
+    /// the row id in the Lumina sheet MainCommand. That mapping was PROVEN by
+    /// the V5.16 probe (log 2026-07-19 15:33), not assumed - all seven buttons
+    /// carried params 1..7 resolving to a coherent menu group (Initiative,
+    /// Charakter, Kommandoliste, Archiv, Timer, Errungenschaften,
+    /// Sammler-Notizbuch), and param ran exactly parallel to the position
+    /// computed below, each confirming the other.
+    ///
+    /// The position is measured too: the buttons are counted in the addon's own
+    /// node list and the focused one located by identity. It stays as the
+    /// fallback for any button whose event or sheet row is missing - a position
+    /// alone is thin, but never wrong.
+    /// </summary>
+    private unsafe bool TryReadIconRowPosition(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (node == null) return false;
+
+        var addon = FindAddonForNode(node);
+        if (addon == null || addon->NameString != "_MainCommand") return false;
+
+        // The focus sits on a collision child; its parent is the button.
+        AtkResNode* button = null;
+        var cur = node;
+        for (var up = 0; up < 3 && cur->ParentNode != null; up++)
+        {
+            cur = cur->ParentNode;
+            if ((int)cur->Type >= 1000) { button = cur; break; }
+        }
+        if (button == null) return false;
+
+        var buttons = new List<nint>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !n->IsVisible()) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Button) continue;
+            buttons.Add((nint)n);
+        }
+
+        var index = buttons.IndexOf((nint)button);
+        if (index < 0 || buttons.Count == 0) return false;
+
+        // The node list runs OPPOSITE to the visual order: the user reported the
+        // first entry announcing itself as "7 von 7" (2026-07-19). Same Z-order
+        // reversal already documented for JournalDetail and FreeCompanyProfile,
+        // where labels sit behind their content.
+        var position = buttons.Count - index;
+
+        // No window name: "Hauptmenü" was wrong (user 2026-07-19 - "es ist nicht
+        // das hauptmenü"), and the addon's internal name (_MainCommand) is not a
+        // name a player would recognise.
+        var name = ReadMainCommandName(button);
+        text = name.Length > 0
+            ? $"{name}, {position} von {buttons.Count}"
+            : $"{position} von {buttons.Count}";
+        return true;
+    }
+
+    /// <summary>
+    /// Name of a main-menu button, "" if it carries no click event or the
+    /// parameter addresses no sheet row. Reading the event rather than indexing
+    /// the sheet by position means a menu that gains, loses or reorders entries
+    /// still announces correctly - the button states its own command id.
+    /// </summary>
+    private unsafe string ReadMainCommandName(AtkResNode* button)
+    {
+        var evt = FindEventOfType(button, AtkEventType.ButtonClick);
+        if (evt == null) return string.Empty;
+        return LookupMainCommandName(evt->Param);
+    }
+
+    /// <summary>Name of a MainCommand sheet row, "" if the id has no row.</summary>
+    private string LookupMainCommandName(uint rowId)
+    {
+        try
+        {
+            var sheet = _data.GetExcelSheet<Lumina.Excel.Sheets.MainCommand>();
+            if (sheet == null) return string.Empty;
+            var row = sheet.GetRowOrDefault(rowId);
+            return row?.Name.ExtractText().Trim() ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, $"[MainCmd] Sheet-Zugriff fehlgeschlagen fuer rowId={rowId}");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>The addon a node belongs to (root-node identity), null if none.</summary>
+    private unsafe AtkUnitBase* FindAddonForNode(AtkResNode* node)
+    {
+        if (node == null) return null;
+
+        var root = node;
+        var guard = 0;
+        while (root->ParentNode != null && guard++ < 64) root = root->ParentNode;
+
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return null;
+
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (a != null && a->RootNode == root) return a;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Name of the addon a node belongs to: climb to the root node, then find the
+    /// loaded addon whose RootNode matches. Identity comparison, no name guessing.
+    /// "?" when nothing matches. Diagnosis only - called just for silent focus
+    /// events, never per frame.
+    /// </summary>
+    private unsafe string FindAddonNameForNode(AtkResNode* node)
+    {
+        if (node == null) return "?";
+
+        var root = node;
+        var guard = 0;
+        while (root->ParentNode != null && guard++ < 64) root = root->ParentNode;
+
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return "?";
+
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (a != null && a->RootNode == root) return a->NameString;
+        }
+        return "?";
+    }
+
+    /// <summary>Raw node types of the ancestor chain - shows how far the text
+    /// search would have had to climb. Diagnosis only.</summary>
+    private unsafe string DescribeAncestorTypes(AtkResNode* node)
+    {
+        var parts = new List<string>();
+        var cur = node;
+        for (var up = 0; up < 6 && cur->ParentNode != null; up++)
+        {
+            cur = cur->ParentNode;
+            parts.Add($"{cur->NodeId}:{(int)cur->Type}");
+        }
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Texts of the neighbouring nodes. If the label sits in a SIBLING rather than
+    /// an ancestor, the current search (own subtree, then up to 3 ancestors) can
+    /// never reach it - this line proves or disproves that. Diagnosis only.
+    /// </summary>
+    private unsafe string DescribeSiblingTexts(AtkResNode* node)
+    {
+        var parts = new List<string>();
+
+        var sib = node->PrevSiblingNode;
+        for (var n = 0; sib != null && n < 4; n++, sib = sib->PrevSiblingNode)
+        {
+            var t = GetTextFromNodeTree(sib);
+            if (t.Length > 0) parts.Add($"vor:'{t}'");
+        }
+
+        sib = node->NextSiblingNode;
+        for (var n = 0; sib != null && n < 4; n++, sib = sib->NextSiblingNode)
+        {
+            var t = GetTextFromNodeTree(sib);
+            if (t.Length > 0) parts.Add($"nach:'{t}'");
+        }
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Every event registered on a silent focus node and its ancestors, with the
+    /// sheet rows each event parameter would address.
+    /// DIAGNOSIS ONLY (V5.20) - decides nothing, announces nothing.
+    ///
+    /// WHY THE TOOLTIP ROUTE IS GONE: V5.19 probed the tooltip windows on the
+    /// Character window's icon buttons. All 20 silent cases logged "tooltip=[]"
+    /// - not empty text, but no tooltip window VISIBLE at all while the keyboard
+    /// focus sat on the button. The game opens tooltips on mouse hover, not on
+    /// keyboard focus. Hypothesis refuted; no wrong label was ever spoken.
+    /// AddonCharacter exists in FFXIVClientStructs but carries only TabIndex and
+    /// TabCount (ilspycmd 2026-07-19), so it offers no button names either.
+    ///
+    /// WHY EVENTS: this is the route that PROVED itself in V5.18. The
+    /// _MainCommand buttons were equally textless, and their ButtonClick
+    /// parameter turned out to be the MainCommand sheet row - three independent
+    /// checks confirmed it (params ran 1..7 parallel to the positions, the names
+    /// formed a coherent menu group, and the z-order cross-check matched). The
+    /// user asks for buttons like "Aktualisieren", which exist in many windows,
+    /// so a generic route matters more than a Character-window special case.
+    ///
+    /// The parameter is resolved against BOTH candidate sheets - Addon (the
+    /// game's UI label sheet) and MainCommand (proven for the main menu) - so
+    /// the log shows which one produces sensible names. Nothing is announced
+    /// until that mapping is confirmed against what the buttons actually do:
+    /// a wrong label sends a blind player into the wrong window, which is worse
+    /// than silence.
+    /// </summary>
+    private unsafe string DescribeFocusEvents(AtkResNode* node)
+    {
+        var parts = new List<string>();
+
+        // Climb: the focus sits on a collision child, the button that carries
+        // the event is its parent (log "eltern=[14:1013 ...]"). Three levels is
+        // the same reach the text search uses.
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            var evt   = cur->AtkEventManager.Event;
+            var guard = 0;
+            while (evt != null && guard++ < 32)
+            {
+                if (!IsReadable(evt)) break;
+                parts.Add($"{cur->NodeId}:{evt->State.EventType} param={evt->Param}"
+                          + DescribeParamRows(evt->Param));
+                evt = evt->NextEvent;
+            }
+            cur = cur->ParentNode;
+        }
+
+        return string.Join(" | ", parts);
+    }
+
+    /// <summary>The sheet rows an event parameter would address, "" when it hits
+    /// none. Both candidates are shown so the log decides which sheet applies -
+    /// picking one up front would be a guess.</summary>
+    private string DescribeParamRows(uint param)
+    {
+        var bits = new List<string>();
+
+        var addon = LookupAddonText(param);
+        if (addon.Length > 0) bits.Add($"Addon:'{addon}'");
+
+        var main = LookupMainCommandName(param);
+        if (main.Length > 0) bits.Add($"MainCommand:'{main}'");
+
+        return bits.Count > 0 ? " -> " + string.Join(" ", bits) : string.Empty;
+    }
+
+    /// <summary>Text of an Addon sheet row (the game's UI label sheet), "" if the
+    /// id has no row. Field verified with ilspycmd 2026-07-19.</summary>
+    private string LookupAddonText(uint rowId)
+    {
+        try
+        {
+            var sheet = _data.GetExcelSheet<Lumina.Excel.Sheets.Addon>();
+            if (sheet == null) return string.Empty;
+            var row = sheet.GetRowOrDefault(rowId);
+            return row?.Text.ExtractText().Trim() ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Focus] Addon-Sheet Zeile {rowId} nicht lesbar: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
     private unsafe string GetTextFromNodeTree(AtkResNode* node, int depth = 0)
     {
         if (node == null || depth > 6) return string.Empty;
