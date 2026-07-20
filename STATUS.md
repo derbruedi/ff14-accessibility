@@ -5,6 +5,30 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-07-20 abends, V5.29: ABSTURZ-FIX BESTAETIGT)
 
+### RELEASE v5.29 VEROEFFENTLICHT (2026-07-20 ~22:30)
+Commits b7625d1 (V5.29) + add14b8 (repo.json 5.29.0.0) nach origin/main
+gepusht. GitHub-Release v5.29 mit 4 Assets, alle state=uploaded, v5.29
+ist "Latest" (per gh api releases/latest geprueft):
+latest.zip (545602 B), FF14Accessibility-v5.29.0.zip,
+FF14AccessibilityInstaller.exe, installer.json.
+- latest-Link per HEAD verifiziert: HTTP 200, 545602 B - passt zur ZIP.
+- ZIP-Inhalt geprueft: Manifest 5.29.0.0, Tolk.dll +
+  nvdaControllerClient64.dll + alle NAudio-DLLs drin.
+- Installer-EXE UNVERAENDERT aus release_v5.28 uebernommen; Sha256 per
+  Get-FileHash gegen installer.json geprueft, stimmt exakt.
+- repo.json byte-sicher via ISO-8859-1: 958 Bytes und 10 Nicht-ASCII-
+  Bytes vorher wie nachher.
+- Dringlichkeit war hoch: unter v5.28 konnte JEDER Nutzer sein Spiel mit
+  Taste O zum Absturz bringen.
+
+### Merke fuer kuenftige Sessions
+- KeyNames.cs (untracked) ist toter Code: die Klasse KeyNames wird
+  nirgends referenziert (die Treffer auf "KeyNames" sind SlotKeyNames in
+  HotbarService). Ein frischer Clone baut also. Entweder loeschen oder
+  bewusst so lassen - nicht versehentlich fuer noetig halten.
+- Byte-Vergleich von Dateien NIE mit PowerShells ">" dumpen, das fuegt
+  ein UTF-8-BOM hinzu und taeuscht 3 Bytes Differenz vor.
+  Richtig: cmd /c "git show HEAD:pfad > datei".
 ### V5.29 BESTAETIGT (User "ja passt" + Log 22:09-22:13)
 Der Beweis ist staerker als "es ist nichts passiert" - der AUSLOESENDE
 PFAD lief erneut durch und hielt:
