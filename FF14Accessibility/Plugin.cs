@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MessageHistoryService _history;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
+    private readonly VitalsService      _vitals;
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
     private readonly DalamudPluginsService _dalamudPlugins;
@@ -56,8 +57,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.27";
-    private const string PluginVersionTag = "Icon-Knoepfe sprechen";
+    private const string PluginVersion    = "5.28";
+    private const string PluginVersionTag = "HP/MP-Toene";
 
     public Plugin()
     {
@@ -146,6 +147,7 @@ public sealed class Plugin : IDalamudPlugin
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
+        _vitals     = new VitalsService(ObjectTable, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
 
@@ -483,6 +485,10 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
+        // HP/MP tones on every 10 % step (pan = fill level). Independent of
+        // combat state on purpose: post-fight regeneration is exactly when the
+        // bar refilling should be audible.
+        _vitals.Update();
         _equipment.Update();
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk
@@ -713,6 +719,7 @@ public sealed class Plugin : IDalamudPlugin
         _autoWalk.Dispose();
         _beacon.Dispose();
         _cue.Dispose();
+        _vitals.Dispose();
         _tolk.Dispose();
     }
 }

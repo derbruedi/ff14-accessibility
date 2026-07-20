@@ -14,6 +14,15 @@ Zentrale, VERIFIZIERTE Fakten über Spiel-Strukturen. Quelle jeweils angegeben
 - `CustomizeData` (Client.Game.Character): Race@0, Sex@1, Tribe@4 (Bytes).
   ABER: kein sauberer Live-Zeiger auf die laufende Charaktererstellung
   (kein AgentCharaMake in dieser Version; AgentLobby ohne CustomizeData-Feld)
+- `Framework` (Client.System.Framework): `bool WindowInactive` @ Offset 6104
+  — hat das SPIELFENSTER den Fokus? (true = im Hintergrund). Genutzt vom
+  VitalsService, um die HP/MP-Töne stumm zu schalten, solange man in einem
+  anderen Programm ist. Vorzuziehen gegenüber der Windows-API
+  `GetForegroundWindow`: das Spiel führt das Flag ohnehin, eine zweite
+  Wahrheitsquelle könnte davon abdriften. Daneben liegen `CallerWindow`
+  (nint) und `GameWindow*`. NOCH NICHT BELEGT: ob das Flag auch
+  Minimieren/Overlays abdeckt oder nur den reinen Fokuswechsel — der
+  VitalsService loggt jeden Flankenwechsel, das klärt es im Betrieb
 
 ## Charaktererstellung (CharaMake)
 

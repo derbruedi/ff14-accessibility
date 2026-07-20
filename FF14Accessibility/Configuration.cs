@@ -152,6 +152,13 @@ public sealed class Configuration : IPluginConfiguration
     public float AutoWalkPlaceStopRange = 1.0f;      // Orte, Wegpunkte, Questziele: dicht dran
     public float AutoWalkTransitionStopRange = 0.5f; // Zonen-Übergänge: fast drauf, damit der Übergang auslöst
 
+    // HP/MP-Töne (V5.28): bei jeder 10-Prozent-Stufe ein kurzer Ton, dessen
+    // Stereo-Position den Füllstand abbildet (voll = rechts, leer = links;
+    // User-Entscheid 2026-07-20). Gilt auch ausserhalb des Kampfes, weil
+    // gerade die Regeneration danach hörbar sein soll. HP tiefer als MP.
+    public bool AnnounceVitalCues = true;
+    public float VitalCueVolume = 0.4f;         // 0 = stumm, 1 = volle Lautstärke
+
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt

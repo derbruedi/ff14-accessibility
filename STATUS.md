@@ -3,7 +3,88 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-20, V5.27: Tooltip-Sonde)
+## STAND JETZT (2026-07-20, V5.28: HP/MP-Toene)
+
+### V5.28 KOMPLETT BESTAETIGT (2026-07-20)
+User: "ok funktioniert" fuer das Grundfeature, danach noch einmal
+"das funktioniert" fuer die beiden Nachbesserungen. Alles in-game
+bestaetigt, nichts mehr offen ausser dem Log-Nachweis unten.
+
+Zwei Nachbesserungen auf User-Wunsch, beide bestaetigt:
+1. TONHOEHEN GETAUSCHT: HP ist jetzt der HOHE Ton (1046 Hz), MP der
+   TIEFE (523 Hz). Vorher andersherum - der User hat beides gehoert und
+   sich so entschieden.
+2. TOENE NUR BEI FOKUSSIERTEM SPIELFENSTER. Quelle ist das Spiel selbst:
+   Framework.WindowInactive, bool auf FieldOffset 6104 (ilspycmd-
+   verifiziert, siehe game-api.md). Bewusst NICHT ueber die Windows-
+   API GetForegroundWindow - das Spiel fuehrt das Flag ohnehin, eine
+   zweite Wahrheitsquelle koennte davon abdriften.
+   WICHTIG: im Hintergrund werden die Stufen WEITER GETRACKT, nur der
+   Ton entfaellt. Sonst wuerde alles, was waehrend des Alt-Tab passiert
+   ist, beim Zurueckkommen in einem Rutsch nachgepiept.
+   NOCH ZU BELEGEN: was das Flag zur Laufzeit genau abdeckt (Alt-Tab,
+   Minimieren, Overlay davor). Der Name legt es nahe, mehr nicht -
+   deshalb loggt jeder Flankenwechsel eine [Vitals]-Zeile.
+
+### V5.28 Grundfeature (vom User bestaetigt)
+V5.27 ist vom User bestaetigt ("es passt"), inklusive des offenen
+Wiederoeffnen-Falls. Neues Feature auf User-Wunsch: HP und MP
+nicht-sprachlich hoerbar machen.
+
+VitalsService.cs (neu) - bewusst NICHT in CueService, weil die Pieptoene
+laut User spaeter durch echte Sounds ersetzt werden; dann aendert sich
+nur dieser eine Service. Austauschpunkt ist die Methode PlayTone.
+
+REGEL: bei jedem Ueberschreiten einer 10-Prozent-Stufe ein kurzer Ton
+(90 ms). Beide Richtungen - Schaden UND Heilung/Regeneration.
+- STEREO-POSITION = FUELLSTAND (User-Entscheid, nach kurzem Probieren
+  am 2026-07-20 umgedreht): 100% = ganz RECHTS, 50% = Mitte,
+  0% = ganz LINKS. Schaden wandert nach links, Heilung nach rechts.
+  Equal-Power-Pan, uebernommen aus BeaconService.
+- HP = 1046 Hz (C6, hoch), MP = 523 Hz (C5, tief). Genau eine Oktave,
+  damit die beiden Balken sich nicht verwechseln lassen. Beide NICHT auf
+  den Beacon-Frequenzen (880/440/220) und nicht auf den Routen-Cues
+  (990-1568).
+- GILT IMMER, auch ausserhalb des Kampfes (User-Entscheid): gerade die
+  Regeneration nach dem Kampf soll hoerbar sein. Die gesprochenen
+  HP-Schwellen in CombatService bleiben unveraendert daneben bestehen -
+  Sprache unterbricht, diese Toene nicht.
+
+DREI FALLEN, die im Code adressiert sind:
+1. HYSTERESE 2 Prozentpunkte (StepFor). Ohne sie koennte ein Wert direkt
+   auf einer Stufengrenze - Regen-Tick gegen Schadens-Tick - zwischen
+   zwei Stufen hin und her rattern und dauerpiepen. Sonderfall 100%:
+   ueber der Obergrenze ist kein Platz mehr fuer die Hysterese.
+2. BASELINE STILL bei Login, Zonenwechsel, MaxHp/MaxMp==0 (Ladebildschirm,
+   Jobs ohne Mana). Stufe -1 = "noch kein Vergleichswert", der naechste
+   Frame setzt nur, sagt nichts. Sonst klingt jeder Ladebildschirm wie
+   ein voller Balken Schaden.
+3. EIN Ton pro Sprung, nicht einer pro uebersprungener Stufe. Ein Treffer
+   von 100% auf 30% gibt einen Ton bei 30%, keine Salve.
+
+HP und MP koennen im selben Frame beide eine Stufe wechseln, deshalb hat
+der Provider eine kleine Warteschlange (max 4, 40 ms Luecke) statt den
+laufenden Ton zu ueberschreiben - sonst verschluckt einer den anderen.
+
+Config neu: AnnounceVitalCues (bool), VitalCueVolume (0.4). Build 0/0,
+deployt als 5.28.0.0 (Manifest gegengeprueft), csproj + Plugin.cs
+synchron. ACHTUNG csproj: Version UND AssemblyVersion UND FileVersion -
+Dalamud vergleicht die AssemblyVersion, die stand erst noch auf 5.27.
+Auto-Deploy nach devPlugins laeuft NUR bei -c Debug, nicht Release.
+
+### Beim naechsten Test (V5.28)
+1. "Version 5 Punkt 28 bereit".
+2. Schaden nehmen: Toene muessen mit sinkender HP nach LINKS wandern.
+3. Danach stehen bleiben und regenerieren: dieselben Toene wandern
+   wieder nach RECHTS zurueck.
+4. Einen Zauber wirken: der MP-Ton ist deutlich TIEFER als der HP-Ton.
+5. Ladebildschirm/Zonenwechsel: darf KEINE Toene ausloesen.
+6. Alt-Tab in ein anderes Fenster, waehrend HP sich aendern: es darf
+   NICHTS zu hoeren sein - auch nicht nachtraeglich beim Zurueckkommen.
+   Im Log muss "[Vitals] Spielfenster im Hintergrund" stehen.
+7. Im Log stehen [Vitals]-Zeilen mit alter und neuer Stufe (Debug-Level).
+
+## ARCHIV V5.27 (2026-07-20, Tooltip-Sonde)
 
 DER SHEET-WEG AUS V5.20 IST WIDERLEGT - durch die eigenen Daten. Die
 events-Sonde hat geliefert, und zwar gegen die Hypothese:
@@ -42,6 +123,17 @@ ENTSCHEIDEND: die vom Hook gemeldeten Node-Zeiger sind DIESELBEN, auf
 denen der Tastatur-Fokus sitzt (Buttons id=3, CheckBoxen id=4 - exakt
 was die [Focus] STUMM-Zeilen meldeten). Zuordnung direkt ueber Zeiger,
 ohne Raterei.
+
+### RELEASE v5.27 VEROEFFENTLICHT (2026-07-20 ~10:05)
+Commit 791ca1d (V5.26+V5.27) nach origin/main gepusht. GitHub-Release
+v5.27 mit 4 Assets: latest.zip (541328 B), FF14Accessibility-v5.27.0.zip,
+FF14AccessibilityInstaller.exe, installer.json. repo.json auf 5.27.0.0
+(byte-sicher ersetzt - die Datei hat vorbestehend kaputte Umlaute, nicht
+neu kodieren!). latest-Link per HEAD verifiziert: HTTP 200, 541328 B.
+Installer-EXE UNVERAENDERT aus release_v5.25 uebernommen (am Installer
+hat sich nichts geaendert, so bleibt der Sha256 in installer.json
+gueltig - per Get-FileHash gegengeprueft, stimmt exakt).
+uia_test.ps1 weiterhin bewusst nicht committet.
 
 ### V5.27 BESTAETIGT (User "ok funktioniert" + Log 2026-07-20 09:58/09:59)
 - "[Tooltip] Hooks aktiv" um 09:58:34.
