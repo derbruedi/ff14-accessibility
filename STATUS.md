@@ -5,6 +5,26 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-07-20, V5.28: HP/MP-Toene)
 
+### RELEASE v5.28 VEROEFFENTLICHT (2026-07-20 ~11:27)
+Commit bdc8452 (V5.28) nach origin/main gepusht. GitHub-Release v5.28
+mit 4 Assets: latest.zip (544299 B), FF14Accessibility-v5.28.0.zip,
+FF14AccessibilityInstaller.exe, installer.json. Alle vier state=uploaded,
+v5.28 ist "Latest". repo.json auf 5.28.0.0.
+- repo.json BYTE-SICHER geaendert (ISO-8859-1 hin und zurueck, das bildet
+  alle 256 Bytewerte bijektiv ab): Groesse 958 vorher wie nachher, GENAU
+  EIN Byte geaendert. Die Datei hat vorbestehend kaputte Umlaute - nicht
+  neu kodieren!
+- Installer-EXE UNVERAENDERT aus release_v5.27 uebernommen (am Installer
+  hat sich nichts geaendert, so bleibt der Sha256 in installer.json
+  gueltig). Per Get-FileHash gegen installer.json geprueft: stimmt exakt.
+- latest-Link per HEAD verifiziert: HTTP 200, 544299 B - passt zur ZIP.
+- ZIP-Inhalt geprueft: Manifest 5.28.0.0, alle NAudio-DLLs + Tolk +
+  nvdaControllerClient64 drin.
+- dist/ ist in .gitignore, die Release-Artefakte gehoeren nicht ins Repo.
+- MERKE: Invoke-WebRequest braucht hier -UseBasicParsing, sonst bricht es
+  im NonInteractive-Modus ab.
+- uia_test.ps1 weiterhin bewusst nicht committet.
+
 ### V5.28 KOMPLETT BESTAETIGT (2026-07-20)
 User: "ok funktioniert" fuer das Grundfeature, danach noch einmal
 "das funktioniert" fuer die beiden Nachbesserungen. Alles in-game
