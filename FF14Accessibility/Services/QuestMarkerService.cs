@@ -178,7 +178,7 @@ public sealed class QuestMarkerService
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            var text = AtkText.Read((AtkTextNode*)node);
             if (string.IsNullOrWhiteSpace(text)) continue;
 
             var id = node->NodeId;

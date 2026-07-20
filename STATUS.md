@@ -3,7 +3,113 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-20, V5.28: HP/MP-Toene)
+## STAND JETZT (2026-07-20 abends, V5.29: ABSTURZ-FIX BESTAETIGT)
+
+### V5.29 BESTAETIGT (User "ja passt" + Log 22:09-22:13)
+Der Beweis ist staerker als "es ist nichts passiert" - der AUSLOESENDE
+PFAD lief erneut durch und hielt:
+22:09:35 _NotificationFriend MouseClick -> Social geoeffnet. Exakt die
+Sequenz, die um 21:53 noch das Spiel gerissen hat. Kein Absturz.
+
+- KEIN Crash-Log mehr nach 21:54:52 (das war der letzte unter V5.28).
+- ALLE Registerkarten-Labels kamen "aus ButtonTextNode": Gruppe,
+  Freunde, Suche. KEIN EINZIGES MAL die Fallback-Liste => das befuerchtete
+  Ladezustands-Problem tritt NICHT auf, ein IsReady/IsFullyLoaded-Gate
+  wird NICHT gebraucht.
+- KEINE REGRESSION durch die 46 umgestellten Lesestellen: 326
+  Sprachausgaben im Log, davon 0 leer.
+
+### Nebenbefunde (NICHT vom Fix verursacht, nicht beauftragt)
+1. "Liste NICHT gefunden" beim ERNEUTEN Oeffnen derselben Registerkarte
+   (22:09:41, 22:10:20) - Karte wird angesagt, Inhalt fehlt. Beim
+   Durchschalten geht es wieder. Vermutlich Kind-Fenster-Id-Logik
+   (_outgoingSocialChildId), NICHT untersucht.
+2. Stumme Listenzeilen FriendList/PartyMemberList/SocialList (15x
+   "[Focus] STUMM", id=7 typ=8). VORBESTEHEND seit V5.27, steht dort
+   schon offen. Dass die Nachbartexte ('--') gelesen werden, zeigt dass
+   AtkText dort arbeitet - der fokussierte Node traegt selbst keinen Text.
+## Der Fix im Detail (V5.29)
+
+### Was passiert war
+Vier Spielabstuerze in 25 Minuten (21:31, 21:33, 21:53, 21:54).
+User-Meldung: Taste O (Online) und "Anfragen annehmen". BEIDES DERSELBE
+BUG - der Klick auf die Freundschafts-Benachrichtigung oeffnet dasselbe
+Fenster wie Taste O (Log 21:53:04 _NotificationFriend MouseClick, danach
+Absturz).
+
+### ROOT CAUSE (am Quellcode belegt, nicht vermutet)
+Alle vier Crash-Logs haben denselben Stack:
+AnnounceSocialTabIfChanged -> Utf8String.ToString() -> AccessViolation.
+
+FFXIVClientStructs' Utf8String.ToString() ist UNGESCHUETZT (ilspycmd
+gegen die DLL vom 2026-07-17):
+    Length  => Math.Max(0, (int)(BufUsed - 1));
+    AsSpan() => new ReadOnlySpan<byte>((byte*)StringPtr, Length);
+    ToString() => Encoding.UTF8.GetString(AsSpan());
+Kein Null-Check, kein Bounds-Check. Auf einem Node, den das Spiel zwar
+angelegt aber noch nicht gefuellt hat, stehen in StringPtr und BufUsed
+noch die alten Bytes -> GetString liest einen Muell-Zeiger ueber eine
+Muell-Laenge und laeuft aus der Speicherseite.
+
+KEIN Offset-Drift! Um 09:31 und 21:35 hat dasselbe Fenster korrekt
+"Gruppe", "Freunde", "Suche" angesagt. Es ist ein TIMING-Problem: bei
+frisch aufgebautem Fenster laeuft unser PostUpdate-Handler zu frueh.
+
+Der bisherige Schutz "textNode != null" (UIReaderService:604) reicht
+nicht - der Zeiger WAR gesetzt, nur der Text dahinter war leer.
+
+WICHTIG: try-catch haette das NIE gefangen. AccessViolationException ist
+in .NET eine Corrupted State Exception; der Check muss VOR dem Lesen
+passieren.
+
+### FIX V5.29
+Services/AtkText.cs (neu) - EIN abgesicherter Leser fuer alle UI-Texte:
+- prueft den Utf8String selbst per VirtualQuery
+- prueft die Struct-Invariante BufUsed <= BufSize (die das Spiel fuehrt)
+- prueft den Puffer an BEIDEN Enden (nur Anfang pruefen reicht nicht,
+  ein langer Lesevorgang liefe sonst trotzdem aus der Seite)
+- liefert im Zweifel "" statt zu raten
+
+ALLE 46 Aufrufe von NodeText.ToString() umgezogen (45 in
+UIReaderService.cs, 1 in QuestMarkerService.cs). Der Social-Pfad war nur
+die Stelle, die es zuerst erwischt hat - dieselbe Falle lag ueberall.
+
+Aufgeraeumt: IsReadable/DescribeMemory gab es danach doppelt. Die
+Fassungen in UIReaderService sind jetzt duenne Weiterleitungen an
+AtkText, die zweite Kopie der MEMORY_BASIC_INFORMATION-Struct ist weg -
+genau ueber so eine zweite Kopie koennte der 44-statt-48-Byte-Bug von
+2026-07-09 unbemerkt zurueckkommen.
+
+Byte-Sicherheit: UIReaderService.cs hat vorbestehend kaputte Umlaut-
+Bytes. Alle Aenderungen liefen ueber ISO-8859-1 hin und zurueck.
+Gegengeprueft: 660 Nicht-ASCII-Bytes vorher wie nachher, git-Diff genau
+46 Zeilen. (Eine Zwischenmessung zeigte 3 Bytes Differenz - das war ein
+BOM, das PowerShells ">" beim Vergleichs-Dump selbst hinzugefuegt hat,
+kein Schaden an der Datei. Merke: zum Byte-Vergleich cmd /c nutzen.)
+
+### BEIM NAECHSTEN TEST (das ist der offene Punkt!)
+V5.29 ist gebaut und deployt, aber NICHT in-game getestet.
+1. "Version 5 Punkt 29 bereit" muss beim Start kommen.
+2. Taste O mehrfach oeffnen/schliessen - kein Absturz.
+3. Freundschaftsanfrage annehmen - kein Absturz.
+4. Registerkarten durchschalten: es MUSS weiter "Gruppe", "Freunde",
+   "Suche" sagen (die echten Spiel-Labels).
+   WENN stattdessen "Gruppenmitglieder"/"Freundesliste"/"Schwarze Liste"
+   kommt, greift die Fallback-Liste - dann war der Text zum Lesezeitpunkt
+   noch nicht da. Kein Absturz, aber im Log steht dann
+   "Label aus Fallback-Liste" statt "Label aus ButtonTextNode".
+   Das waere der Hinweis, dass zusaetzlich ein Ladezustands-Gate noetig
+   ist (AtkUnitBase.IsReady bzw. die VTable-Funktion IsFullyLoaded -
+   beides existiert, beides bisher UNGENUTZT im Plugin).
+5. Quer gegenpruefen, dass nichts stumm wurde: Ansagen haengen jetzt ALLE
+   am neuen Leser. Wenn UI-Text flaechendeckend verstummt, zuerst
+   MEMORY_BASIC_INFORMATION in AtkText.cs pruefen (Size = 48!).
+
+Noch nicht committet, nicht releast. Letzter Release: v5.28.
+
+---
+
+## STAND (2026-07-20, V5.28: HP/MP-Toene)
 
 ### RELEASE v5.28 VEROEFFENTLICHT (2026-07-20 ~11:27)
 Commit bdc8452 (V5.28) nach origin/main gepusht. GitHub-Release v5.28

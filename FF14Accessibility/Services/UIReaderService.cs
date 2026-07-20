@@ -601,7 +601,7 @@ public sealed class UIReaderService : IDisposable
         _socialTabSpokenAt = DateTime.UtcNow;
 
         var textNode = tabs[active]->AtkComponentButton.ButtonTextNode;
-        var label = textNode != null ? textNode->NodeText.ToString() : string.Empty;
+        var label = textNode != null ? AtkText.Read(textNode) : string.Empty;
         var fromNode = !string.IsNullOrWhiteSpace(label);
         if (!fromNode) label = SocialTabFallback[active];
 
@@ -1007,7 +1007,7 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text) continue;
-            var t = ((AtkTextNode*)node)->NodeText.ToString();
+            var t = AtkText.Read((AtkTextNode*)node);
             if (!string.IsNullOrWhiteSpace(t) && t.Length > 1)
                 segments.Add((node->NodeId, t));
         }
@@ -1081,7 +1081,7 @@ public sealed class UIReaderService : IDisposable
         // Title text node id=121 (dump 2026-07-16: [5] id=121 Text V "Kopf").
         var node = addon->GetNodeById(121);
         if (node == null || node->Type != NodeType.Text) return;
-        var category = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+        var category = AtkText.Read((AtkTextNode*)node).Trim();
         if (string.IsNullOrEmpty(category) || category == _lastArmouryCategory) return;
 
         var isSwitch = _lastArmouryCategory.Length > 0;
@@ -1170,7 +1170,7 @@ public sealed class UIReaderService : IDisposable
             if (n == null) continue;
             if (n->Type == NodeType.Text && n->IsVisible())
             {
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (t.Length > 1) _log.Info($"[Probe] {name} id={n->NodeId}: '{t}'");
                 continue;
             }
@@ -1181,7 +1181,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var child = comp->UldManager.NodeList[j];
                 if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
-                var t = ((AtkTextNode*)child)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)child).Trim();
                 if (t.Length > 1) _log.Info($"[Probe] {name} id={n->NodeId}/{child->NodeId} CT={(int)comp->GetComponentType()}: '{t}'");
             }
         }
@@ -1728,7 +1728,7 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
-            var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)node).Trim();
             if (t.Length > 0) texts.Add($"id{node->NodeId}:'{t}'");
         }
         _log.Info($"[Notify] {name} geoeffnet. Sichtbare Texte: {(texts.Count > 0 ? string.Join(" | ", texts) : "keine")}");
@@ -1890,7 +1890,7 @@ public sealed class UIReaderService : IDisposable
     {
         var qn = icon->QuantityText;
         if (qn == null || !((AtkResNode*)qn)->IsVisible()) return string.Empty;
-        var q = qn->NodeText.ToString().Trim();
+        var q = AtkText.Read(qn).Trim();
         if (q.Length == 0 || q == "1" || !q.All(char.IsDigit)) return string.Empty;
         return q;
     }
@@ -2173,7 +2173,7 @@ public sealed class UIReaderService : IDisposable
 
             if (n->Type == NodeType.Text)
             {
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (!string.IsNullOrWhiteSpace(t))
                     _configSystemLastTexts[n->NodeId] = t;
             }
@@ -2192,7 +2192,7 @@ public sealed class UIReaderService : IDisposable
                 flagCache[n->NodeId * 10000u + child->NodeId] = (ushort)child->NodeFlags;
 
                 if (child->Type != NodeType.Text) continue;
-                var ct = ((AtkTextNode*)child)->NodeText.ToString().Trim();
+                var ct = AtkText.Read((AtkTextNode*)child).Trim();
                 if (!string.IsNullOrWhiteSpace(ct))
                     _configSystemLastTexts[n->NodeId * 10000u + child->NodeId] = ct;
             }
@@ -2273,7 +2273,7 @@ public sealed class UIReaderService : IDisposable
 
             if (n->Type == NodeType.Text)
             {
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (string.IsNullOrWhiteSpace(t)) continue;
                 var hasKey = _configSystemLastTexts.TryGetValue(n->NodeId, out var prev);
                 if (hasKey && prev == t) continue;
@@ -2293,7 +2293,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var child = comp->UldManager.NodeList[j];
                 if (child == null || child->Type != NodeType.Text) continue;
-                var t = ((AtkTextNode*)child)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)child).Trim();
                 if (string.IsNullOrWhiteSpace(t)) continue;
                 var key = n->NodeId * 10000u + child->NodeId;
                 var hasKey = _configSystemLastTexts.TryGetValue(key, out var prev);
@@ -2583,7 +2583,7 @@ public sealed class UIReaderService : IDisposable
         {
             var n = addon->UldManager.NodeList[i];
             if (n == null || !n->IsVisible() || n->Type != NodeType.Text) continue;
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)n).Trim();
             if (t.Length > 1 && !IsVolatileConfigText(t)) return t;
         }
         return "Ohne Beschriftung";
@@ -2750,7 +2750,7 @@ public sealed class UIReaderService : IDisposable
             // Ueberschriften als sichtbar und lieferte immer dieselbe (kein
             // einziger Tab-Wechsel im Log 2026-07-16 16:32 trotz Seitenwechsel).
             if (!IsEffectivelyVisible(n)) continue;
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)n).Trim();
             // Volatile Anzeigen ueberspringen: der fps-Zaehler (Top-Level id=4)
             // liegt am ENDE der Node-Liste, also VOR der echten Ueberschrift
             // (id=22 "Anzeigeeinstellungen") - er wurde als Tab-Label gewaehlt
@@ -2854,7 +2854,7 @@ public sealed class UIReaderService : IDisposable
             {
                 if (typeNum == 3)
                 {
-                    var rawText = ((AtkTextNode*)n)->NodeText.ToString().Replace("\n", "?");
+                    var rawText = AtkText.Read((AtkTextNode*)n).Replace("\n", "?");
                     var txt     = rawText.Length > 70 ? rawText[..70] + "�" : rawText;
                     sb.AppendLine($"  [{i}] id={n->NodeId} T={typeNum} F=0x{flags:X4} {vis} \"{txt}\"");
                 }
@@ -2883,7 +2883,7 @@ public sealed class UIReaderService : IDisposable
                 var cext = string.Empty;
                 if (ct2 == 3)
                 {
-                    var s = ((AtkTextNode*)child)->NodeText.ToString().Replace("\n", "?");
+                    var s = AtkText.Read((AtkTextNode*)child).Replace("\n", "?");
                     cext = $" \"{(s.Length > 50 ? s[..50] + "�" : s)}\"";
                 }
                 else if (ct2 >= 1000)
@@ -2947,7 +2947,7 @@ public sealed class UIReaderService : IDisposable
             if (n->Type == NodeType.Text)
             {
                 if (!n->IsVisible()) continue; // versteckte Nodes = alter/bedingter Inhalt
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var hasKey = cache.TryGetValue(n->NodeId, out var prev);
                 if (hasKey && prev == t) continue;
@@ -2968,7 +2968,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var child = comp->UldManager.NodeList[j];
                 if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
-                var t = ((AtkTextNode*)child)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)child).Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var key = n->NodeId * 10000u + child->NodeId;
                 var hasKey = cache.TryGetValue(key, out var prev);
@@ -3268,7 +3268,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var c = comp->UldManager.NodeList[j];
                 if (c == null || c->Type != NodeType.Text) continue;
-                var t = ((AtkTextNode*)c)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)c).Trim();
                 if (!string.IsNullOrWhiteSpace(t)) return t;
             }
             return string.Empty; // Window component found, but it has no title
@@ -3304,7 +3304,7 @@ public sealed class UIReaderService : IDisposable
         {
             var gc = comp->UldManager.NodeList[k];
             if (gc == null || gc->Type != NodeType.Text) continue;
-            var t = ((AtkTextNode*)gc)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)gc).Trim();
             if (!string.IsNullOrWhiteSpace(t) && t.Length > 1) return t;
         }
         return string.Empty;
@@ -3347,7 +3347,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var gc = childComp->UldManager.NodeList[k];
                 if (gc == null || gc->Type != NodeType.Text) continue;
-                var t = ((AtkTextNode*)gc)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)gc).Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
 
                 if ((int)child->Type == 1009)
@@ -3502,9 +3502,9 @@ public sealed class UIReaderService : IDisposable
             if (!_raceGenderSymbolsLogged)
             {
                 var mSym = male->AtkComponentButton.ButtonTextNode != null
-                    ? male->AtkComponentButton.ButtonTextNode->NodeText.ToString() : "?";
+                    ? AtkText.Read(male->AtkComponentButton.ButtonTextNode) : "?";
                 var fSym = female->AtkComponentButton.ButtonTextNode != null
-                    ? female->AtkComponentButton.ButtonTextNode->NodeText.ToString() : "?";
+                    ? AtkText.Read(female->AtkComponentButton.ButtonTextNode) : "?";
                 _log.Info($"[Accessibility] RaceGender-Symbole: id4(als männlich)='{ToHex(mSym)}' id3(als weiblich)='{ToHex(fSym)}'");
                 _raceGenderSymbolsLogged = true;
             }
@@ -3698,7 +3698,7 @@ public sealed class UIReaderService : IDisposable
         if (node->Type != NodeType.Text) { ProbeHelpState($"Node id=4 ist kein Text (Type={node->Type})"); return; }
         if (!node->IsVisible()) { ProbeHelpState("Node id=4 unsichtbar"); return; }
 
-        var text = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+        var text = AtkText.Read((AtkTextNode*)node).Trim();
         if (text == _lastCharaMakeHelpText)
         {
             ProbeHelpState($"Text unveraendert (Laenge {text.Length})");
@@ -3763,7 +3763,7 @@ public sealed class UIReaderService : IDisposable
             {
                 var n = a->UldManager.NodeList[i];
                 if (n == null || n->Type != NodeType.Text) continue;
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (t.Length < 40) continue;
                 found++;
                 var head = t.Length > 60 ? t[..60] : t;
@@ -3900,7 +3900,7 @@ public sealed class UIReaderService : IDisposable
     {
         var node = addon->CurrentChannelTextNode;
         if (node == null) return string.Empty;
-        return TolkService.Sanitize(node->NodeText.ToString()).Trim();
+        return TolkService.Sanitize(AtkText.Read(node)).Trim();
     }
 
     /// <summary>
@@ -4040,7 +4040,7 @@ public sealed class UIReaderService : IDisposable
         {
             var n = addon->UldManager.NodeList[i];
             if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)n).Trim();
             if (t.Length is < 2 or > 20 || t.Contains('/')) continue;
             var dx = n->X - fx;
             var dy = n->Y - fy;
@@ -4538,7 +4538,7 @@ public sealed class UIReaderService : IDisposable
             var n = addon->UldManager.NodeList[i];
             if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
 
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)n).Trim();
             if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
             if (parts.Contains(t)) continue; // name appears twice in the tooltip
             parts.Add(t);
@@ -4654,7 +4654,7 @@ public sealed class UIReaderService : IDisposable
     {
         if (node->Type == NodeType.Text)
         {
-            var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)node).Trim();
             // Character counters ("1/2", "3/40") sit inside input fields and
             // carry no meaning without their box - the field itself is named
             // below instead.
@@ -4783,7 +4783,7 @@ public sealed class UIReaderService : IDisposable
 
             if (node->Type == NodeType.Text)
             {
-                var text = ((AtkTextNode*)node)->NodeText.ToString();
+                var text = AtkText.Read((AtkTextNode*)node);
                 if (string.IsNullOrWhiteSpace(text)) continue;
                 if (!_questProbed.Contains(addonName))
                     _log.Info($"[Quest] {addonName} canvas textNode id={node->NodeId} '{text}'");
@@ -4810,7 +4810,7 @@ public sealed class UIReaderService : IDisposable
                     var child = comp->UldManager.NodeList[j];
                     if (child == null || child->Type != NodeType.Text
                         || child->NodeId != 3 || !child->IsVisible()) continue;
-                    var text = ((AtkTextNode*)child)->NodeText.ToString();
+                    var text = AtkText.Read((AtkTextNode*)child);
                     if (string.IsNullOrWhiteSpace(text)) continue;
                     objectives.Add(text);
                     allTexts.Add(text);
@@ -4911,7 +4911,7 @@ public sealed class UIReaderService : IDisposable
             if (n == null || !n->IsVisible()) continue;
             if (n->Type == NodeType.Text)
             {
-                var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+                var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (t.Length > 0 && t.Any(char.IsDigit)
                     && t.All(c => char.IsDigit(c) || c is '.' or ',' or ' '))
                     return t;
@@ -5058,7 +5058,7 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->GetNodeById(id);
             if (node == null || node->Type != NodeType.Text) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            var text = AtkText.Read((AtkTextNode*)node).Trim();
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 2 && !YesNoLabels.Contains(text))
                 return text;
         }
@@ -5066,55 +5066,23 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            var text = AtkText.Read((AtkTextNode*)node).Trim();
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 2 && !YesNoLabels.Contains(text))
                 return text;
         }
         return string.Empty;
     }
 
-    // -- VirtualQuery: Pointer-Sicherheitsnetz gegen AccessViolationException --
+    // -- Pointer-Sicherheitsnetz: eine Implementierung, siehe AtkText --
 
-    // Size MUST be 48 (4 trailing padding bytes for 8-byte alignment). With 44,
-    // VirtualQuery always fails with ERROR_BAD_LENGTH and IsReadable() returns
-    // false for EVERY pointer - proven by standalone repro on 2026-07-09.
-    [StructLayout(LayoutKind.Explicit, Size = 48)]
-    private struct MEMORY_BASIC_INFORMATION
-    {
-        [FieldOffset(0)]  public nuint BaseAddress;
-        [FieldOffset(8)]  public nuint AllocationBase;
-        [FieldOffset(16)] public uint  AllocationProtect;
-        [FieldOffset(20)] public ushort PartitionId;
-        [FieldOffset(24)] public nuint RegionSize;
-        [FieldOffset(32)] public uint  State;
-        [FieldOffset(36)] public uint  Protect;
-        [FieldOffset(40)] public uint  Type;
-    }
+    // These forward to AtkText so there is exactly ONE VirtualQuery guard in
+    // the plugin. They stay as named helpers because 36 call sites here read
+    // better with the short name, and because a second copy of the struct
+    // layout is exactly how the 44-vs-48-byte bug from 2026-07-09 could creep
+    // back in unnoticed.
+    private static unsafe bool IsReadable(void* ptr) => AtkText.IsReadable(ptr);
 
-    [DllImport("kernel32.dll")]
-    private static extern unsafe nuint VirtualQuery(void* lpAddress, out MEMORY_BASIC_INFORMATION lpBuffer, nuint dwLength);
-
-    private static unsafe bool IsReadable(void* ptr)
-    {
-        if (ptr == null) return false;
-        if (VirtualQuery(ptr, out var mbi, (nuint)sizeof(MEMORY_BASIC_INFORMATION)) == 0) return false;
-        const uint MEM_COMMIT   = 0x1000;
-        const uint PAGE_NOACCESS = 0x01;
-        const uint PAGE_GUARD    = 0x100;
-        return mbi.State == MEM_COMMIT && (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) == 0;
-    }
-
-    /// <summary>
-    /// Diagnostic companion to IsReadable: returns pointer value plus the
-    /// VirtualQuery verdict (State/Protect) so failed checks are explainable in the log.
-    /// </summary>
-    private static unsafe string DescribeMemory(void* ptr)
-    {
-        if (ptr == null) return "null";
-        if (VirtualQuery(ptr, out var mbi, (nuint)sizeof(MEMORY_BASIC_INFORMATION)) == 0)
-            return $"0x{(nint)ptr:X}: VirtualQuery failed";
-        return $"0x{(nint)ptr:X}: State=0x{mbi.State:X} Protect=0x{mbi.Protect:X} RegionSize=0x{(ulong)mbi.RegionSize:X}";
-    }
+    private static unsafe string DescribeMemory(void* ptr) => AtkText.DescribeMemory(ptr);
 
     // -- List-Item-Text lesen (abgesichert gegen ung�ltige Renderer-Pointer) --
 
@@ -5150,7 +5118,7 @@ public sealed class UIReaderService : IDisposable
                 if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
                 var textNode = (AtkTextNode*)node;
                 if (textNode->NodeText.IsEmpty) continue;
-                var text = textNode->NodeText.ToString();
+                var text = AtkText.Read(textNode);
                 if (!string.IsNullOrEmpty(text)) (parts ??= []).Add(text);
             }
             if (parts != null) return JoinDistinctParts(parts);
@@ -5206,7 +5174,7 @@ public sealed class UIReaderService : IDisposable
                 if (node == null) continue;
                 if (node->Type == NodeType.Text && node->NodeId == 2 && node->IsVisible())
                 {
-                    label = ((AtkTextNode*)node)->NodeText.ToString();
+                    label = AtkText.Read((AtkTextNode*)node);
                 }
                 else if ((int)node->Type >= 1000 && node->NodeId is 5 or 6)
                 {
@@ -5310,7 +5278,7 @@ public sealed class UIReaderService : IDisposable
             var node = comp->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text || node->NodeId != textNodeId) continue;
             if (!node->IsVisible()) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            var text = AtkText.Read((AtkTextNode*)node);
             if (!string.IsNullOrEmpty(text)) return text;
         }
         return string.Empty;
@@ -5769,7 +5737,7 @@ public sealed class UIReaderService : IDisposable
         {
             var n = comp->UldManager.NodeList[i];
             if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)n).Trim();
             if (!string.IsNullOrEmpty(t)) parts.Add(t);
         }
         return string.Join(", ", parts);
@@ -6151,7 +6119,7 @@ public sealed class UIReaderService : IDisposable
         // Text-Node: Inhalt direkt zur�ckgeben
         if (node->Type == NodeType.Text)
         {
-            var t = ((AtkTextNode*)node)->NodeText.ToString().Trim();
+            var t = AtkText.Read((AtkTextNode*)node).Trim();
             return t.Length > 1 ? t : string.Empty;
         }
 
@@ -6177,7 +6145,7 @@ public sealed class UIReaderService : IDisposable
             var btn = (AtkComponentButton*)comp;
             if (btn->ButtonTextNode != null)
             {
-                var t = btn->ButtonTextNode->NodeText.ToString().Trim();
+                var t = AtkText.Read(btn->ButtonTextNode).Trim();
                 if (t.Length > 1) return t;
             }
         }
@@ -6222,7 +6190,7 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->GetNodeById(id);
             if (node == null || node->Type != NodeType.Text) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            var text = AtkText.Read((AtkTextNode*)node);
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 1) return text;
         }
         return string.Empty;
@@ -6241,7 +6209,7 @@ public sealed class UIReaderService : IDisposable
             if (comp == null) continue;
             var btn = (AtkComponentButton*)comp;
             if (btn->ButtonTextNode == null) continue;
-            var text = btn->ButtonTextNode->NodeText.ToString().Trim();
+            var text = AtkText.Read(btn->ButtonTextNode).Trim();
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 1)
                 items.Add(text);
         }
@@ -6278,7 +6246,7 @@ public sealed class UIReaderService : IDisposable
 
             var btn = (AtkComponentButton*)comp;
             if (btn->ButtonTextNode == null) continue;
-            var text = btn->ButtonTextNode->NodeText.ToString().Trim();
+            var text = AtkText.Read(btn->ButtonTextNode).Trim();
             if (!string.IsNullOrWhiteSpace(text))
                 return text;
         }
@@ -6302,7 +6270,7 @@ public sealed class UIReaderService : IDisposable
             if (comp == null) continue;
 
             var btn = (AtkComponentButton*)comp;
-            var lbl = btn->ButtonTextNode != null ? btn->ButtonTextNode->NodeText.ToString().Trim() : "?";
+            var lbl = btn->ButtonTextNode != null ? AtkText.Read(btn->ButtonTextNode).Trim() : "?";
             var nf  = (ushort)node->NodeFlags;
 
             var sb = new System.Text.StringBuilder();
@@ -6335,7 +6303,7 @@ public sealed class UIReaderService : IDisposable
         {
             var node = addon->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
-            var text = ((AtkTextNode*)node)->NodeText.ToString();
+            var text = AtkText.Read((AtkTextNode*)node);
             if (!string.IsNullOrWhiteSpace(text) && text.Length > 1) parts.Add(text);
         }
         return JoinDistinctParts(parts, ". ");
@@ -6594,7 +6562,7 @@ public sealed class UIReaderService : IDisposable
 
         if (typeNum == 3) // Text
         {
-            var t = ((AtkTextNode*)node)->NodeText.ToString().Replace("\n", "?");
+            var t = AtkText.Read((AtkTextNode*)node).Replace("\n", "?");
             if (t.Length > 80) t = t[..80] + "�";
             extra = $" \"{t}\"";
         }
