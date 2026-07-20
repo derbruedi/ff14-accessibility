@@ -28,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IDataManager            DataManager     { get; init; } = null!;
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
     [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
+    [PluginService] private IGameInteropProvider    Interop         { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -51,11 +52,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
     private readonly DalamudPluginsService _dalamudPlugins;
+    private readonly TooltipService _tooltips;
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.25";
-    private const string PluginVersionTag = "Zaehler ans Ende, HP-Ansage auf Strg+Entf";
+    private const string PluginVersion    = "5.27";
+    private const string PluginVersionTag = "Icon-Knoepfe sprechen";
 
     public Plugin()
     {
@@ -137,7 +139,10 @@ public sealed class Plugin : IDalamudPlugin
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _history    = new MessageHistoryService(_tolk);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager);
+        // Must exist before the UI reader: that one asks it for the labels of
+        // icon buttons, which carry no text of their own.
+        _tooltips   = new TooltipService(Interop, Log);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
@@ -701,6 +706,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Framework.Update -= OnFrameworkUpdate;
         CommandManager.RemoveHandler("/acc");
+        _tooltips.Dispose();
         _toasts.Dispose();
         _chatReader.Dispose();
         _uiReader.Dispose();

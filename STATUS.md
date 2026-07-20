@@ -3,7 +3,169 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-19, V5.25 RELEASET - alles bestaetigt)
+## STAND JETZT (2026-07-20, V5.27: Tooltip-Sonde)
+
+DER SHEET-WEG AUS V5.20 IST WIDERLEGT - durch die eigenen Daten. Die
+events-Sonde hat geliefert, und zwar gegen die Hypothese:
+
+- Die Maus-Events tragen an JEDEM Knopf in JEDEM Fenster dieselbe feste
+  Serie param=256..260 (Character id=3 wie Social id=5). Das Addon-Sheet
+  macht daraus jedes Mal "Attacke/Verteidigung/Praezision/Ausweichen/
+  MAGIE" - fuenf identische Woerter, egal welcher Knopf. Also eine feste
+  Event-Serie, kein Bezeichner.
+- FocusStart param=3 erscheint in FriendList, PartyMemberList und
+  TelepotTown gleichermassen.
+- Die ListItem*-Events tragen den Zeilenindex (2 bzw. 4), keinen Namen.
+
+Warum es bei _MainCommand (V5.18) trotzdem ging: DIESE Knoepfe oeffnen
+per Definition MainCommands, ihr ButtonClick-param IST die Sheet-Zeile.
+Im Charakter-Fenster ist param=20 nur ein hausinterner Callback-Index.
+Blind uebernommen haette der Knopf "Tastenbelegung" geheissen.
+
+BRAUCHBAR BLEIBT: der ButtonClick-param ist eine STABILE Knopf-Kennung
+(Character/Comp1013 -> 20, Social/Comp1006 -> 4). Nur ohne Namen.
+
+### SONDE BESTAETIGT (Log 2026-07-20 09:31, 241 Aufrufe)
+AttachTooltip laeuft BEIM AUFBAU, nicht beim Hovern. Das Oeffnen des
+Charakter-Fensters allein lieferte alle Namen im Klartext, in
+Landessprache, vom Spiel selbst:
+- Fenster 125 (Character), 4 Knoepfe: "Ausruestung optimieren",
+  "Projektionsplatte", "Liste der Ausruestungssets", "Aktualisieren"
+- 5 CheckBoxen: "Ausruestung am Kopf anzeigen", "Einstellungen fuer
+  Ausruestung am Kopf", "Weggesteckte Waffen/Werkzeuge anzeigen",
+  "Waffe ziehen/wegstecken", "Gesichtsaccessoires"
+- dazu "Zurueck zur Frontalansicht", "Stick bewegt Charaktermodell"
+- Fenster 126 (Attribute): ALLE 22 Attributs-Erklaerungen im Volltext
+  ("Konstitution: Beeinflusst die Hoehe der maximalen Lebenspunkte.")
+
+ENTSCHEIDEND: die vom Hook gemeldeten Node-Zeiger sind DIESELBEN, auf
+denen der Tastatur-Fokus sitzt (Buttons id=3, CheckBoxen id=4 - exakt
+was die [Focus] STUMM-Zeilen meldeten). Zuordnung direkt ueber Zeiger,
+ohne Raterei.
+
+### V5.27 BESTAETIGT (User "ok funktioniert" + Log 2026-07-20 09:58/09:59)
+- "[Tooltip] Hooks aktiv" um 09:58:34.
+- Gesprochen: "Liste der Ausruestungssets", "Aktualisieren",
+  "Ausruestung optimieren".
+- HARTE ZAHL: vorher 41 STUMM-Faelle im Charakter-Fenster, nachher
+  GENAU EINER - und der ist addon='?' id=0, das Uebergangs-Artefakt
+  beim Fensterwechsel (gehoert zu keinem Addon). Kein echter Knopf
+  ist mehr stumm.
+
+NOCH NICHT BELEGT: das Wiederoeffnen des Fensters (Detach-Bereinigung).
+Alle Ansagen lagen in einem 14-Sekunden-Fenster, aus dem Log ist kein
+zweiter Aufbau ableitbar. Beim naechsten Mal einmal schliessen +
+wieder oeffnen; kaemen dort falsche Namen, ist es der einzige noch
+offene Fehlerpfad.
+
+### V5.27 UMSETZUNG
+ROOT-CAUSE-KORREKTUR zu V5.19/V5.20: AttachTooltip und ShowTooltip sind
+ZWEI Funktionen (ilspycmd-verifiziert, AtkTooltipManager).
+- ShowTooltip zeigt das FENSTER - nur bei Maus-Hover. Genau das hat die
+  V5.19-Sonde gemessen, und daraus faelschlich "kein Text" geschlossen.
+- AttachTooltip BINDET Text an einen Node - vermutlich beim Aufbau des
+  Addons, also lange vorher und unabhaengig von der Maus.
+
+Wenn die Bindung beim Aufbau passiert, steht der Name jedes Icon-Knopfes
+die ganze Zeit im Speicher: vom Spiel geliefert, in Landessprache, fuer
+ALLE Fenster gleich. Keine Handarbeit, keine Tabelle.
+
+HYPOTHESE, NICHT BELEGT: dass Addons AttachTooltip beim Aufbau rufen.
+Folgt aus Benennung + Funktionstrennung, mehr nicht. Die Sonde klaert es.
+
+TooltipService.cs (ersetzt die Sonde TooltipProbeService): haelt eine
+LIVE-Zuordnung Node-Zeiger -> Text, drei Hooks (Attach / Detach /
+DetachByAddonId).
+
+WARUM LIVE UND NICHT FESTE TABELLE: die Zeiger wechseln bei jedem
+Neuaufbau des Fensters - im Sonden-Log stehen zwei verschiedene Saetze
+fuer dieselben neun Knoepfe. Eine feste Zeiger-Tabelle wuerde nach dem
+ersten Wiederoeffnen falsche Namen liefern. Detach wird deshalb
+mitgehookt: ein freigegebener Zeiger fliegt sofort raus, ein recycelter
+erbt nie den Namen seines Vorgaengers. Fuer einen blinden Spieler ist
+das der Unterschied zwischen Stille und dem falschen Fenster.
+
+REIN LESEND: jeder Detour merkt sich und reicht an Original weiter.
+Keine synthetischen Maus-Events, kein erzwungener Tooltip.
+Text nur bei gesetztem Text-Flag gelesen (AtkTooltipArgs ist eine UNION,
+alle Varianten auf Offset 0 - sonst wuerde eine Id als Zeiger gedeutet).
+
+UIReaderService: im Fokus-Pfad fragt der Leser TryGetTooltipDeep (bis 3
+Eltern hoch, weil der Fokus oft auf dem Collision-KIND sitzt). RANGFOLGE
+bewusst: echter Node-Text > Tooltip > Positions-Notbehelf. Damit aendert
+sich NICHTS an dem, was heute schon spricht - der Tooltip springt nur
+dort ein, wo bisher Stille war. TryGetTooltip gibt null zurueck wenn
+nichts bekannt ist; der Leser schweigt dann, statt zu raten.
+Plugin.cs: IGameInteropProvider neu als PluginService.
+
+Build 0/0, deployt (5.27.0.0), csproj + Plugin.cs synchron.
+
+### Beim naechsten Test (V5.27)
+1. "Version 5 Punkt 27 bereit".
+2. Im Log muss "[Tooltip] Hooks aktiv (Attach/Detach/DetachByAddon)."
+   stehen. Fehlt sie, steht dort "[Tooltip] Hooks fehlgeschlagen" + Grund.
+3. Charakter-Fenster oeffnen, mit den Pfeiltasten ueber die Icon-Knoepfe
+   oben laufen. Erwartung: "Aktualisieren", "Ausruestung optimieren",
+   "Projektionsplatte", "Liste der Ausruestungssets" usw. werden gesagt.
+4. Fenster SCHLIESSEN und ERNEUT OEFFNEN, nochmal drueberlaufen. Das ist
+   der eigentliche Pruefpunkt: kommen dieselben Namen? Wenn hier falsche
+   Namen kaemen, greift die Detach-Bereinigung nicht.
+5. Attribute-Fenster: die Erklaerungstexte sollten jetzt lesbar sein.
+6. Weitere Fenster mit Icon-Knoepfen (Social, Teleport) gegenpruefen.
+7. Alles was danach noch stumm ist, steht als "[Focus] STUMM" im Log -
+   die Diagnosezeile bleibt bewusst drin.
+
+### Nebenfund vom 20.07., noch nicht angefasst
+Stumm sind nicht nur Icon-Knoepfe, sondern auch LISTENZEILEN in
+FriendList, PartyMemberList und TelepotTown (Teleport-Fenster). Eigener
+Bug, praktisch vermutlich wichtiger als die Icon-Knoepfe. User gefragt,
+ob vorziehen - noch keine Antwort.
+
+---
+
+## STAND (2026-07-19, V5.26: Bestiarium-Sonde entfernt)
+
+ProbeBestiaryRow ist RAUS (User-Wunsch) - samt Aufruf in
+OnMonsterNoteUpdate. Sie hatte ihren Zweck erfuellt: sie hat die
+Deklinations-Namen aufgedeckt. Ab jetzt ist das Bestiarium-Log ruhig.
+
+Rein subtraktiv, kein Verhalten geaendert: die Ansage selbst laeuft
+unveraendert. `out var item` wurde zu `out _`, weil das Item NUR die
+Sonde brauchte. Build 0/0 - kein toter Code uebrig.
+
+BEHALTEN: ProbeMiss in BestiaryService. Die meldet kuenftige
+Namens-Faelle von selbst ("[Bestiary] MISS ..."), sonst faellt ein
+fehlender Lebensraum nur als Stille auf.
+
+Build 0/0, deployt (5.26.0.0). NOCH NICHT RELEASET - v5.25 ist der
+veroeffentlichte Stand.
+
+### Beim naechsten Test (V5.26)
+1. "Version 5 Punkt 26 bereit".
+2. Bestiarium einmal durchlaufen: Ansagen muessen unveraendert sein
+   (Monster + Fundort). Im Log duerfen KEINE "[Bestiary] Probe"-Zeilen
+   mehr stehen.
+
+### OFFEN, vom User auf spaeter verschoben (2026-07-19)
+Die STUMMEN ICON-KNOEPFE (V5.20, Abschnitt weiter unten). Stand dort:
+- Tooltip-Weg ist WIDERLEGT (Spiel oeffnet Tooltips nur bei Maus-Hover,
+  nicht bei Tastatur-Fokus) - belegt, nicht vermutet.
+- AddonCharacter traegt keine benannten Knopf-Felder (ilspycmd).
+- V5.20 loggt als naechsten Versuch `events=[...]` pro stummem Knopf.
+  DAFUER FEHLT NOCH DAS TEST-LOG. Ohne das geht es nicht weiter.
+- Beim Test zwingend dazu: welche Knoepfe gibt es in dem Fenster
+  WIRKLICH und in welcher Reihenfolge? Nur der Abgleich mit der
+  Wirklichkeit beweist die Zuordnung, das Sheet allein tut es nicht.
+- Falls `events=[]` leer bleibt, ist auch dieser Weg tot; dann bliebe
+  nur, ein MouseOver an den Knopf zu schicken - ein Eingriff, der
+  ausdrueckliches OK braucht.
+
+Ausserdem offen (klein): V5.26 ist gebaut und deployt, aber NICHT
+committet und NICHT releast. v5.25 ist der veroeffentlichte Stand.
+
+---
+
+## STAND (2026-07-19, V5.25 RELEASET - alles bestaetigt)
 
 v5.25 ist veroeffentlicht. ALLE offenen Testpunkte sind abgehakt:
 

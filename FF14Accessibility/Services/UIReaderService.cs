@@ -33,6 +33,7 @@ public sealed class UIReaderService : IDisposable
     private readonly MessageHistoryService _history;
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
+    private readonly TooltipService  _tooltips;
     private readonly List<string>    _titleMenuItems = [];
 
     // SelectYesno: labels are read fresh from the dialog buttons on open -
@@ -241,8 +242,9 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips)
     {
+        _tooltips       = tooltips;
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
         _tolk           = tolk;
@@ -1301,6 +1303,17 @@ public sealed class UIReaderService : IDisposable
             // working announcements with "Hauptmenü, X von 7" (user 2026-07-19:
             // "er liest es ja manchmal vor aber manchmal auch nicht jetzt sagt er
             // nur hauptmenü"). A fallback must never outrank the real text.
+            // Icon buttons carry no text node at all - only Collision and Image
+            // (dump 2026-07-20, all nine buttons in Character). Their label exists
+            // solely as the tooltip the game binds while building the addon, which
+            // the probe confirmed on 2026-07-20: opening Character alone produced
+            // "Ausruestung optimieren", "Aktualisieren" and the rest in the user's
+            // language. Ranked ABOVE the positional fallback because this is the
+            // real name rather than a substitute - but still below genuine node
+            // text, so nothing that already spoke changes.
+            if (string.IsNullOrEmpty(text))
+                text = _tooltips.TryGetTooltipDeep(node) ?? string.Empty;
+
             if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
                 text = iconRow;
         }
@@ -5567,13 +5580,8 @@ public sealed class UIReaderService : IDisposable
         var renderer = ClimbToItemRenderer(focus);
         if (renderer == null) return;
 
-        var (row, index, total) = ReadTreeRow(tree, renderer, out var item);
+        var (row, index, total) = ReadTreeRow(tree, renderer, out _);
         if ((nint)renderer == _lastBestiaryRendererPtr && row == _lastBestiaryRow) return;
-
-        // Ground-Truth-Probe (einmal pro Zeilenwechsel, kein Frame-Spam): alle
-        // Text-Nodes der Zeile (sichtbar UND unsichtbar) + die Roh-Strings.
-        // Klaert, wo bei unfertigen Raengen ("0/10, NEU") der Rang-Name steckt.
-        ProbeBestiaryRow(renderer, item);
 
         _lastBestiaryRendererPtr = (nint)renderer;
         _lastBestiaryRow = row;
@@ -5796,22 +5804,6 @@ public sealed class UIReaderService : IDisposable
             return true;
         }
         return false;
-    }
-
-    private unsafe void ProbeBestiaryRow(AtkComponentListItemRenderer* renderer, AtkComponentTreeListItem* item)
-    {
-        var comp = (AtkComponentBase*)renderer;
-        var sb = new StringBuilder();
-        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
-        {
-            var n = comp->UldManager.NodeList[i];
-            if (n == null || n->Type != NodeType.Text) continue;
-            var t = ((AtkTextNode*)n)->NodeText.ToString().Trim();
-            sb.Append($" [id={n->NodeId} vis={(n->IsVisible() ? 1 : 0)} '{t}']");
-        }
-        var raw = item != null ? ReadItemStrings(item) : "(kein Item)";
-        var rid = comp->OwnerNode != null ? ((AtkResNode*)comp->OwnerNode)->NodeId : 0;
-        _log.Info($"[Bestiary] Probe rendererId={rid} texts:{sb} strings=[{raw}]");
     }
 
     /// <summary>
