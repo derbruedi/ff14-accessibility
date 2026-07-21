@@ -9,6 +9,10 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using DetailKind = FFXIVClientStructs.FFXIV.Client.Enums.DetailKind;
+using LuminaAction = Lumina.Excel.Sheets.Action;
+using LuminaActionTransient = Lumina.Excel.Sheets.ActionTransient;
+using LuminaTrait = Lumina.Excel.Sheets.Trait;
 
 namespace FF14Accessibility.Services;
 
@@ -1265,7 +1269,15 @@ public sealed class UIReaderService : IDisposable
             _lastFocusedItemName = ResolveFocusedItemName(node);
 
         string text;
-        if (!string.IsNullOrEmpty(_lastFocusedItemName))
+        if (TryReadActionMenuFocusRow(node, out var actionRow))
+        {
+            // Skill window (Aktionen & Talente): the list rows are icon-only,
+            // so name/level/description come from the game's own action-detail
+            // agent, resolved through Lumina. Takes priority over the item
+            // reader below (an action icon id must not be looked up as an item).
+            text = actionRow;
+        }
+        else if (!string.IsNullOrEmpty(_lastFocusedItemName))
         {
             text = _lastFocusedItemName;
         }
@@ -1893,6 +1905,120 @@ public sealed class UIReaderService : IDisposable
         var q = AtkText.Read(qn).Trim();
         if (q.Length == 0 || q == "1" || !q.All(char.IsDigit)) return string.Empty;
         return q;
+    }
+
+    // -- Skill-Fenster (ActionMenu: Aktionen & Talente) --------------
+    //
+    // The list rows are pure icon slots (dump 2026-07-21: ListItemRenderer ->
+    // DragDrop -> Icon, no text node). Name, level and description therefore
+    // come from the game's OWN action-detail agent: AgentActionDetail carries
+    // the hovered ActionId + ActionKind (ilspycmd 2026-07-21), resolved through
+    // the Lumina Action/ActionTransient/Trait sheets - nothing is scraped from
+    // the flaky UI and nothing is guessed.
+    //
+    // OPEN runtime question (to be confirmed via the [ActionDetail] log): does
+    // AgentActionDetail follow KEYBOARD focus, not just mouse hover? The text
+    // tooltip appears on keyboard focus, which is strong evidence; if the log
+    // shows the id lagging the focused slot, the fallback is to hook
+    // AgentActionDetail.HandleActionHover.
+
+    /// <summary>
+    /// While the skill window is open and the focus sits on a real skill slot,
+    /// returns "Name, Stufe X, Beschreibung" from the action-detail agent and
+    /// Lumina. False for section headers (Kommandos/Rolle/Eigenschaften) and
+    /// when nothing resolves - the caller then falls back to the generic reader,
+    /// so those headers keep their own labels.
+    /// </summary>
+    private unsafe bool TryReadActionMenuFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible("ActionMenu")) return false;
+        if (!FocusIsActionSlot(node)) return false;
+
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
+        if (agent == null) return false;
+        var id = agent->ActionId;
+        if (id == 0) return false;
+        var kind = agent->ActionKind;
+
+        var info = DescribeActionDetail(kind, id);
+        if (string.IsNullOrEmpty(info)) return false;
+
+        // Verification: proves ActionId/Kind follow the focused slot. Once
+        // confirmed in-game this line can drop to debug level.
+        _log.Info($"[ActionDetail] node id={node->NodeId} kind={kind} id={id} -> '{info}'");
+        text = info;
+        return true;
+    }
+
+    /// <summary>
+    /// True when the focused node belongs to an icon slot (Icon/DragDrop
+    /// component) and not a button. Section headers in the skill window are
+    /// Button components, which must keep their generic label.
+    /// </summary>
+    private static unsafe bool FocusIsActionSlot(AtkResNode* node)
+    {
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp == null) return false;
+                var ct = comp->GetComponentType();
+                return ct is ComponentType.DragDrop or ComponentType.Icon;
+            }
+            cur = cur->ParentNode;
+        }
+        return false;
+    }
+
+    /// <summary>Formats one skill/trait line from the detail agent's kind + id.
+    /// Empty for kinds we do not resolve (the generic reader then keeps the
+    /// tooltip's name+level).</summary>
+    private string DescribeActionDetail(DetailKind kind, uint id) => kind switch
+    {
+        DetailKind.Action or DetailKind.CraftingAction => DescribeAction(id),
+        DetailKind.Trait                               => DescribeTrait(id),
+        _                                              => string.Empty,
+    };
+
+    /// <summary>"Name, Stufe X, Beschreibung" for an action. Level and
+    /// description are omitted when the sheets carry none.</summary>
+    private string DescribeAction(uint id)
+    {
+        if (!_data.GetExcelSheet<LuminaAction>().TryGetRow(id, out var row)) return string.Empty;
+        var name = row.Name.ExtractText().Trim();
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+
+        var sb = new StringBuilder(name);
+        if (row.ClassJobLevel > 0) sb.Append($", Stufe {row.ClassJobLevel}");
+
+        if (_data.GetExcelSheet<LuminaActionTransient>().TryGetRow(id, out var trans))
+        {
+            var desc = FlattenDescription(trans.Description.ExtractText());
+            if (desc.Length > 0) sb.Append($", {desc}");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>"Name, Stufe X" for a trait (the Trait sheet has no description).</summary>
+    private string DescribeTrait(uint id)
+    {
+        if (!_data.GetExcelSheet<LuminaTrait>().TryGetRow(id, out var row)) return string.Empty;
+        var name = row.Name.ExtractText().Trim();
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        return row.Level > 0 ? $"{name}, Stufe {row.Level}" : name;
+    }
+
+    /// <summary>Collapses line breaks and runs of spaces in a tooltip
+    /// description to a single spoken line.</summary>
+    private static string FlattenDescription(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        var flat = s.Replace('\r', ' ').Replace('\n', ' ');
+        while (flat.Contains("  ")) flat = flat.Replace("  ", " ");
+        return flat.Trim();
     }
 
     // -- Dialog-Button-Fokus-Probe (SelectYesno, JournalResult) ------

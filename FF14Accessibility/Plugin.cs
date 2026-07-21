@@ -57,7 +57,7 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.29";
+    private const string PluginVersion    = "5.30";
     private const string PluginVersionTag = "Absturz-Fix Online-Fenster";
 
     public Plugin()
