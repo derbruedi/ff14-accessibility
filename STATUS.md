@@ -3,7 +3,99 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-20 abends, V5.29: ABSTURZ-FIX BESTAETIGT)
+## STAND JETZT (2026-07-21, V5.30: SKILL-FENSTER liest Level+Beschreibung - BESTAETIGT + RELEASED)
+
+### V5.30 BESTAETIGT (User im Spiel)
+User: "funktioniert, sagt name stufe und beschreibung an". Beim Navigieren
+durch die Skills kommt "Name, Stufe X, <Beschreibung>". Die offene Laufzeit-
+frage ist damit geklaert: AgentActionDetail.ActionId zieht bei TASTATUR-
+Navigation mit (Maus nicht noetig).
+
+### RELEASE v5.30 (2026-07-21)
+- repo.json BYTE-SICHER auf 5.30.0.0 (ISO-8859-1 hin/zurueck): 958 Bytes und
+  10 Nicht-ASCII-Bytes vorher wie nachher, genau 1 Zeile geaendert.
+- latest.zip aus Release-Build: Manifest 5.30.0.0, Tolk + nvdaControllerClient64
+  + alle NAudio-DLLs drin.
+- Installer-EXE UNVERAENDERT aus release_v5.29 uebernommen; Sha256 per
+  Get-FileHash gegen installer.json geprueft, stimmt exakt (Installer nicht
+  geaendert -> Hash bleibt gueltig).
+- Assets in dist/release_v5.30: latest.zip, FF14Accessibility-v5.30.0.zip,
+  FF14AccessibilityInstaller.exe, installer.json, notes.md.
+
+Ziel (User-Wunsch): im Skill-Fenster (Addon `ActionMenu`, "Aktionen &
+Talente") soll pro Skill Name + Stufe + Beschreibung in EINER Zeile kommen.
+User-Entscheid: volle Beschreibung, Traits mit Name+Stufe.
+
+VERIFIZIERT (ilspycmd + Dump/Log 2026-07-21 14:50):
+- ActionMenu-Liste = reines ICON-Raster (ListItemRenderer -> DragDrop -> Icon,
+  KEIN Text-Node). Name/Level/Beschreibung stehen NICHT im UI.
+- Bisher las nur der Tooltip-Fallback Name+Level ("VortexschnittSt. 1", ohne
+  Trennung, ohne Beschreibung).
+- SAUBERE QUELLE: AgentActionDetail (ilspycmd) haelt ActionId @60 + ActionKind
+  (DetailKind-Enum: Action/CraftingAction/Trait/...). Lumina: Action.Name +
+  Action.ClassJobLevel (das "St. X") + ActionTransient.Description (gleiche
+  RowId); Trait.Name + Trait.Level (Trait-Sheet hat KEINE Description).
+
+FIX V5.30 (UIReaderService.cs): neuer Fokus-Leser TryReadActionMenuFocusRow.
+Wenn ActionMenu offen + Fokus auf echtem Skill-Slot (FocusIsActionSlot: Icon/
+DragDrop-Komponente, nicht Button) -> AgentActionDetail lesen -> Lumina ->
+"Name, Stufe X, Beschreibung". Sektions-Kopfzeilen (Kommandos/Rolle/
+Eigenschaften) bleiben generisch. Hat Vorrang vor der Item-Aufloesung.
+
+OFFENE LAUFZEITFRAGE (nicht geraten, per Log zu klaeren): zieht
+AgentActionDetail.ActionId auch bei TASTATUR-Navigation mit (nicht nur Maus)?
+Indiz: der Text-Tooltip erscheint bei Tastaturfokus. BEWEIS liefert die neue
+Logzeile "[ActionDetail] node id=.. kind=.. id=.. -> '<text>'": steht dort
+beim Durchgehen jeweils der Skill, auf dem der Fokus sitzt -> bestaetigt.
+Falls die id nachhinkt -> Fallback: Hook auf AgentActionDetail.HandleActionHover.
+
+BEIM TEST: (1) "Version 5 Punkt 30 bereit" muss kommen. (2) ActionMenu oeffnen,
+mit Pfeiltasten durch Skills gehen: es MUSS "Name, Stufe X, <Beschreibung>"
+kommen. (3) Traits (Eigenschaften-Bereich): "Name, Stufe X". (4) Kopfzeilen
+weiter "Kommandos/Rolle/Eigenschaften". (5) Log [ActionDetail] gegenpruefen.
+
+Committet + als GitHub-Release v5.30 veroeffentlicht. (Details im Memory:
+skill_window_actionmenu.md)
+
+---
+
+## STAND (2026-07-21, EMOTE-BILDSCHIRM: Untersuchung, pausiert)
+
+Ziel: das in-game Emote-Fenster (Addon `Emote`) soll beim Navigieren jedes
+Emote vorlesen. User-Entscheid: das ECHTE Spielfenster lesbar machen (nutzt
+Favoriten/Kategorien), NICHT nur den vorhandenen Tasten-Browser.
+User-Status 2026-07-21: "bis jetzt funktioniert das mit den emotes" - keine
+akute Fehlfunktion, Arbeit pausiert, nur Zwischenstand gesichert.
+(Volldetails im Memory: emote_screen_investigation.md)
+
+VERIFIZIERT (Quellcode + dalamud.log 2026-07-21 09:03-09:11):
+- KEIN Spieldaten-Zeiger auf den markierten Emote: AgentEmote (272 B) hat kein
+  Selected-Feld, es gibt keine AddonEmote-Struct in FFXIVClientStructs. UI-
+  Auslesen ist alternativlos.
+- Emote-Fenster = TreeList (Comp id=47, CT=TreeList(12), 36 ListItemRenderer).
+  Emote-Name im id=5 Text-Node jeder Zeile.
+- Navigation bewegt nur den globalen FocusedNode (id=7), NICHT die TreeList-
+  Index-Felder (HoveredItemIndex2 blieb -1). Daher greift TrackListIndices
+  nicht - nur der [Focus]-Pfad (UpdateGlobalFocus, jeden Frame, Plugin.cs:501).
+- Der [Focus]-Pfad liest den Namen bereits korrekt bei befuellten Kategorien
+  (Log 09:03: "Freuen/Aufmuntern/Willkommen/Beruhigen" angesagt).
+
+LUECKEN (sicher behebbar, noch nicht gebaut):
+1. Leere/recycelte Zeilen (id=5="") -> Stille. Dump 09:11: alle 36 Zeilen leer
+   (Items.LongCount=0) = vermutlich leere Favoriten/Zuletzt-Tab.
+2. Keine Kategorie-Ansage (man hoert das Emote, nicht die Kategorie/Tab).
+
+OFFEN - nur in-game klaerbar (nicht raten): kommt man per Tastatur an ALLE
+Emotes/Kategorien heran (Raster-Fenster, evtl. mehrere Tabs)? Wie Kategorie
+wechseln? Naechster Schritt: User navigiert eine BEFUELLTE Kategorie mit
+Pfeiltasten + frischer Strg+F5-Dump.
+
+Vorhandener Tasten-Browser (funktioniert, Fallback): EmoteService.cs,
+Umschalt+F4/F5 blaettern alle freigeschalteten Emotes, Umschalt+F6 fuehrt aus.
+
+---
+
+## STAND (2026-07-20 abends, V5.29: ABSTURZ-FIX BESTAETIGT)
 
 ### RELEASE v5.29 VEROEFFENTLICHT (2026-07-20 ~22:30)
 Commits b7625d1 (V5.29) + add14b8 (repo.json 5.29.0.0) nach origin/main
