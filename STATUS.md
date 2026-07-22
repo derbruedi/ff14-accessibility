@@ -3,7 +3,107 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-22, V5.31: OBJEKT-BROWSER auf Bild-Tasten, N frei - RELEASED)
+## STAND JETZT (2026-07-22, V5.33: SAMMELN - Cursor-Zeile + Ausbeute-Ansage - GEBAUT, UNGETESTET)
+
+Aufbauend auf V5.32 (bestaetigt, s.u.). User: "mach beide" (A Pro-Gegenstand-
+Ansage beim Durchblaettern, B Ausbeute-Ansage).
+
+A - PRO-GEGENSTAND BEIM DURCHBLAETTERN:
+- Neuer Zweig in UpdateGlobalFocus (ZUERST in der if/else-Kette):
+  TryReadGatheringFocusRow. Wenn der globale FocusedNode in einer Item-Zeile
+  des offenen "Gathering"-Addons sitzt, wird die Zeile ueber das saubere
+  DescribeGatheringItem vorgelesen (Name via ReadClean + Stufe + Chance).
+- SELBSTDIAGNOSE: Falls der FocusedNode im Sammel-Fenster NICHT wandert
+  (im V5.32-Test war beim Abbauen kein [Focus] im Log - aber unklar, ob der
+  User ueberhaupt geblaettert hat), bleibt der Zweig einfach stumm und die
+  vorhandenen [Focus]-Zeilen zeigen, was der Fokus stattdessen tut. Dann
+  Pivot auf ein Auswahl-Index/Highlight-Feld.
+- Mengen-Fix: der Ausbeute-Node (Icon-Comp id=31 -> id=7) ist "unsichtbar"
+  markiert, wird jetzt OHNE Sichtbarkeits-Gate gelesen; "Menge" wird nur
+  angesagt, wenn >1 ("Menge 1" waere Laerm).
+
+B - AUSBEUTE-ANSAGE (Chat):
+- Loot kommt als XivChatType.Gathering (67), Log-verifiziert: "Du beginnst
+  abzuholzen." / "Du hast ein Ahorn-Holzscheit erhalten." / "Du bist fertig
+  mit dem Abholzen." (bisher gelesen=False). ChatReaderService liest den Typ
+  jetzt (Config ReadGatheringMessages=true), OHNE Kanal-Praefix (Satz ist
+  komplett). Menge steckt im Text ("ein"/"drei"). Doppel-Space (gestripptes
+  Icon-Glyph) faengt TolkService.Sanitize.
+- NICHT gelesen: Progress (64) "Deine Routine steigt um X" (Sammel-EXP) -
+  bewusst ausgelassen (Spam); Achievements sind auch Progress(64).
+
+### V5.32 BESTAETIGT (User + Log 2026-07-22 21:20)
+"es wurde was angesagt und wenn ich drauf druecke baut er es ab". Log:
+[Gather] Sammel-Fenster gelesen: 4 Gegenstaende, Kopf='Abholzen.
+Belastbarkeit 4 von 4' -> Ansage "...1. Ahornast, Stufe 5, Chance 95
+Prozent. 2. Latex, ...". NAMEN SAUBER (ReadClean funktioniert). Abbauen
+laeuft ueber den Spiel-Cursor.
+NEBENBEFUND (loest V5.12-Sorge): der Objekt-Browser zeigt Minen-Punkte sehr
+wohl - im selben Log "Minenarbeiter (Abbauen), Stufe 10, 100 Meter" neben 20
+"Gaertner (Abholzen)"-Punkten. "Nur Gaertnersachen" lag an der Entfernung.
+Punkte werden nach Klasse gelabelt.
+
+### Beim naechsten Test (V5.33)
+1. "Version 5 Punkt 33 bereit".
+2. Sammel-Fenster oeffnen, mit Pfeiltasten durch die Liste: wird pro Zeile
+   Name+Stufe+Chance angesagt (A)? Oder bleibt es still (dann [Focus]-Log
+   pruefen: wandert der Fokus ueberhaupt)?
+3. Abbauen: kommt die Ausbeute-Ansage "Du hast X erhalten" (B)? Nicht zu
+   viel Laerm (Routine-EXP soll NICHT kommen)?
+4. Sauber, kein Praefix-Kauderwelsch vor der Loot-Zeile?
+
+---
+
+## STAND (2026-07-22, V5.32: SAMMEL-FENSTER wird vorgelesen)
+
+User-Auftrag: das Sammel-Fenster (Erz abbauen / Holz faellen) barrierefrei
+machen - "man sollte die Materialien sehen". User lieferte einen sauberen
+Dump vom Faellen (Desktop\FFXIV_UI_Dump.txt): Addon "Gathering", 40 Nodes.
+
+STRUKTUR (verifiziert am Dump 2026-07-22, Node-IDs gepinnt):
+- 8 Item-Zeilen = Comp(1010) CheckBox (Ch=34). Gefuellt, wenn Name (id=23)
+  nicht leer. Pro Zeile: id=23 Name (Item-Link-SeString!), id=21 "St. X"
+  (Stufe), id=16 Bonus-%, id=10 Sammelchance-%, id=7 "Rar"/id=6 "Verborgen"
+  (nur sichtbar wenn zutreffend), Ausbeute in Icon-Comp(1005) id=31 -> id=7.
+- Kopf: Aktion in Window-Comp(1013) id=39 -> id=3 ("Abholzen"); Belastbarkeit
+  aktuell id=12 / max id=9 (Top-Level).
+- AddonGathering-Struct (ilspycmd) haelt die Liste NICHT (nur TooltipActive,
+  ItemListHovered, GatherStatus) -> Werte kommen aus den UI-Nodes.
+
+NEU IN V5.32:
+- Dedizierter OnGatheringUpdate (PostUpdate, einmal pro Oeffnen; Flag reset
+  bei !IsVisible). "Gathering" in SpecialSetup- + SpecialUpdateAddons, damit
+  der generische Leser die Item-Link-Namen nicht als Rohtext scrapt.
+- AtkText.ReadClean(): liest Node-Text als Dalamud-SeString (MemoryHelper,
+  Adress+Laenge-Ueberladung) -> Item-Link-Payload faellt weg. Loest das
+  Glyphen-Problem "H?%I?&Ahorn-Holzscheit...IH" -> "Ahorn-Holzscheit".
+  Gleiche Guard wie AtkText.Read (TryValidate extrahiert).
+- Ansage beim Oeffnen: "Abholzen. Belastbarkeit 4 von 4. 4 Gegenstaende:
+  1. Ahorn-Holzscheit, Stufe 3, Menge 1, Chance 95 Prozent. 2. ...".
+
+ANNAHME, markiert: "St. X" = Stufe (Item-Sammelstufe). Im Dump korreliert
+hoeheres St. mit niedrigerer Chance (St.5 Ahornast=85%, St.1=100%) - aber
+in-game NICHT bestaetigt, koennte auch Sterne sein. Nur die Abkuerzung wird
+expandiert, die Zahl bleibt woertlich.
+
+### Beim naechsten Test (V5.32)
+1. "Version 5 Punkt 32 bereit".
+2. Erzader/Baum ansteuern und INTERAGIEREN (Sammel-Fenster oeffnen): wird
+   beim Oeffnen die Liste vorgelesen (Aktion + Belastbarkeit + jeder
+   Gegenstand mit Name/Stufe/Menge/Chance)?
+3. Sind die NAMEN sauber (kein "H%I&...IH"-Muell)?
+4. Stimmt "Stufe X" - oder ist es im Fenster etwas anderes (Sterne)?
+5. Ist "Belastbarkeit 4 von 4" richtig herum (bei angebrochenem Knoten z.B.
+   "3 von 4")?
+6. Log-Kontrolle: Zeile "[Gather] Sammel-Fenster gelesen: N Gegenstaende".
+7. OFFEN fuer v2 (nach Test): Wie waehlt man einen Gegenstand aus und baut ab?
+   Cursor-/Fokus-Mechanik im Fenster ist noch nicht erschlossen - beim Test
+   mit Pfeiltasten durch die Liste gehen und berichten, ob etwas angesagt
+   wird (globaler Fokus-Leser) oder Stille herrscht.
+
+---
+
+## STAND (2026-07-22, V5.31: OBJEKT-BROWSER auf Bild-Tasten, N frei - RELEASED)
 
 ### V5.31 BESTAETIGT (User im Spiel: "ok funktioniert")
 Objekt-Browser von der N-Familie auf die Bild-Tasten umgezogen, damit N

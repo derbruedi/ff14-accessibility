@@ -120,6 +120,9 @@ public sealed class Configuration : IPluginConfiguration
     public bool ReadTellChat       = true;
     public bool ReadFCChat         = true;
     public bool ReadSystemMessages = true;
+    // Sammel-Meldungen (XivChatType.Gathering 67): "Du hast X erhalten",
+    // "Du beginnst/bist fertig ..." - die Ausbeute-Rueckmeldung beim Abbauen.
+    public bool ReadGatheringMessages = true;
     // (V4.91: ReadCombatMessages entfernt - das Kampflog-Vorlesen aus V4.90 kam
     // in-game nie an und wurde samt Nachlese-Kategorie "Kampf" zurueckgebaut.)
     // Tipp-Echo im Chat-Eingabefeld (Senden): NVDA liest das Spiel-Chatfeld

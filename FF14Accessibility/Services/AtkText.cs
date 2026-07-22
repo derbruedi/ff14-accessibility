@@ -52,32 +52,69 @@ internal static unsafe class AtkText
         => node == null ? string.Empty : Read(&node->NodeText);
 
     /// <summary>
-    /// Reads a <see cref="Utf8String"/>, or an empty string when it is not in a
-    /// readable state. This is the actual guard; the overloads above funnel
-    /// into it.
+    /// Reads a <see cref="Utf8String"/> as RAW UTF-8, or an empty string when it
+    /// is not in a readable state. Fast, but keeps any SeString payload markers
+    /// verbatim - use <see cref="ReadClean(Utf8String*)"/> for text that may
+    /// carry item links / auto-translate payloads.
     /// </summary>
     public static string Read(Utf8String* str)
     {
+        if (!TryValidate(str, out var start, out var length)) return string.Empty;
+        return Encoding.UTF8.GetString(start, length);
+    }
+
+    /// <summary>
+    /// Reads a text node and drops SeString payloads (item links, auto-translate)
+    /// so only the human-readable text is returned. Item-link node text otherwise
+    /// leaks its raw marker bytes ("H?%I?&amp;Ahorn-Holzscheit...IH"); parsing it
+    /// through Dalamud's SeString reader yields "Ahorn-Holzscheit".
+    /// </summary>
+    public static string ReadClean(AtkTextNode* node)
+        => node == null ? string.Empty : ReadClean(&node->NodeText);
+
+    /// <inheritdoc cref="ReadClean(AtkTextNode*)"/>
+    public static string ReadClean(Utf8String* str)
+    {
+        // Same guard as Read: the buffer must be mapped and self-consistent
+        // before Dalamud is allowed to walk it. The address+length overload is
+        // used (not the Utf8String* one, which is deprecated) - both parse the
+        // FFXIV SeString payloads; TextValue then yields only the readable text.
+        if (!TryValidate(str, out var start, out var length)) return string.Empty;
+        var se = Dalamud.Memory.MemoryHelper.ReadSeString((nint)start, length);
+        return TolkService.Sanitize(se.TextValue);
+    }
+
+    /// <summary>
+    /// The shared guard: verifies the string struct and its buffer are mapped and
+    /// the game's own length invariant holds, returning the readable span. This
+    /// is the single place the crash from an unfilled node (see class remarks) is
+    /// prevented; both read paths funnel through it.
+    /// </summary>
+    private static bool TryValidate(Utf8String* str, out byte* start, out int length)
+    {
+        start = null;
+        length = 0;
+
         // 1. The struct itself must be mapped before any field is touched.
-        if (!IsReadable(str)) return string.Empty;
+        if (!IsReadable(str)) return false;
 
         // 2. Trust the game's own emptiness flag first - an empty string is a
         //    normal state (a label the game deliberately blanked), not a fault.
-        var length = str->Length;
-        if (length <= 0) return string.Empty;
+        length = str->Length;
+        if (length <= 0) return false;
 
         // 3. The struct's own invariant: the used portion cannot exceed the
         //    allocated buffer. Garbage almost always violates this.
-        if (str->BufUsed > str->BufSize) return string.Empty;
-        if (str->BufSize is <= 0 or > MaxPlausibleLength) return string.Empty;
+        if (str->BufUsed > str->BufSize) return false;
+        if (str->BufSize is <= 0 or > MaxPlausibleLength) return false;
 
         // 4. The buffer must be mapped at both ends. Checking only the start
         //    would still let a long read run off the end of the page.
-        var start = (byte*)str->StringPtr;
-        if (!IsReadable(start)) return string.Empty;
-        if (!IsReadable(start + length - 1)) return string.Empty;
+        start = (byte*)str->StringPtr;
+        if (!IsReadable(start)) return false;
+        if (!IsReadable(start + length - 1)) return false;
 
-        return Encoding.UTF8.GetString(start, length);
+        return true;
     }
 
     /// <summary>

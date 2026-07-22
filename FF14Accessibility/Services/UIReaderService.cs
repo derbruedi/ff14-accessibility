@@ -118,6 +118,7 @@ public sealed class UIReaderService : IDisposable
         "ConfigSystem",
         "TitleDCWorldMap",    // Datenzentrum-Auswahl: eigener Handler
         "TitleDCWorldMapBg",  // nur Hintergrund, nichts anzusagen
+        "Gathering",          // Sammel-Fenster: eigener Handler (OnGatheringUpdate)
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -146,6 +147,9 @@ public sealed class UIReaderService : IDisposable
         // sprechen - das dedizierte Tipp-Echo (OnCharaMakeInputUpdate)
         // uebernimmt. Oeffnungs-Ansage kommt weiter aus OnAnyAddonOpen.
         "CharaMakeDataInputString",
+        // Sammel-Fenster: eigener Handler liest die Item-Liste (OnGatheringUpdate);
+        // der generische Update-Pfad wuerde die Item-Link-Namen als Rohtext lesen.
+        "Gathering",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -274,6 +278,13 @@ public sealed class UIReaderService : IDisposable
         // -- Talk / TalkSubtitle (NPC-Dialoge, Untertitel) ---------
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
+
+        // -- Gathering (Sammel-Fenster: Erz abbauen / Holz faellen) -----
+        // The item rows are populated a few frames after PostSetup, so read on
+        // PostUpdate once per open (visibility resets the flag, like Talk). The
+        // addon is in SpecialSetup/SpecialUpdateAddons so the generic reader
+        // stays out and never scrapes the item-link node names as raw junk.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Gathering", OnGatheringUpdate);
 
         // -- SelectYesno ------------------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
@@ -1066,6 +1077,248 @@ public sealed class UIReaderService : IDisposable
         _history.Add(MessageHistoryService.Category.Dialogue, spoken);
     }
 
+    // -- Gathering (Sammel-Fenster) -----------------------------------
+    //
+    // Opens when the player interacts with a mining vein / tree. Node-id map
+    // pinned from the "Gathering" dump 2026-07-22 (Ch=34 item rows are
+    // Comp(1010) CheckBoxes). Values are plain text EXCEPT the item name, which
+    // is an item-link SeString and is read via AtkText.ReadClean. Per row:
+    //   id=23  item name (item link)      id=21  gather level "St. X"
+    //   id=16  bonus chance %             id=10  gather chance %
+    //   id=7   "Rar"  (only when it applies, i.e. node visible)
+    //   id=6   "Verborgen" (dito)
+    //   icon Comp(1005) id=31 -> text id=7  yield count
+    // A row is filled when its name is non-empty. Header: window action verb in
+    // Comp(1013) id=39 text id=3 ("Abholzen"), integrity current id=12 / max id=9.
+    // Announced ONCE per open; the flag resets when the addon goes invisible.
+
+    // Visible flag on AtkResNode.NodeFlags - matches the "V" column in the dump.
+    private const int NodeVisibleFlag = 0x10;
+
+    private bool _gatheringSpoken;
+
+    private unsafe void OnGatheringUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->IsVisible)
+        {
+            _gatheringSpoken = false; // next node interaction starts fresh
+            return;
+        }
+        if (_gatheringSpoken) return;
+
+        var items = ReadGatheringItems(addon);
+        if (items.Count == 0) return; // list not populated yet - retry next frame
+
+        _gatheringSpoken = true;
+
+        var sb     = new StringBuilder();
+        var header = BuildGatheringHeader(addon);
+        if (header.Length > 0) sb.Append(header).Append(". ");
+        sb.Append(items.Count).Append(items.Count == 1 ? " Gegenstand: " : " Gegenstände: ");
+        for (var i = 0; i < items.Count; i++)
+            sb.Append(i + 1).Append(". ").Append(items[i]).Append(". ");
+
+        var spoken = sb.ToString();
+        _log.Info($"[Gather] Sammel-Fenster gelesen: {items.Count} Gegenstände, Kopf='{header}'");
+        _tolk.SpeakInterrupt(spoken);
+        _history.Add(MessageHistoryService.Category.System, spoken);
+    }
+
+    /// <summary>
+    /// All filled item rows of the gathering window, top to bottom, each already
+    /// formatted for speech ("Ahorn-Holzscheit, Stufe 3, Menge 1, Chance 95 Prozent").
+    /// </summary>
+    private unsafe List<string> ReadGatheringItems(AtkUnitBase* addon)
+    {
+        var rows = new List<(float Y, string Text)>();
+        var uld  = &addon->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var node = uld->NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue; // components only
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+
+            // Item rows carry BOTH the name node id=23 and the gather-% node
+            // id=10; the quick-gather checkbox and the window frame do not.
+            if (FindChildNode(comp, 10) == null) continue;
+            var name = ReadVisibleChildText(comp, 23, clean: true);
+            if (name.Length == 0) continue; // empty slot
+
+            rows.Add((node->Y, DescribeGatheringItem(comp, name)));
+        }
+        return rows.OrderBy(r => r.Y).Select(r => r.Text).ToList();
+    }
+
+    /// <summary>Formats one gathering item row for speech.</summary>
+    private static unsafe string DescribeGatheringItem(AtkComponentBase* comp, string name)
+    {
+        var parts = new List<string> { name };
+
+        // "St. X" (id=21). ASSUMPTION (in-game unverified, corroborated by the
+        // dump: a higher value tracks a lower gather chance) that St. = Stufe,
+        // the item's gathering level. Only the abbreviation is expanded - the
+        // number stays verbatim, so a wrong label never hides the real value.
+        var level = ReadVisibleChildText(comp, 21);
+        if (level.Length > 0) parts.Add(level.Replace("St.", "Stufe"));
+
+        // Yield only when it is more than one - "Menge 1" on every item is noise.
+        var yield = ReadGatheringYield(comp);
+        if (yield.Length > 0 && yield != "1") parts.Add($"Menge {yield}");
+
+        var chance = ReadVisibleChildText(comp, 10);
+        if (chance.Length > 0) parts.Add($"Chance {chance} Prozent");
+
+        // Bonus chance only when it is a real value (not 0 % / not "-").
+        var bonus = ReadVisibleChildText(comp, 16);
+        if (bonus.Length > 0 && bonus != "0" && bonus != "-")
+            parts.Add($"Bonus {bonus} Prozent");
+
+        if (IsVisibleFlag(FindChildNode(comp, 7))) parts.Add("rar");
+        if (IsVisibleFlag(FindChildNode(comp, 6))) parts.Add("verborgen");
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>Window action verb + node integrity, e.g. "Abholzen. Belastbarkeit 4 von 4".</summary>
+    private static unsafe string BuildGatheringHeader(AtkUnitBase* addon)
+    {
+        var parts = new List<string>();
+
+        var windowComp = FindTopComponent(addon, 39);
+        if (windowComp != null)
+        {
+            var action = ReadVisibleChildText(windowComp, 3);
+            if (action.Length > 0) parts.Add(action);
+        }
+
+        var current = ReadTopText(addon, 12);
+        var max     = ReadTopText(addon, 9);
+        if (current.Length > 0 && max.Length > 0)
+            parts.Add($"Belastbarkeit {current} von {max}");
+
+        return string.Join(". ", parts);
+    }
+
+    /// <summary>
+    /// Yield count of a row, held in the icon Comp(1005) id=31, text id=7. That
+    /// text node is NOT flagged visible in the dump (the count is painted as an
+    /// icon overlay), so it is read WITHOUT the visibility gate - unlike the
+    /// other row fields, which do respect it.
+    /// </summary>
+    private static unsafe string ReadGatheringYield(AtkComponentBase* rowComp)
+    {
+        var iconNode = FindChildNode(rowComp, 31);
+        if (iconNode == null || (int)iconNode->Type < 1000) return string.Empty;
+        var iconComp = ((AtkComponentNode*)iconNode)->Component;
+        if (iconComp == null) return string.Empty;
+
+        var n = FindChildNode(iconComp, 7);
+        if (n == null || n->Type != NodeType.Text) return string.Empty;
+        return AtkText.Read((AtkTextNode*)n).Trim();
+    }
+
+    /// <summary>
+    /// The gathering item row whose component contains the given focused node, or
+    /// null. Lets the global focus reader speak the row under the cursor via the
+    /// clean <see cref="DescribeGatheringItem"/> instead of the raw item-link name.
+    /// </summary>
+    private unsafe bool TryReadGatheringFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        var handle = _gameGui.GetAddonByName("Gathering");
+        if (handle.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)handle;
+        if (addon == null || !addon->IsVisible) return false;
+
+        var uld = &addon->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var rowNode = uld->NodeList[i];
+            if (rowNode == null || (int)rowNode->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)rowNode)->Component;
+            if (comp == null) continue;
+            if (FindChildNode(comp, 10) == null) continue;     // not an item row
+            var name = ReadVisibleChildText(comp, 23, clean: true);
+            if (name.Length == 0) continue;                    // empty slot
+
+            if (rowNode == node || IsNodeInComponent(comp, node))
+            {
+                text = DescribeGatheringItem(comp, name);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>True if <paramref name="node"/> is one of the component's own nodes.</summary>
+    private static unsafe bool IsNodeInComponent(AtkComponentBase* comp, AtkResNode* node)
+    {
+        if (comp == null) return false;
+        var uld = &comp->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+            if (uld->NodeList[i] == node) return true;
+        return false;
+    }
+
+    // ── Node helpers (component/addon child lookup by id) ─────────────
+
+    private static unsafe AtkResNode* FindChildNode(AtkComponentBase* comp, uint id)
+    {
+        if (comp == null) return null;
+        var uld = &comp->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var n = uld->NodeList[i];
+            if (n != null && n->NodeId == id) return n;
+        }
+        return null;
+    }
+
+    private static unsafe AtkResNode* FindTopNode(AtkUnitBase* addon, uint id)
+    {
+        var uld = &addon->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var n = uld->NodeList[i];
+            if (n != null && n->NodeId == id) return n;
+        }
+        return null;
+    }
+
+    private static unsafe AtkComponentBase* FindTopComponent(AtkUnitBase* addon, uint id)
+    {
+        var n = FindTopNode(addon, id);
+        if (n == null || (int)n->Type < 1000) return null;
+        return ((AtkComponentNode*)n)->Component;
+    }
+
+    private static unsafe bool IsVisibleFlag(AtkResNode* n)
+        => n != null && ((int)n->NodeFlags & NodeVisibleFlag) != 0;
+
+    /// <summary>
+    /// Reads a component's child text node by id, but only when it is visible -
+    /// the "Rar"/"Verborgen"/blank-% marker nodes exist in every row and must
+    /// stay silent for the items they do not apply to.
+    /// </summary>
+    private static unsafe string ReadVisibleChildText(AtkComponentBase* comp, uint id, bool clean = false)
+    {
+        var n = FindChildNode(comp, id);
+        if (n == null || n->Type != NodeType.Text || !IsVisibleFlag(n)) return string.Empty;
+        var t = (AtkTextNode*)n;
+        return (clean ? AtkText.ReadClean(t) : AtkText.Read(t)).Trim();
+    }
+
+    /// <summary>Reads a top-level addon text node by id (visibility not required).</summary>
+    private static unsafe string ReadTopText(AtkUnitBase* addon, uint id)
+    {
+        var n = FindTopNode(addon, id);
+        if (n == null || n->Type != NodeType.Text) return string.Empty;
+        return AtkText.Read((AtkTextNode*)n).Trim();
+    }
+
     // -- ArmouryBoard (Arsenalkammer) ---------------------------------
 
     // Category title of the armoury chest ("Kopf", "Waffe" ...) as last
@@ -1269,7 +1522,15 @@ public sealed class UIReaderService : IDisposable
             _lastFocusedItemName = ResolveFocusedItemName(node);
 
         string text;
-        if (TryReadActionMenuFocusRow(node, out var actionRow))
+        if (TryReadGatheringFocusRow(node, out var gatherRow))
+        {
+            // Gathering window: speak the row under the cursor cleanly (name is
+            // an item link -> ReadClean, plus level/chance). Ranked first so the
+            // item-name resolver and the generic reader - which would only find
+            // the raw, payload-polluted name - never run for these rows.
+            text = gatherRow;
+        }
+        else if (TryReadActionMenuFocusRow(node, out var actionRow))
         {
             // Skill window (Aktionen & Talente): the list rows are icon-only,
             // so name/level/description come from the game's own action-detail

@@ -58,8 +58,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.31";
-    private const string PluginVersionTag = "Objekt-Browser auf Bild-Tasten, N frei";
+    private const string PluginVersion    = "5.33";
+    private const string PluginVersionTag = "Sammeln: Zeile unter Cursor + Ausbeute-Ansage";
 
     public Plugin()
     {

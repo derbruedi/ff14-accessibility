@@ -88,7 +88,7 @@ public sealed class ChatReaderService : IDisposable
         if (isOwn)
             fullText = $"{GetOwnChatPrefix(msg.LogKind)}{addressee}: {messageText}";
         else if (string.IsNullOrWhiteSpace(senderText))
-            fullText = $"{prefix}: {messageText}";
+            fullText = string.IsNullOrEmpty(prefix) ? messageText : $"{prefix}: {messageText}";
         else
             fullText = $"{prefix} von {senderText}: {messageText}";
 
@@ -113,6 +113,10 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.FreeCompany      => _config.ReadFCChat,
         XivChatType.SystemMessage    => _config.ReadSystemMessages,
         XivChatType.ErrorMessage     => true,
+        // Gathering (67): loot + status while mining/logging ("Du hast X
+        // erhalten", "Du bist fertig ..."). Empty sender, so it is announced
+        // without a prefix (the message is already a full sentence).
+        XivChatType.Gathering        => _config.ReadGatheringMessages,
         // Verified via ilspycmd (Dalamud XivChatType, 2026-07-19): these were
         // missing entirely, so the player's own outgoing tells and everything
         // in /yell, cross-world party and /echo was silently dropped - neither
@@ -172,6 +176,7 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.Yell          => "Brüllt",
         XivChatType.CrossParty    => "Gruppe",
         XivChatType.Echo          => "Echo",
+        XivChatType.Gathering     => "",   // full sentence, no channel prefix
         _                         => "Chat"
     };
 
