@@ -3,7 +3,60 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-21, V5.30: SKILL-FENSTER liest Level+Beschreibung - BESTAETIGT + RELEASED)
+## STAND JETZT (2026-07-22, V5.31: OBJEKT-BROWSER auf Bild-Tasten, N frei - RELEASED)
+
+### V5.31 BESTAETIGT (User im Spiel: "ok funktioniert")
+Objekt-Browser von der N-Familie auf die Bild-Tasten umgezogen, damit N
+kuenftig fuer etwas anderes frei ist:
+- Unterkategorien: Bild-ab (vor) / Bild-auf (zurueck) = KeyNextObject / KeyPrevObject
+- Kategorien: Strg+Bild-ab / Strg+Bild-auf = KeyCategory / KeyCategoryPrev
+
+VERIFIZIERT am echten Keybind-Dump (Desktop\FFXIV_Keybinds.txt): bare
+Bild-auf/Bild-ab = CAMERA_ZOOMIN/ZOOMOUT. Das Plugin schluckt Tasten
+NICHT (liest nur IKeyState), also zoomt die Kamera beim Unterkategorie-
+Wechsel visuell mit - fuer blindes Spiel folgenlos, User hat das bewusst
+akzeptiert. Strg+Bild-auf/-ab laut Dump voellig frei. Umsetzung: Config-
+Defaults + Migration Version 8 (nur unveraenderte Standardwerte), BildAuf
+=0x21/BildAb=0x22 in die AKTIVE Tabelle Plugin.cs KeyNameToVK (NICHT
+KeyNames.cs - toter Code), Hilfetext angepasst.
+
+MOJIBAKE-FIX: Plugin.cs hatte an 31 Umlaut-Stellen doppelte Kodierung
+(UTF-8 als cp1252 gelesen, wieder UTF-8) - u.a. der GESPROCHENE Hilfetext
+(Strg+F1), "in der Naehe", Konflikt-Labels. Datei war GEMISCHT (manche
+Umlaute korrekt), darum nur die echten Ã-Mojibake-Paare zurueckgerechnet,
+korrekte Umlaute unangetastet. BOM + Zeilenenden erhalten. Nur Plugin.cs
+war betroffen, alle anderen .cs sauber.
+
+MITGEZOGEN (vorbestehende, bis dahin UNDOKUMENTIERTE + vermutlich
+ungetestete WIP-Arbeit aus frueherer Session - User-Entscheid "alles
+zusammen" releasen): Goto-Karten-Koordinaten aus Zwischenablage (Strg+
+Umschalt+F1: GotoClipboardCoords/ParseMapCoords/ReadClipboardText/
+PlacesService.MapCoordToWorld), Objekt-Sonde (Strg+F5:
+NavigationService.DumpNearbyObjects), HP-Ansage als absolute Werte
+"HP X von Y" statt Prozent (CombatService + NavigationService).
+>>> DIESE DREI SIND IM RELEASE, ABER NICHT IN-GAME GETESTET. <<<
+
+### RELEASE v5.31 (2026-07-22)
+- Versionen synchron: Plugin.cs 5.31, csproj 5.31.0.0, repo.json 5.31.0.0
+  (byte-sicher via Python-Bytes-Replace: 958 Bytes, 10 Nicht-ASCII-Bytes
+  vorher wie nachher, genau 1 Zeile geaendert).
+- latest.zip aus Release-Build (0/0): Manifest 5.31.0.0, Tolk +
+  nvdaControllerClient64 + alle NAudio-DLLs drin (549248 B).
+- Installer-EXE UNVERAENDERT aus release_v5.30 uebernommen; Sha256 gegen
+  installer.json geprueft, stimmt exakt.
+- Assets in dist/release_v5.31: latest.zip, FF14Accessibility-v5.31.0.zip,
+  FF14AccessibilityInstaller.exe, installer.json, notes.md.
+- GitHub-Release v5.31 als "Latest"; releases/latest/download/latest.zip
+  per HEAD verifiziert: HTTP 200, 549248 B = passt zur lokalen ZIP.
+- Untracked NICHT committet: KeyNames.cs (toter Code), uia_test.ps1.
+
+### BEIM NAECHSTEN TEST offen (V5.31-WIP): (1) Goto-Koordinaten Strg+
+Umschalt+F1: Koordinaten kopieren, laeuft er hin? (2) Objekt-Sonde
+Strg+F5: Log [ObjProbe] gefuellt? (3) HP-Ansage sagt "X von Y"?
+
+---
+
+## ARCHIV V5.30 (2026-07-21, SKILL-FENSTER liest Level+Beschreibung - BESTAETIGT + RELEASED)
 
 ### V5.30 BESTAETIGT (User im Spiel)
 User: "funktioniert, sagt name stufe und beschreibung an". Beim Navigieren
