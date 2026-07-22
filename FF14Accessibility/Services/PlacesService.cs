@@ -55,6 +55,36 @@ public sealed class PlacesService
     private static float PixelToWorld(float pixel, ushort sizeFactor, short offset)
         => (pixel - 1024f) * 100f / sizeFactor - offset;
 
+    /// <summary>
+    /// Converts the player-facing map coordinates shown in-game (the 1..~42
+    /// values, e.g. 24.1 / 21.0) to a world position on the CURRENT map. Y is
+    /// left 0 - the caller snaps it onto the walkable mesh via navmesh.
+    /// Inverse of the display formula above: display = 2*pixel/scale + 1, so
+    /// pixel = (display - 1) * scale / 2, then PixelToWorld. Verified against
+    /// live data: map 24.1 / 21.0 in Central Thanalan -> world ~131 / -24,
+    /// matching the parsonage object positions from the object probe.
+    /// Returns null when the current map is unknown.
+    /// </summary>
+    public Vector3? MapCoordToWorld(float mapX, float mapY)
+    {
+        var mapId = _clientState.MapId;
+        if (mapId == 0) return null;
+
+        if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map))
+        {
+            _log.Info($"[Goto] Map {mapId} nicht im Sheet - keine Umrechnung.");
+            return null;
+        }
+
+        var pixelX = (mapX - 1f) * map.SizeFactor / 2f;
+        var pixelY = (mapY - 1f) * map.SizeFactor / 2f;
+        var worldX = PixelToWorld(pixelX, map.SizeFactor, map.OffsetX);
+        var worldZ = PixelToWorld(pixelY, map.SizeFactor, map.OffsetY);
+        _log.Info($"[Goto] Karte {mapX:0.0}/{mapY:0.0} (Map {mapId}, Scale {map.SizeFactor}, " +
+                  $"Off {map.OffsetX}/{map.OffsetY}) -> Welt {worldX:0.0}/{worldZ:0.0}");
+        return new Vector3(worldX, 0f, worldZ);
+    }
+
     /// <summary>Spoken type label of the player-set map flag.</summary>
     public const string FlagTypeLabel = "Markierung";
 

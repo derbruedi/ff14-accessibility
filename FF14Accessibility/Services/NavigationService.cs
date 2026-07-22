@@ -580,6 +580,44 @@ public sealed class NavigationService
             .ToList();
     }
 
+    /// <summary>
+    /// Debug probe: logs EVERY nearby ObjectTable entry within 60 m - including
+    /// the ones the normal browser hides (empty name, untargetable) - with kind,
+    /// name, DataId, distance and world position. Used to find out how the game
+    /// represents things that are audible but not in the browser list, e.g. the
+    /// humming quest-battle circle / duty-entrance portal at Quiverons Pfarrhaus.
+    /// Bound to the UI-dump key (Strg+F5). Announces the count so the blind user
+    /// knows the dump ran; the detail goes to the log ([ObjProbe]).
+    /// </summary>
+    public void DumpNearbyObjects()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null)
+        {
+            _tolk.SpeakInterrupt("Objekt-Sonde: kein Spieler.");
+            return;
+        }
+
+        var near = _objectTable
+            .Where(o => o.GameObjectId != player.GameObjectId
+                        && Vector3.Distance(player.Position, o.Position) <= 60f)
+            .OrderBy(o => Vector3.Distance(player.Position, o.Position))
+            .ToList();
+
+        _log.Info($"[ObjProbe] === {near.Count} Objekte in 60 m, Spieler @ {player.Position} ===");
+        foreach (var o in near)
+        {
+            var name = string.IsNullOrWhiteSpace(o.Name.TextValue) ? "<leer>" : o.Name.TextValue;
+            var dist = Vector3.Distance(player.Position, o.Position);
+            _log.Info(
+                $"[ObjProbe] {dist,6:0.0}m {o.ObjectKind,-14} " +
+                $"DataId={o.BaseId} name='{name}' zielbar={o.IsTargetable} " +
+                $"pos={o.Position} id={o.GameObjectId:X}");
+        }
+
+        _tolk.SpeakInterrupt($"Objekt-Sonde: {near.Count} Objekte im Log.");
+    }
+
     // ── Sammelpunkte (Minenarbeiter / Gärtner) ──────────────────────
     //
     // Data path, all ilspycmd-verified (2026-07-19):
@@ -1107,11 +1145,11 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(_routes.DescribeRoute(_previewName, waypoints));
     }
 
-    /// <summary>", HP X Prozent" for targets that have hit points, else empty.</summary>
+    /// <summary>", HP X von Y" for targets that have hit points, else empty.</summary>
     private static string DescribeTargetHp(IGameObject target)
     {
         if (target is IBattleChara bc && bc.MaxHp > 0)
-            return $", HP {(int)(bc.CurrentHp * 100u / bc.MaxHp)} Prozent";
+            return $", HP {bc.CurrentHp} von {bc.MaxHp}";
         return string.Empty;
     }
 

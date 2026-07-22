@@ -11,10 +11,16 @@ public sealed class Configuration : IPluginConfiguration
     // (2026-07-10): N ist der einzige freie Buchstabe, Strg+F1..F12 sind frei.
     // Format: "Taste" oder "Strg+Umschalt+Taste" (Modifier: Strg, Umschalt, Alt).
     public string KeyHelp         = "Strg+F1";          // Kontextbezogene Hilfe
-    public string KeyNextObject   = "N";                // Objekt-Browser: nächstes Objekt anvisieren
-    public string KeyPrevObject   = "Umschalt+N";       // Objekt-Browser: vorheriges Objekt
-    public string KeyCategory     = "Strg+N";           // Objekt-Browser: Kategorie vorwärts
-    public string KeyCategoryPrev = "Strg+Umschalt+N";  // Objekt-Browser: Kategorie zurück (Umschalt = rückwärts, wie N/Umschalt+N; Strg+Alt+N war NVDA-Start-Hotkey!)
+    // V5.31: N-Familie freigeräumt (N wird künftig anders gebraucht). Der
+    // Objekt-Browser liegt jetzt auf den Bild-Tasten. Bare Bild-auf/Bild-ab
+    // sind im Spiel CAMERA_ZOOMIN/ZOOMOUT (Keybind-Dump 2026-07-10) - der Zoom
+    // ist rein visuell und für blindes Spiel folgenlos (User bestätigt
+    // 2026-07-22); das Plugin verbraucht die Taste ohnehin nicht. Strg+Bild-
+    // auf/-ab sind laut Dump völlig frei.
+    public string KeyNextObject   = "BildAb";           // Objekt-Browser: nächstes Objekt (Bild-ab = runter/vor)
+    public string KeyPrevObject   = "BildAuf";          // Objekt-Browser: vorheriges Objekt (Bild-auf = hoch/zurück)
+    public string KeyCategory     = "Strg+BildAb";      // Objekt-Browser: Kategorie vorwärts
+    public string KeyCategoryPrev = "Strg+BildAuf";     // Objekt-Browser: Kategorie zurück
     // WINDOWS-FALLE Umschalt+Nummernblock: bei aktivem NumLock wandelt der
     // Tastaturtreiber Umschalt+Numpad-Ziffer in die NAVIGATIONS-Taste um
     // (Numpad3 -> Bild-ab) und laesst Umschalt dabei kuenstlich los - das
@@ -24,6 +30,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyWalkGuide    = "Strg+Numpad3";     // Gehhilfe an/aus (neben Auto-Lauf Numpad3; Strg+Numpad3 laut Keybind-Dump frei)
     public string KeyAutoWalk     = "Numpad3";          // Auto-Lauf zum Ziel an/aus (braucht vnavmesh)
     public string KeyRoutePreview = "Strg+Numpad5";     // Routen-Vorschau: Weg ansagen ohne zu laufen (Numpad5 hat die tastbare Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 frei)
+    public string KeyGotoCoords   = "Strg+Umschalt+F1"; // Zu Koordinaten aus der Zwischenablage laufen (z.B. "24.1 21.0" kopieren, dann Taste). Alle Strg+F/Umschalt+F sind belegt; Strg+F* ist laut Keybind-Dump spielfrei, also ist Strg+Umschalt+F* erst recht frei.
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
     public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt

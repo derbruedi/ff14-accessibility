@@ -76,7 +76,7 @@ public sealed class CombatService
         {
             if (_lastHpPercent > threshold && hp <= threshold)
             {
-                _tolk.SpeakInterrupt($"HP: {hp} Prozent.");
+                _tolk.SpeakInterrupt($"HP: {player.CurrentHp} von {player.MaxHp}.");
                 break;
             }
         }
@@ -113,7 +113,7 @@ public sealed class CombatService
             {
                 if (_lastTargetHpPercent > threshold && hp <= threshold)
                 {
-                    _tolk.SpeakInterrupt($"Ziel HP: {hp} Prozent.");
+                    _tolk.SpeakInterrupt($"Ziel HP: {target.CurrentHp} von {target.MaxHp}.");
                     break;
                 }
             }
@@ -224,18 +224,15 @@ public sealed class CombatService
             return;
         }
 
-        var hp = HpPercent(player.CurrentHp, player.MaxHp);
-        var mp = HpPercent(player.CurrentMp, player.MaxMp);
-
         var text = player.MaxMp > 0
-            ? $"HP {hp} Prozent, MP {mp} Prozent."
-            : $"HP {hp} Prozent.";
+            ? $"HP {player.CurrentHp} von {player.MaxHp}, MP {player.CurrentMp} von {player.MaxMp}."
+            : $"HP {player.CurrentHp} von {player.MaxHp}.";
 
         if (_targetManager.Target is IBattleChara target && target.MaxHp > 0)
         {
             var name = target.Name.TextValue;
             if (string.IsNullOrWhiteSpace(name)) name = "Ziel";
-            text += $" {name}, HP {HpPercent(target.CurrentHp, target.MaxHp)} Prozent.";
+            text += $" {name}, HP {target.CurrentHp} von {target.MaxHp}.";
         }
 
         _tolk.SpeakInterrupt(text);

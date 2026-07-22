@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -57,8 +58,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.30";
-    private const string PluginVersionTag = "Absturz-Fix Online-Fenster";
+    private const string PluginVersion    = "5.31";
+    private const string PluginVersionTag = "Objekt-Browser auf Bild-Tasten, N frei";
 
     public Plugin()
     {
@@ -124,6 +125,23 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 7;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.Version < 8)
+        {
+            // V5.31: N-Familie freigeraeumt (N wird kuenftig anders gebraucht).
+            // Objekt-Browser zieht auf die Bild-Tasten: Unterkategorien auf
+            // Bild-auf/Bild-ab, Kategorien auf Strg+Bild-auf/-ab. Bare Bild-
+            // auf/-ab ueberschneiden sich mit CAMERA_ZOOMIN/ZOOMOUT (Keybind-
+            // Dump), der Zoom ist aber rein visuell und fuer blindes Spiel
+            // folgenlos (User bestaetigt 2026-07-22); das Plugin verbraucht die
+            // Taste nicht. Nur unveraenderte Standardwerte migrieren, damit eine
+            // eigene Belegung nie ueberschrieben wird.
+            if (_config.KeyNextObject   == "N")               _config.KeyNextObject   = "BildAb";
+            if (_config.KeyPrevObject   == "Umschalt+N")      _config.KeyPrevObject   = "BildAuf";
+            if (_config.KeyCategory     == "Strg+N")          _config.KeyCategory     = "Strg+BildAb";
+            if (_config.KeyCategoryPrev == "Strg+Umschalt+N") _config.KeyCategoryPrev = "Strg+BildAuf";
+            _config.Version = 8;
+            PluginInterface.SavePluginConfig(_config);
+        }
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
         _tolk       = new TolkService(Log);
         _beacon       = new BeaconService(_config, _tolk, Log);
@@ -162,7 +180,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         // /acc nav  â†’ Richtung zum Ziel
         // /acc set  â†’ Aktuelles Spielziel verfolgen
-        // /acc near â†’ Objekte in der NÃ¤he
+        // /acc near â†’ Objekte in der Nähe
         // /acc stop â†’ Sprache stoppen
         CommandManager.AddHandler("/acc", new CommandInfo(OnCommand)
         {
@@ -174,7 +192,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         var trimmed = args.Trim();
 
-        // "dump" nimmt einen optionalen Addon-Namen â€” muss vor dem switch geprÃ¼ft werden
+        // "dump" nimmt einen optionalen Addon-Namen â€” muss vor dem switch geprüft werden
         if (trimmed.StartsWith("dump", StringComparison.OrdinalIgnoreCase))
         {
             var dumpArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
@@ -215,7 +233,7 @@ public sealed class Plugin : IDalamudPlugin
                 AnnounceHelp();
                 break;
             default:
-                _tolk.SpeakInterrupt("Unbekannter Befehl. Tippe /acc help fÃ¼r Hilfe.");
+                _tolk.SpeakInterrupt("Unbekannter Befehl. Tippe /acc help für Hilfe.");
                 break;
         }
     }
@@ -230,14 +248,15 @@ public sealed class Plugin : IDalamudPlugin
         foreach (var (function, keyName) in new[]
         {
             ("Hilfe",             _config.KeyHelp),
-            ("NÃ¤chstes Objekt",   _config.KeyNextObject),
+            ("Nächstes Objekt",   _config.KeyNextObject),
             ("Vorheriges Objekt", _config.KeyPrevObject),
             ("Kategorie",         _config.KeyCategory),
-            ("Kategorie zurÃ¼ck",  _config.KeyCategoryPrev),
+            ("Kategorie zurück",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Routen-Vorschau",   _config.KeyRoutePreview),
-            ("MenÃ¼ vorlesen",  _config.KeyReadUI),
+            ("Zu Koordinaten",    _config.KeyGotoCoords),
+            ("Menü vorlesen",  _config.KeyReadUI),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("UI-Dump",        _config.KeyDumpUI),
@@ -247,24 +266,24 @@ public sealed class Plugin : IDalamudPlugin
             ("Gil",            _config.KeyReadGil),
             ("Stufe",          _config.KeyLevelExp),
             ("Emote weiter",   _config.KeyEmoteNext),
-            ("Emote zurÃ¼ck",   _config.KeyEmotePrev),
-            ("Emote ausfÃ¼hren", _config.KeyEmoteDo),
+            ("Emote zurück",   _config.KeyEmotePrev),
+            ("Emote ausführen", _config.KeyEmoteDo),
             ("Bestiarium",     _config.KeyBestiary),
             ("Benachrichtigung", _config.KeyNotification),
-            ("AusrÃ¼stung",     _config.KeyReadEquipment),
-            ("Beste AusrÃ¼stung", _config.KeyEquipBest),
-            ("ZufÃ¤lliges Aussehen", _config.KeyRandomLook),
-            ("Skill zurÃ¼ck",   _config.KeySkillPrev),
+            ("Ausrüstung",     _config.KeyReadEquipment),
+            ("Beste Ausrüstung", _config.KeyEquipBest),
+            ("Zufälliges Aussehen", _config.KeyRandomLook),
+            ("Skill zurück",   _config.KeySkillPrev),
             ("Skill weiter",   _config.KeySkillNext),
             ("Skill-Ziel-Taste", _config.KeySkillSlot),
             ("Skill belegen",  _config.KeySkillAssign),
             ("Skill-Ziel-Leiste", _config.KeySkillBar),
-            ("Nachlese Kategorie zurÃ¼ck", _config.KeyChatCatPrev),
+            ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
-            ("Nachlese Ã¤lter", _config.KeyChatReadOlder),
+            ("Nachlese älter", _config.KeyChatReadOlder),
             ("Nachlese neuer", _config.KeyChatReadNewer),
             ("Plugin-Liste weiter",  _config.KeyPluginsNext),
-            ("Plugin-Liste zurÃ¼ck",  _config.KeyPluginsPrev),
+            ("Plugin-Liste zurück",  _config.KeyPluginsPrev),
             ("Plugin-Einstellungen", _config.KeyPluginsConfig),
         })
         {
@@ -284,6 +303,10 @@ public sealed class Plugin : IDalamudPlugin
         ["Up"]     = 0x26, ["Down"]   = 0x28,
         ["Left"]   = 0x25, ["Right"]  = 0x27,
         ["Return"] = 0x0D,
+        // V5.31: Objekt-Browser auf die Bild-Tasten (N-Familie freigeraeumt).
+        // BildAuf=VK_PRIOR/0x21, BildAb=VK_NEXT/0x22. Bare = CAMERA_ZOOMIN/OUT
+        // im Spiel (nur visuell), Strg+BildAuf/-Ab laut Keybind-Dump frei.
+        ["BildAuf"] = 0x21, ["BildAb"] = 0x22,
         // Nummernblock â€” TitleDCWorldMap Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         ["Numpad2"] = 0x62, ["Numpad4"] = 0x64,
         ["Numpad6"] = 0x66, ["Numpad8"] = 0x68,
@@ -371,6 +394,117 @@ public sealed class Plugin : IDalamudPlugin
             && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU]    == alt;
     }
 
+    /// <summary>
+    /// Reads two map coordinates (e.g. "24.1 21.0", "X: 24,1 Y: 21,0",
+    /// "24.1, 21.0") from the WINDOWS CLIPBOARD, converts them to a world
+    /// position on the current map and walks there via the auto-walk. The
+    /// clipboard is used on purpose: NVDA cannot read the game chat or an ImGui
+    /// text field, so the user copies the coords from anywhere readable
+    /// (a message, a wiki, or Notepad they typed into) and presses one key.
+    /// </summary>
+    private void GotoClipboardCoords()
+    {
+        string clip;
+        try
+        {
+            clip = ReadClipboardText();
+        }
+        catch (System.Exception ex)
+        {
+            Log.Warning($"[Goto] Zwischenablage nicht lesbar: {ex.Message}");
+            _tolk.SpeakInterrupt("Zwischenablage konnte nicht gelesen werden.");
+            return;
+        }
+
+        var coords = ParseMapCoords(clip);
+        if (coords == null)
+        {
+            Log.Info($"[Goto] Keine Koordinaten in der Zwischenablage: '{clip}'");
+            _tolk.SpeakInterrupt("Keine Koordinaten in der Zwischenablage gefunden. " +
+                                 "Erst die Zahlen kopieren, dann die Taste drücken.");
+            return;
+        }
+
+        var (mapX, mapY) = coords.Value;
+        var approx = _places.MapCoordToWorld(mapX, mapY);
+        if (approx == null)
+        {
+            _tolk.SpeakInterrupt("Aktuelle Karte unbekannt, kann nicht umrechnen.");
+            return;
+        }
+
+        // Snap the 2D map point onto the walkable mesh (map coords carry no height).
+        var floor = _autoWalk.ResolveFloorPoint(approx.Value) ?? approx.Value;
+        var name  = $"Koordinaten {mapX:0.0}, {mapY:0.0}";
+        Log.Info($"[Goto] {name} -> Welt {approx.Value.X:0.0}/{approx.Value.Z:0.0}, Boden {floor.Y:0.0}");
+        _tolk.SpeakInterrupt($"Laufe zu Koordinaten {mapX:0.0}, {mapY:0.0}.");
+
+        // Fresh start every time: stop a running walk first, then head out.
+        if (_autoWalk.IsActive) _autoWalk.StopQuiet();
+        _autoWalk.ToggleToPosition(floor, name, 2.5f);
+    }
+
+    /// <summary>
+    /// Extracts the first two decimal numbers from arbitrary text as map
+    /// coordinates. Accepts dot or comma decimals ("24.1" / "24,1") and any
+    /// separators around them. Returns null if fewer than two numbers are found
+    /// or they are outside the plausible map-coordinate range (1..60).
+    /// </summary>
+    private static (float X, float Y)? ParseMapCoords(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"\d+(?:[.,]\d+)?");
+        if (matches.Count < 2) return null;
+
+        var nums = new List<float>(2);
+        foreach (System.Text.RegularExpressions.Match m in matches)
+        {
+            var normalized = m.Value.Replace(',', '.');
+            if (float.TryParse(normalized, System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var v))
+                nums.Add(v);
+            if (nums.Count == 2) break;
+        }
+
+        if (nums.Count < 2) return null;
+        if (nums[0] is < 1f or > 60f || nums[1] is < 1f or > 60f) return null;
+        return (nums[0], nums[1]);
+    }
+
+    private const uint CF_UNICODETEXT = 13;
+
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool OpenClipboard(nint hWndNewOwner);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool CloseClipboard();
+    [DllImport("user32.dll", SetLastError = true)] private static extern nint GetClipboardData(uint uFormat);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern nint GlobalLock(nint hMem);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(nint hMem);
+
+    /// <summary>
+    /// Reads Unicode text from the Windows clipboard via Win32 - no WinForms
+    /// (needs STA) and no ImGui reference. OpenClipboard can briefly fail while
+    /// another process holds the clipboard, so it is retried a few times.
+    /// </summary>
+    private static string ReadClipboardText()
+    {
+        var opened = false;
+        for (var attempt = 0; attempt < 6 && !opened; attempt++)
+            opened = OpenClipboard(nint.Zero);
+        if (!opened) return string.Empty;
+
+        try
+        {
+            var handle = GetClipboardData(CF_UNICODETEXT);
+            if (handle == nint.Zero) return string.Empty;
+
+            var ptr = GlobalLock(handle);
+            if (ptr == nint.Zero) return string.Empty;
+            try { return Marshal.PtrToStringUni(ptr) ?? string.Empty; }
+            finally { GlobalUnlock(handle); }
+        }
+        finally { CloseClipboard(); }
+    }
+
     // Keybind dump runs automatically once per session: the user cannot open
     // the chat yet, so /acc keys would be unreachable for them.
     private bool _keybindsDumped;
@@ -445,6 +579,7 @@ public sealed class Plugin : IDalamudPlugin
                 case MarkerResolve.Failed:   break; // reason already announced
             }
         }
+        if (IsJustPressed(_config.KeyGotoCoords))    GotoClipboardCoords();
         if (IsJustPressed(_config.KeyReadUI))        _uiReader.ReadCurrentFocus();
         if (IsJustPressed(_config.KeySilence))       _tolk.Silence();
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
@@ -479,8 +614,14 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
-        // (kein Chat-Fenster nÃ¶tig, funktioniert auch auf dem Titelbildschirm)
-        if (IsJustPressed(_config.KeyDumpUI))        _uiReader.DumpFocusedAddon();
+        // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
+        if (IsJustPressed(_config.KeyDumpUI))
+        {
+            _uiReader.DumpFocusedAddon();
+            // Also dump every nearby object (incl. nameless/untargetable) so we
+            // can locate audible-but-unlisted things like the quest-battle circle.
+            _navigation.DumpNearbyObjects();
+        }
         // F2 â€” aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
@@ -513,7 +654,7 @@ public sealed class Plugin : IDalamudPlugin
                 _uiReader.ForceDCMapRead();
         }
 
-        // MenÃ¼-Navigation: nur wenn ein MenÃ¼ aktiv ist
+        // Menü-Navigation: nur wenn ein Menü aktiv ist
         if (_uiReader.HasActiveMenu)
         {
             var up    = IsJustPressed("Up");
@@ -575,7 +716,7 @@ public sealed class Plugin : IDalamudPlugin
                 var hop = _places.FindFirstHopToMap(quest.MapId, out _);
                 if (hop == null)
                 {
-                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Ãœbergang dorthin.");
+                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.");
                     return MarkerResolve.Failed;
                 }
                 var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
@@ -657,8 +798,8 @@ public sealed class Plugin : IDalamudPlugin
         {
             var habitat = _bestiary.GetHabitat(monsterName);
             _tolk.SpeakInterrupt(habitat != null
-                ? $"Kein {monsterName} in der NÃ¤he. Lebt in {habitat}."
-                : $"Kein {monsterName} in der NÃ¤he.");
+                ? $"Kein {monsterName} in der Nähe. Lebt in {habitat}."
+                : $"Kein {monsterName} in der Nähe.");
             return;
         }
 
@@ -674,34 +815,34 @@ public sealed class Plugin : IDalamudPlugin
     {
         _tolk.SpeakInterrupt(
             "Tasten: " +
-            "N, nÃ¤chstes Objekt ansagen und anvisieren. " +
-            "Umschalt+N, vorheriges Objekt. " +
-            "Strg+N, Kategorie vorwÃ¤rts. " +
-            "Strg+Umschalt+N, Kategorie zurÃ¼ck. " +
+            "Bild ab, nächstes Objekt ansagen und anvisieren. " +
+            "Bild auf, vorheriges Objekt. " +
+            "Strg+Bild ab, Kategorie vorwärts. " +
+            "Strg+Bild auf, Kategorie zurück. " +
             "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
             "Nummernblock 3, automatisch zum Ziel laufen. " +
             "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
             "F, zum Ziel hindrehen. W, laufen. " +
             "Strg+F1, diese Hilfe. " +
             "Strg+F2, aktives Fenster. " +
-            "Strg+F10, MenÃ¼ vorlesen. " +
+            "Strg+F10, Menü vorlesen. " +
             "Strg+F11, Sprache stoppen. " +
             "Strg+Entfernen, HP und MP ansagen. " +
-            "Strg+F9, gewÃ¤hlte Aktionsleiste vorlesen. " +
-            "Strg+F6, angelegte AusrÃ¼stung vorlesen. " +
-            "Strg+F7, empfohlene AusrÃ¼stung anlegen. " +
-            "Strg+F8, zufÃ¤lliges Aussehen in der Charaktererschaffung. " +
-            "Umschalt+F7 und F8, Skill-Browser zurÃ¼ck und vor. " +
+            "Strg+F9, gewählte Aktionsleiste vorlesen. " +
+            "Strg+F6, angelegte Ausrüstung vorlesen. " +
+            "Strg+F7, empfohlene Ausrüstung anlegen. " +
+            "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
+            "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
             "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
-            "Umschalt+F9, Ziel-Taste der Leiste wÃ¤hlen. " +
-            "Umschalt+F10, gewÃ¤hlten Skill auf die Ziel-Taste legen. " +
+            "Umschalt+F9, Ziel-Taste der Leiste wählen. " +
+            "Umschalt+F10, gewählten Skill auf die Ziel-Taste legen. " +
             "Befehle: " +
             "/acc nav, Richtung zum Ziel. " +
             "/acc set, Aktuelles Ziel verfolgen. " +
             "/acc clear, Ziel aufheben. " +
-            "/acc near, Objekte in der NÃ¤he. " +
+            "/acc near, Objekte in der Nähe. " +
             "/acc status, HP und MP ansagen. " +
-            "/acc ui, MenÃ¼ vorlesen. " +
+            "/acc ui, Menü vorlesen. " +
             "/acc win, Aktives Fenster ansagen. " +
             "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
             "/acc stop, Sprache stoppen."
