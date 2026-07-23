@@ -3,7 +3,289 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-22, V5.33: SAMMELN - Cursor-Zeile + Ausbeute-Ansage - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-07-23, V5.42: Dungeon-Beitritt Sekunden-Spam behoben - GEBAUT, UNGETESTET)
+
+V5.41-TEST (Log 2026-07-23 12:17): Mein Countdown-Handler funktioniert
+("Noch 40 Sekunden zum Beitreten" bei 40). ABER: der GENERISCHE Text-Scanner
+(ScanAddonTexts in OnAnyAddonUpdate) las id=60 JEDE Sekunde vor ("[Speak] INT
+'0:44'/'0:43'/...") -> User "er zaehlt immer noch runter". Bei frueheren Pops
+(12:00) sprach der Scanner den Timer nicht (Zustandsabhaengig), bei 12:17 doch.
+
+V5.42 FIX: "ContentsFinderConfirm" in SpecialUpdateAddons aufgenommen ->
+OnAnyAddonUpdate returned frueh (UIReaderService.cs:745), ScanAddonTexts laeuft
+nicht mehr fuer dieses Addon -> kein Sekunden-Spam. Oeffnungs-Ansage bleibt
+(kommt aus OnAnyAddonOpen/PostSetup, NICHT betroffen; Addon nicht in
+SpecialSetupAddons). Countdown-Handler ist eigener Listener -> laeuft weiter.
+Button-Fokus ('Warten'/'Teilnehmen') kommt vom globalen Fokus-Leser -> bleibt.
+
+TEST: Duty anmelden, Pop abwarten. Erwartung: Oeffnungs-Ansage (Dungeon-Name)
++ NUR alle 10 s "Noch X Sekunden zum Beitreten", KEIN Sekunden-Runterzaehlen.
+
+---
+
+## HISTORIE (2026-07-23, V5.41: Dungeon-Beitritt Countdown alle 10 s)
+
+User: bei der Anfrage "Dungeon beitreten?" (ContentsFinderConfirm) lief ein
+Timer, der nicht angesagt wurde - alle 10 s ansagen reicht.
+
+BEFUND (Log 2026-07-23 12:00 + 12:12): Addon "ContentsFinderConfirm", Countdown
+in Text-Node id=60 im Format "M:SS" ("0:44" -> zaehlt von 45 runter). Der
+generische Scanner LOGGT id=60 jede Sekunde ([Scan]), spricht ihn aber nicht.
+Buttons: "Teilnehmen" (id=63, ButtonClick param=8), "Zurueckziehen" (id=65,
+param=9), "Warten" - werden vom Fokus-Leser beim Durchtabben schon angesagt.
+
+V5.41: OnContentsFinderConfirmUpdate (PostUpdate). Liest id=60, ParseClock
+("M:SS"->Sekunden), sagt bei jedem vollen 10er (40/30/20/10) EINMAL an "Noch X
+Sekunden zum Beitreten." via _tolk.Speak (NICHT unterbrechend, damit Button-
+Navigation nicht abgeschnitten wird). Reset bei !IsVisible. Addon NICHT in
+SpecialUpdate -> generische Oeffnungs-Ansage (Dungeon-Name etc.) bleibt.
+
+TEST: Duty ueber Inhaltssuche anmelden, bei der Pop-Anfrage warten. Erwartung:
+"Noch 40/30/20/10 Sekunden zum Beitreten." Buttons weiter per Tab + Enter.
+
+---
+
+## HISTORIE (2026-07-23, V5.40: Anfaenger-Arena Uebungsauswahl lesbar - BESTAETIGT ✓)
+
+V5.40 BESTAETIGT (User 2026-07-23): "das scheint zu funktionieren, hak die
+Arena erstmal ab". Vorleser (Uebung + Rolle beim Oeffnen) + Enter=Beginnen
+funktionieren. NICHT weiter getestet/gebaut: Uebungs-Navigation (zwischen
+Angreifer 1/2/... wechseln, Pfeil-Buttons) + Verguetung-Ansage - bei Bedarf
+spaeter nachruesten.
+
+---
+
+## HISTORIE (2026-07-23, V5.40: Anfaenger-Arena Uebungsauswahl lesbar)
+
+User in der Anfaenger-Arena, dumpte Addon "BeginnersMansionProblem"
+(Uebungsauswahl-Fenster, 46 Nodes). Struktur:
+  id=21 Text  = gewaehlte Uebung ("Angreifer 1")
+  id=39 Text  = Klasse/Rolle ("Thaumaturg (Angreifer)")
+  id=31/32    = Verguetung (1440 / 200, verschachtelt)
+  id=9  Button = Hauptaktion ("Beginnen"/"Uebung wiederholen", Ch=5)
+  id=45 "Schliessen", id=43 "Erklaerung", id=14 "Alle abgeschlossenen
+  Uebungen", id=12 "Zur Grundausbildung wechseln", id=16/id=3/id=4 = Pfeile?
+
+V5.40 (analog ContentsTutorial): dedizierter Leser OnBeginnersArenaUpdate
+(PostUpdate, Dedup): sagt beim Oeffnen/Wechsel "Anfaenger-Arena. Uebung: X.
+Klasse. Enter beginnt." In SpecialSetup/UpdateAddons (Text-Scanner aus,
+Fokus-Leser bleibt fuer Button-Navigation). Enter (HandleConfirmKey) klickt
+Hauptaktion id=9 via DispatchClick -> "Uebung gestartet."
+
+OFFEN FUER TEST: (1) sagt der Leser die richtige Uebung? (2) startet Enter/id=9
+die Uebung wirklich? (3) UEBUNGS-NAVIGATION (zwischen Angreifer 1/2/... wechseln)
+noch NICHT gebaut - Mechanik unklar (welche Pfeil-Buttons id=16/3/4). Beim Test
+mit dem globalen Fokus-Leser durchtabben, dann [Focus]-Log zeigt die Pfeile ->
+danach Navigation nachruesten. Verguetung noch nicht vorgelesen.
+
+HINWEIS: seit V5.35 haben sich VIELE ungetestete Features angesammelt (5.35
+Objektfilter, 5.36 Tutorial-Popup, 5.37-5.39 Dungeon-Marker-Sonden, 5.40
+Arena). Beim naechsten Spielen einmal durchtesten und abhaken.
+
+---
+
+## STAND (2026-07-23, V5.39: Wegpunkt-Diagnose - GEBAUT, UNGETESTET)
+
+User-Klaerung: mit "Orte koennen nicht angelaufen werden" waren die WEGPUNKTE
+(PlacesService-Kategorie) gemeint.
+
+BEFUND: Im Dungeon (terr=1036, aktuelle map=31) liest die Wegpunkte-Kategorie
+15 statische Marker aus dem Lumina-MapMarker-Sheet fuer map 31. Log zeigt
+"Keine Uebergangs-Route von Map 31 nach Map 20/21/22/3" -> das sind
+Western-La-Noscea-Overworld-Sub-Karten. VERDACHT (noch nicht hart bestaetigt):
+map 31 ist die Overworld-Karte ueber der Instanz; die 15 "Wegpunkte" sind
+Overworld-Marker (Uebergaenge/Orte), die geografisch AUSSERHALB des
+Dungeon-Meshes liegen -> vnavmesh findet keinen Weg -> nicht anlaufbar.
+PlacesService.GetPlaces() nutzt _clientState.MapId + PixelToWorld; Y=0 wird vor
+dem Lauf per Navmesh aufgeloest (im Dungeon schlaegt das an einer
+Overworld-Position fehl).
+
+V5.39 = DumpMapMarkers (Strg+F5) loggt jetzt ZUSAETZLICH jeden Wegpunkt mit
+Name/Typ/Weltposition ([MarkerProbe] Ort '...'). Damit EIN Dungeon-Dump alles
+klaert: EventMarkers (=0 bestaetigt), MiniMapMarkers (offen), Wegpunkt-Details
+(offen).
+
+WENN Verdacht bestaetigt (Wegpunkte = Overworld-Muell im Dungeon): Wegpunkte-
+Kategorie im Dungeon unterdruecken ODER durch echte Dungeon-Ziele ersetzen
+(MiniMapMarker-Objective, falls vorhanden; sonst QuestMarker-Endziel +
+Objekt-Browser-Tore/Schalter). Parallel bleibt Option B (Auto-Lauf kampf-fest)
+der pragmatischste Dungeon-Fortschritt.
+
+---
+
+## STAND (2026-07-23, V5.38: Marker-Sonde erweitert um MiniMapMarkers - GEBAUT, UNGETESTET)
+
+V5.37-SONDEN-ERGEBNIS (Log 2026-07-23, IM Dungeon Sastasha terr=1036 map=31,
+ObjProbe zeigte Wellenfahrer-Tor/Gefangene/Duty-Support-NPCs -> eindeutig
+Instanz): EventMarkers gesamt = 0. HYPOTHESE WIDERLEGT - das Dungeon-Ziel
+steckt NICHT in AgentMap.EventMarkers.
+
+WICHTIGER NEBENBEFUND: Das Dungeon-ENDZIEL ist bereits anlaufbar! Der
+QuestMarker "Das Geheimnis der Sastasha-Hoehle" hat IM Dungeon eine Position
+(-312|5|311), und der Auto-Lauf dorthin FUNKTIONIERTE (vnavmesh baute
+64-Wegpunkte-Pfad, "laeuft dist=790"). Der echte Blocker: der Lauf stoppt bei
+JEDEM Kampf (10:11/10:19/10:20 je nach ~8 s gestoppt) -> User kommt nur in
+Mini-Schritten voran (840 -> 788 -> 773 m). Ausserdem fuehrt der Direktweg zum
+Endziel durch Gegnergruppen + Tore (Wellenfahrer-Tor muss geoeffnet werden).
+
+V5.38 = SONDE ERWEITERT: DumpMapMarkers loggt jetzt zusaetzlich
+AgentMap.MiniMapMarkers (die Minimap-Icons; MapMarkerBase verifiziert:
+IconId@4, Subtext@16 CStringPointer, X@44/Y@46 short = MAP-PIXEL, nicht Welt).
+Das leuchtende Objective-Icon wird hier vermutet. Pixel->Welt umrechenbar wie
+PlacesService (welt=(pixel-1024)*100/SizeFactor-Offset), Y-Hoehe via vnavmesh
+PointOnFloor.
+
+NAECHSTER TEST: erneut in einen Dungeon, Strg+F5. [MarkerProbe] Mini[..]-Zeilen
+zeigen, ob ein MiniMapMarker das aktuelle Ziel ist (icon/sub/X/Y). Falls ja ->
+Kategorie "Dungeon-Ziel" bauen. Falls auch leer -> das Ziel ist evtl. NUR der
+QuestMarker (Endziel) + Objekt-Browser (Tore/Gegner als EventObj/BattleNpc);
+dann Fokus auf Option B (Auto-Lauf kampf-fest) statt neuer Ziel-Quelle.
+
+STRATEGIE-NOTIZ: Sastasha-Ziele stehen im _ToDoList als Text ("Korallenmecha-
+nismus betaetigen 0/1", "Sastasha erkunden"). Die interaktiven Ziele (Tore,
+Schalter) sind als EventObj IM Objekt-Browser (Wellenfahrer-Tor zielbar=True).
+Der Dungeon-Fortschritt = Gegner-Pulls + Tore oeffnen; Duty-Support-NPCs
+fuehren durch -> denkbare Alternative: dem vorangehenden NPC-Begleiter folgen.
+
+---
+
+## STAND (2026-07-23, V5.37: DUNGEONS barrierefrei - Schritt 1: Ziel-Marker-Sonde - GEBAUT)
+
+User-Ziel: Dungeons barrierefrei machen. User-Wahl fuer den ersten Baustein:
+"Dungeon-Ziel anlaufbar machen" (das leuchtende Story-Ziel im Dungeon als
+anlaufbaren Punkt).
+
+BEFUND aus Log 2026-07-23 (Weg zum Sastasha-Eingang, terr=1036/map=31):
+- Auto-Lauf FUNKTIONIERT grundsaetzlich (vnavmesh baute 64-Wegpunkte-Pfad,
+  978 m). ABER: bricht bei jedem Zufallskampf ab ("Kampf." -> "Auto-Lauf
+  gestoppt", Zeile 3009) und muss neu gestartet werden.
+- Das Overworld-QuestMarker-System (Map.Instance()->QuestMarkers, gelesen von
+  QuestMarkerService) zeigt im Dungeon-Gebiet nur den EINGANG (map 31), nicht
+  das dungeon-interne Ziel. Dungeon-Aufgaben stehen im _ToDoList als TEXT ohne
+  Weltkoordinaten ("Korallenmechanismus betaetigen 0/1", "Sastasha erkunden").
+
+RECHERCHE (ilspycmd, AgentMap verifiziert): Das dynamische Dungeon-Ziel steckt
+wahrscheinlich in AgentMap.Instance()->EventMarkers (StdVector<MapMarkerData>,
+Doc: "FateManager, EventFramework and SequentialEvent"). Dungeons laufen ueber
+EventFramework/Director -> Objective-Marker dort erwartet. Gleicher
+MapMarkerData-Typ (Position/IconId/TooltipString/Radius), den QuestMarkerService
+schon liest. NOCH NICHT verifiziert, ob es im Dungeon das Ziel enthaelt und in
+welchem Koordinatensystem (Welt vs. Pixel).
+
+V5.37 = SONDE (kein fertiges Feature): NavigationService.DumpMapMarkers() haengt
+an Strg+F5 (neben DumpNearbyObjects). Loggt [MarkerProbe] alle EventMarkers
+(pos/icon/radius/tooltip) + Spielerposition + terr.
+
+NAECHSTER SCHRITT / TEST: In Sastasha (oder irgendeinen Dungeon) gehen, dort
+Strg+F5 druecken. Log-Zeilen [MarkerProbe] zeigen, ob EventMarkers das aktuelle
+Ziel enthaelt. Falls ja -> als anlaufbare Position in eine Kategorie
+"Dungeon-Ziel" bauen (Positions-Lauf wie Quest-Ziele). Falls EventMarkers leer/
+ohne Ziel -> MiniMapMarkers (FixedSizeArray100<MiniMapMarker>) oder
+MapMarkers (FixedSizeArray132<MapMarkerInfo>) proben. NICHT vorher bauen.
+OFFEN nebenbei: Auto-Lauf nach Kampf automatisch fortsetzen (User-Option B).
+
+---
+
+## STAND (2026-07-23, V5.36: ContentsTutorial - Freischaltungs-Popup lesbar + schliessbar - GEBAUT, UNGETESTET)
+
+User steckte in einem Fenster fest: "mir wurde gesagt dass ich die Arena
+freigeschaltet hab, aber ich kann die Meldung nicht wegmachen, es geht auch
+nicht mehr zurueck." Dump (Strg+F5, jetzt via V5.35-Fallback erfasst,
+Desktop\FFXIV_UI_Dump.txt) zeigte Addon "ContentsTutorial" (Titel
+"INHALTSFUEHRER"):
+  id=2  Text  = Ueberschrift ("Anfaenger-Arena")
+  id=5  Text  = Fliesstext ("Die Anfaenger-Arena wurde freigeschaltet! ...")
+  id=7  Text  = Seitenzaehler ("1/1")
+  id=11 Button "Schliessen" = EINZIGER Weg raus (Spiel ignoriert Escape hier)
+  id=10 CheckBox "Verstanden! Ich bin bereit!"
+
+DOPPELTES PROBLEM: (1) stumm - ContentsTutorial stand in NotificationAddons,
+OnNotification las nur den ERSTEN Text (leeres id=4/Titel), nie den Body.
+(2) nicht schliessbar - blinder Nutzer kann den "Schliessen"-Button nicht
+klicken, Escape wird vom Spiel ignoriert.
+
+ZWEITER DUMP (09:57): MEHRSEITIGES Tutorial "Dungeon-Inhalte", Seite "1/8".
+Kritisch: der "Schliessen"-Button (id=11) ist auf Seite 1 UNSICHTBAR (Dump:
+kein V-Flag) - er erscheint erst auf der LETZTEN Seite. Stattdessen zwei
+Bild-Buttons (Pfeile) id=8 (ButtonClick param=1) und id=9 (param=2) =
+Weiter/Zurueck (aus [Focus]-Eventlog). Der User steckte fest, weil man erst
+durch 8 Seiten blaettern muss, bevor "Schliessen" da ist.
+
+FIX (V5.36):
+- ContentsTutorial aus NotificationAddons RAUS. Neuer dedizierter Leser
+  OnContentsTutorialUpdate (PostUpdate, Dedup, Reset bei !IsVisible): sagt
+  "Ueberschrift. Body. [Seite X von Y.] Enter schliesst/blaettert weiter."
+  Body via AtkText.Read (Sanitize entfernt die HI..IH-Payload-Glyphen).
+  Hinweis haengt an id=11-Sichtbarkeit: sichtbar -> "Enter schliesst", sonst
+  "Enter blaettert weiter". Bleibt in SpecialSetup/UpdateAddons.
+- Enter (HandleConfirmKey -> AdvanceOrCloseContentsTutorial): wenn id=11
+  sichtbar (letzte Seite) -> TryClickButton "Schliessen" ("Geschlossen.");
+  sonst -> DispatchClick auf id=8 (Weiter-Pfeil), naechste Seite wird
+  vorgelesen. So blaettert der User mit mehrfachem Enter durch und schliesst
+  am Ende. Einseitige Popups schliessen beim ersten Enter.
+
+VERSION HOCHGESETZT: 5.34 -> 5.36 (csproj + Plugin.cs), damit die Ladeansage
+"Version 5 Punkt 36" bestaetigt, dass die neue DLL aktiv ist. WICHTIG: der
+User hatte V5.34 geladen und die neuen Handler liefen nicht (kein [Tutorial]
+im Log) - immer erst pruefen, ob die aktuelle Version wirklich geladen ist.
+
+OFFENE PUNKTE FUER DEN TEST:
+- Ist id=8 wirklich der WEITER-Pfeil? ANNAHME aus param=1. Falls die Seite
+  nicht hochgeht ([Tutorial]-Log "Seite vorher=X/8" bleibt gleich): id=8/id=9
+  tauschen.
+- Schliesst der Event-Dispatch auf der letzten Seite wirklich?
+- Kommt der Body sauber (ohne HI/IH-Glyphen)? [Tutorial]-Log zeigt es.
+- Duty-startende Tutorials verlangen evtl. die Checkbox "Ich bin bereit!"
+  (id=10) vor dem Schliessen - dann eigene Taste noetig.
+
+TESTPLAN: In so ein Popup gehen. Erwartung: jede Seite wird vorgelesen; Enter
+blaettert weiter, bis Seite Y/Y -> Enter schliesst ("Geschlossen.").
+
+---
+
+## STAND (2026-07-23, V5.35: namenlose Objekte im Browser AUSBLENDEN - GEBAUT, UNGETESTET)
+
+User-Beobachtung (Log 2026-07-23): in Wohnvierteln (Dorf des Nebels) blaehte
+der Objekt-Browser die Liste auf (52 Objekte), viele mit LEEREM Namen -
+Ansage "leer, Objekt, 20 Meter, hinter rechts, 3 von 52" (ids 4000BA0E/BA0F,
+EventObj). User-Entscheid: solche Objekte AUSBLENDEN.
+
+ROOT CAUSE: der Namensfilter in NavigationService.GetObjectsOfKinds pruefte
+den ROHNAMEN (o.Name.TextValue) mit IsNullOrWhiteSpace. Diese Objekte tragen
+einen Namen aus Icon-Glyphen / SeString-Payload-Bytes -> roh nicht leer
+(Filter laesst durch), aber TolkService.Sanitize (U+E000-F8FF + 0x02..0x03
+Payloads) reduziert ihn beim Sprechen auf nichts -> leere Ansage.
+
+FIX: der Filter prueft jetzt den SANITISIERTEN Namen
+(!IsNullOrWhiteSpace(TolkService.Sanitize(o.Name.TextValue))). Ursachen-
+unabhaengig robust, konsistent mit dem Rest (ueberall wird vor dem Sprechen
+sanitisiert). Sammelpunkte bleiben ausgenommen (eigener Fallback-Name).
+
+TEST: in der gleichen Gegend (Dorf des Nebels) mit BildAuf/BildAb durch die
+Kategorie "Objekte" blaettern - die namenlosen Eintraege sollten weg sein,
+Anzahl kleiner als 52, keine "leer"-Ansagen mehr.
+
+---
+
+## STAND (2026-07-23, V5.34: Zeichen-Echo beim Tippen AUS)
+
+User-Wunsch: beim Schreiben in Chats und Eingabefeldern sollen die einzelnen
+ZEICHEN nicht mehr vorgelesen werden.
+- Neuer Config-Schalter EchoTypedCharacters (Default FALSE). Gate zentral in
+  SpeakTextEchoDiff (fruehes return), damit ALLE drei Tipp-Echos auf einen
+  Schlag schweigen: Chat (OnChatLogUpdate), Namensfeld (OnCharaMakeNameUpdate),
+  Kommentarfeld (OnCharaMakeInputUpdate).
+- BEWUSST erhalten (nicht "die Zeichen"): die Kontext-Ansagen laufen weiter -
+  "Chat-Eingabe, <Kanal>" beim Oeffnen, Kanalwechsel, Feld-Label
+  ("Vorname"/"Nachname"). Nur das Zeichen-fuer-Zeichen-Echo haengt am Schalter.
+- FOLGE (dem User mitgeteilt): In der Charaktererstellung hoert man beim
+  Tippen des Namens jetzt auch nichts mehr - nur noch das Feld-Label. Falls
+  das stoert, EchoTypedCharacters gezielt fuer die Namensfelder wieder an
+  (oder global). EchoChatInput bleibt true (Chat-Eingabe-Kontext bleibt).
+
+---
+
+## STAND (2026-07-22, V5.33: SAMMELN - Cursor-Zeile + Ausbeute-Ansage - GEBAUT, UNGETESTET)
 
 Aufbauend auf V5.32 (bestaetigt, s.u.). User: "mach beide" (A Pro-Gegenstand-
 Ansage beim Durchblaettern, B Ausbeute-Ansage).

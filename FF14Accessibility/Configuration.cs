@@ -128,6 +128,11 @@ public sealed class Configuration : IPluginConfiguration
     // Tipp-Echo im Chat-Eingabefeld (Senden): NVDA liest das Spiel-Chatfeld
     // nicht, daher spricht das Plugin die getippten Zeichen (V4.90).
     public bool EchoChatInput      = true;
+    // Ob die getippten ZEICHEN beim Schreiben (Chat + Eingabefelder) laut
+    // vorgelesen werden. User-Wunsch 2026-07-22: aus. Die Kontext-Ansagen
+    // (Feldname, "Chat-Eingabe", Kanal) bleiben davon unberuehrt - nur das
+    // Zeichen-fuer-Zeichen-Echo (SpeakTextEchoDiff) haengt daran.
+    public bool EchoTypedCharacters = false;
 
     // Toasts (V4.80): Bildschirm-Popups des Spiels via IToastGui. Fehler-Toasts
     // ("Das Ziel ist zu weit entfernt.") leben NUR im _TextError-Overlay:

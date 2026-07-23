@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LuminaENpcResident = Lumina.Excel.Sheets.ENpcResident;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
@@ -572,8 +573,15 @@ public sealed class NavigationService
 
         var isGathering = kinds.Contains(ObjectKind.GatheringPoint);
         return _objectTable
+            // The name filter checks the SANITIZED name, not the raw one: some
+            // world objects (e.g. housing-district EventObj 4000BA0E/BA0F) carry
+            // a name made only of icon glyphs / SeString payload bytes. The raw
+            // string is non-empty (IsNullOrWhiteSpace = false), so it slips past
+            // a raw check, but Sanitize (the same pass the announcement uses)
+            // reduces it to nothing -> the browser would announce "<blank>,
+            // Objekt, 20 Meter". Gathering nodes keep their own fallback name.
             .Where(o => o.GameObjectId != player.GameObjectId
-                        && (isGathering || !string.IsNullOrWhiteSpace(o.Name.TextValue))
+                        && (isGathering || !string.IsNullOrWhiteSpace(TolkService.Sanitize(o.Name.TextValue)))
                         && kinds.Contains(o.ObjectKind)
                         && Vector3.Distance(player.Position, o.Position) <= CycleRange)
             .OrderBy(o => Vector3.Distance(player.Position, o.Position))
@@ -616,6 +624,76 @@ public sealed class NavigationService
         }
 
         _tolk.SpeakInterrupt($"Objekt-Sonde: {near.Count} Objekte im Log.");
+
+        DumpMapMarkers();
+    }
+
+    /// <summary>
+    /// Debug probe: logs the game's DYNAMIC map markers from
+    /// AgentMap.EventMarkers (per FFXIVClientStructs doc: FateManager,
+    /// EventFramework and SequentialEvent). Dungeons run on the EventFramework /
+    /// Director system, so the current OBJECTIVE marker (the glowing on-screen
+    /// waypoint) is expected here - the overworld QuestMarkers only carry the
+    /// dungeon ENTRANCE (log 2026-07-23: Sastasha marker sat in map 31, not in
+    /// the instance). Logs each marker's position, icon and tooltip plus the
+    /// player position so a real dungeon run confirms BOTH the source and the
+    /// coordinate system (world vs. map pixels) before anything is built on it.
+    /// Runs alongside DumpNearbyObjects on the UI-dump key (Strg+F5).
+    /// </summary>
+    public unsafe void DumpMapMarkers()
+    {
+        var agent = AgentMap.Instance();
+        if (agent == null)
+        {
+            _log.Info("[MarkerProbe] AgentMap.Instance() ist null.");
+            return;
+        }
+
+        var terr   = _clientState.TerritoryType;
+        var player = _objectTable.LocalPlayer;
+        var ppos   = player != null ? player.Position : default;
+        _log.Info($"[MarkerProbe] === terr={terr} Spieler=({ppos.X:F1}|{ppos.Y:F1}|{ppos.Z:F1}) ===");
+
+        long eventCount = 0;
+        var markers = agent->EventMarkers;
+        for (var i = 0L; i < markers.LongCount; i++)
+        {
+            var m  = markers[i];
+            var tt = m.TooltipString != null ? m.TooltipString->ToString() : string.Empty;
+            _log.Info($"[MarkerProbe] Event[{i}] pos=({m.Position.X:F1}|{m.Position.Y:F1}|{m.Position.Z:F1}) " +
+                      $"icon={m.IconId} r={m.Radius:F1} tt='{tt}'");
+            eventCount++;
+        }
+        _log.Info($"[MarkerProbe] EventMarkers gesamt: {eventCount}");
+
+        // MiniMapMarkers: the minimap icons. The dungeon OBJECTIVE (glowing
+        // waypoint) is expected here. Position is MAP PIXELS (short X/Y), not
+        // world coords - convert later like PlacesService does. Subtext often
+        // carries the label. DataType/DataKey identify the marker source.
+        var mini      = agent->MiniMapMarkers;
+        var miniCount = agent->MiniMapMarkerCount;
+        _log.Info($"[MarkerProbe] MiniMapMarkers: Count={miniCount} (Span {mini.Length})");
+        for (var i = 0; i < mini.Length; i++)
+        {
+            var m   = mini[i];
+            if (m.MapMarker.IconId == 0 && m.DataType == 0) continue; // empty slot
+            var sub = m.MapMarker.Subtext.ToString();
+            _log.Info($"[MarkerProbe] Mini[{i}] type={m.DataType} key={m.DataKey} " +
+                      $"icon={m.MapMarker.IconId} X={m.MapMarker.X} Y={m.MapMarker.Y} sub='{sub}'");
+        }
+
+        // Waypoint category (PlacesService, static Lumina MapMarker sheet of the
+        // current map). Log each entry with its resolved WORLD position so a
+        // dungeon run shows whether these are useful in-instance points or the
+        // overworld markers of the underlying map (which would sit outside the
+        // dungeon mesh and explain why they cannot be walked to).
+        var places = _places.GetPlaces();
+        _log.Info($"[MarkerProbe] Wegpunkte (PlacesService): {places.Count}");
+        foreach (var p in places)
+            _log.Info($"[MarkerProbe] Ort '{p.Name}' ({p.TypeLabel}) " +
+                      $"welt=({p.Position.X:F1}|{p.Position.Z:F1})");
+
+        _tolk.SpeakInterrupt($"Marker-Sonde: {eventCount} Event, {miniCount} Minimap, {places.Count} Orte im Log.");
     }
 
     // ── Sammelpunkte (Minenarbeiter / Gärtner) ──────────────────────

@@ -119,6 +119,7 @@ public sealed class UIReaderService : IDisposable
         "TitleDCWorldMap",    // Datenzentrum-Auswahl: eigener Handler
         "TitleDCWorldMapBg",  // nur Hintergrund, nichts anzusagen
         "Gathering",          // Sammel-Fenster: eigener Handler (OnGatheringUpdate)
+        "BeginnersMansionProblem", // Anfänger-Arena: eigener Handler (OnBeginnersArenaUpdate)
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -150,6 +151,14 @@ public sealed class UIReaderService : IDisposable
         // Sammel-Fenster: eigener Handler liest die Item-Liste (OnGatheringUpdate);
         // der generische Update-Pfad wuerde die Item-Link-Namen als Rohtext lesen.
         "Gathering",
+        // Anfaenger-Arena Uebungsauswahl: eigener Handler (OnBeginnersArenaUpdate);
+        // der Text-Scanner wuerde die vielen Buttons/Texte spammen.
+        "BeginnersMansionProblem",
+        // Dungeon-Beitritts-Anfrage: der Text-Scanner las den Countdown (id=60)
+        // JEDE Sekunde vor ("0:44", "0:43"...); der eigene Handler
+        // (OnContentsFinderConfirmUpdate, eigener Listener) sagt ihn alle 10 s
+        // an. Oeffnungs-Ansage (Dungeon-Name) bleibt (kommt aus OnAnyAddonOpen).
+        "ContentsFinderConfirm",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -224,10 +233,13 @@ public sealed class UIReaderService : IDisposable
 
     private static readonly string[] SelectStringAddons = ["SelectString", "SelectIconString"];
 
+    // ContentsTutorial is NOT here anymore: OnNotification read only its first
+    // text (the empty id=4 / the title), never the body. It now has its own
+    // reader (OnContentsTutorialUpdate) that speaks heading + body + close hint.
     private static readonly string[] NotificationAddons =
     [
         "_TextError", "_WideText", "_BattleTalk", "_LocationTitle",
-        "LevelUpAnnouncement", "ContentsTutorial", "_ScreenText",
+        "LevelUpAnnouncement", "_ScreenText",
     ];
 
     private static readonly HashSet<string> YesNoLabels =
@@ -285,6 +297,18 @@ public sealed class UIReaderService : IDisposable
         // addon is in SpecialSetup/SpecialUpdateAddons so the generic reader
         // stays out and never scrapes the item-link node names as raw junk.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Gathering", OnGatheringUpdate);
+
+        // -- ContentsTutorial ("Inhaltsführer": Freischaltungs-/Tutorial-Popup) --
+        // Body text appears a few frames after PostSetup and changes on page
+        // turns, so read on PostUpdate with per-window dedup (like the quest
+        // reader). Muted in the generic path via SpecialSetup/UpdateAddons.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ContentsTutorial", OnContentsTutorialUpdate);
+
+        // -- Anfänger-Arena (Übungsauswahl "BeginnersMansionProblem") ---
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
+
+        // -- Dungeon-Beitritts-Anfrage: Countdown alle 10 s ansagen -----
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
 
         // -- SelectYesno ------------------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
@@ -3770,6 +3794,192 @@ public sealed class UIReaderService : IDisposable
         _tolk.SpeakInterrupt(text);
     }
 
+    // -- ContentsTutorial ("Inhaltsführer": Freischaltungs-/Tutorial-Popup) --
+    //
+    // Struktur (Dump 2026-07-23, Freischaltung "Anfänger-Arena"):
+    //   id=2  Text   = Überschrift ("Anfänger-Arena")
+    //   id=5  Text   = Fließtext ("Die Anfänger-Arena wurde freigeschaltet! ...")
+    //   id=7  Text   = Seitenzähler ("1/1")
+    //   id=11 Button "Schließen" = der EINZIGE Weg raus - das Spiel ignoriert
+    //         hier Escape, weshalb ein blinder Nutzer feststeckte (Report
+    //         2026-07-23: "kann die Meldung nicht wegmachen").
+    // Das Fenster ist im generischen Pfad stumm (SpecialSetup/UpdateAddons) und
+    // läuft NICHT mehr über OnNotification (das nur den ersten Text las). Dieser
+    // dedizierte Leser sagt Überschrift + Text bei Öffnen/Refresh an (deduped
+    // wie der Quest-Leser); HandleConfirmKey (Enter) klickt "Schließen".
+    private string _lastTutorialText = string.Empty;
+
+    private unsafe void OnContentsTutorialUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastTutorialText = string.Empty; // reset so it re-reads on reopen
+            return;
+        }
+
+        var heading = ReadTutorialNode(addon, 2);
+        var body    = ReadTutorialNode(addon, 5);
+        if (string.IsNullOrWhiteSpace(heading) && string.IsNullOrWhiteSpace(body)) return;
+
+        var sb = new StringBuilder();
+        if (heading.Length > 0) sb.Append(heading).Append(". ");
+        if (body.Length > 0)    sb.Append(body);
+
+        // Seitenzähler "X/Y" nur ansagen, wenn es mehr als eine Seite gibt.
+        var page  = ReadTutorialNode(addon, 7);
+        var slash = page.IndexOf('/');
+        int cur = 0, total = 0;
+        var multiPage = slash > 0
+                        && int.TryParse(page[..slash], out cur)
+                        && int.TryParse(page[(slash + 1)..], out total)
+                        && total > 1;
+        if (multiPage)
+            sb.Append(" Seite ").Append(cur).Append(" von ").Append(total).Append('.');
+
+        // The "Schließen" button (id=11) is only visible on the LAST page;
+        // before that Enter pages forward. Announce the correct action.
+        var closeBtn = addon->GetNodeById(11);
+        var canClose = closeBtn != null && closeBtn->IsVisible();
+        sb.Append(canClose ? " Enter schließt." : " Enter blättert weiter.");
+        var text = sb.ToString().Trim();
+        if (text == _lastTutorialText) return;
+
+        _lastTutorialText = text;
+        _log.Info($"[Tutorial] ContentsTutorial: '{text}'");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>Reads a text node of the tutorial addon by id (sanitized), or "".</summary>
+    private unsafe string ReadTutorialNode(AtkUnitBase* addon, uint id)
+    {
+        var node = addon->GetNodeById(id);
+        if (node == null || node->Type != NodeType.Text) return string.Empty;
+        return AtkText.Read((AtkTextNode*)node).Trim();
+    }
+
+    /// <summary>
+    /// Enter inside the "Inhaltsführer" popup. On the last page - where the
+    /// "Schließen" button (id=11) becomes visible - it closes the window; before
+    /// that it pages forward via the "next" arrow. So single-page unlock popups
+    /// close on the first Enter, while multi-page ones (e.g. "Dungeon-Inhalte",
+    /// 1/8) walk through every page (each spoken by OnContentsTutorialUpdate) and
+    /// close at the end.
+    /// The forward arrow is id=8 (ButtonClick param=1, from the [Focus] event log
+    /// 2026-07-23); id=9 (param=2) is back. If paging turns out reversed, the
+    /// [Tutorial] log shows the page counter not advancing - then swap the ids.
+    /// </summary>
+    private unsafe void AdvanceOrCloseContentsTutorial(AtkUnitBase* addon)
+    {
+        var closeBtn = addon->GetNodeById(11);
+        if (closeBtn != null && closeBtn->IsVisible())
+        {
+            if (TryClickButton(addon, "Schließen"))
+            {
+                _lastTutorialText = string.Empty;
+                _tolk.SpeakInterrupt("Geschlossen.");
+            }
+            else
+            {
+                _tolk.SpeakInterrupt("Schließen-Knopf reagiert nicht.");
+            }
+            return;
+        }
+
+        // Not on the last page yet: page forward. Log the page counter so a
+        // wrong arrow guess is diagnosable (the page would not advance).
+        var before = ReadTutorialNode(addon, 7);
+        var next   = addon->GetNodeById(8);
+        if (next != null && DispatchClick(next))
+            _log.Info($"[Tutorial] Weiter (id=8) geklickt. Seite vorher='{before}'");
+        else
+            _tolk.SpeakInterrupt("Weiter-Knopf reagiert nicht.");
+    }
+
+    // -- BeginnersMansionProblem (Anfänger-Arena: Übungsauswahl) ------
+    //
+    // Struktur (Dump 2026-07-23):
+    //   id=21 Text   = gewählte Übung ("Angreifer 1")
+    //   id=39 Text   = Klasse/Rolle ("Thaumaturg (Angreifer)")
+    //   id=31/32     = Vergütung (verschachtelt, hier nicht gelesen)
+    //   id=9  Button = Hauptaktion ("Beginnen" / "Übung wiederholen")
+    //   id=45 Button "Schließen", id=43 "Erklärung"
+    // Das Fenster wird generisch nicht sinnvoll vorgelesen (viele Buttons/Texte);
+    // dieser Leser sagt beim Öffnen/Wechsel die aktuelle Übung + Rolle an. Der
+    // generische Fokus-Leser bleibt aktiv (liest die Buttons beim Durchtabben);
+    // nur der Text-Scanner wird via SpecialSetup/UpdateAddons ausgesperrt.
+    // Enter (HandleConfirmKey) klickt die Hauptaktion (id=9).
+    private string _lastArenaText = string.Empty;
+
+    private unsafe void OnBeginnersArenaUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastArenaText = string.Empty; // reset so it re-reads on reopen
+            return;
+        }
+
+        var exercise = ReadTutorialNode(addon, 21); // generic id->text reader
+        var role     = ReadTutorialNode(addon, 39);
+        if (string.IsNullOrWhiteSpace(exercise) && string.IsNullOrWhiteSpace(role)) return;
+
+        var sb = new StringBuilder("Anfänger-Arena");
+        if (exercise.Length > 0) sb.Append(". Übung: ").Append(exercise);
+        if (role.Length > 0)     sb.Append(". ").Append(role);
+        sb.Append(". Enter beginnt.");
+        var text = sb.ToString();
+        if (text == _lastArenaText) return;
+
+        _lastArenaText = text;
+        _log.Info($"[Arena] BeginnersMansionProblem: '{text}'");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // -- ContentsFinderConfirm (Dungeon-Beitritts-Anfrage mit Countdown) --
+    //
+    // When a duty pops, this window asks "Teilnehmen / Zurückziehen" with a
+    // 45-second countdown in text node id=60 ("0:44" M:SS, log 2026-07-23
+    // 12:00). The generic scanner logs the timer every second but never speaks
+    // it, so the blind user hears the buttons but not how much time is left.
+    // User request: announce the remaining time every 10 seconds. Non-
+    // interrupting (Speak) so it does not cut off button navigation.
+    private int _lastFinderSecondsSpoken = -1;
+
+    private unsafe void OnContentsFinderConfirmUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastFinderSecondsSpoken = -1; // reset for the next pop
+            return;
+        }
+
+        var seconds = ParseClock(ReadTutorialNode(addon, 60));
+        if (seconds < 0) return;
+
+        // Announce at every full 10-second mark (40, 30, 20, 10), once each.
+        if (seconds > 0 && seconds % 10 == 0 && seconds != _lastFinderSecondsSpoken)
+        {
+            _lastFinderSecondsSpoken = seconds;
+            _log.Info($"[Finder] Countdown-Ansage: {seconds} s");
+            _tolk.Speak($"Noch {seconds} Sekunden zum Beitreten.");
+        }
+    }
+
+    /// <summary>Parses a "M:SS" (or plain "SS") clock string to total seconds, or -1.</summary>
+    private static int ParseClock(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return -1;
+        var parts = text.Split(':');
+        if (parts.Length == 2
+            && int.TryParse(parts[0], out var m) && int.TryParse(parts[1], out var s))
+            return m * 60 + s;
+        if (parts.Length == 1 && int.TryParse(parts[0], out var only))
+            return only;
+        return -1;
+    }
+
     // -- Charaktererstellung: Volk & Geschlecht ----------------------
 
     // Last announced (race, gender) so PostUpdate only speaks on change.
@@ -4297,6 +4507,12 @@ public sealed class UIReaderService : IDisposable
     /// </summary>
     private void SpeakTextEchoDiff(string old, string @new)
     {
+        // User wish 2026-07-22: do not read the typed characters. Gated here so
+        // ALL typing echoes (chat, name field, comment field) fall silent at
+        // once, while their callers still update state and still speak the
+        // context (field label, "Chat-Eingabe", channel) around this call.
+        if (!_config.EchoTypedCharacters) return;
+
         if (@new.Length == 0)
             _tolk.SpeakInterrupt("leer");
         else if (@new.Length > old.Length && @new.StartsWith(old, StringComparison.Ordinal))
@@ -4644,6 +4860,35 @@ public sealed class UIReaderService : IDisposable
         if (!yesNoPtr.IsNull && ((AtkUnitBase*)(nint)yesNoPtr)->IsVisible)
         {
             ConfirmYesNo();
+            return;
+        }
+
+        // Content-Tutorial popup ("Inhaltsführer", e.g. arena unlock): the only
+        // way out is its "Schließen" button - the game ignores Escape here,
+        // which is exactly why a blind user got stuck (report 2026-07-23).
+        var tutorialPtr = _gameGui.GetAddonByName("ContentsTutorial");
+        if (!tutorialPtr.IsNull && ((AtkUnitBase*)(nint)tutorialPtr)->IsVisible)
+        {
+            AdvanceOrCloseContentsTutorial((AtkUnitBase*)(nint)tutorialPtr);
+            return;
+        }
+
+        // Anfänger-Arena Übungsauswahl: Enter starts the selected exercise via
+        // its main action button (id=9 "Beginnen"/"Übung wiederholen").
+        var arenaPtr = _gameGui.GetAddonByName("BeginnersMansionProblem");
+        if (!arenaPtr.IsNull && ((AtkUnitBase*)(nint)arenaPtr)->IsVisible)
+        {
+            var arena    = (AtkUnitBase*)(nint)arenaPtr;
+            var beginBtn = arena->GetNodeById(9);
+            if (beginBtn != null && DispatchClick(beginBtn))
+            {
+                _lastArenaText = string.Empty;
+                _tolk.SpeakInterrupt("Übung gestartet.");
+            }
+            else
+            {
+                _tolk.SpeakInterrupt("Beginnen-Knopf reagiert nicht.");
+            }
             return;
         }
 
@@ -6822,6 +7067,8 @@ public sealed class UIReaderService : IDisposable
             "Talk",
             "ConfigSystem",
             "ConfigPadCalibration",
+            "ContentsTutorial",       // Hall-of-the-Novice-/Tutorial-Fenster
+            "JobHudNotice",           // Job-Hinweis-Fenster
         ]);
 
         foreach (var name in candidates)
@@ -6833,6 +7080,31 @@ public sealed class UIReaderService : IDisposable
             _log.Info($"[Dump] Aktives Addon erkannt: {name}");
             DumpAddon(name);
             return;
+        }
+
+        // Last resort: dump EVERY visible addon that is not pure HUD noise.
+        // This covers windows the game does not report as focused and that are
+        // not in the fixed list above (e.g. an unknown tutorial/notice popup).
+        // Diagnostic only - the node trees go to the log, so the real window
+        // can be identified afterwards instead of guessing its addon name.
+        if (mgr != null)
+        {
+            var rest = new List<string>();
+            for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+            {
+                var a = mgr->AllLoadedUnitsList.Entries[i].Value;
+                if (a == null || !a->IsVisible) continue;
+                var n = a->NameString;
+                if (string.IsNullOrEmpty(n) || IsSuppressedAddon(n)) continue;
+                rest.Add(n);
+            }
+            if (rest.Count > 0)
+            {
+                _log.Info($"[Dump] Kein fokussiertes/bekanntes Addon - dumpe {rest.Count} sichtbare Nicht-HUD-Fenster: {string.Join(", ", rest)}");
+                DumpAddons(rest);
+                _tolk.SpeakInterrupt($"Kein bekanntes Fenster. {rest.Count} sichtbare Fenster gedumpt, Liste im Log.");
+                return;
+            }
         }
 
         _tolk.SpeakInterrupt("Kein aktives Addon f�r Dump gefunden.");
@@ -6999,6 +7271,9 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsTutorial", OnContentsTutorialUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
         _addonLifecycle.UnregisterListener(OnSelectStringOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Request", OnRequestOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Title", OnTitleScreenOpen);
