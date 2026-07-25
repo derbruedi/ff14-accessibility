@@ -59,8 +59,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.42";
-    private const string PluginVersionTag = "Dungeon-Beitritt: Sekunden-Spam weg, nur 10-s-Ansage";
+    private const string PluginVersion    = "5.45";
+    private const string PluginVersionTag = "SP-Ansage, Himmelsrichtung, Gil-Depot, englische Ausgabe (Teil 1)";
 
     public Plugin()
     {
