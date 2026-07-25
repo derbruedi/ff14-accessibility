@@ -808,6 +808,26 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   0-Arg-Instanzmethode → CS1501). Instanzmethode am Pointer nutzen: `ps->GetCurrentClassJobExp()`.
 - Level-Up-Ansage: CurrentLevel jeden Frame lesen, bei Anstieg (gleicher Job)
   ansagen — sauber aus PlayerState, kein UI-Scraping. (CombatService.TrackLevelUp)
+- XP-Gewinn-Ansage (V5.52, User-Wunsch 2026-07-25): GetCurrentClassJobExp() jeden
+  Frame lesen, bei Anstieg (gleicher Job) das Delta ansagen ("X Erfahrung") und in
+  den Nachlese-Kanal "Beute" schreiben. Baseline pro Job (Job-Wechsel aendert den
+  Wert ohne echten Gewinn) + Level-Up-Ruecksprung (Wert faellt Richtung 0) nur
+  stumm nachziehen; needed==0 (Maxstufe) => kein Tracking. Nicht-unterbrechend
+  (Speak), damit XP nie eine HP-/Cast-Warnung abschneidet. (CombatService.TrackXpGain)
+
+### Loot-Kanal (eingesammelte Gegenstaende) — VERIFIZIERT (Live-[Chat]-Log 2026-07-25)
+Beute/Waehrung, die ins Inventar wandert, kommt ueber **XivChatType.LootNotice
+(62)** — leerer Sender, voller Satz ("Du hast ein Lammfilet erhalten.", "Du hast
+115 Gil erhalten.", "Du hast 17 Legionstaler erhalten."). Deckt Gegner-Drops
+(Schaf -> Lammfilet/Schafsbockhorn), Gil, GC-Taler und Sammel-Kristalle ab. Liegt
+AUSSERHALB des Kampflog-Bereichs (41-49), wird also NICHT von IsCombatLogLine
+verworfen — kam von Anfang an sauber im [Chat]-Log an, nur ungelesen (ShouldRead
+default false). V5.52: LootNotice -> ReadLoot (Config AnnounceLoot), Nachlese-Kanal
+"Beute" (gemeinsam mit XP), kein Prefix. Gathering (67) bleibt der separate
+Abbau-Kanal.
+- OFFEN (nicht verifiziert): Instanz-/Dungeon-Beute per Wuerfelsystem (Bedarf/Gier)
+  koennte ueber einen anderen Kanal (LootRoll?) laufen — bei Bedarf spaeter aus
+  einem Dungeon-Log nachziehen.
 
 ### Emotes ausführen (ilspycmd-verifiziert 2026-07-12)
 - `AgentEmote.Instance()` (FFXIVClientStructs.FFXIV.Client.UI.Agent):
@@ -904,3 +924,56 @@ Wird von der GENERISCHEN Listen-Navigation erfasst (nicht unterdrueckt, hat eine
 - **Loesung V5.47**: dedizierter `ReadGrandCompanyRow` (Name/Preis/Besitz per
   `ReadComponentTextById` id 4/7/10) → „Name, X Staatstaler, Besitz Y"; eingehaengt im
   `name switch` von `TrackListIndices`. Stabiler Text ⇒ `idx|text`-Dedup killt das Doppel.
+
+## Fischen (ilspycmd-verifiziert 2026-07-25, FFXIVClientStructs.dll + Lumina.Excel.dll)
+
+Ziel: Angeln barrierefrei. Erster Schritt „wo kann ich angeln" — Laufzeit-Sonde
+`/acc fishprobe` (FishingService.Probe, read-only) loggt (A) alle Objekte in 200 m
+mit ObjectKind/DataId/Position und (B) den FishingSpot-Katalog der Zone mit
+Roh-X/Z + Umrechnung. NOCH NICHT verifiziert (Sonde offen): ob Angel-Loecher in
+der ObjectTable auftauchen (und als welche ObjectKind), und die X/Z-Skalierung.
+
+### Laufzeit-Zustand: FishingEventHandler (Client.Game.Event, Size 560)
+- Erbt `EventHandler` + `AtkModuleInterface.AtkEventInterface`. Zugriff ueber
+  `EventFramework.Instance()->GetEventHandlerById(<Fisch-Event-ID>)` — die
+  konkrete ID ist NICHT verifiziert (CraftEventHandler nutzt 655361/0xA0001;
+  Fishing-ID per Probe `GetEventId` des aktiven Handlers festnageln).
+- `State` @456 = enum **FishingState** — die Grundwahrheit des Angelvorgangs:
+  None, CastingOut, PullingPoleIn (kein Biss / Fisch entwischt / nach Fang / Rest),
+  Quitting, PoleReady (Standby, Rute bereit), **Bite (BISS — jetzt anschlagen!)**,
+  Hooking (Anschlagen + Einholen), ReleasingCatch, ConfirmingCollectable,
+  AmbitiousLure/ModestLure (nur Aktions-Animation), Unk11, LineInWater (Leine im
+  Wasser, warten auf Biss). ⇒ Biss-Ansage = Flanke State->Bite.
+- `CanFish` @464 (bool) — betrifft „richtig stehen": ob gerade ausgeworfen werden
+  kann. Weitere Flags @465–470: CanMoochPreviousCatch, CanMooch2PreviousCatch,
+  CanReleasePreviousCatch, ChangingPosition, CanIdenticalCastPreviousCatch,
+  CanSurfaceSlapPreviousCatch. `CurrentCastBaitFlags` @472 (FishingBaitFlags).
+- Tug-Staerke (leicht/mittel/schwer) ist in DIESEM Struct NICHT als Feld sichtbar
+  — per Probe klaeren (evtl. aus Bite-Untertyp/Animation ableitbar).
+
+### FishingModule (Client.UI.Misc, Size 192) — NICHT Laufzeit
+- Reines Save-File (UserFileEvent): Fischtagebuch. `UnseenFishCount` @188. Fuer
+  die Positionierung/Biss-Ansage irrelevant.
+
+### FishingSpot-Sheet (Lumina) — statischer Katalog aller Angelplaetze
+- Felder: `TerritoryType` @52 (RowRef, = Zone), `PlaceNameMain` @54,
+  `PlaceNameSub` @56, `PlaceName` @60 (RowRef, Anzeigename), `Radius` @58 (ushort),
+  `Order` @62, `X` @64 (short), `Z` @66 (short), `GatheringLevel` @68 (byte, noetige
+  Angelstufe), `FishingSpotCategory` @69, `Rare` @71. Filter Zone:
+  `row.TerritoryType.RowId == clientState.TerritoryType`.
+- X/Z = KARTEN-PIXEL (0..2048), VERIFIZIERT an echten Sheet-Werten (Lumina gegen
+  sqpack, 2026-07-25): alle 333 Zeilen liegen in X 108..1948 / Z 210..1934, also
+  im Pixelbereich; Umrechnung ergibt sinnvolle Kartenkoordinaten (Fallgourd Float
+  21,0/24,6; Limsa Untere Decks 7,7/12,2). ⇒ NICHT MapCoordToWorld (1..42), sondern
+  `PlacesService.MapPixelToWorld(X, Z)` (nutzt die verifizierte PixelToWorld-Formel,
+  wie MapMarker). Radius ist NICHT in denselben Welt-Einheiten (Stadtwerte bis 3000)
+  — fuer die Fuehrung ignoriert, grosszuegige Ankunftsdistanz + Navmesh reichen.
+- Y-Hoehe fehlt (Kartendaten 2D) → via Navmesh (PointOnFloor / PathfindAndMoveCloseTo)
+  aufloesen, wie bei allen anderen Wegpunkten. LIVE noch zu bestaetigen: dass der
+  umgerechnete Punkt auf dem Angelloch landet (Kompass-Ansage von /acc fish = Check).
+- GEBAUT V5.52 (Debug): FishingService.GetSpotsInCurrentZone + AnnounceSpotsInCurrentZone,
+  Kommando **/acc fish** — sagt Angelplaetze der Zone (Name, Stufe, Entfernung,
+  Himmelsrichtung), naechster zuerst.
+- Verwandte Typen (falls je gebraucht): AddonFishingNote, AddonFishGuide2,
+  AgentFishGuide, AddonSpearFishing, InstanceContentOceanFishing (Meeresangeln),
+  Lumina SpearfishingNotebook.

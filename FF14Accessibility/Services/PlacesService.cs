@@ -117,6 +117,30 @@ public sealed class PlacesService
         return (mapX, mapY);
     }
 
+    /// <summary>
+    /// Converts a raw map-PIXEL coordinate pair (0..2048, the convention used by
+    /// the MapMarker and FishingSpot sheets) to a world position on the CURRENT
+    /// map. Y is left 0 - the caller snaps it onto the walkable mesh via navmesh.
+    /// Verified against real FishingSpot data (2026-07-25): all sheet X/Z sit in
+    /// 108..1948, i.e. inside the 0..2048 pixel range, and convert to sensible
+    /// in-zone map coordinates. Returns null when the current map is unknown.
+    /// </summary>
+    public Vector3? MapPixelToWorld(float pixelX, float pixelY)
+    {
+        var mapId = _clientState.MapId;
+        if (mapId == 0) return null;
+
+        if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map))
+        {
+            _log.Info($"[Goto] Map {mapId} nicht im Sheet - keine Pixel-Umrechnung.");
+            return null;
+        }
+
+        var worldX = PixelToWorld(pixelX, map.SizeFactor, map.OffsetX);
+        var worldZ = PixelToWorld(pixelY, map.SizeFactor, map.OffsetY);
+        return new Vector3(worldX, 0f, worldZ);
+    }
+
     /// <summary>Spoken type label of the player-set map flag.</summary>
     public const string FlagTypeLabel = "Markierung";
 

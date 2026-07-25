@@ -42,6 +42,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GearInfoService    _gearInfo;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
+    private readonly FishingService     _fishing;
     private readonly BestiaryService    _bestiary;
     private readonly RouteService       _routes;
     private readonly NavigationService  _navigation;
@@ -60,8 +61,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.51";
-    private const string PluginVersionTag = "Gegner-Cast-Ansage nur noch bei Cast auf den Spieler";
+    private const string PluginVersion    = "5.52";
+    private const string PluginVersionTag = "XP-Gewinn- und Beute-Ansage (Loot) mit neuem Nachlese-Kanal";
 
     public Plugin()
     {
@@ -195,9 +196,10 @@ public sealed class Plugin : IDalamudPlugin
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
+        _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _routes       = new RouteService(PluginInterface, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _routes, _config, DataManager, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _history    = new MessageHistoryService(_tolk);
         // Must exist before the UI reader: that one asks it for the labels of
@@ -206,7 +208,7 @@ public sealed class Plugin : IDalamudPlugin
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -279,6 +281,12 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "keys":
                 _keybinds.DumpKeybinds(GetPluginKeys());
+                break;
+            case "fish":
+                _fishing.AnnounceSpotsInCurrentZone();
+                break;
+            case "fishobj":
+                _fishing.ProbeNearbyObjects();
                 break;
             case "help":
                 AnnounceHelp();

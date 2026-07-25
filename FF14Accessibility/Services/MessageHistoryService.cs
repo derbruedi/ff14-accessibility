@@ -12,13 +12,14 @@ namespace FF14Accessibility.Services;
 /// </summary>
 public sealed class MessageHistoryService
 {
-    public enum Category { Dialogue, Say, Shout, Party, Alliance, Tell, FreeCompany, System }
+    public enum Category { Dialogue, Say, Shout, Party, Alliance, Tell, FreeCompany, System, Loot }
 
     // Reihenfolge beim Durchschalten (Strg+. vorwärts, Strg+, rückwärts).
     private static readonly Category[] Order =
     {
         Category.Dialogue, Category.Say, Category.Shout, Category.Party,
         Category.Alliance, Category.Tell, Category.FreeCompany, Category.System,
+        Category.Loot,
     };
 
     private static readonly Dictionary<Category, string> Names = new()
@@ -31,6 +32,9 @@ public sealed class MessageHistoryService
         [Category.Tell]        = "Flüstern",
         [Category.FreeCompany] = "Freie Gesellschaft",
         [Category.System]      = "System",
+        // Beute-Kanal: XP-Gewinne und eingesammelte Gegenstaende zum Nachlesen
+        // (User-Wunsch 2026-07-25).
+        [Category.Loot]        = "Beute",
     };
 
     private const int Max = 50;

@@ -8,12 +8,13 @@ namespace FF14Accessibility.Services;
 
 public sealed class CombatService
 {
-    private readonly IObjectTable   _objectTable;
-    private readonly ITargetManager _targetManager;
-    private readonly IDataManager   _data;
-    private readonly TolkService    _tolk;
-    private readonly Configuration  _config;
-    private readonly IPluginLog     _log;
+    private readonly IObjectTable          _objectTable;
+    private readonly ITargetManager        _targetManager;
+    private readonly IDataManager          _data;
+    private readonly TolkService           _tolk;
+    private readonly Configuration         _config;
+    private readonly MessageHistoryService _history;
+    private readonly IPluginLog            _log;
 
     private bool _wasInCombat   = false;
     private int  _lastHpPercent = 100;
@@ -21,6 +22,11 @@ public sealed class CombatService
     // Level-up tracking (per active job, so a job switch is not a "level up").
     private short _lastLevel = -1;
     private byte  _lastLevelJobId;
+
+    // XP-gain tracking. Baseline per active job (a job switch changes the EXP
+    // value without any XP actually being earned); -1 = not yet baselined.
+    private long _lastExp = -1;
+    private byte _lastExpJobId;
 
     // Current-target tracking for HP thresholds and cast announcements.
     private ulong _targetId;
@@ -36,6 +42,7 @@ public sealed class CombatService
         IDataManager data,
         TolkService tolk,
         Configuration config,
+        MessageHistoryService history,
         IPluginLog log)
     {
         _objectTable   = objectTable;
@@ -43,6 +50,7 @@ public sealed class CombatService
         _data          = data;
         _tolk          = tolk;
         _config        = config;
+        _history       = history;
         _log           = log;
     }
 
@@ -53,6 +61,7 @@ public sealed class CombatService
         if (player == null) return;
 
         TrackLevelUp();
+        TrackXpGain();
 
         var inCombat = (player.StatusFlags & StatusFlags.InCombat) != 0;
 
@@ -180,6 +189,51 @@ public sealed class CombatService
             _log.Info($"[Level] Level-Up: job={job} {_lastLevel} -> {level}");
         }
         _lastLevel = level;
+    }
+
+    /// <summary>
+    /// Announces every XP gain for the active job. The current EXP comes straight
+    /// from PlayerState (GetCurrentClassJobExp, ilspycmd-verified) - the same
+    /// source the level-up tracker uses, no UI scraping. Fires when the value
+    /// RISES; a job switch (which changes the value without any XP earned) and a
+    /// level-up (the value drops back toward 0) only re-baseline silently - the
+    /// level-up itself is already announced by TrackLevelUp. Spoken non-interrupt
+    /// so an XP line never cuts off an HP warning or an enemy-cast alert, and
+    /// archived to the "Beute" reread channel.
+    /// </summary>
+    private unsafe void TrackXpGain()
+    {
+        if (!_config.AnnounceXpGain) return;
+
+        var ps = PlayerState.Instance();
+        if (ps == null) return;
+
+        var job    = ps->CurrentClassJobId;
+        var needed = ps->GetCurrentClassJobNeededExp();
+        // At max level NeededExp is 0 and no XP is earned - nothing to track.
+        if (needed == 0) { _lastExp = -1; return; }
+
+        var cur = (long)ps->GetCurrentClassJobExp();
+
+        // First read after login, a job switch, or coming back from max level:
+        // set the baseline silently so the first real gain reports a clean delta.
+        if (_lastExp < 0 || job != _lastExpJobId)
+        {
+            _lastExp = cur;
+            _lastExpJobId = job;
+            return;
+        }
+
+        if (cur > _lastExp)
+        {
+            var gain = cur - _lastExp;
+            _tolk.Speak(AccessibilityStrings.XpGained((int)gain));
+            _history.Add(MessageHistoryService.Category.Loot, AccessibilityStrings.XpGained((int)gain));
+            _log.Info($"[XP] +{gain} (job={job} {_lastExp} -> {cur}/{needed})");
+        }
+        // Always follow the value, including the level-up drop-back, so the next
+        // real gain measures from the correct baseline instead of a huge jump.
+        _lastExp = cur;
     }
 
     /// <summary>

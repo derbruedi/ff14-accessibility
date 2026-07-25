@@ -26,6 +26,7 @@ internal enum NavCategory
     Players,
     Objects,
     GatheringNodes,
+    FishingSpots,
     Aetherytes,
     QuestGoals,
     AcceptableQuests,
@@ -42,6 +43,7 @@ public sealed class NavigationService
     private readonly CueService _cue;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService _places;
+    private readonly FishingService _fishing;
     private readonly RouteService _routes;
     private readonly Configuration _config;
     private readonly IDataManager _data;
@@ -60,6 +62,7 @@ public sealed class NavigationService
         CueService cue,
         QuestMarkerService questMarkers,
         PlacesService places,
+        FishingService fishing,
         RouteService routes,
         Configuration config,
         IDataManager data,
@@ -73,6 +76,7 @@ public sealed class NavigationService
         _cue = cue;
         _questMarkers = questMarkers;
         _places = places;
+        _fishing = fishing;
         _routes = routes;
         _config = config;
         _data = data;
@@ -166,6 +170,11 @@ public sealed class NavigationService
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
         (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         (NavCategory.GatheringNodes,  new[] { ObjectKind.GatheringPoint }),
+        // Angelplätze kommen aus dem FishingSpot-Sheet (FishingService), nicht aus
+        // der ObjectTable: das Sheet kennt ALLE Angelplätze der Zone (das Spiel
+        // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
+        // kann ich angeln" nutzlos) - genau wie bei den Ätheryten (User 2026-07-25).
+        (NavCategory.FishingSpots,    null),
         // Ätheryten kommen aus den Kartendaten (PlacesService), nicht aus der
         // ObjectTable: die Marker kennen ALLE Ätheryten + Aethernet-Splitter
         // der Zone, die Objektsuche nur die in ~100 m (User-Wunsch 2026-07-13).
@@ -182,6 +191,7 @@ public sealed class NavigationService
     private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Cat == NavCategory.AcceptableQuests;
     private bool IsPlacesCategory          => Categories[_categoryIndex].Cat == NavCategory.Waypoints;
     private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
+    private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -251,6 +261,13 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsFishingCategory)
+        {
+            var spots = _fishing.GetSpotsInCurrentZone().Count;
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryFishingCount(spots));
+            return;
+        }
+
         var count = GetCategoryObjects().Count;
         _tolk.SpeakInterrupt(AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, count));
     }
@@ -273,6 +290,12 @@ public sealed class NavigationService
         if (IsPlacesCategory || IsAetheryteCategory)
         {
             CyclePlaceDestination(direction, player, aetherytesOnly: IsAetheryteCategory);
+            return;
+        }
+
+        if (IsFishingCategory)
+        {
+            CycleFishingDestination(direction, player);
             return;
         }
 
@@ -475,6 +498,40 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Angelplätze: durch die Angel-Löcher des Gebiets blättern ──
+    //
+    // Spots come from the static FishingSpot sheet (FishingService), sorted
+    // nearest-first. Like the aetheryte/waypoint categories a spot is just a
+    // named position, so it flows into the SAME walk guide / auto-walk via
+    // SelectedPlaceDestination - no separate steering path needed. The required
+    // fishing level is spoken so the player knows if the spot is usable yet.
+    private void CycleFishingDestination(int direction, IGameObject player)
+    {
+        var spots = _fishing.GetSpotsInCurrentZone();
+        if (spots.Count == 0)
+        {
+            SelectedPlaceDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFishingSpots);
+            return;
+        }
+
+        var count = spots.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var spot = spots[_cycleIndex];
+
+        // Reuse PlaceDestination so the existing walk guide picks it up unchanged.
+        SelectedPlaceDestination = new PlaceDestination(
+            spot.Name, AccessibilityStrings.FishingSpotType, spot.Position,
+            IsZoneTransition: false, TargetMapId: 0);
+
+        var text = AccessibilityStrings.FishingSpotEntry(spot.Name, spot.Level) + ", " +
+                   $"{FormatDistance(Distance2D(player.Position, spot.Position))}, " +
+                   $"{CalculateDirection(player, spot.Position)}, " +
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Fish] Auswahl: {text} pos=({spot.Position.X:F1}|{spot.Position.Z:F1})");
+        _tolk.SpeakInterrupt(text);
+    }
+
     /// <summary>
     /// Quest objectives, nearest first. In-zone markers come first, sorted by
     /// straight-line distance. Cross-zone markers follow, sorted by the walking
@@ -549,6 +606,13 @@ public sealed class NavigationService
     /// </summary>
     private bool IsCategoryAvailable(int index)
     {
+        // Fishing spots are static per zone: show the category only where the
+        // zone actually has any (no clutter in waterless zones), regardless of
+        // the active class - a blind player wants to find the water BEFORE
+        // switching to fisher, just like aetherytes are always shown.
+        if (Categories[index].Cat == NavCategory.FishingSpots)
+            return _fishing.GetSpotsInCurrentZone().Count > 0;
+
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
         return IsGatheringClass() || GetObjectsOfKinds(kinds).Count > 0;

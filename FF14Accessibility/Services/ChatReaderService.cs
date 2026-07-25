@@ -117,6 +117,11 @@ public sealed class ChatReaderService : IDisposable
         // erhalten", "Du bist fertig ..."). Empty sender, so it is announced
         // without a prefix (the message is already a full sentence).
         XivChatType.Gathering        => _config.ReadGatheringMessages,
+        // LootNotice (62): items/currency picked up ("Du hast ein Lammfilet
+        // erhalten.", "Du hast 115 Gil erhalten.") - covers enemy drops and
+        // everything else that lands in the bag. Verified from a live [Chat] log
+        // (2026-07-25). Empty sender, full sentence -> no prefix.
+        XivChatType.LootNotice       => _config.AnnounceLoot,
         // Verified via ilspycmd (Dalamud XivChatType, 2026-07-19): these were
         // missing entirely, so the player's own outgoing tells and everything
         // in /yell, cross-world party and /echo was silently dropped - neither
@@ -159,6 +164,9 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.Yell          => MessageHistoryService.Category.Shout,
         XivChatType.CrossParty    => MessageHistoryService.Category.Party,
         XivChatType.Echo          => MessageHistoryService.Category.Say,
+        // Beute-Kanal: eingesammelte Gegenstaende/Waehrung zum Nachlesen
+        // (gemeinsam mit den XP-Gewinnen aus CombatService.TrackXpGain).
+        XivChatType.LootNotice    => MessageHistoryService.Category.Loot,
         _                         => MessageHistoryService.Category.System
     };
 
@@ -177,6 +185,7 @@ public sealed class ChatReaderService : IDisposable
         XivChatType.CrossParty    => "Gruppe",
         XivChatType.Echo          => "Echo",
         XivChatType.Gathering     => "",   // full sentence, no channel prefix
+        XivChatType.LootNotice    => "",   // full sentence, no channel prefix
         _                         => "Chat"
     };
 

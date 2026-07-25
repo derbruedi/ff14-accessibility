@@ -200,6 +200,19 @@ public sealed class Configuration : IPluginConfiguration
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
+
+    // Fortschritt / Beute
+    // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState
+    // (GetCurrentClassJobExp, jeden Frame gelesen - dieselbe Quelle wie die
+    // Level-Up-Ansage), kein UI-Scraping. Jeder Gewinn wird zusaetzlich in den
+    // Nachlese-Kanal "Beute" geschrieben (User-Wunsch 2026-07-25).
+    public bool AnnounceXpGain = true;
+    // Eingesammelte Gegenstaende/Waehrung (Loot) live ansagen + in den Beute-
+    // Kanal schreiben. Kanal = XivChatType.LootNotice (62), verifiziert aus
+    // einem Live-[Chat]-Log 2026-07-25 ("Du hast ein Lammfilet erhalten."),
+    // deckt Gegner-Drops und alles ins Inventar Wandernde ab. Siehe
+    // ChatReaderService.ShouldRead.
+    public bool AnnounceLoot = true;
     // Ziel-Ton bei anvisiertem Gegner ENTFERNT (2026-07-18, User): das Spiel
     // spielt selbst einen Ton - ein zweiter obendrauf war nur Lärm.
 

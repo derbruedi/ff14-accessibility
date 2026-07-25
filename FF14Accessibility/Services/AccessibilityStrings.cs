@@ -173,6 +173,7 @@ public static class AccessibilityStrings
         NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
         NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
+        NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
         NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
         NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
         NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
@@ -202,6 +203,23 @@ public static class AccessibilityStrings
         IsGerman
             ? $"Kategorie Ätheryten: {count} im Gebiet."
             : $"Category Aetherytes: {count} in this area.";
+
+    // Fishing spots (Angelplätze). Type label used when the spot flows through
+    // the shared PlaceDestination path; entry adds the required fishing level.
+    public static string FishingSpotType => IsGerman ? "Angelplatz" : "Fishing spot";
+
+    public static string FishingSpotEntry(string name, int level) =>
+        IsGerman
+            ? $"{name}, Stufe {level}"
+            : $"{name}, level {level}";
+
+    public static string CategoryFishingCount(int count) =>
+        IsGerman
+            ? $"Kategorie Angelplätze: {count} im Gebiet."
+            : $"Category Fishing spots: {count} in this area.";
+
+    public static string NoFishingSpots =>
+        IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
 
     public static string CategoryObjectCount(string label, int count) =>
         IsGerman
@@ -536,6 +554,9 @@ public static class AccessibilityStrings
         IsGerman
             ? $"Stufe {level}. Noch {left} Erfahrungspunkte bis zur nächsten Stufe."
             : $"Level {level}. {left} experience points to the next level.";
+    // Live-Ansage bei jedem XP-Gewinn (kurz gehalten, laeuft im Kampf oft).
+    public static string XpGained(int amount) =>
+        IsGerman ? $"{amount} Erfahrung." : $"{amount} experience.";
 
     // ════════════════════════════════════════════════════════════════
     //  EquipmentService - Ausruestung
