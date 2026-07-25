@@ -12,6 +12,26 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     in den NEU-Bloecken unten. repo.json/csproj/Plugin.cs auf 5.46. Installer unveraendert
     (1.1.0, exe+installer.json vom v5.45-Release wiederverwendet, SHA passt).
 
+>>> NEU (2026-07-25, GEBAUT 0/0, DEBUG-DEPLOYT, UNGETESTET, -> V5.47): GRAND-COMPANY-
+    SHOP LESBAR. Menue „GrandCompanyExchange" (Staatstaler gegen Gegenstaende).
+    Verifiziert per Dump + dalamud.log: die generische Listen-Navigation griff schon,
+    las aber kryptisch „0, 1.060, Legionaers-Schwert" (Spaltenreihenfolge, ohne Label,
+    teils doppelt bei Sichtbarkeits-Flackern der Spalten). Fix: dedizierter Zeilen-Leser
+    ReadGrandCompanyRow (Node-IDs aus dem Renderer: id4=Name, id7=Preis, id10=Besitz)
+    -> „Name, X Staatstaler, Besitz Y". Eingehaengt im name-switch von TrackListIndices
+    (neben ConfigKeybind). Stabiler Text ⇒ idx|text-Dedup beseitigt das Doppel.
+    AccessibilityStrings.GrandCompanyRow (de/en). Node-Struktur dokumentiert in
+    docs/game-api.md. OFFEN/optional: Rang + Staatstaler-Guthaben beim Oeffnen ansagen
+    (Root-Nodes id6/id8; PostSetup-Timing noch unverifiziert - bewusst nicht gebaut).
+    TEST: Shop oeffnen, Liste durchblaettern -> „Legionaers-Schwert, 1.060 Staatstaler,
+    Besitz 0" statt „0, 1.060, ..."; kein Doppel mehr.
+    NACHTRAG (2026-07-25): Kategorie-REITER (Waffen/Ruestung/Militaerbedarf/Materialien/
+    Besondere Artikel) waren stumm. Fix: OnGrandCompanyUpdate (PostUpdate) sagt bei
+    Reiterwechsel „Kategorie X". Aktiver Reiter = RadioButton mit IsChecked (Flags-Bit 18,
+    ilspycmd-verifiziert); Label = Text-Kind id=2; Rang-Icons Comp(1016) per leerem Label
+    gefiltert. AccessibilityStrings.CategoryLabel (de/en). Registrierung analog ArmouryBoard.
+    TEST: Reiter wechseln -> „Kategorie Ruestung" o.ae.
+
 ## VORHERIGER STAND (2026-07-25, V5.45 OEFFENTLICH RELEASED - aber IM SPIEL noch UNGETESTET)
 
 >>> RELEASE-INFO: v5.45 ist auf GitHub veroeffentlicht (Latest) mit 4 Assets:

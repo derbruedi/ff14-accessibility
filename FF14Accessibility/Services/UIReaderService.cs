@@ -354,6 +354,12 @@ public sealed class UIReaderService : IDisposable
         // Text, tabs = Base-wrapped icons without text).
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ArmouryBoard", OnArmouryBoardUpdate);
 
+        // GrandCompanyExchange (Staatstaler-Shop): the 5 category tabs
+        // (Waffen/Ruestung/... ) are RadioButtons without a shared title node,
+        // so the active one is found via its checked state and announced on
+        // switch (user 2026-07-25: tabs were silent).
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
+
         // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
             _addonLifecycle.RegisterListener(AddonEvent.PostSetup, name, OnSelectStringOpen);
@@ -1389,6 +1395,61 @@ public sealed class UIReaderService : IDisposable
         // interrupt as usual.
         if (isSwitch) _tolk.SpeakInterrupt($"Kategorie {category}.");
         else          _tolk.Speak($"Kategorie {category}.");
+    }
+
+    // -- GrandCompanyExchange: Kategorie-Reiter -----------------------
+
+    // Active category tab last announced, so switching speaks it once.
+    private string _lastGcCategory = string.Empty;
+
+    /// <summary>
+    /// Announces the active category tab of the seal shop (Waffen, Rüstung,
+    /// Militärbedarf, Materialien, Besondere Artikel) when it changes. Unlike
+    /// ArmouryBoard there is no shared title node - the tabs are RadioButtons
+    /// (dump 2026-07-25: Comp(1008)/RadioButton, label = text child id=2), so
+    /// the active one is the checked button. IsChecked = Flags bit 18
+    /// (AtkComponentButton, ilspycmd 2026-07-25). The rank icons (Comp(1016))
+    /// are also RadioButtons but carry no text child, so they are filtered out
+    /// by the empty label.
+    /// </summary>
+    private unsafe void OnGrandCompanyUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastGcCategory = string.Empty;
+            return;
+        }
+
+        var category = ReadCheckedGcCategory(addon);
+        if (string.IsNullOrEmpty(category) || category == _lastGcCategory) return;
+
+        var isSwitch = _lastGcCategory.Length > 0;
+        _lastGcCategory = category;
+        _log.Info($"[Accessibility] GrandCompany Kategorie: '{category}'");
+        // On open the window/list announcer speaks first - queue the initial
+        // category behind it; a real tab switch interrupts.
+        if (isSwitch) _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLabel(category));
+        else          _tolk.Speak(AccessibilityStrings.CategoryLabel(category));
+    }
+
+    /// <summary>Label of the currently checked category RadioButton, or "" if
+    /// none is checked yet. Scans the addon's top-level nodes; the checked
+    /// button with a text label (id=2) is the active category.</summary>
+    private unsafe string ReadCheckedGcCategory(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null) continue;
+            if (comp->GetComponentType() != ComponentType.RadioButton) continue;
+            if (!((AtkComponentButton*)comp)->IsChecked) continue;
+            var label = TolkService.Sanitize(ReadComponentTextById(comp, 2)).Trim();
+            if (!string.IsNullOrWhiteSpace(label)) return label;
+        }
+        return string.Empty;
     }
 
     // -- SelectYesno -------------------------------------------------
@@ -5945,6 +6006,38 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
+    /// GrandCompanyExchange (seal quartermaster shop) row: item name + seal
+    /// price + amount owned, clearly labelled. The generic reader announced
+    /// the bare, unlabelled column order "0, 1.060, name" and doubled it when
+    /// a column's visibility flickered between frames (log 2026-07-25). Node
+    /// ids from the row template (F5 dump 2026-07-25, identical on every row):
+    /// name=id4, price=id7, owned=id10 - all direct visible text nodes of the
+    /// ListItemRenderer, so ReadComponentTextById reaches them (the quantity
+    /// lives in a nested NumericInput component and is deliberately skipped).
+    /// Empty trailing slots (blank name) return "" so the caller falls back.
+    /// </summary>
+    private unsafe string ReadGrandCompanyRow(AtkComponentList* list, int idx)
+    {
+        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
+        try
+        {
+            var rendererSlot = &list->ItemRendererList[idx];
+            if (!IsReadable(rendererSlot)) return string.Empty;
+            var renderer = (*rendererSlot).AtkComponentListItemRenderer;
+            if (renderer == null || !IsReadable(renderer)) return string.Empty;
+            var comp = (AtkComponentBase*)renderer;
+
+            var name = TolkService.Sanitize(ReadComponentTextById(comp, 4));
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            var price = ReadComponentTextById(comp, 7);
+            var owned = ReadComponentTextById(comp, 10);
+            return AccessibilityStrings.GrandCompanyRow(name, price, owned);
+        }
+        catch (Exception ex) { _log.Warning($"[Accessibility] GrandCompany-Zeile: {ex.Message}"); }
+        return string.Empty;
+    }
+
+    /// <summary>
     /// Reads one Tastenbelegung row from its ListItemRenderer component.
     /// Rows without binding button components (section headers like
     /// "Laufen und Steuern") return just their label - only real command
@@ -6123,9 +6216,16 @@ public sealed class UIReaderService : IDisposable
             idx = int.Parse(state.Hl.Split(' ')[0]);
         if (idx < 0) return;
 
-        // Tastenbelegung: dedicated row reader so the bound key is announced
-        // with the command; generic reader as fallback if the structure drifts.
-        var text = name == "ConfigKeybind" ? ReadConfigKeybindRow(list, idx) : string.Empty;
+        // Dedicated row readers give labelled, stable text; the generic reader
+        // is the fallback if the structure drifts. Stable text also fixes the
+        // double announcement: the idx|text dedup below drops the repeat when a
+        // column briefly flickers between frames (log 2026-07-25 GrandCompany).
+        var text = name switch
+        {
+            "ConfigKeybind"        => ReadConfigKeybindRow(list, idx),
+            "GrandCompanyExchange" => ReadGrandCompanyRow(list, idx),
+            _                      => string.Empty,
+        };
         if (string.IsNullOrEmpty(text)) text = ReadListItemText(list, idx);
         // CharaMake-Aussehen-Picker (CMFIcon*/CMFColor*): rows are pure image
         // swatches without text (dump 2026-07-17 16:35) - the position is the
@@ -7427,6 +7527,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);

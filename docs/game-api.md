@@ -870,3 +870,37 @@ JournalCanvas enthält Belohnungs-Einträge als Multipurpose(21)-Komponenten:
   Dalamud-Updates. Bewusst nicht genutzt (User-Entscheid 2026-07-19);
   Installation/Update laufen über die Installer-EXE.
 - Genutzt in `DalamudPluginsService.cs` (V5.13, Umschalt+F1/F2/F12).
+
+### GrandCompanyExchange (Staatstaler-Quartiermeister) — F5-Dump 2026-07-25 (V5.47)
+Shop, in dem man Staatstaler (Grand Company Seals) gegen Gegenstaende eintauscht.
+Wird von der GENERISCHEN Listen-Navigation erfasst (nicht unterdrueckt, hat eine
+`List(9)`), aber die generische Zeile las kryptisch „0, 1.060, Legionaers-Schwert"
+(Spaltenreihenfolge, ohne Label, teils doppelt bei Sichtbarkeits-Flackern).
+- Addon „GrandCompanyExchange", Fenstertitel `Comp(1007)` Kind id=3 = „STAATSTALER
+  EINTAUSCHEN".
+- **Item-Liste**: id=57 `Comp(1014)` `[CT=List(9)]`, `ListLen=21`. Tastatur trackt
+  wie ueberall `HoveredItemIndex2` (@344) — die generische `TrackListIndices` sagt an.
+- **Zeilen-Template** (`ListItemRenderer`/`Comp(1015)`, jede Zeile identisch):
+  - id=10 Text = **Besitz** (wie viele man schon hat), z.B. „0".
+  - id=7  Text = **Preis in Staatstalern**, z.B. „1.060".
+  - id=6  `Comp(1011)` `NumericInput` = **Kaufmenge**, Kind-Text id=5 = „1"
+    (liegt in der EIGENEN ULD des NumericInput, NICHT im Renderer-NodeList → wird
+    vom generischen Reader und vom dedizierten Reader NICHT versehentlich gelesen).
+  - id=5  Text (UNSICHTBAR) = Item-Name-Duplikat.
+  - id=4  Text (sichtbar) = **Item-Name** (SeString-Payload, Sanitize noetig).
+- **Kategorie-Reiter** (`RadioButton(4)`/`Comp(1008)`, Text-Kind id=2): id=44 Waffen,
+  id=45 Ruestung, id=46 Militaerbedarf, id=47 Materialien, id=48 Besondere Artikel.
+  Der AKTIVE Reiter = der RadioButton mit `IsChecked==true`. `AtkComponentButton.IsChecked`
+  = `BitOps.GetBit(Flags@232, 18)` (ilspycmd 2026-07-25; `AtkComponentRadioButton`
+  erbt `AtkComponentButton`). KEIN gemeinsamer Titel-Node wie bei ArmouryBoard (id=121) —
+  darum Reiter ueber checked-State ermitteln, Label aus Text-Kind id=2. V5.47:
+  `OnGrandCompanyUpdate` sagt bei Reiterwechsel „Kategorie X" (die Rang-Icons `Comp(1016)`
+  sind auch RadioButtons, haben aber KEIN Text-Kind id=2 → per leerem Label gefiltert).
+- **Rang-Icons** (`RadioButton(4)`/`Comp(1016)`, id=37–42): OHNE Text → der globale
+  Fokus-Reader pendelt hier stumm (Log 2026-07-25, [Focus] STUMM, alle ~0,3s).
+- Addon-Root-Texte: id=6 = eigener GC-Rang („Legionaer 3. Klasse"), id=8 = eigenes
+  Staatstaler-Guthaben („300"). (Noch NICHT genutzt — Kandidat fuer Oeffnungs-Ansage,
+  PostSetup-Timing unverifiziert.)
+- **Loesung V5.47**: dedizierter `ReadGrandCompanyRow` (Name/Preis/Besitz per
+  `ReadComponentTextById` id 4/7/10) → „Name, X Staatstaler, Besitz Y"; eingehaengt im
+  `name switch` von `TrackListIndices`. Stabiler Text ⇒ `idx|text`-Dedup killt das Doppel.

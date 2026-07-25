@@ -25,6 +25,18 @@ public static class AccessibilityStrings
     public static string MenuPosition(string item, int index, int count) =>
         IsGerman ? $"{item}, {index} von {count}" : $"{item}, {index} of {count}";
 
+    /// <summary>GrandCompanyExchange (seal quartermaster) row: item name, seal
+    /// price, amount already owned. The generic reader announced the bare
+    /// "0, 1.060, name" without labels; this makes the columns explicit.</summary>
+    public static string GrandCompanyRow(string name, string price, string owned) =>
+        IsGerman ? $"{name}, {price} Staatstaler, Besitz {owned}"
+                 : $"{name}, {price} seals, {owned} owned";
+
+    /// <summary>Announces the active category tab of a shop/window, e.g. the
+    /// GrandCompanyExchange tabs (Waffen/Rüstung/...).</summary>
+    public static string CategoryLabel(string name) =>
+        IsGerman ? $"Kategorie {name}." : $"Category {name}.";
+
     // ── Sprachumschaltung (/acc lang) ────────────────────────────────
     public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
     public static string LanguageEnglish => IsGerman ? "Englisch" : "English";
