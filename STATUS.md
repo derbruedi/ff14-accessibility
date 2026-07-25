@@ -3,7 +3,28 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-25, V5.51 OEFFENTLICH RELEASED - Gegner-Cast-Filter + Chat-Tasten, NEUE FEATURES IN-GAME UNGETESTET)
+## STAND JETZT (2026-07-26, V5.52 OEFFENTLICH RELEASED - XP-Gewinn- + Beute-Ansage, NUR XP IN-GAME BESTAETIGT)
+
+>>> V5.52 (2026-07-26): XP- und Loot-Ansage + neuer Nachlese-Kanal "Beute". Auf
+    User-Wunsch (jeder XP-Gewinn sofort, Loot live + Nachlese). Released, EXTERN zu
+    testen (User laesst von anderen pruefen).
+    (1) XP-Gewinn live: CombatService.TrackXpGain liest GetCurrentClassJobExp jeden
+        Frame, sagt Delta an ("X Erfahrung", nicht-unterbrechend) + schreibt in den
+        Beute-Kanal. Baseline pro Job + Level-Up-Ruecksprung stumm nachgezogen.
+        >>> IN-GAME BESTAETIGT (Live-Log 2026-07-25: +94/+132/+542, Level-Up sauber).
+    (2) Loot live: XivChatType.LootNotice (62), aus Live-[Chat]-Log VERIFIZIERT -
+        "Du hast X erhalten" (Gegner-Drops, Gil, GC-Taler, Kristalle). ShouldRead ->
+        Config AnnounceLoot, Nachlese-Kanal "Beute". >>> LOOT-ANSAGE UNGETESTET.
+    (3) Neue Nachlese-Kategorie Category.Loot = "Beute" (MessageHistoryService), XP +
+        Loot gemeinsam. Erreichbar: Alt+Bild-ab bis "Beute", Umschalt+Bild-auf/-ab.
+    Enthaelt ausserdem den bereits verdrahteten Fisch-Sonden-Code (inaktiv, /acc fish;
+    Feature ruht, braucht sehende Hilfe). repo.json/csproj/Plugin.cs auf 5.52 synchron.
+    Installer unveraendert (1.1.0, exe+installer.json vom v5.51-Release wiederverwendet,
+    SHA verifiziert). uia_test.ps1 bleibt untracked (temp UIA-Helfer, nicht im Release).
+    OFFEN: Dungeon-Wuerfel-Beute (LootRoll?) noch nicht verifiziert; XP/Loot bei Spam
+    ggf. buendeln (User-Rueckmeldung abwarten).
+
+## VORHERIGER STAND (2026-07-25, V5.51 OEFFENTLICH RELEASED - Gegner-Cast-Filter + Chat-Tasten, NEUE FEATURES IN-GAME UNGETESTET)
 
 >>> V5.51 (2026-07-25): Release geschnitten, um eine VERSIONSDRIFT zu heilen. Problem:
     Plugin.cs war intern schon auf 5.50/5.51 gebumpt, aber csproj UND repo.json hingen
