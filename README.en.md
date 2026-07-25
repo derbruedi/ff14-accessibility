@@ -56,14 +56,21 @@ cues — including braille display output and automatic walking.
   announcements and an honest message when no path exists.
 - **Route preview**: hear the route without walking
   ("Path to aetheryte, 62 meters: 25 meters north, then …").
+- **Facing direction**: while you turn, the compass direction you are
+  looking at is announced (north, north-east …); can be turned off.
+- **Coordinates**: copy your own map coordinates to the clipboard (to share
+  them in chat) or walk to coordinates you copied.
 - Target-change announcements for the game's own targeting keys
   (Tab, F1–F12).
 
 ### Combat
 
 - Combat status on demand: your own HP and MP.
-- Target HP in steps, announcement when the target starts casting,
-  a short tone when you target an enemy.
+- Target HP in steps, announcement when the target starts casting **at
+  you**, a short tone when you target an enemy.
+- HP and MP also as stereo tones (at every 10-percent step the stereo
+  position reflects how full the bar is).
+- Gathering points (GP) for gatherers on demand.
 
 ### Inventory and gear
 
@@ -86,6 +93,11 @@ cues — including braille display output and automatic walking.
 
 - Emote browser: cycle through emotes and perform them.
 - Read the hunting log aloud, including each monster's habitat.
+- **Notifications**: accept incoming invitations (free company, party,
+  friend list) with a key — the pop-up can otherwise only be clicked with
+  the mouse.
+- **Plugin list**: browse the installed Dalamud plugins by keyboard
+  (Dalamud's own window cannot be read by a screen reader).
 - After every login the plugin saves the game's keybinds as a text file
   on the desktop and warns about conflicts with plugin keys.
 
@@ -156,19 +168,21 @@ and carries on normally.
 
 ## Default hotkeys
 
-The keys were chosen to be free according to the game's keybind table.
-Ctrl+F1 announces the current help at any time.
+The keys were chosen to be mostly free according to the game's keybind
+table; a few sit on purely visual camera functions (zoom, camera preset)
+that have no effect for blind play. Ctrl+F1 announces the current help at
+any time. Every key can be changed in the settings.
 
-Note: "Umschalt" is the German word for Shift, "Strg" for Ctrl — the lists
-below use Ctrl/Shift.
+Note: keys are shown with Ctrl/Shift. "Page Up/Down" are the dedicated
+navigation keys above the arrow block.
 
 ### Finding objects
 
-- **N** — announce and target the next nearby object
-- **Shift+N** — previous object
-- **Ctrl+N** — next object category (e.g. NPCs, enemies, quest
+- **Page Down** — announce and target the next nearby object
+- **Page Up** — previous object
+- **Ctrl+Page Down** — next object category (e.g. NPCs, enemies, quest
   objectives, waypoints)
-- **Ctrl+Shift+N** — previous object category
+- **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance
 
@@ -176,6 +190,9 @@ below use Ctrl/Shift.
 - **Ctrl+Numpad 3** — walk guide on/off (audio guidance while walking
   manually, follows the navigation mesh around obstacles)
 - **Ctrl+Numpad 5** — route preview: hear the path without walking
+- **Ctrl+Shift+F1** — walk to coordinates from the clipboard (e.g. copy
+  "24.1 21.0", then press the key)
+- **Ctrl+Shift+F2** — copy your own map coordinates to the clipboard
 - **F** — face the target (game key), **W** — walk (game key)
 
 ### Reading and information
@@ -185,16 +202,20 @@ below use Ctrl/Shift.
 - **Ctrl+F10** — read the current menu; with the journal open: read the
   quest
 - **Ctrl+F11** — stop speech immediately
-- **Ctrl+H** — combat status: your HP and MP
+- **N** — toggle the facing-direction announcement while turning
+- **Ctrl+Delete** — combat status: your HP and MP
+- **Ctrl+End** — gathering points (GP) for gatherers
 - **Ctrl+L** — level and missing experience
 - **Ctrl+F3** — read the inventory (bag and key items)
 - **Shift+F3** — gil
 - **Ctrl+F4** — read the hunting log
+- **Ctrl+F12** — accept an open notification/invitation
 
 ### Gear
 
 - **Ctrl+F6** — read equipped gear (with item level)
 - **Ctrl+F7** — equip recommended gear (the game's own optimizer)
+- **Ctrl+F8** — random appearance (character creation only)
 
 ### Hotbars and skill browser
 
@@ -207,16 +228,22 @@ below use Ctrl/Shift.
 
 ### Reading back chat
 
-- **Ctrl+Period** / **Ctrl+Comma** — next / previous category (dialogues,
-  say, shout, party, alliance, tell, free company, system); announced with
-  the category name and its message count
-- **Comma** / **Period** — step to the older / newer message inside the
-  selected category ("3 of 12: …")
+- **Alt+Page Up** / **Alt+Page Down** — previous / next category
+  (dialogues, say, shout, party, alliance, tell, free company, system);
+  announced with the category name and its message count
+- **Shift+Page Up** / **Shift+Page Down** — step to the older / newer
+  message inside the selected category ("3 of 12: …")
 
 ### Emotes
 
 - **Shift+F4** / **Shift+F5** — previous / next emote
 - **Shift+F6** — perform the chosen emote
+
+### Plugin list
+
+- **Shift+F1** / **Shift+F2** — announce the next / previous installed
+  plugin
+- **Shift+F12** — open the settings of the selected plugin
 
 ### Diagnostics
 

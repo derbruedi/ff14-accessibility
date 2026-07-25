@@ -56,13 +56,21 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Meldung, wenn kein Weg gefunden wird.
 - **Routen-Vorschau**: den Weg ansagen lassen, ohne zu laufen
   („Weg zu Ätheryt, 62 Meter: 25 Meter nach Norden, dann …").
+- **Himmelsrichtung**: beim Drehen wird die Blickrichtung angesagt
+  (Norden, Nordosten …), abschaltbar.
+- **Koordinaten**: eigene Karten-Koordinaten in die Zwischenablage
+  kopieren (zum Weitergeben im Chat) oder zu kopierten Koordinaten
+  hinlaufen.
 - Zielwechsel-Ansagen für die Spiel-eigenen Zieltasten (Tab, F1–F12).
 
 ### Kampf
 
 - Kampfstatus auf Tastendruck: eigene HP und MP.
-- Ziel-HP in Stufen, Ansage wenn das Ziel einen Zauber wirkt,
-  kurzer Ton beim Anvisieren eines Gegners.
+- Ziel-HP in Stufen, Ansage wenn das Ziel einen Zauber **auf dich**
+  wirkt, kurzer Ton beim Anvisieren eines Gegners.
+- HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
+  die Stereo-Position den Füllstand an).
+- SP-Stand für Sammler (Sammelpunkte/GP) auf Tastendruck.
 
 ### Inventar und Ausrüstung
 
@@ -86,6 +94,11 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 - Emote-Browser: Emotes durchblättern und ausführen.
 - Bestiarium (Jagdtagebuch) vorlesen, inklusive Lebensraum der Monster.
+- **Benachrichtigungen**: eingehende Einladungen (Freie Gesellschaft,
+  Gruppe, Freundesliste) per Taste annehmen — das Popup lässt sich sonst
+  nur mit der Maus bedienen.
+- **Plugin-Liste**: die installierten Dalamud-Plugins per Tastatur
+  durchblättern (Dalamuds eigenes Fenster ist nicht vorlesbar).
 - Nach jedem Login speichert das Plugin die Spiel-Tastenbelegung als
   Textdatei auf dem Desktop und warnt bei Konflikten mit Plugin-Tasten.
 
@@ -157,16 +170,18 @@ sagt er das und macht trotzdem normal weiter.
 
 ## Tastenübersicht (Standard)
 
-Die Tasten sind so gewählt, dass sie laut Spiel-Tastenbelegung frei sind.
-Strg+F1 sagt jederzeit die aktuelle Hilfe an.
+Die Tasten sind so gewählt, dass sie laut Spiel-Tastenbelegung überwiegend
+frei sind; einige liegen auf rein visuellen Kamera-Funktionen (Zoom,
+Kamera-Preset), die für blindes Spiel folgenlos sind. Strg+F1 sagt jederzeit
+die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 
 ### Objekte finden
 
-- **N** — nächstes Objekt ansagen und anvisieren
-- **Umschalt+N** — vorheriges Objekt
-- **Strg+N** — Objekt-Kategorie vorwärts (z. B. NPCs, Gegner, Quest-Ziele,
-  Wegpunkte)
-- **Strg+Umschalt+N** — Objekt-Kategorie zurück
+- **Bild-ab** — nächstes Objekt ansagen und anvisieren
+- **Bild-auf** — vorheriges Objekt
+- **Strg+Bild-ab** — Objekt-Kategorie vorwärts (z. B. NPCs, Gegner,
+  Quest-Ziele, Wegpunkte)
+- **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung
 
@@ -174,6 +189,10 @@ Strg+F1 sagt jederzeit die aktuelle Hilfe an.
 - **Strg+Nummernblock 3** — Gehhilfe an/aus (Ton-Führung beim manuellen
   Laufen, folgt dem Wegenetz um Hindernisse)
 - **Strg+Nummernblock 5** — Routen-Vorschau: Weg ansagen, ohne zu laufen
+- **Strg+Umschalt+F1** — zu Koordinaten aus der Zwischenablage laufen
+  (z. B. „24.1 21.0" kopieren, dann Taste)
+- **Strg+Umschalt+F2** — eigene Karten-Koordinaten in die Zwischenablage
+  kopieren
 - **F** — zum Ziel hindrehen (Spiel-Taste), **W** — laufen (Spiel-Taste)
 
 ### Vorlesen und Information
@@ -182,16 +201,20 @@ Strg+F1 sagt jederzeit die aktuelle Hilfe an.
 - **Strg+F2** — aktives Fenster ansagen
 - **Strg+F10** — aktuelles Menü vorlesen; bei offenem Journal: Quest vorlesen
 - **Strg+F11** — Sprache sofort stoppen
-- **Strg+H** — Kampfstatus: eigene HP und MP
+- **N** — Himmelsrichtungs-Ansage beim Drehen an/aus
+- **Strg+Entf** — Kampfstatus: eigene HP und MP
+- **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
 - **Strg+L** — Stufe und fehlende Erfahrung
 - **Strg+F3** — Inventar vorlesen (Tasche und Schlüsselgegenstände)
 - **Umschalt+F3** — Gil-Stand
 - **Strg+F4** — Bestiarium (Jagdtagebuch) vorlesen
+- **Strg+F12** — offene Benachrichtigung/Einladung annehmen
 
 ### Ausrüstung
 
 - **Strg+F6** — angelegte Ausrüstung vorlesen (mit Stufe)
 - **Strg+F7** — empfohlene Ausrüstung anlegen (Spiel-eigener Optimierer)
+- **Strg+F8** — zufälliges Aussehen (nur in der Charaktererstellung)
 
 ### Aktionsleisten und Skill-Browser
 
@@ -204,16 +227,22 @@ Strg+F1 sagt jederzeit die aktuelle Hilfe an.
 
 ### Chat nachlesen
 
-- **Strg+Punkt** / **Strg+Komma** — Kategorie vor / zurück (Dialoge,
+- **Alt+Bild-auf** / **Alt+Bild-ab** — Kategorie zurück / vor (Dialoge,
   Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft, System);
   angesagt wird der Name mit der Anzahl der Nachrichten
-- **Komma** / **Punkt** — in der gewählten Kategorie zur älteren /
-  neueren Nachricht blättern („3 von 12: …")
+- **Umschalt+Bild-auf** / **Umschalt+Bild-ab** — in der gewählten Kategorie
+  zur älteren / neueren Nachricht blättern („3 von 12: …")
 
 ### Emotes
 
 - **Umschalt+F4** / **Umschalt+F5** — Emote zurück / vor
 - **Umschalt+F6** — gewähltes Emote ausführen
+
+### Plugin-Liste
+
+- **Umschalt+F1** / **Umschalt+F2** — nächstes / vorheriges installiertes
+  Plugin ansagen
+- **Umschalt+F12** — Einstellungen des gewählten Plugins öffnen
 
 ### Diagnose
 
