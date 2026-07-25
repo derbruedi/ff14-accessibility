@@ -25,7 +25,7 @@ public sealed class CombatService
     // Current-target tracking for HP thresholds and cast announcements.
     private ulong _targetId;
     private int   _lastTargetHpPercent = 100;
-    private bool  _targetWasCasting;
+    private bool  _targetWasCastingAtMe;
     private uint  _lastCastActionId;
 
     private static readonly int[] HpThresholds = [75, 50, 25, 10];
@@ -67,7 +67,7 @@ public sealed class CombatService
         }
         _wasInCombat = inCombat;
 
-        UpdateTarget(inCombat);
+        UpdateTarget(inCombat, player.GameObjectId);
 
         if (!inCombat) return;
 
@@ -88,7 +88,7 @@ public sealed class CombatService
     /// combat (so you hear your attacks working and when the enemy is nearly
     /// dead) and announces when the target starts casting an action.
     /// </summary>
-    private void UpdateTarget(bool inCombat)
+    private void UpdateTarget(bool inCombat, ulong playerId)
     {
         var target = _targetManager.Target as IBattleChara;
         var targetId = target?.GameObjectId ?? 0;
@@ -98,7 +98,7 @@ public sealed class CombatService
         {
             _targetId = targetId;
             _lastTargetHpPercent = target != null ? HpPercent(target.CurrentHp, target.MaxHp) : 100;
-            _targetWasCasting = false;
+            _targetWasCastingAtMe = false;
             _lastCastActionId = 0;
         }
 
@@ -120,22 +120,26 @@ public sealed class CombatService
             _lastTargetHpPercent = hp;
         }
 
-        // Cast announcement: fire once per cast (rising edge, or a new action
-        // while still casting). Lets a blind player react to a big enemy skill.
+        // Cast announcement: only casts aimed AT THE PLAYER (user request
+        // 2026-07-25 - casts on others are noise). CastTargetObjectId is the
+        // object the target is casting at (Dalamud IBattleChara, verified).
+        // Fire once per cast (rising edge, or a new action while still casting);
+        // tracking "casting at me" as the edge state also catches the target
+        // swinging an in-progress cast onto the player.
         if (_config.AnnounceEnemyCast)
         {
-            var casting = target.IsCasting;
+            var castingAtMe = target.IsCasting && target.CastTargetObjectId == playerId;
             var castId = target.CastActionId;
-            var newCast = casting && (!_targetWasCasting || castId != _lastCastActionId);
+            var newCast = castingAtMe && (!_targetWasCastingAtMe || castId != _lastCastActionId);
             if (newCast)
             {
                 var name = CastActionName(castId);
                 _tolk.SpeakInterrupt(AccessibilityStrings.EnemyCasts(name));
-                _log.Info($"[Combat] Gegner-Cast: id={castId} name='{name}' " +
+                _log.Info($"[Combat] Gegner-Cast auf mich: id={castId} name='{name}' " +
                           $"unterbrechbar={target.IsCastInterruptible}");
                 _lastCastActionId = castId;
             }
-            _targetWasCasting = casting;
+            _targetWasCastingAtMe = castingAtMe;
         }
     }
 

@@ -60,8 +60,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.50";
-    private const string PluginVersionTag = "Chat-Kategorie-Tasten auf Alt+Bild-auf/-ab";
+    private const string PluginVersion    = "5.51";
+    private const string PluginVersionTag = "Gegner-Cast-Ansage nur noch bei Cast auf den Spieler";
 
     public Plugin()
     {
