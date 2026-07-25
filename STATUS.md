@@ -3,7 +3,16 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-25, V5.46 OEFFENTLICH RELEASED - Chat-Eingabe-Fixes, IN-GAME BESTAETIGT)
+## STAND JETZT (2026-07-25, V5.47 OEFFENTLICH RELEASED - Grand-Company-Shop lesbar, IN-GAME BESTAETIGT)
+
+>>> V5.47 (2026-07-25): Grand-Company-Staatstaler-Shop (GrandCompanyExchange) komplett
+    barrierefrei, in-game bestaetigt. (1) Item-Zeilen „Name, X Staatstaler, Besitz Y"
+    (dedizierter ReadGrandCompanyRow statt kryptischem „0, 1.060, ..."; Doppel weg).
+    (2) Kategorie-Reiter „Kategorie Waffen/Ruestung/..." (OnGrandCompanyUpdate, aktiver
+    Reiter via RadioButton.IsChecked/Flags-Bit 18). Details in den NEU-Bloecken unten +
+    docs/game-api.md. repo.json/csproj/Plugin.cs auf 5.47. Installer unveraendert (1.1.0).
+
+## VORHERIGER STAND (2026-07-25, V5.46 OEFFENTLICH RELEASED - Chat-Eingabe-Fixes, IN-GAME BESTAETIGT)
 
 >>> V5.46 (2026-07-25): Chat-Eingabe-Verbesserungen, vom User in-game bestaetigt und
     released. (1) Mod-Hotkeys stehen still, solange ein Spiel-Textfeld fokussiert ist
