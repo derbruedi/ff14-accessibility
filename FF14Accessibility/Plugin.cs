@@ -60,8 +60,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.45";
-    private const string PluginVersionTag = "SP-Ansage, Himmelsrichtung, Gil-Depot, englische Ausgabe (Teil 1)";
+    private const string PluginVersion    = "5.46";
+    private const string PluginVersionTag = "Chat-Eingabe: Hotkeys beim Tippen gesperrt + Zeile auf Braille";
 
     public Plugin()
     {

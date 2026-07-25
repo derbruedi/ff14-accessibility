@@ -3,7 +3,16 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-25, V5.45 OEFFENTLICH RELEASED - aber IM SPIEL noch UNGETESTET)
+## STAND JETZT (2026-07-25, V5.46 OEFFENTLICH RELEASED - Chat-Eingabe-Fixes, IN-GAME BESTAETIGT)
+
+>>> V5.46 (2026-07-25): Chat-Eingabe-Verbesserungen, vom User in-game bestaetigt und
+    released. (1) Mod-Hotkeys stehen still, solange ein Spiel-Textfeld fokussiert ist
+    (RaptureAtkModule.IsTextInputActive-Gate in IsJustPressed). (2) Beim Tippen spiegelt
+    die Braillezeile still die aktuelle Eingabezeile (neuer Tolk_Braille-Pfad). Details
+    in den NEU-Bloecken unten. repo.json/csproj/Plugin.cs auf 5.46. Installer unveraendert
+    (1.1.0, exe+installer.json vom v5.45-Release wiederverwendet, SHA passt).
+
+## VORHERIGER STAND (2026-07-25, V5.45 OEFFENTLICH RELEASED - aber IM SPIEL noch UNGETESTET)
 
 >>> RELEASE-INFO: v5.45 ist auf GitHub veroeffentlicht (Latest) mit 4 Assets:
     latest.zip, FF14Accessibility-v5.45.0.zip, FF14AccessibilityInstaller.exe (1.1.0,
