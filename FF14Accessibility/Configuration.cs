@@ -64,12 +64,21 @@ public sealed class Configuration : IPluginConfiguration
     public string KeySkillAssign   = "Umschalt+F10";    // Gewählten Skill auf die Ziel-Taste legen
     public string KeySkillBar      = "Umschalt+F11";    // Ziel-Leiste weiterschalten (Kommandomenü 1-10; Umschalt+F11 laut Keybind-Dump frei)
     // Nachlese-Browser (V4.90): kategorisierter Chat-/Dialog-/System-Verlauf.
-    // Komma und Punkt sind im Spiel NICHT belegt (Keybind-Dump 2026-07-17) und
-    // werden bei aktivem Textfeld vom Spiel verbraucht (dann kein Fehlauslösen).
-    public string KeyChatCatPrev   = "Strg+,";          // Nachlese: vorherige Kategorie (Kanal/Dialoge/System)
-    public string KeyChatCatNext   = "Strg+.";          // Nachlese: nächste Kategorie
-    public string KeyChatReadOlder = ",";               // Nachlese: ältere Nachricht in der Kategorie
-    public string KeyChatReadNewer = ".";               // Nachlese: neuere Nachricht in der Kategorie
+    // Das ganze Paar liegt auf dem Bild-Tasten-Cluster, der nachweislich
+    // modifier-sauber ist (Objekt-Browser auf bare/Strg+Bild funktioniert):
+    //   bare Bild = Objekte, Strg+Bild = Objekt-Kategorie,
+    //   Umschalt+Bild = Nachricht aelter/neuer, Alt+Bild = Chat-Kategorie.
+    // V5.48: bare "." oeffnet in-game das Reittier-Verzeichnis (MENU_MOUNT) -> Lese-
+    // Paar auf Umschalt+BildAuf/-Ab. V5.49: Strg+,/Strg+. wurden ebenfalls von
+    // MENU_MOUNT geschluckt (Spiel feuert auf Basistaste "." trotz Strg, gleiche
+    // Falle wie H/MENU_CRAFT in V5.25, in-game bestaetigt). V5.50: Kategorie-Paar
+    // auf Alt+BildAuf/-Ab (User-Wunsch; Alt+Bild ist frei - das Spiel bindet Alt
+    // nur mit Buchstaben fuer Chat-Befehle). Bei aktivem Textfeld verbraucht das
+    // Spiel die Taste.
+    public string KeyChatCatPrev   = "Alt+BildAuf";            // Nachlese: vorherige Kategorie (Kanal/Dialoge/System)
+    public string KeyChatCatNext   = "Alt+BildAb";             // Nachlese: nächste Kategorie
+    public string KeyChatReadOlder = "Umschalt+BildAuf";       // Nachlese: ältere Nachricht in der Kategorie
+    public string KeyChatReadNewer = "Umschalt+BildAb";        // Nachlese: neuere Nachricht in der Kategorie
     // Benachrichtigungen (V5.9): Einladungen (Freie Gesellschaft, Gruppe,
     // Freundesliste) erscheinen als Popup, das ein Sehender anklickt. Ohne
     // Tastaturweg lief die Einladung fuer den User schlicht ab (Log 2026-07-18

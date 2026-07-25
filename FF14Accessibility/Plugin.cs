@@ -60,8 +60,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.47";
-    private const string PluginVersionTag = "Grand-Company-Shop lesbar: Item-Zeilen + Kategorie-Reiter";
+    private const string PluginVersion    = "5.50";
+    private const string PluginVersionTag = "Chat-Kategorie-Tasten auf Alt+Bild-auf/-ab";
 
     public Plugin()
     {
@@ -142,6 +142,42 @@ public sealed class Plugin : IDalamudPlugin
             if (_config.KeyCategory     == "Strg+N")          _config.KeyCategory     = "Strg+BildAb";
             if (_config.KeyCategoryPrev == "Strg+Umschalt+N") _config.KeyCategoryPrev = "Strg+BildAuf";
             _config.Version = 8;
+            PluginInterface.SavePluginConfig(_config);
+        }
+        if (_config.Version < 9)
+        {
+            // V5.48: bare "." now opens the mount notebook in-game (MENU_MOUNT),
+            // colliding with the "read newer message" key. Move the chat-reread
+            // pair onto Umschalt+BildAuf/-Ab (older=up, newer=down). Umschalt+Bild
+            // is free both in-game (game binds only bare PRIOR/NEXT) and plugin-
+            // side. Only migrate untouched defaults so custom bindings survive.
+            if (_config.KeyChatReadOlder == ",") _config.KeyChatReadOlder = "Umschalt+BildAuf";
+            if (_config.KeyChatReadNewer == ".") _config.KeyChatReadNewer = "Umschalt+BildAb";
+            _config.Version = 9;
+            PluginInterface.SavePluginConfig(_config);
+        }
+        if (_config.Version < 10)
+        {
+            // V5.49: Strg+, / Strg+. still triggered the mount notebook - the game
+            // acts on the BASE key "." (MENU_MOUNT) and ignores the Ctrl modifier
+            // (same trap as H/MENU_CRAFT in V5.25, user-confirmed in-game). Move the
+            // category pair onto Strg+Umschalt+BildAuf/-Ab, keeping the whole
+            // Nachlese/nav family on the Bild cluster (bare=objects, Strg=obj-category,
+            // Umschalt=reread, Strg+Umschalt=chat-category). Only untouched defaults.
+            if (_config.KeyChatCatPrev == "Strg+,") _config.KeyChatCatPrev = "Strg+Umschalt+BildAuf";
+            if (_config.KeyChatCatNext == "Strg+.") _config.KeyChatCatNext = "Strg+Umschalt+BildAb";
+            _config.Version = 10;
+            PluginInterface.SavePluginConfig(_config);
+        }
+        if (_config.Version < 11)
+        {
+            // V5.50: user prefers the chat-category pair on Alt+BildAuf/-Ab (frees
+            // the Strg+Umschalt chord). Alt+Bild is unbound in-game (Alt binds only
+            // with letters for chat commands). Only migrate the V10 default so a
+            // custom binding survives.
+            if (_config.KeyChatCatPrev == "Strg+Umschalt+BildAuf") _config.KeyChatCatPrev = "Alt+BildAuf";
+            if (_config.KeyChatCatNext == "Strg+Umschalt+BildAb")  _config.KeyChatCatNext = "Alt+BildAb";
+            _config.Version = 11;
             PluginInterface.SavePluginConfig(_config);
         }
         // Language for all mod announcements (Auto = follow Windows). Must be set
