@@ -3,7 +3,26 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-25, V5.47 OEFFENTLICH RELEASED - Grand-Company-Shop lesbar, IN-GAME BESTAETIGT)
+## STAND JETZT (2026-07-25, V5.51 OEFFENTLICH RELEASED - Gegner-Cast-Filter + Chat-Tasten, NEUE FEATURES IN-GAME UNGETESTET)
+
+>>> V5.51 (2026-07-25): Release geschnitten, um eine VERSIONSDRIFT zu heilen. Problem:
+    Plugin.cs war intern schon auf 5.50/5.51 gebumpt, aber csproj UND repo.json hingen
+    beide noch auf 5.47 -> seit v5.47 kam KEIN Release mehr raus, Nutzer bekamen weiter
+    5.47. Fix: alle drei Versionsstellen (Plugin.cs / csproj / repo.json) auf 5.51
+    synchronisiert und v5.51 released. MERKE: Plugin.cs wird in Feature-Commits gebumpt,
+    csproj/repo.json nur beim Release-Schneiden -> bei mehreren Feature-Bumps zwischen
+    zwei Releases driften die Stellen; vor jedem Release alle drei abgleichen.
+    Inhalt (alles seit v5.47):
+    (1) V5.51 (uncommitted -> jetzt released): Gegner-Cast-Ansage feuert nur noch, wenn
+        der Zauber auf DEN SPIELER gerichtet ist (target.IsCasting && CastTargetObjectId
+        == playerId). Casts auf andere Ziele = Laerm, jetzt gefiltert. Edge-State heisst
+        jetzt _targetWasCastingAtMe. (CombatService.cs). >>> IN-GAME NOCH NICHT GETESTET.
+    (2) V5.48-5.50 (Commit fe5e7f2): Chat-Nachlese-/Kategorie-Tasten auf den Bild-Cluster
+        verlegt (Alt+Bild-auf/-ab), weg von Komma/Punkt (= Reittier-Menue MENU_MOUNT).
+    Installer unveraendert (1.1.0, exe+installer.json vom v5.47-Release wiederverwendet,
+    SHA verifiziert). uia_test.ps1 bleibt untracked (temp UIA-Helfer, nicht im Release).
+
+## VORHERIGER STAND (2026-07-25, V5.47 OEFFENTLICH RELEASED - Grand-Company-Shop lesbar, IN-GAME BESTAETIGT)
 
 >>> V5.47 (2026-07-25): Grand-Company-Staatstaler-Shop (GrandCompanyExchange) komplett
     barrierefrei, in-game bestaetigt. (1) Item-Zeilen „Name, X Staatstaler, Besitz Y"
