@@ -43,12 +43,12 @@ public sealed class GearInfoService
         if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return string.Empty;
         if (row.EquipSlotCategory.RowId == 0) return string.Empty; // not equipment
 
-        var level = $"Stufe {row.LevelEquip}";
+        var level = AccessibilityStrings.GearLevel(row.LevelEquip);
         var (ok, reason) = Wearability(row);
         return ok switch
         {
-            true  => briefWhenWearable ? level : $"{level}, tragbar",
-            false => $"{level}, nicht tragbar, {reason}",
+            true  => briefWhenWearable ? level : AccessibilityStrings.Wearable(level),
+            false => AccessibilityStrings.NotWearable(level, reason),
             _     => level, // player state or sheet column unknown: no claim
         };
     }
@@ -78,7 +78,7 @@ public sealed class GearInfoService
         if (ps == null) return (null, string.Empty);
 
         if (row.LevelEquip > ps->CurrentLevel)
-            return (false, $"ab Stufe {row.LevelEquip}");
+            return (false, AccessibilityStrings.FromLevel(row.LevelEquip));
 
         if (row.ClassJobCategory.ValueNullable is { } cat)
         {
@@ -87,7 +87,7 @@ public sealed class GearInfoService
             if (jobOk == false)
             {
                 var forWho = cat.Name.ExtractText().Trim();
-                return (false, forWho.Length > 0 ? $"nur für {forWho}" : "andere Klasse nötig");
+                return (false, forWho.Length > 0 ? AccessibilityStrings.OnlyForClass(forWho) : AccessibilityStrings.DifferentClassNeeded);
             }
         }
 
@@ -95,7 +95,7 @@ public sealed class GearInfoService
         {
             var raceOk = RaceAllowed(races, ps->Race, ps->Sex);
             if (raceOk == null) return (null, string.Empty);
-            if (raceOk == false) return (false, "nicht für dein Volk");
+            if (raceOk == false) return (false, AccessibilityStrings.NotForYourRace);
         }
 
         return (true, string.Empty);

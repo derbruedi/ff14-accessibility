@@ -1,14 +1,12 @@
-using System.Globalization;
+using Dalamud.Game.ClientState.Objects.Enums;
 
 namespace FF14Accessibility.Services;
 
 public static class AccessibilityStrings
 {
-    private static bool IsGerman =>
-        string.Equals(
-            CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
-            "de",
-            StringComparison.OrdinalIgnoreCase);
+    // Language is driven by the config-backed Loc provider ("/acc lang"),
+    // NOT the OS culture directly. Auto still falls back to the OS culture.
+    private static bool IsGerman => Loc.IsGerman;
 
     public static string TitleScreen => IsGerman ? "Titelbildschirm" : "Title screen";
     public static string MainMenu => IsGerman ? "Hauptmenü" : "Main menu";
@@ -26,6 +24,26 @@ public static class AccessibilityStrings
 
     public static string MenuPosition(string item, int index, int count) =>
         IsGerman ? $"{item}, {index} von {count}" : $"{item}, {index} of {count}";
+
+    // ── Sprachumschaltung (/acc lang) ────────────────────────────────
+    public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
+    public static string LanguageEnglish => IsGerman ? "Englisch" : "English";
+
+    public static string LanguageSet(string language) =>
+        IsGerman ? $"Sprache auf {language} umgestellt." : $"Language set to {language}.";
+
+    public static string LanguageAuto(string language) =>
+        IsGerman
+            ? $"Sprache folgt jetzt Windows: {language}."
+            : $"Language now follows Windows: {language}.";
+
+    public static string LanguageUsage =>
+        IsGerman
+            ? "Sprache wählen mit: /acc lang de, /acc lang en oder /acc lang auto."
+            : "Choose a language with: /acc lang de, /acc lang en or /acc lang auto.";
+
+    public static string UnknownCommand =>
+        IsGerman ? "Unbekannter Befehl. Tippe /acc help für Hilfe." : "Unknown command. Type /acc help for help.";
 
     // ── Keybind-Dump (/acc keys) ─────────────────────────────────────
     public static string KeybindDumpSaved(int boundCount, int conflictCount) =>
@@ -101,6 +119,203 @@ public static class AccessibilityStrings
             ? $"{confirm} oder {cancel}? Links und rechts wechseln, Enter wählt aus."
             : $"{confirm} or {cancel}? Left and right to switch, Enter to select.";
 
+    // ── Navigation: Himmelsrichtungen, relative Richtung, Distanz ─────
+    // Sprachabhängige Kompass-Wörter (0 = Norden .. 7 = Nordwesten). Property,
+    // KEIN static readonly Array: "/acc lang" schaltet zur Laufzeit um, ein
+    // eingefrorenes Array würde die alte Sprache behalten.
+    private static readonly string[] CompassDe =
+        { "Norden", "Nordosten", "Osten", "Südosten", "Süden", "Südwesten", "Westen", "Nordwesten" };
+    private static readonly string[] CompassEn =
+        { "North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest" };
+
+    public static string[] CompassWords => IsGerman ? CompassDe : CompassEn;
+
+    /// <summary>Relative-to-heading direction word for a signed angle in degrees
+    /// (negative = left, 0 = ahead). The spoken steering cue.</summary>
+    public static string RelativeDirection(double relativeAngle) => relativeAngle switch
+    {
+        < -135 => IsGerman ? "hinter links"  : "behind to the left",
+        < -45  => IsGerman ? "links"         : "left",
+        < -15  => IsGerman ? "leicht links"  : "slightly left",
+        <= 15  => IsGerman ? "geradeaus"     : "straight ahead",
+        <= 45  => IsGerman ? "leicht rechts" : "slightly right",
+        <= 135 => IsGerman ? "rechts"        : "right",
+        _      => IsGerman ? "hinter rechts" : "behind to the right",
+    };
+
+    /// <summary>Spoken distance: very close as a phrase, otherwise metres, then
+    /// kilometres. Mirrors the mod's metre convention (not in-game yalms).</summary>
+    public static string FormatDistance(float distance) =>
+        distance < 2f    ? (IsGerman ? "direkt neben dir" : "right next to you") :
+        distance < 100f  ? (IsGerman ? $"{distance:F0} Meter"     : $"{distance:F0} meters") :
+                           (IsGerman ? $"{distance / 1000:F1} Kilometer" : $"{distance / 1000:F1} kilometers");
+
+    // ── Objekt-Browser: Kategorie-Labels & -Ansagen (NavigationService) ─
+    /// <summary>The spoken name of an object-browser category in the active
+    /// language. Identity is the NavCategory key; this is display only.</summary>
+    internal static string CategoryLabel(NavCategory cat) => cat switch
+    {
+        NavCategory.All              => IsGerman ? "Alles"             : "Everything",
+        NavCategory.Npcs             => IsGerman ? "NPCs"              : "NPCs",
+        NavCategory.Enemies          => IsGerman ? "Gegner"            : "Enemies",
+        NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
+        NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
+        NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
+        NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
+        NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
+        NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
+        NavCategory.Waypoints        => IsGerman ? "Wegpunkte"         : "Waypoints",
+        _                            => cat.ToString(),
+    };
+
+    public static string CategoryQuestCount(string label, int here, int away) =>
+        away > 0
+            ? (IsGerman
+                ? $"Kategorie {label}: {here} im Gebiet, {away} in anderen Gebieten."
+                : $"Category {label}: {here} in this area, {away} in other areas.")
+            : (IsGerman
+                ? $"Kategorie {label}: {here} im Gebiet."
+                : $"Category {label}: {here} in this area.");
+
+    public static string CategoryWaypointCount(int count, int exits) =>
+        exits > 0
+            ? (IsGerman
+                ? $"Kategorie Wegpunkte: {count} im Gebiet, davon {exits} Übergänge."
+                : $"Category Waypoints: {count} in this area, {exits} of them exits.")
+            : (IsGerman
+                ? $"Kategorie Wegpunkte: {count} im Gebiet."
+                : $"Category Waypoints: {count} in this area.");
+
+    public static string CategoryAetheryteCount(int count) =>
+        IsGerman
+            ? $"Kategorie Ätheryten: {count} im Gebiet."
+            : $"Category Aetherytes: {count} in this area.";
+
+    public static string CategoryObjectCount(string label, int count) =>
+        IsGerman
+            ? $"Kategorie {label}: {count} in der Nähe."
+            : $"Category {label}: {count} nearby.";
+
+    public static string NoObjectsInRange(string label, float range) =>
+        IsGerman
+            ? $"Keine {label} in {range:F0} Metern."
+            : $"No {label} within {range:F0} meters.";
+
+    // ── Objekt-/Ziel-Ansagen (NavigationService) ─────────────────────
+    /// <summary>Fallback name for an object the game left unnamed.</summary>
+    public static string Unnamed => IsGerman ? "Unbenannt" : "Unnamed";
+
+    /// <summary>Spoken "N of M" position counter for browser cycling (no period).</summary>
+    public static string Counter(int index, int count) =>
+        IsGerman ? $"{index} von {count}" : $"{index} of {count}";
+
+    /// <summary>Trailing warning when the game refused to set the target
+    /// (leading space, appended to a target announcement).</summary>
+    public static string NotTargetedSuffix => IsGerman ? " Achtung, nicht anvisiert." : " Warning, not targeted.";
+
+    public static string TargetPrefix => IsGerman ? "Ziel: " : "Target: ";
+
+    public static string Tracking(string name)      => IsGerman ? $"Verfolge {name}." : $"Tracking {name}.";
+    public static string TargetNotFound(string name)=> IsGerman ? $"Ziel {name} nicht gefunden." : $"Target {name} not found.";
+    public static string TargetReached(string name) => IsGerman ? $"Ziel erreicht: {name}." : $"Target reached: {name}.";
+    public static string TargetDirection(string name, string distance, string direction) =>
+        IsGerman ? $"{name}: {distance}, {direction}." : $"{name}: {distance}, {direction}.";
+
+    public static string TrackingStopped => IsGerman ? "Zielverfolgung beendet." : "Target tracking stopped.";
+    public static string WalkTargetLost  => IsGerman ? "Gehhilfe: Ziel verloren." : "Walk guide: target lost.";
+    public static string NoGameTarget    => IsGerman ? "Kein Ziel anvisiert." : "No target selected.";
+    public static string NoNearbyObjects => IsGerman ? "Keine Objekte in der Nähe." : "No objects nearby.";
+    public static string NearbyList(string joined) => IsGerman ? $"In der Nähe: {joined}" : $"Nearby: {joined}";
+
+    /// <summary>"No target. Select an object with N first." (object browser hint).</summary>
+    public static string NoTargetSelectN => IsGerman
+        ? "Kein Ziel. Erst mit N ein Objekt wählen."
+        : "No target. Select an object with N first.";
+
+    /// <summary>"No target set. Select an object with N first." (direction key).</summary>
+    public static string NoTargetTracked => IsGerman
+        ? "Kein Ziel gesetzt. Erst mit N ein Objekt wählen."
+        : "No target set. Select an object with N first.";
+
+    /// <summary>Type name for an object kind, spoken after the object name.</summary>
+    public static string ObjectKindName(ObjectKind kind) => kind switch
+    {
+        ObjectKind.Pc             => IsGerman ? "Spieler"     : "Player",
+        ObjectKind.BattleNpc      => IsGerman ? "Kampf-NPC"   : "Combat NPC",
+        ObjectKind.EventNpc       => IsGerman ? "NPC"         : "NPC",
+        ObjectKind.Treasure       => IsGerman ? "Schatz"      : "Treasure",
+        ObjectKind.Aetheryte      => IsGerman ? "Ätheryt"     : "Aetheryte",
+        ObjectKind.GatheringPoint => IsGerman ? "Sammelpunkt" : "Gathering node",
+        ObjectKind.EventObj       => IsGerman ? "Objekt"      : "Object",
+        ObjectKind.Companion      => IsGerman ? "Begleiter"   : "Companion",
+        ObjectKind.Retainer       => IsGerman ? "Gehilfe"     : "Retainer",
+        ObjectKind.Mount          => IsGerman ? "Reittier"    : "Mount",
+        _                         => kind.ToString(),
+    };
+
+    /// <summary>Quest hint from a nameplate icon id, or empty for none.</summary>
+    public static string QuestMarkerHint(uint iconId) => iconId switch
+    {
+        0                     => string.Empty,
+        >= 71001 and <= 71006 => IsGerman ? "Quest verfügbar" : "Quest available",
+        >= 71021 and <= 71046 => IsGerman ? "Quest aktiv"     : "Quest active",
+        >= 71000 and <= 71999 => IsGerman ? "Quest"           : "Quest",
+        _                     => string.Empty,
+    };
+
+    /// <summary>Gathering-node description ("Gathering node" / "&lt;type&gt;, level N").
+    /// <paramref name="type"/> is the game-provided node type; may be empty.</summary>
+    public static string GatheringNodeFallback => IsGerman ? "Sammelpunkt" : "Gathering node";
+    public static string GatheringNodeDesc(string type, int level) =>
+        level > 0
+            ? (IsGerman ? $"{type}, Stufe {level}" : $"{type}, level {level}")
+            : type;
+
+    // ── Quest-Ziel-Ansage (zusammengesetzt) ──────────────────────────
+    public static string NoAcceptableQuests => IsGerman ? "Keine annehmbaren Quests in der Nähe." : "No available quests nearby.";
+    public static string NoQuestGoals       => IsGerman ? "Keine Quest-Ziele. Erst eine Quest annehmen." : "No quest goals. Accept a quest first.";
+    public static string StoryPrefix        => IsGerman ? "Story: " : "Story: ";
+    public static string LevelPrefix(int level) => IsGerman ? $"Stufe {level}, " : $"Level {level}, ";
+    public static string InArea(string zone)    => IsGerman ? $"im Gebiet {zone}." : $"in the area {zone}.";
+    public static string InAnotherArea       => IsGerman ? "in einem anderen Gebiet." : "in another area.";
+    public static string NumpadWalksToTransition => IsGerman ? " Nummernblock 3 läuft zum Übergang." : " Numpad 3 walks to the transition.";
+
+    /// <summary>The "get there via &lt;transition&gt;" clause of a cross-zone quest
+    /// announcement, including the count of remaining transitions.</summary>
+    public static string RouteViaHop(string hopName, string distance, string direction, int extraHops) =>
+        IsGerman
+            ? $" Dorthin über {hopName}, {distance}, {direction}" +
+              (extraHops > 0 ? $", danach noch {extraHops} weitere Übergänge." : ".")
+            : $" Get there via {hopName}, {distance}, {direction}" +
+              (extraHops > 0 ? $", then {extraHops} more transitions." : ".");
+
+    // ── Wegpunkte / Gehhilfe / Routen-Ansagen ────────────────────────
+    public static string NoAetherytesFound => IsGerman ? "Keine Ätheryten in diesem Gebiet gefunden." : "No aetherytes found in this area.";
+    public static string NoWaypointsFound  => IsGerman ? "Keine Wegpunkte in diesem Gebiet gefunden." : "No waypoints found in this area.";
+    public static string NoNavmeshStraightLine => IsGerman ? "Kein Wegenetz, führe in Luftlinie." : "No navmesh, guiding in a straight line.";
+    public static string ComputingRoute    => IsGerman ? "Weg wird berechnet." : "Computing route.";
+    public static string NewRoute(string direction) => IsGerman ? $"Neuer Weg: {direction}." : $"New route: {direction}.";
+    public static string ComputingRouteTo(string name) => IsGerman ? $"Berechne Weg zu {name}." : $"Computing route to {name}.";
+    public static string NoNavmeshPlugin   => IsGerman
+        ? "Kein Wegenetz. Das Plugin vnavmesh fehlt oder lädt noch."
+        : "No navmesh. The vnavmesh plugin is missing or still loading.";
+    public static string NewFlagMarker(string distance, string compass) =>
+        IsGerman ? $"Neue Markierung, {distance}, {compass}." : $"New flag, {distance}, {compass}.";
+
+    /// <summary>", up"/", down" vertical hint appended to a guide step; "" when level.</summary>
+    public static string VerticalUp   => IsGerman ? ", aufwärts" : ", up";
+    public static string VerticalDown => IsGerman ? ", abwärts"  : ", down";
+
+    // ── Routen-Vorschau (RouteService.DescribeRoute) ─────────────────
+    public static string RoutePracticallyThere(string name) =>
+        IsGerman ? $"Weg zu {name}: praktisch am Ziel." : $"Route to {name}: practically there.";
+    public static string RouteHeader(string name, float total) =>
+        IsGerman ? $"Weg zu {name}, {total:F0} Meter: " : $"Route to {name}, {total:F0} meters: ";
+    public static string RouteSegment(float distance, string compass) =>
+        IsGerman ? $"{distance:F0} Meter nach {compass}" : $"{distance:F0} meters {compass}";
+    public static string RouteThen => IsGerman ? ", dann " : ", then ";
+    public static string RouteAndOn => IsGerman ? ", dann weiter" : ", then onward";
+
     // ── Datenzentrums-Auswahl (TitleDCWorldMap) ──────────────────────
     public static string DCSelected(string dc, IReadOnlyCollection<string> worlds) =>
         worlds.Count > 0
@@ -108,4 +323,255 @@ public static class AccessibilityStrings
                 ? $"{dc} ausgewählt. Welten: {string.Join(", ", worlds)}. Zum Bestätigen den Ok-Knopf drücken."
                 : $"{dc} selected. Worlds: {string.Join(", ", worlds)}. Press the Ok button to confirm.")
             : (IsGerman ? $"{dc} ausgewählt." : $"{dc} selected.");
+
+    // ════════════════════════════════════════════════════════════════
+    //  UIReaderService - Fenster-, Listen- und Menue-Ansagen
+    //  NOTE: Only the mod's OWN announcement frames are translated here.
+    //  Strings that MATCH against the game UI (button labels like "Schließen",
+    //  "Bestätigen", journal headers) stay in the game-client language and are
+    //  handled by the separate client-language-robustness work, NOT via /acc lang.
+    // ════════════════════════════════════════════════════════════════
+
+    // ── Listen / Menue (Social, generische Auswahl) ──────────────────
+    /// <summary>List summary: "&lt;selection&gt;, N entries" or "Menu, N entries"
+    /// when nothing is selected.</summary>
+    public static string ListSummary(string selection, int count) =>
+        selection.Length > 0
+            ? (IsGerman ? $"{selection}, {count} Einträge" : $"{selection}, {count} entries")
+            : (IsGerman ? $"Menü, {count} Einträge"        : $"Menu, {count} entries");
+
+    public static string NoEntries       => IsGerman ? "Keine Einträge" : "No entries";
+    public static string NoEntriesSuffix => IsGerman ? ", keine Einträge" : ", no entries";
+
+    /// <summary>", N entries" plus optional ": &lt;selection&gt;", appended to a tab line.</summary>
+    public static string ListEntriesSuffix(int count, string selection) =>
+        IsGerman
+            ? $", {count} Einträge{(selection.Length > 0 ? $": {selection}" : string.Empty)}"
+            : $", {count} entries{(selection.Length > 0 ? $": {selection}" : string.Empty)}";
+
+    public static string SocialTabHeader(string label, int index, int total) =>
+        IsGerman
+            ? $"{label}, Registerkarte {index} von {total}"
+            : $"{label}, tab {index} of {total}";
+
+    public static string OnlineWindowPrefix(string rest) =>
+        IsGerman ? $"Online-Fenster. {rest}" : $"Online window. {rest}";
+
+    // ── Text-Eingabe-Echo (beim Tippen) ──────────────────────────────
+    public static string InputEmpty => IsGerman ? "leer" : "empty";
+    public static string Deleted(string removed) => IsGerman ? $"{removed} gelöscht" : $"{removed} deleted";
+
+    // ── Benachrichtigung (ActivateNotification) ──────────────────────
+    public static string NoOpenNotification => IsGerman ? "Keine offene Benachrichtigung." : "No open notification.";
+    public static string NotificationNotResponding => IsGerman ? "Benachrichtigung reagiert nicht." : "Notification not responding.";
+
+    // ── ContentsTutorial-Popup (Freischaltungen) ─────────────────────
+    // NOTE: The actual close-button match ("Schließen") lives in the service and
+    // stays in the game-client language (Teil 2), these are the spoken frames.
+    public static string PageOf(int current, int total) =>
+        IsGerman ? $" Seite {current} von {total}." : $" Page {current} of {total}.";
+    public static string EnterCloses    => IsGerman ? " Enter schließt." : " Press Enter to close.";
+    public static string EnterPagesOn   => IsGerman ? " Enter blättert weiter." : " Press Enter to continue.";
+    public static string Closed         => IsGerman ? "Geschlossen." : "Closed.";
+    public static string CloseButtonNotResponding => IsGerman ? "Schließen-Knopf reagiert nicht." : "Close button not responding.";
+    public static string NextButtonNotResponding  => IsGerman ? "Weiter-Knopf reagiert nicht." : "Next button not responding.";
+
+    // ── Bestiarium (MonsterNote) ─────────────────────────────────────
+    public static string BestiaryNotOpen   => IsGerman ? "Bestiarium ist nicht geöffnet." : "The bestiary is not open.";
+    public static string BestiaryListNotFound => IsGerman ? "Bestiarium-Liste nicht gefunden." : "Bestiary list not found.";
+    public static string NoMonstersInList  => IsGerman ? "Keine Monster in dieser Liste." : "No monsters in this list.";
+    public static string LivesIn(string habitat) => IsGerman ? $", lebt in {habitat}" : $", lives in {habitat}";
+    public static string BestiaryOverview(int count, string rows) =>
+        IsGerman ? $"Bestiarium, {count} Monster. {rows}" : $"Bestiary, {count} monsters. {rows}";
+
+    // ── Gegenstand abliefern (Request / delivery) ────────────────────
+    // "Hand Over" is the EN client's button; verify against an EN dump in Teil 2.
+    public static string DeliveryOpen => IsGerman
+        ? "Gegenstand abliefern. Drücke Strg F3 für die passenden Gegenstände, dann auswählen und Übergeben."
+        : "Hand over item. Press Ctrl F3 for the matching items, then select and Hand Over.";
+    public static string DeliveryItems(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => IsGerman ? "Keine passenden Gegenstände im Beutel gefunden." : "No matching items found in your bag.",
+        1 => IsGerman
+                ? $"Ein passender Gegenstand: {items[0]}. Auswählen und dann Übergeben drücken."
+                : $"One matching item: {items[0]}. Select it, then press Hand Over.",
+        _ => IsGerman
+                ? $"{items.Count} passende Gegenstände: {string.Join(", ", items)}. Auswählen und dann Übergeben drücken."
+                : $"{items.Count} matching items: {string.Join(", ", items)}. Select one, then press Hand Over.",
+    };
+
+    // ── Zufaelliges Aussehen (CharaMake RandomLook) ──────────────────
+    public static string NoAppearanceWindow => IsGerman
+        ? "Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung."
+        : "No appearance window open. Only during the Appearance step of character creation.";
+    public static string RandomAppearanceNotFound => IsGerman ? "Knopf Zufälliges Aussehen nicht gefunden." : "Random appearance button not found.";
+    public static string RandomAppearanceNotResponding => IsGerman ? "Knopf Zufälliges Aussehen reagiert nicht." : "Random appearance button not responding.";
+    public static string RandomAppearancePressed => IsGerman ? "Zufälliges Aussehen gedrückt." : "Random appearance pressed.";
+
+    // ── Seitenwechsel / Reiter (generisch) ───────────────────────────
+    public static string TabPressedNoPageChange => IsGerman ? "Reiter gedrückt, aber kein Seitenwechsel erkannt." : "Tab pressed, but no page change detected.";
+    public static string TabNotResponding => IsGerman ? "Reiter reagiert nicht." : "Tab not responding.";
+
+    // ── Datenzentrum / Gamepad / Uebung / Menue ──────────────────────
+    public static string ChooseDataCenter => IsGerman ? "Datenzentrum wählen." : "Choose a data center.";
+    public static string GamepadCalibration => IsGerman ? "Gamepad-Kalibrierung. Escape zum Schließen." : "Gamepad calibration. Press Escape to close.";
+    public static string ExerciseStarted => IsGerman ? "Übung gestartet." : "Exercise started.";
+    public static string BeginButtonNotResponding => IsGerman ? "Beginnen-Knopf reagiert nicht." : "Begin button not responding.";
+    public static string NoActiveMenu => IsGerman ? "Kein aktives Menü." : "No active menu.";
+
+    // ── Dump (/acc dump) ─────────────────────────────────────────────
+    public static string NoActiveAddonToDump => IsGerman ? "Kein aktives Addon für Dump gefunden." : "No active addon found to dump.";
+    public static string NoAddonName => IsGerman ? "Kein Addon-Name. Beispiel: /acc dump TitleDCWorldMap" : "No addon name. Example: /acc dump TitleDCWorldMap";
+    public static string DumpFileError => IsGerman ? "Dump nur im Dalamud-Log. Datei-Fehler." : "Dump only in the Dalamud log. File error.";
+    public static string UnknownWindowDumped(int count) =>
+        IsGerman
+            ? $"Kein bekanntes Fenster. {count} sichtbare Fenster gedumpt, Liste im Log."
+            : $"No known window. Dumped {count} visible windows, list in the log.";
+
+    // ── Zusammengesetzte Ansagen (UIReader Etappe 2) ─────────────────
+    /// <summary>" item: " / " items: " count label for a gathered/read item list.</summary>
+    public static string ItemsCountLabel(int count) =>
+        IsGerman ? (count == 1 ? " Gegenstand: " : " Gegenstände: ")
+                 : (count == 1 ? " item: " : " items: ");
+
+    /// <summary>The word "Level" / "Stufe" - used both standalone and to expand
+    /// the game's abbreviated level label.</summary>
+    public static string LevelWord => IsGerman ? "Stufe" : "Level";
+    public static string LevelSuffix(int level) => IsGerman ? $", Stufe {level}" : $", level {level}";
+    public static string NameWithLevel(string name, int level) =>
+        IsGerman ? $"{name}, Stufe {level}" : $"{name}, level {level}";
+    public static string AmountLabel(string yield) => IsGerman ? $"Menge {yield}" : $"Amount {yield}";
+    public static string UnknownItem(uint iconId) =>
+        IsGerman ? $"Unbekannter Gegenstand, Icon {iconId}" : $"Unknown item, icon {iconId}";
+
+    // ── Konfig-Steuerelemente (Slider / Dropdown / Eingabefeld) ──────
+    public static string SliderDesc(string label, string value, int min, int max) =>
+        IsGerman
+            ? $"{label}, Regler, {value}, von {min} bis {max}."
+            : $"{label}, slider, {value}, from {min} to {max}.";
+    public static string DropdownDesc(string label, string value) =>
+        IsGerman ? $"{label}, Auswahlliste, {value}." : $"{label}, dropdown, {value}.";
+    public static string InputFieldValue(string typed) =>
+        typed.Length > 0
+            ? (IsGerman ? $"Eingabefeld: {typed}" : $"Input field: {typed}")
+            : (IsGerman ? "Eingabefeld, leer"     : "Input field, empty");
+
+    // ── Belohnungs-Zeile (JournalResult) ─────────────────────────────
+    // Currency type is only a UI image, so the mod labels amounts by position.
+    public static string[] RewardCurrencyLabels =>
+        IsGerman ? new[] { "Erfahrung", "Gil" } : new[] { "EXP", "Gil" };
+    public static string MoreReward => IsGerman ? "weitere Vergütung" : "further reward";
+
+    // ── Keybind-Zeile (Config) ───────────────────────────────────────
+    public static string KeyBindingLine(string label, IReadOnlyList<string> keys) =>
+        keys.Count > 0
+            ? (IsGerman ? $"{label}, Taste {string.Join(", ", keys)}" : $"{label}, key {string.Join(", ", keys)}")
+            : (IsGerman ? $"{label}, keine Taste" : $"{label}, no key");
+
+    // ── Anfaenger-Arena (BeginnersMansionProblem) ────────────────────
+    // "Beginner's Arena" is the EN content name; verify against an EN dump (Teil 2).
+    public static string ArenaTitle => IsGerman ? "Anfänger-Arena" : "Beginner's Arena";
+    public static string ArenaExercise(string exercise) =>
+        IsGerman ? $". Übung: {exercise}" : $". Exercise: {exercise}";
+    public static string ArenaEnterBegins => IsGerman ? ". Enter beginnt." : ". Press Enter to begin.";
+
+    // ── Benachrichtigung aktivieren ──────────────────────────────────
+    public static string Activating(string text) => IsGerman ? $"Aktiviere: {text}" : $"Activating: {text}";
+    public static string NotificationActivated => IsGerman ? "Benachrichtigung aktiviert" : "Notification activated";
+
+    // ════════════════════════════════════════════════════════════════
+    //  CombatService / VitalsService - Kampf, Vitalwerte, Level
+    // ════════════════════════════════════════════════════════════════
+    public static string NotLoggedIn => IsGerman ? "Nicht eingeloggt." : "Not logged in.";
+    public static string CombatStart => IsGerman ? "Kampf." : "Combat.";
+    public static string CombatEnd => IsGerman ? "Kampf vorbei." : "Combat over.";
+
+    // "X of Y" building blocks for HP/MP/GP (no trailing punctuation).
+    public static string HpValue(uint cur, uint max) => IsGerman ? $"HP {cur} von {max}" : $"HP {cur} of {max}";
+    public static string MpValue(uint cur, uint max) => IsGerman ? $"MP {cur} von {max}" : $"MP {cur} of {max}";
+
+    public static string HpSentence(uint cur, uint max) => IsGerman ? $"HP: {cur} von {max}." : $"HP: {cur} of {max}.";
+    public static string TargetHpSentence(uint cur, uint max) => IsGerman ? $"Ziel HP: {cur} von {max}." : $"Target HP: {cur} of {max}.";
+
+    /// <summary>", HP X of Y" fragment appended to a target announcement.</summary>
+    public static string TargetHpFragment(uint cur, uint max) =>
+        IsGerman ? $", HP {cur} von {max}" : $", HP {cur} of {max}";
+
+    /// <summary>Full HP/MP status: HP always, MP only when the job has mana.</summary>
+    public static string VitalStatus(uint hp, uint hpMax, uint mp, uint mpMax, bool hasMp) =>
+        hasMp
+            ? (IsGerman ? $"HP {hp} von {hpMax}, MP {mp} von {mpMax}." : $"HP {hp} of {hpMax}, MP {mp} of {mpMax}.")
+            : (IsGerman ? $"HP {hp} von {hpMax}." : $"HP {hp} of {hpMax}.");
+
+    /// <summary>" &lt;name&gt;, HP X of Y." target clause appended to the status readout.</summary>
+    public static string TargetStatusClause(string name, uint cur, uint max) =>
+        IsGerman ? $" {name}, HP {cur} von {max}." : $" {name}, HP {cur} of {max}.";
+
+    public static string TargetFallbackName => IsGerman ? "Ziel" : "Target";
+
+    // GP (Sammelpunkte) - the DE client says "SP", the EN client "GP".
+    public static string NoGatheringPoints => IsGerman ? "Keine Sammelpunkte. SP gibt es nur als Sammler." : "No gathering points. GP only exists for gatherers.";
+    public static string GpValue(uint cur, uint max) => IsGerman ? $"SP {cur} von {max}." : $"GP {cur} of {max}.";
+
+    public static string EnemyCasts(string action) => IsGerman ? $"Gegner wirkt {action}." : $"Enemy casts {action}.";
+    public static string AnAbility => IsGerman ? "eine Fähigkeit" : "an ability";
+
+    // ── Level / Erfahrung ────────────────────────────────────────────
+    public static string LevelReached(int level) => IsGerman ? $"Stufe {level} erreicht." : $"Reached level {level}.";
+    public static string LevelNotAvailable => IsGerman ? "Stufe nicht verfügbar." : "Level not available.";
+    public static string LevelMax(int level) => IsGerman ? $"Stufe {level}, Maximalstufe erreicht." : $"Level {level}, maximum level reached.";
+    public static string LevelExpLeft(int level, int left) =>
+        IsGerman
+            ? $"Stufe {level}. Noch {left} Erfahrungspunkte bis zur nächsten Stufe."
+            : $"Level {level}. {left} experience points to the next level.";
+
+    // ════════════════════════════════════════════════════════════════
+    //  EquipmentService - Ausruestung
+    // ════════════════════════════════════════════════════════════════
+    public static string HighQuality => IsGerman ? " Hoch-Qualität" : " high quality";
+    public static string NoEquipmentWorn => IsGerman ? "Keine Ausrüstung angelegt." : "No equipment worn.";
+    public static string SlotsFree(int empty) => IsGerman ? $" {empty} Plätze frei." : $" {empty} slots free.";
+    public static string EquipmentList(string parts, string emptyNote) =>
+        IsGerman ? $"Ausrüstung: {parts}.{emptyNote}" : $"Equipment: {parts}.{emptyNote}";
+    public static string ItemFallback(uint id) => IsGerman ? $"Gegenstand {id}" : $"Item {id}";
+
+    public static string EquipChangeInProgress => IsGerman ? "Ausrüstungswechsel läuft schon." : "Equipment change already in progress.";
+    public static string EquipModuleUnavailable => IsGerman ? "Ausrüstungsmodul nicht verfügbar." : "Equipment module not available.";
+    public static string ApplyingRecommendedGear => IsGerman ? "Lege empfohlene Ausrüstung an." : "Applying recommended equipment.";
+    public static string EquipChangeFailed => IsGerman ? "Ausrüstungswechsel fehlgeschlagen." : "Equipment change failed.";
+    public static string EquipChangeDidntWork => IsGerman ? "Ausrüstungswechsel hat nicht geklappt." : "Equipment change did not work.";
+    public static string EquipResult(int changed) =>
+        changed > 0
+            ? (IsGerman ? $"Empfohlene Ausrüstung angelegt, {changed} Teile gewechselt." : $"Recommended equipment applied, {changed} pieces changed.")
+            : (IsGerman
+                ? "Ausrüstung unverändert. Entweder schon optimal, oder Wechsel gerade nicht möglich."
+                : "Equipment unchanged. Either already optimal, or a change is not possible right now.");
+
+    /// <summary>Spoken equipment-slot label (mod wording, not the game's).</summary>
+    public static string SlotEquipment  => IsGerman ? "Ausrüstung"   : "Equipment";
+    public static string SlotWeapon     => IsGerman ? "Waffe"        : "Weapon";
+    public static string SlotOffHand    => IsGerman ? "Nebenhand"    : "Off hand";
+    public static string SlotHead       => IsGerman ? "Kopf"         : "Head";
+    public static string SlotBody       => IsGerman ? "Rumpf"        : "Body";
+    public static string SlotHands      => IsGerman ? "Hände"        : "Hands";
+    public static string SlotWaist      => IsGerman ? "Gürtel"       : "Waist";
+    public static string SlotLegs       => IsGerman ? "Beine"        : "Legs";
+    public static string SlotFeet       => IsGerman ? "Füße"         : "Feet";
+    public static string SlotEars       => IsGerman ? "Ohren"        : "Ears";
+    public static string SlotNeck       => IsGerman ? "Hals"         : "Neck";
+    public static string SlotWrists     => IsGerman ? "Handgelenke"  : "Wrists";
+    public static string SlotRing       => IsGerman ? "Ring"         : "Ring";
+    public static string SlotSoulCrystal=> IsGerman ? "Jobkristall"  : "Soul Crystal";
+
+    // ════════════════════════════════════════════════════════════════
+    //  GearInfoService - Stufe & Tragbarkeit
+    // ════════════════════════════════════════════════════════════════
+    public static string GearLevel(uint level) => IsGerman ? $"Stufe {level}" : $"Level {level}";
+    public static string Wearable(string level) => IsGerman ? $"{level}, tragbar" : $"{level}, wearable";
+    public static string NotWearable(string level, string reason) =>
+        IsGerman ? $"{level}, nicht tragbar, {reason}" : $"{level}, not wearable, {reason}";
+    public static string FromLevel(uint level) => IsGerman ? $"ab Stufe {level}" : $"from level {level}";
+    public static string OnlyForClass(string forWho) => IsGerman ? $"nur für {forWho}" : $"only for {forWho}";
+    public static string DifferentClassNeeded => IsGerman ? "andere Klasse nötig" : "different class required";
+    public static string NotForYourRace => IsGerman ? "nicht für dein Volk" : "not for your race";
 }

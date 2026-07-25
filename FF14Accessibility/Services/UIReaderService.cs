@@ -120,6 +120,7 @@ public sealed class UIReaderService : IDisposable
         "TitleDCWorldMapBg",  // nur Hintergrund, nichts anzusagen
         "Gathering",          // Sammel-Fenster: eigener Handler (OnGatheringUpdate)
         "BeginnersMansionProblem", // Anfänger-Arena: eigener Handler (OnBeginnersArenaUpdate)
+        "Bank",               // Gil-Depot beim Gehilfen: eigener Handler (OnBankUpdate)
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -159,6 +160,13 @@ public sealed class UIReaderService : IDisposable
         // (OnContentsFinderConfirmUpdate, eigener Listener) sagt ihn alle 10 s
         // an. Oeffnungs-Ansage (Dungeon-Name) bleibt (kommt aus OnAnyAddonOpen).
         "ContentsFinderConfirm",
+        // Gil-Depot (Gil beim Gehilfen anvertrauen/entnehmen): der generische
+        // Scanner las beim Oeffnen alle Texte als eine Wortkette (Labels von
+        // Werten getrennt) und gab beim Tippen des Betrags kein Echo. Der eigene
+        // Leser (OnBankUpdate) baut einen sauberen Satz. Der globale Fokus-Leser
+        // (UpdateGlobalFocus, laeuft unabhaengig) sagt weiter die Knoepfe
+        // (Ausfuehren/Abbrechen) beim Durchtabben an.
+        "Bank",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -309,6 +317,12 @@ public sealed class UIReaderService : IDisposable
 
         // -- Dungeon-Beitritts-Anfrage: Countdown alle 10 s ansagen -----
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
+
+        // -- Bank (Gil-Depot beim Gehilfen: anvertrauen / entnehmen) ----
+        // Values are set at setup, but the amount changes as the user types, so
+        // read on PostUpdate with dedup (like Talk/Gathering). Suppressed in the
+        // generic path via SpecialSetup/UpdateAddons.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
 
         // -- SelectYesno ------------------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
@@ -476,9 +490,7 @@ public sealed class UIReaderService : IDisposable
             if (IsSocialChildDuringGrace(name, addon)) return;
 
             var sel   = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
-            var msg   = sel.Length > 0
-                ? $"{sel}, {count} Einträge"
-                : $"Menü, {count} Einträge";
+            var msg   = AccessibilityStrings.ListSummary(sel, count);
             // Queue behind the window title instead of cutting it off
             if (string.IsNullOrWhiteSpace(title)) _tolk.SpeakInterrupt(msg);
             else                                  _tolk.Speak(msg);
@@ -597,6 +609,8 @@ public sealed class UIReaderService : IDisposable
 
     // Fallback labels, used only when the game's own button text is empty.
     // Order MUST match the radio-button order in AddonSocial.
+    // NOTE: these mirror the game-client tab names, so they stay in the client
+    // language and belong to the client-robustness work (Teil 2), not /acc lang.
     private static readonly string[] SocialTabFallback =
         ["Gruppenmitglieder", "Freundesliste", "Schwarze Liste", "Spielersuche"];
 
@@ -644,8 +658,8 @@ public sealed class UIReaderService : IDisposable
         var fromNode = !string.IsNullOrWhiteSpace(label);
         if (!fromNode) label = SocialTabFallback[active];
 
-        var text = $"{label}, Registerkarte {active + 1} von {tabs.Length}";
-        if (first) text = $"Online-Fenster. {text}";
+        var text = AccessibilityStrings.SocialTabHeader(label, active + 1, tabs.Length);
+        if (first) text = AccessibilityStrings.OnlineWindowPrefix(text);
 
         // The content does NOT exist yet at this moment: the game attaches the
         // tab's own window a moment later and fills its list after that (log
@@ -692,7 +706,7 @@ public sealed class UIReaderService : IDisposable
             if ((DateTime.UtcNow - since).TotalSeconds < EmptyListWaitS) return;
             _emptyListSince.Remove(name);
             _log.Info($"[Accessibility] {name}: Liste bleibt leer.");
-            if (!IsSocialChildDuringGrace(name, addon)) _tolk.Speak("Keine Einträge");
+            if (!IsSocialChildDuringGrace(name, addon)) _tolk.Speak(AccessibilityStrings.NoEntries);
             return;
         }
 
@@ -700,7 +714,7 @@ public sealed class UIReaderService : IDisposable
         var sel = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
         _log.Info($"[Accessibility] {name}: Liste nachtraeglich gefuellt ({count} Eintraege)");
         if (IsSocialChildDuringGrace(name, addon)) return;
-        _tolk.Speak(sel.Length > 0 ? $"{sel}, {count} Einträge" : $"Menü, {count} Einträge");
+        _tolk.Speak(AccessibilityStrings.ListSummary(sel, count));
     }
 
     private unsafe void FlushPendingSocialTab(AtkUnitBase* addon)
@@ -725,13 +739,13 @@ public sealed class UIReaderService : IDisposable
         if (count > 0)
         {
             var sel = ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
-            text += $", {count} Einträge{(sel.Length > 0 ? $": {sel}" : string.Empty)}";
+            text += AccessibilityStrings.ListEntriesSuffix(count, sel);
         }
         else if (list != null)
         {
             // List exists and is genuinely empty (no friends, no party) - that
             // is an answer to "what can I do here", not a failure.
-            text += ", keine Einträge";
+            text += AccessibilityStrings.NoEntriesSuffix;
         }
 
         _log.Info($"[Social] Ansage: '{text}' (Liste " +
@@ -853,7 +867,7 @@ public sealed class UIReaderService : IDisposable
                 if (count <= 0) { _emptyListSince[name] = DateTime.UtcNow; return; }
                 if (IsSocialChildDuringGrace(name, currentAddon)) return;
                 var sel = ReadListItemText(lateList, Math.Max(0, lateList->SelectedItemIndex));
-                _tolk.Speak(sel.Length > 0 ? $"{sel}, {count} Einträge" : $"Menü, {count} Einträge");
+                _tolk.Speak(AccessibilityStrings.ListSummary(sel, count));
                 return;
             }
             ScanAddonTexts(name, currentAddon, isInit: false);
@@ -1140,7 +1154,7 @@ public sealed class UIReaderService : IDisposable
         var sb     = new StringBuilder();
         var header = BuildGatheringHeader(addon);
         if (header.Length > 0) sb.Append(header).Append(". ");
-        sb.Append(items.Count).Append(items.Count == 1 ? " Gegenstand: " : " Gegenstände: ");
+        sb.Append(items.Count).Append(AccessibilityStrings.ItemsCountLabel(items.Count));
         for (var i = 0; i < items.Count; i++)
             sb.Append(i + 1).Append(". ").Append(items[i]).Append(". ");
 
@@ -1185,12 +1199,14 @@ public sealed class UIReaderService : IDisposable
         // dump: a higher value tracks a lower gather chance) that St. = Stufe,
         // the item's gathering level. Only the abbreviation is expanded - the
         // number stays verbatim, so a wrong label never hides the real value.
+        // NOTE: "St." is the DE client's level abbreviation; matching it is
+        // client-language-specific (Teil 2). The target word follows /acc lang.
         var level = ReadVisibleChildText(comp, 21);
-        if (level.Length > 0) parts.Add(level.Replace("St.", "Stufe"));
+        if (level.Length > 0) parts.Add(level.Replace("St.", AccessibilityStrings.LevelWord));
 
         // Yield only when it is more than one - "Menge 1" on every item is noise.
         var yield = ReadGatheringYield(comp);
-        if (yield.Length > 0 && yield != "1") parts.Add($"Menge {yield}");
+        if (yield.Length > 0 && yield != "1") parts.Add(AccessibilityStrings.AmountLabel(yield));
 
         var chance = ReadVisibleChildText(comp, 10);
         if (chance.Length > 0) parts.Add($"Chance {chance} Prozent");
@@ -1961,7 +1977,7 @@ public sealed class UIReaderService : IDisposable
         var name = FindOpenNotification(out var addon);
         if (name.Length == 0)
         {
-            _tolk.SpeakInterrupt("Keine offene Benachrichtigung.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoOpenNotification);
             _log.Info("[Notify] Aktivierung angefordert, aber kein Benachrichtigungsfenster sichtbar.");
             return;
         }
@@ -2003,11 +2019,11 @@ public sealed class UIReaderService : IDisposable
 
         if (best == null || best->Listener == null)
         {
-            _tolk.SpeakInterrupt("Benachrichtigung reagiert nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotificationNotResponding);
             return;
         }
 
-        _tolk.SpeakInterrupt(bestText.Length > 0 ? $"Aktiviere: {bestText}" : "Benachrichtigung aktiviert");
+        _tolk.SpeakInterrupt(bestText.Length > 0 ? AccessibilityStrings.Activating(bestText) : AccessibilityStrings.NotificationActivated);
 
         var data = default(AtkEventData);
         best->Listener->ReceiveEvent(best->State.EventType, (int)best->Param, best, &data);
@@ -2043,7 +2059,10 @@ public sealed class UIReaderService : IDisposable
         foreach (var c in text)
         {
             if (char.IsDigit(c)) { hasDigit = true; continue; }
-            if (c is ' ' or '.' or ',' or '/' or '%') continue;
+            // ':' laesst Zeit-/Timer-Formate ("87:54", "0:44", "1:23:45") als
+            // Zaehler durchgehen - ein sich sekuendlich aenderndes M:SS ist ein
+            // laufender Timer, den der generische Scanner nie vorlesen soll.
+            if (c is ' ' or '.' or ',' or '/' or '%' or ':') continue;
             return false;
         }
         return hasDigit;
@@ -2277,7 +2296,7 @@ public sealed class UIReaderService : IDisposable
         if (string.IsNullOrWhiteSpace(name)) return string.Empty;
 
         var sb = new StringBuilder(name);
-        if (row.ClassJobLevel > 0) sb.Append($", Stufe {row.ClassJobLevel}");
+        if (row.ClassJobLevel > 0) sb.Append(AccessibilityStrings.LevelSuffix(row.ClassJobLevel));
 
         if (_data.GetExcelSheet<LuminaActionTransient>().TryGetRow(id, out var trans))
         {
@@ -2293,7 +2312,7 @@ public sealed class UIReaderService : IDisposable
         if (!_data.GetExcelSheet<LuminaTrait>().TryGetRow(id, out var row)) return string.Empty;
         var name = row.Name.ExtractText().Trim();
         if (string.IsNullOrWhiteSpace(name)) return string.Empty;
-        return row.Level > 0 ? $"{name}, Stufe {row.Level}" : name;
+        return row.Level > 0 ? AccessibilityStrings.NameWithLevel(name, row.Level) : name;
     }
 
     /// <summary>Collapses line breaks and runs of spaces in a tooltip
@@ -2429,7 +2448,7 @@ public sealed class UIReaderService : IDisposable
 
     private void OnRequestOpen(AddonEvent type, AddonArgs args)
     {
-        _tolk.SpeakInterrupt("Gegenstand abliefern. Drücke Strg F3 für die passenden Gegenstände, dann auswählen und Übergeben.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.DeliveryOpen);
     }
 
     /// <summary>
@@ -2469,19 +2488,13 @@ public sealed class UIReaderService : IDisposable
                 var iconId = icon->IconId;
                 if (iconId == 0) continue; // empty slot
 
-                var name = iconNames.TryGetValue(iconId, out var n) ? n : $"Unbekannter Gegenstand, Icon {iconId}";
+                var name = iconNames.TryGetValue(iconId, out var n) ? n : AccessibilityStrings.UnknownItem(iconId);
                 _log.Info($"[HandIn] Slot node={node->NodeId} iconId={iconId} name='{name}'");
                 items.Add(name);
             }
         }
 
-        var msg = items.Count switch
-        {
-            0 => "Keine passenden Gegenstände im Beutel gefunden.",
-            1 => $"Ein passender Gegenstand: {items[0]}. Auswählen und dann Übergeben drücken.",
-            _ => $"{items.Count} passende Gegenstände: {string.Join(", ", items)}. Auswählen und dann Übergeben drücken.",
-        };
-        _tolk.SpeakInterrupt(msg);
+        _tolk.SpeakInterrupt(AccessibilityStrings.DeliveryItems(items));
     }
 
     // -- Titelbildschirm ---------------------------------------------
@@ -2783,7 +2796,7 @@ public sealed class UIReaderService : IDisposable
             _csExpectedTabIdx = -1;
             _log.Info("[CS] Reiter-Aktivierung ohne erkannten Seitenwechsel (>1,5 s)");
             LogTabMarkerProbe(addon);
-            _tolk.SpeakInterrupt("Reiter gedrückt, aber kein Seitenwechsel erkannt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.TabPressedNoPageChange);
         }
 
         // [CS-OPT] Flags-Änderungen an Option-Nodes erkennen (Diag2)
@@ -2885,8 +2898,9 @@ public sealed class UIReaderService : IDisposable
                 // AtkComponentSlider.Value/MinValue/MaxValue (ilspycmd-verified 2026-07-16)
                 var slider = (AtkComponentSlider*)comp;
                 _csFocusValue = slider->Value.ToString();
-                desc = $"{NearestPrecedingLabel(addon, _csFocusTopIdx)}, Regler, {_csFocusValue}, " +
-                       $"von {slider->MinValue} bis {slider->MaxValue}.";
+                desc = AccessibilityStrings.SliderDesc(
+                    NearestPrecedingLabel(addon, _csFocusTopIdx), _csFocusValue,
+                    slider->MinValue, slider->MaxValue);
                 break;
             }
             case ComponentType.DropDownList:
@@ -2894,7 +2908,7 @@ public sealed class UIReaderService : IDisposable
                 // AtkComponentDropDownList.List (ilspycmd-verified); the list's
                 // SelectedItemIndex marks the chosen entry even while closed.
                 _csFocusValue = ReadConfigControlValue(top);
-                desc = $"{NearestPrecedingLabel(addon, _csFocusTopIdx)}, Auswahlliste, {_csFocusValue}.";
+                desc = AccessibilityStrings.DropdownDesc(NearestPrecedingLabel(addon, _csFocusTopIdx), _csFocusValue);
                 break;
             }
             case ComponentType.DragDrop when top->NodeId is >= 7 and <= 14 && _csTabs.Count > 0:
@@ -3407,7 +3421,7 @@ public sealed class UIReaderService : IDisposable
         _dcTabPanels.Clear();
 
         var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null) { _tolk.SpeakInterrupt("Datenzentrum w�hlen."); return; }
+        if (addon == null) { _tolk.SpeakInterrupt(AccessibilityStrings.ChooseDataCenter); return; }
 
         // -- Schritt 1: Alle Region-Panels sammeln.
         // Wir sammeln ALLE Panels, auch die (noch) unsichtbaren, um die Navigation
@@ -3431,7 +3445,7 @@ public sealed class UIReaderService : IDisposable
 
         if (_dcTabPanels.Count == 0)
         {
-            _tolk.SpeakInterrupt("Datenzentrum w�hlen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ChooseDataCenter);
             return;
         }
 
@@ -3776,7 +3790,7 @@ public sealed class UIReaderService : IDisposable
     }
     private void OnPadCalibrationOpen(AddonEvent type, AddonArgs args)
     {
-        _tolk.SpeakInterrupt("Gamepad-Kalibrierung. Escape zum Schlie�en.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.GamepadCalibration);
     }
 
     // -- Benachrichtigungen ------------------------------------------
@@ -3835,13 +3849,13 @@ public sealed class UIReaderService : IDisposable
                         && int.TryParse(page[(slash + 1)..], out total)
                         && total > 1;
         if (multiPage)
-            sb.Append(" Seite ").Append(cur).Append(" von ").Append(total).Append('.');
+            sb.Append(AccessibilityStrings.PageOf(cur, total));
 
         // The "Schließen" button (id=11) is only visible on the LAST page;
         // before that Enter pages forward. Announce the correct action.
         var closeBtn = addon->GetNodeById(11);
         var canClose = closeBtn != null && closeBtn->IsVisible();
-        sb.Append(canClose ? " Enter schließt." : " Enter blättert weiter.");
+        sb.Append(canClose ? AccessibilityStrings.EnterCloses : AccessibilityStrings.EnterPagesOn);
         var text = sb.ToString().Trim();
         if (text == _lastTutorialText) return;
 
@@ -3874,14 +3888,15 @@ public sealed class UIReaderService : IDisposable
         var closeBtn = addon->GetNodeById(11);
         if (closeBtn != null && closeBtn->IsVisible())
         {
+            // "Schließen" is a game-UI button match (stays client-language, Teil 2).
             if (TryClickButton(addon, "Schließen"))
             {
                 _lastTutorialText = string.Empty;
-                _tolk.SpeakInterrupt("Geschlossen.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.Closed);
             }
             else
             {
-                _tolk.SpeakInterrupt("Schließen-Knopf reagiert nicht.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.CloseButtonNotResponding);
             }
             return;
         }
@@ -3893,7 +3908,7 @@ public sealed class UIReaderService : IDisposable
         if (next != null && DispatchClick(next))
             _log.Info($"[Tutorial] Weiter (id=8) geklickt. Seite vorher='{before}'");
         else
-            _tolk.SpeakInterrupt("Weiter-Knopf reagiert nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NextButtonNotResponding);
     }
 
     // -- BeginnersMansionProblem (Anfänger-Arena: Übungsauswahl) ------
@@ -3924,10 +3939,10 @@ public sealed class UIReaderService : IDisposable
         var role     = ReadTutorialNode(addon, 39);
         if (string.IsNullOrWhiteSpace(exercise) && string.IsNullOrWhiteSpace(role)) return;
 
-        var sb = new StringBuilder("Anfänger-Arena");
-        if (exercise.Length > 0) sb.Append(". Übung: ").Append(exercise);
+        var sb = new StringBuilder(AccessibilityStrings.ArenaTitle);
+        if (exercise.Length > 0) sb.Append(AccessibilityStrings.ArenaExercise(exercise));
         if (role.Length > 0)     sb.Append(". ").Append(role);
-        sb.Append(". Enter beginnt.");
+        sb.Append(AccessibilityStrings.ArenaEnterBegins);
         var text = sb.ToString();
         if (text == _lastArenaText) return;
 
@@ -3978,6 +3993,147 @@ public sealed class UIReaderService : IDisposable
         if (parts.Length == 1 && int.TryParse(parts[0], out var only))
             return only;
         return -1;
+    }
+
+    // -- Bank (Gil-Depot: Gil beim Gehilfen anvertrauen / entnehmen) --
+    //
+    // Struktur (Dump 2026-07-24, "Bank" | Nodes=37):
+    //   Fenster-Komponente id=37 (Window) traegt den Titel "Gil-Depot".
+    //   id=32  NumericInput -> Kind id=5 Text = eingegebener Betrag ("0").
+    //   id=28  CheckBox     = Umschalter, flankiert von id=29 "Hinterlegen"
+    //          (links) und id=27 "Entnehmen" (rechts).
+    //   Truhe-Seite (Gehilfe): id=17 "Truhe", id=23 Name, id=24 Derzeit-Wert,
+    //          id=25 Danach-Wert.
+    //   Spieler-Seite: id=10 Name, id=11 "Derzeit"/id=12 Wert, id=13 "Danach"/
+    //          id=14 Wert  (Derzeit/Danach hier eindeutig aus der Node-Reihenfolge).
+    //
+    // Alle genannten Werte sind TOP-LEVEL-Text-Nodes mit eindeutigen ids und
+    // werden per ReadTopText gelesen (kollisionsfrei; die Fenster-Komponente
+    // hat gleiche ids intern, liegt aber in ihrer eigenen NodeList). Der Betrag
+    // sitzt in der NumericInput-Komponente und wird per Komponenten-Kind gelesen.
+    //
+    // Der generische Pfad las beim Oeffnen alle Texte als eine Wortkette (Labels
+    // von Werten getrennt, einmalig, KEIN Echo beim Tippen). Dieser Leser sagt
+    // beim Oeffnen die volle Uebersicht an und danach beim Tippen kompakt den
+    // Betrag + den resultierenden Spielerstand ("danach"). Modus siehe
+    // DeriveBankMode.
+    private bool   _bankAnnounced;
+    private string _lastBankAmount = string.Empty;
+    private string _lastBankMode   = string.Empty;
+
+    private unsafe void OnBankUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _bankAnnounced  = false; // re-announce full summary on reopen
+            _lastBankAmount = string.Empty;
+            _lastBankMode   = string.Empty;
+            return;
+        }
+
+        var playerName  = ReadTopText(addon, 10);
+        var playerNow   = ReadTopText(addon, 12);
+        var playerAfter = ReadTopText(addon, 14);
+        var chestName   = ReadTopText(addon, 23);
+        var chestNow    = ReadTopText(addon, 24);
+        var chestAfter  = ReadTopText(addon, 25);
+
+        var amount = ReadComponentChildText(addon, 32, 5);
+        if (string.IsNullOrWhiteSpace(amount)) amount = "0";
+
+        // Not populated yet (window still initialising): wait for real balances.
+        if (string.IsNullOrWhiteSpace(playerNow) && string.IsNullOrWhiteSpace(chestNow))
+            return;
+
+        var mode = DeriveBankMode(addon, playerNow, playerAfter);
+
+        // First frame after opening: announce the whole picture.
+        if (!_bankAnnounced)
+        {
+            var sb = new StringBuilder("Gil-Depot");
+            if (mode.Length > 0) sb.Append(", ").Append(mode);
+            sb.Append(". Betrag ").Append(amount).Append('.');
+            if (playerName.Length > 0)
+                sb.Append(' ').Append(playerName).Append(": derzeit ").Append(playerNow)
+                  .Append(", danach ").Append(playerAfter).Append('.');
+            if (chestName.Length > 0)
+                sb.Append(" Truhe ").Append(chestName).Append(": derzeit ").Append(chestNow)
+                  .Append(", danach ").Append(chestAfter).Append('.');
+
+            var full = sb.ToString();
+            _bankAnnounced  = true;
+            _lastBankAmount = amount;
+            _lastBankMode   = mode;
+            _log.Info($"[Bank] Oeffnen: '{full}'");
+            _tolk.SpeakInterrupt(full);
+            return;
+        }
+
+        // Mode toggle (deposit <-> withdraw): short confirmation.
+        if (mode.Length > 0 && mode != _lastBankMode)
+        {
+            _lastBankMode = mode;
+            _log.Info($"[Bank] Modus: '{mode}'");
+            _tolk.SpeakInterrupt(mode + ".");
+            return;
+        }
+
+        // Amount changed while typing: echo it plus the resulting player balance.
+        if (amount != _lastBankAmount)
+        {
+            _lastBankAmount = amount;
+            var msg = playerName.Length > 0 && !string.IsNullOrWhiteSpace(playerAfter)
+                ? $"Betrag {amount}, {playerName} danach {playerAfter}."
+                : $"Betrag {amount}.";
+            _log.Info($"[Bank] Betrag: '{msg}'");
+            _tolk.SpeakInterrupt(msg);
+        }
+    }
+
+    /// <summary>
+    /// Derives the deposit/withdraw label. Primary signal is the player-side
+    /// balance change (dump-verified derzeit=id12 / danach=id14 pairing): a
+    /// FALLING player balance means gil goes INTO the chest (Hinterlegen), a
+    /// RISING one means it is taken OUT (Entnehmen). This is read straight from
+    /// game state and is correct whenever an amount is entered. Only when no
+    /// amount is pending (both equal) it falls back to the mode checkbox id=28;
+    /// that mapping (checked = Entnehmen) is an ASSUMPTION and is logged so a
+    /// real test can confirm or flip it.
+    /// </summary>
+    private unsafe string DeriveBankMode(AtkUnitBase* addon, string playerNow, string playerAfter)
+    {
+        var now   = ParseGil(playerNow);
+        var after = ParseGil(playerAfter);
+        if (now >= 0 && after >= 0 && now != after)
+            return after < now ? "Hinterlegen" : "Entnehmen";
+
+        // Amount 0 / values equal: read the checkbox as a tentative fallback.
+        var cb = (AtkComponentCheckBox*)FindTopComponent(addon, 28);
+        if (cb == null) return string.Empty;
+        var isChecked = cb->IsChecked;
+        _log.Info($"[Bank] Modus-Checkbox id=28 IsChecked={isChecked} (Annahme: checked=Entnehmen)");
+        return isChecked ? "Entnehmen" : "Hinterlegen";
+    }
+
+    /// <summary>Parses a German-grouped gil number ("9.824") to a long, or -1.</summary>
+    private static long ParseGil(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return -1;
+        long v = 0; var any = false;
+        foreach (var ch in text)
+            if (ch >= '0' && ch <= '9') { v = v * 10 + (ch - '0'); any = true; }
+        return any ? v : -1;
+    }
+
+    /// <summary>Reads a text node nested inside a top-level component, by both ids.</summary>
+    private unsafe string ReadComponentChildText(AtkUnitBase* addon, uint componentId, uint childId)
+    {
+        var comp = FindTopComponent(addon, componentId);
+        if (comp == null) return string.Empty;
+        var n = FindChildNode(comp, childId);
+        if (n == null || n->Type != NodeType.Text) return string.Empty;
+        return AtkText.Read((AtkTextNode*)n).Trim();
     }
 
     // -- Charaktererstellung: Volk & Geschlecht ----------------------
@@ -4514,11 +4670,11 @@ public sealed class UIReaderService : IDisposable
         if (!_config.EchoTypedCharacters) return;
 
         if (@new.Length == 0)
-            _tolk.SpeakInterrupt("leer");
+            _tolk.SpeakInterrupt(AccessibilityStrings.InputEmpty);
         else if (@new.Length > old.Length && @new.StartsWith(old, StringComparison.Ordinal))
             _tolk.SpeakInterrupt(@new[old.Length..]);
         else if (old.Length > @new.Length && old.StartsWith(@new, StringComparison.Ordinal))
-            _tolk.SpeakInterrupt($"{old[@new.Length..]} gelöscht");
+            _tolk.SpeakInterrupt(AccessibilityStrings.Deleted(old[@new.Length..]));
         else
             _tolk.SpeakInterrupt(@new);
     }
@@ -4883,11 +5039,11 @@ public sealed class UIReaderService : IDisposable
             if (beginBtn != null && DispatchClick(beginBtn))
             {
                 _lastArenaText = string.Empty;
-                _tolk.SpeakInterrupt("Übung gestartet.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.ExerciseStarted);
             }
             else
             {
-                _tolk.SpeakInterrupt("Beginnen-Knopf reagiert nicht.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.BeginButtonNotResponding);
             }
             return;
         }
@@ -4943,7 +5099,7 @@ public sealed class UIReaderService : IDisposable
                   $"Kandidat={(candidate != null ? candidate->State.EventType.ToString() : "KEINER")}");
         if (candidate == null || candidate->Listener == null || !IsReadable(candidate->Listener))
         {
-            _tolk.SpeakInterrupt("Reiter reagiert nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.TabNotResponding);
             return true; // handled: focus WAS on a tab, do not fall through
         }
 
@@ -5102,21 +5258,21 @@ public sealed class UIReaderService : IDisposable
         var ptr = _gameGui.GetAddonByName("_CharaMakeFeature");
         if (ptr.IsNull || !((AtkUnitBase*)(nint)ptr)->IsVisible)
         {
-            _tolk.SpeakInterrupt("Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoAppearanceWindow);
             return;
         }
         var addon = (AtkUnitBase*)(nint)ptr;
         var node  = addon->GetNodeById(4);
         if (node == null || (int)node->Type < 1000 || !node->IsVisible())
         {
-            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen nicht gefunden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.RandomAppearanceNotFound);
             _log.Warning("[Accessibility] RandomLook: _CharaMakeFeature id=4 fehlt oder unsichtbar");
             return;
         }
         var comp = ((AtkComponentNode*)node)->Component;
         if (comp == null || !IsReadable(comp) || comp->GetComponentType() != ComponentType.Button)
         {
-            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen nicht gefunden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.RandomAppearanceNotFound);
             _log.Warning("[Accessibility] RandomLook: id=4 ist kein Button");
             return;
         }
@@ -5130,7 +5286,7 @@ public sealed class UIReaderService : IDisposable
         }
         if (evt == null || evt->Listener == null || !IsReadable(evt->Listener))
         {
-            _tolk.SpeakInterrupt("Knopf Zufälliges Aussehen reagiert nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.RandomAppearanceNotResponding);
             _log.Warning("[Accessibility] RandomLook: kein ButtonClick-Event/Listener an id=4");
             return;
         }
@@ -5138,7 +5294,7 @@ public sealed class UIReaderService : IDisposable
         var data = default(AtkEventData); // zeroed, Size=40 (ilspycmd)
         evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
         _log.Info($"[Accessibility] RandomLook: ButtonClick param={evt->Param} dispatched");
-        _tolk.SpeakInterrupt("Zufälliges Aussehen gedrückt.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.RandomAppearancePressed);
     }
 
     /// <summary>
@@ -5229,7 +5385,7 @@ public sealed class UIReaderService : IDisposable
         // Kein Listen-/Dialogfenster: das fokussierte Fenster komplett vorlesen.
         if (TryReadWholeWindow()) return;
 
-        _tolk.SpeakInterrupt("Kein aktives Men�.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.NoActiveMenu);
     }
 
     /// <summary>
@@ -5303,7 +5459,7 @@ public sealed class UIReaderService : IDisposable
             // EvaluatedString = the field's current content (AtkComponentInputBase,
             // ilspycmd 2026-07-17; same field the chat and CharaMake echo use).
             var typed = ((AtkComponentTextInput*)comp)->AtkComponentInputBase.EvaluatedString.ToString().Trim();
-            parts.Add(typed.Length > 0 ? $"Eingabefeld: {typed}" : "Eingabefeld, leer");
+            parts.Add(AccessibilityStrings.InputFieldValue(typed));
             return;
         }
 
@@ -5516,9 +5672,9 @@ public sealed class UIReaderService : IDisposable
         // icon id), so we label the amounts by position - JournalResult always
         // lists Erfahrung first, then Gil, then other currencies. Logged so the
         // order can be verified/replaced with a real type mapping later.
-        string[] labels = { "Erfahrung", "Gil" };
+        var labels = AccessibilityStrings.RewardCurrencyLabels;
         for (var k = 0; k < amounts.Count; k++)
-            parts.Add($"{(k < labels.Length ? labels[k] : "weitere Vergütung")} {amounts[k]}");
+            parts.Add($"{(k < labels.Length ? labels[k] : AccessibilityStrings.MoreReward)} {amounts[k]}");
 
         // Only log when the reward actually changed: this runs per frame, and the
         // unconditional log wrote the same line every ~75 ms (log 2026-07-19,
@@ -5824,9 +5980,7 @@ public sealed class UIReaderService : IDisposable
             var keys = new List<string>(2);
             if (!string.IsNullOrWhiteSpace(key1)) keys.Add(key1);
             if (!string.IsNullOrWhiteSpace(key2)) keys.Add(key2);
-            return keys.Count > 0
-                ? $"{label}, Taste {string.Join(", ", keys)}"
-                : $"{label}, keine Taste";
+            return AccessibilityStrings.KeyBindingLine(label, keys);
         }
         catch (Exception ex) { _log.Warning($"[Accessibility] ConfigKeybind-Zeile: {ex.Message}"); }
         return string.Empty;
@@ -6259,7 +6413,7 @@ public sealed class UIReaderService : IDisposable
         var ptr = _gameGui.GetAddonByName("MonsterNote");
         if (ptr.IsNull || !((AtkUnitBase*)(nint)ptr)->IsVisible)
         {
-            _tolk.SpeakInterrupt("Bestiarium ist nicht geöffnet.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.BestiaryNotOpen);
             return;
         }
 
@@ -6267,7 +6421,7 @@ public sealed class UIReaderService : IDisposable
         var tree = FindTreeList(addon);
         if (tree == null)
         {
-            _tolk.SpeakInterrupt("Bestiarium-Liste nicht gefunden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.BestiaryListNotFound);
             return;
         }
 
@@ -6287,17 +6441,17 @@ public sealed class UIReaderService : IDisposable
             if (!TryExtractBestiaryMonster(text, out var monster)) continue;
             // Habitat so the overview answers "where to go"
             if (_bestiary.GetHabitat(monster) is { } habitat)
-                text += $", lebt in {habitat}";
+                text += AccessibilityStrings.LivesIn(habitat);
             rows.Add(text);
         }
 
         _log.Info($"[Bestiary] Uebersicht: {rows.Count} Monster von {total} Items");
         if (rows.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Monster in dieser Liste.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoMonstersInList);
             return;
         }
-        _tolk.SpeakInterrupt($"Bestiarium, {rows.Count} Monster. " + string.Join(". ", rows));
+        _tolk.SpeakInterrupt(AccessibilityStrings.BestiaryOverview(rows.Count, string.Join(". ", rows)));
     }
 
     private static unsafe AtkComponentTreeList* FindTreeList(AtkUnitBase* addon)
@@ -7102,12 +7256,12 @@ public sealed class UIReaderService : IDisposable
             {
                 _log.Info($"[Dump] Kein fokussiertes/bekanntes Addon - dumpe {rest.Count} sichtbare Nicht-HUD-Fenster: {string.Join(", ", rest)}");
                 DumpAddons(rest);
-                _tolk.SpeakInterrupt($"Kein bekanntes Fenster. {rest.Count} sichtbare Fenster gedumpt, Liste im Log.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.UnknownWindowDumped(rest.Count));
                 return;
             }
         }
 
-        _tolk.SpeakInterrupt("Kein aktives Addon f�r Dump gefunden.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.NoActiveAddonToDump);
         _log.Info("[Dump] Kein sichtbares Addon in der Kandidatenliste gefunden.");
     }
 
@@ -7120,7 +7274,7 @@ public sealed class UIReaderService : IDisposable
     {
         if (string.IsNullOrWhiteSpace(addonName))
         {
-            _tolk.SpeakInterrupt("Kein Addon-Name. Beispiel: /acc dump TitleDCWorldMap");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoAddonName);
             return;
         }
 
@@ -7187,7 +7341,7 @@ public sealed class UIReaderService : IDisposable
         catch (Exception ex)
         {
             _log.Warning($"[Dump] Datei-Fehler: {ex.Message}");
-            _tolk.SpeakInterrupt("Dump nur im Dalamud-Log. Datei-Fehler.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.DumpFileError);
         }
     }
 
@@ -7274,6 +7428,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsTutorial", OnContentsTutorialUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
         _addonLifecycle.UnregisterListener(OnSelectStringOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Request", OnRequestOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Title", OnTitleScreenOpen);

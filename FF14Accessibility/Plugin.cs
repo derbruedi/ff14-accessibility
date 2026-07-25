@@ -51,6 +51,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly VitalsService      _vitals;
+    private readonly HeadingService     _heading;
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
     private readonly DalamudPluginsService _dalamudPlugins;
@@ -142,6 +143,10 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 8;
             PluginInterface.SavePluginConfig(_config);
         }
+        // Language for all mod announcements (Auto = follow Windows). Must be set
+        // before the first Speak below.
+        Loc.Mode = _config.Language;
+
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
         _tolk       = new TolkService(Log);
         _beacon       = new BeaconService(_config, _tolk, Log);
@@ -166,6 +171,7 @@ public sealed class Plugin : IDalamudPlugin
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
+        _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
 
@@ -197,6 +203,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             var dumpArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
             _uiReader.DumpAddon(dumpArg);
+            return;
+        }
+
+        // "lang" nimmt ein Sprach-Argument (de/en/auto) - vor dem switch prüfen
+        if (trimmed.StartsWith("lang", StringComparison.OrdinalIgnoreCase))
+        {
+            var langArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
+            SetLanguage(langArg);
             return;
         }
 
@@ -233,9 +247,35 @@ public sealed class Plugin : IDalamudPlugin
                 AnnounceHelp();
                 break;
             default:
-                _tolk.SpeakInterrupt("Unbekannter Befehl. Tippe /acc help für Hilfe.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.UnknownCommand);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Handles "/acc lang &lt;de|en|auto&gt;": switches the announcement language,
+    /// persists it in the config so it survives a restart, and confirms the new
+    /// setting spoken in the language just chosen. An unknown/empty argument
+    /// speaks the usage hint and changes nothing.
+    /// </summary>
+    private void SetLanguage(string arg)
+    {
+        var mode = Loc.ParseArg(arg);
+        if (mode is null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.LanguageUsage);
+            return;
+        }
+
+        _config.Language = mode.Value;
+        Loc.Mode = mode.Value;                 // take effect immediately for the confirmation below
+        PluginInterface.SavePluginConfig(_config);
+
+        // Name the resolved language; "auto" also reports which one Windows picked.
+        var languageName = Loc.IsGerman ? AccessibilityStrings.LanguageGerman : AccessibilityStrings.LanguageEnglish;
+        _tolk.SpeakInterrupt(mode.Value == LanguageMode.Auto
+            ? AccessibilityStrings.LanguageAuto(languageName)
+            : AccessibilityStrings.LanguageSet(languageName));
     }
 
     /// <summary>
@@ -256,9 +296,12 @@ public sealed class Plugin : IDalamudPlugin
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Routen-Vorschau",   _config.KeyRoutePreview),
             ("Zu Koordinaten",    _config.KeyGotoCoords),
+            ("Koordinaten kopieren", _config.KeyCopyCoords),
             ("Menü vorlesen",  _config.KeyReadUI),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
+            ("SP-Stand",       _config.KeySpStatus),
+            ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
             ("UI-Dump",        _config.KeyDumpUI),
             ("Aktives Fenster", _config.KeyWhereAmI),
             ("Aktionsleiste",  _config.KeyReadHotbar),
@@ -321,6 +364,9 @@ public sealed class Plugin : IDalamudPlugin
         // V5.25: Entf ist im Keybind-Dump NIRGENDS belegt - anders als H, wo
         // das Spiel trotz Strg-Modifier MENU_CRAFT ausloeste. VK_DELETE=0x2E.
         ["Entf"] = 0x2E,
+        // SP-Stand-Ansage (Sammler). Strg+Ende ist im Keybind-Dump CAMERA_SAVE
+        // (rein visuell, folgenlos). VK_END=0x23.
+        ["Ende"] = 0x23,
     };
 
     private readonly bool[] _keyWasDown     = new bool[256];
@@ -472,11 +518,93 @@ public sealed class Plugin : IDalamudPlugin
         return (nums[0], nums[1]);
     }
 
+    /// <summary>
+    /// Reads the player's current map coordinates (the in-game 1..~42 values)
+    /// and puts them on the clipboard as "X, Y". A sighted player reads these
+    /// off the minimap to share their location ("I'm at 24.1, 21.0"); the blind
+    /// player cannot, so one key copies them ready to paste into a chat message
+    /// or a tell. The reverse direction of <see cref="GotoClipboardCoords"/> -
+    /// the "X, Y" format it writes is exactly what that method parses back.
+    /// </summary>
+    private void CopyCurrentCoords()
+    {
+        var player = ObjectTable.LocalPlayer;
+        if (player == null)
+        {
+            _tolk.SpeakInterrupt("Position unbekannt.");
+            return;
+        }
+
+        var coords = _places.WorldToMapCoord(player.Position);
+        if (coords == null)
+        {
+            _tolk.SpeakInterrupt("Aktuelle Karte unbekannt, kann Koordinaten nicht bestimmen.");
+            return;
+        }
+
+        var (mapX, mapY) = coords.Value;
+        // Clipboard text uses invariant '.' decimals so the values paste cleanly
+        // into chat and round-trip through GotoClipboardCoords' parser.
+        var inv  = System.Globalization.CultureInfo.InvariantCulture;
+        var text = $"{mapX.ToString("0.0", inv)}, {mapY.ToString("0.0", inv)}";
+
+        bool ok;
+        try
+        {
+            ok = WriteClipboardText(text);
+        }
+        catch (System.Exception ex)
+        {
+            Log.Warning($"[CopyCoords] Zwischenablage nicht schreibbar: {ex.Message}");
+            _tolk.SpeakInterrupt("Zwischenablage konnte nicht beschrieben werden.");
+            return;
+        }
+
+        if (!ok)
+        {
+            Log.Warning("[CopyCoords] Zwischenablage konnte nicht geoeffnet/beschrieben werden.");
+            _tolk.SpeakInterrupt("Zwischenablage konnte nicht beschrieben werden.");
+            return;
+        }
+
+        Log.Info($"[CopyCoords] Koordinaten {text} kopiert (Welt {player.Position.X:0.0}/{player.Position.Z:0.0}).");
+        _tolk.SpeakInterrupt($"Koordinaten {mapX:0.0}, {mapY:0.0} kopiert.");
+    }
+
+    /// <summary>
+    /// Turns the turn-by-turn compass announcement on or off and speaks the new
+    /// state. When switching ON, the current facing is spoken once as immediate
+    /// confirmation and the service is re-baselined so it does not echo the same
+    /// direction again on its next frame.
+    /// </summary>
+    private void ToggleHeading()
+    {
+        _config.AnnounceHeading = !_config.AnnounceHeading;
+        PluginInterface.SavePluginConfig(_config);
+        _heading.ResetBaseline();
+
+        if (_config.AnnounceHeading)
+        {
+            var dir = _heading.CurrentHeadingWord();
+            _tolk.SpeakInterrupt(dir.Length > 0
+                ? $"Himmelsrichtung an. {dir}."
+                : "Himmelsrichtung an.");
+        }
+        else
+        {
+            _tolk.SpeakInterrupt("Himmelsrichtung aus.");
+        }
+    }
+
     private const uint CF_UNICODETEXT = 13;
+    private const uint GMEM_MOVEABLE  = 0x0002;
 
     [DllImport("user32.dll", SetLastError = true)] private static extern bool OpenClipboard(nint hWndNewOwner);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool CloseClipboard();
     [DllImport("user32.dll", SetLastError = true)] private static extern nint GetClipboardData(uint uFormat);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool EmptyClipboard();
+    [DllImport("user32.dll", SetLastError = true)] private static extern nint SetClipboardData(uint uFormat, nint hMem);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern nint GlobalAlloc(uint uFlags, nuint dwBytes);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern nint GlobalLock(nint hMem);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(nint hMem);
 
@@ -501,6 +629,43 @@ public sealed class Plugin : IDalamudPlugin
             if (ptr == nint.Zero) return string.Empty;
             try { return Marshal.PtrToStringUni(ptr) ?? string.Empty; }
             finally { GlobalUnlock(handle); }
+        }
+        finally { CloseClipboard(); }
+    }
+
+    /// <summary>
+    /// Writes Unicode text to the Windows clipboard via Win32 - the write-side
+    /// mirror of <see cref="ReadClipboardText"/> (no WinForms/STA, no ImGui).
+    /// SetClipboardData takes ownership of the moveable global block on success,
+    /// so it is NOT freed here. Returns false if the clipboard stays locked by
+    /// another process or the allocation fails.
+    /// </summary>
+    private static bool WriteClipboardText(string text)
+    {
+        var opened = false;
+        for (var attempt = 0; attempt < 6 && !opened; attempt++)
+            opened = OpenClipboard(nint.Zero);
+        if (!opened) return false;
+
+        try
+        {
+            if (!EmptyClipboard()) return false;
+
+            // Global block holds the string plus a trailing null (Unicode = 2 bytes/char).
+            var buffer = new char[text.Length + 1]; // last element stays '\0'
+            text.CopyTo(0, buffer, 0, text.Length);
+
+            var hMem = GlobalAlloc(GMEM_MOVEABLE, (nuint)(buffer.Length * 2));
+            if (hMem == nint.Zero) return false;
+
+            var ptr = GlobalLock(hMem);
+            if (ptr == nint.Zero) return false;
+            try { Marshal.Copy(buffer, 0, ptr, buffer.Length); }
+            finally { GlobalUnlock(hMem); }
+
+            // On success the clipboard owns hMem; on failure we would leak it,
+            // but SetClipboardData only fails with the clipboard already closed.
+            return SetClipboardData(CF_UNICODETEXT, hMem) != nint.Zero;
         }
         finally { CloseClipboard(); }
     }
@@ -580,9 +745,12 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
         if (IsJustPressed(_config.KeyGotoCoords))    GotoClipboardCoords();
+        if (IsJustPressed(_config.KeyCopyCoords))    CopyCurrentCoords();
         if (IsJustPressed(_config.KeyReadUI))        _uiReader.ReadCurrentFocus();
         if (IsJustPressed(_config.KeySilence))       _tolk.Silence();
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
+        if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
+        if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
         if (IsJustPressed(_config.KeyReadHotbar))    _hotbar.ReadHotbar();
         if (IsJustPressed(_config.KeyReadInventory))
         {
@@ -630,6 +798,9 @@ public sealed class Plugin : IDalamudPlugin
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.
         _vitals.Update();
+        // Speaks the compass direction the player turns to face (settled turns,
+        // sector changes only). Toggled by KeyToggleHeading.
+        _heading.Update();
         _equipment.Update();
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk

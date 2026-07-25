@@ -56,7 +56,7 @@ public sealed class EquipmentService
 
             var label = SlotLabel(item.BaseItemId);
             var name = ResolveItemName(item.BaseItemId);
-            var hq = item.IsHq ? " Hoch-Qualität" : string.Empty;
+            var hq = item.IsHq ? AccessibilityStrings.HighQuality : string.Empty;
             // Level per piece; "tragbar" is omitted for wearable gear (brief) -
             // worn pieces are normally wearable, only a mismatch (e.g. after a
             // class change) is worth words: "nicht tragbar, nur für ...".
@@ -68,11 +68,11 @@ public sealed class EquipmentService
 
         if (parts.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Ausrüstung angelegt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoEquipmentWorn);
             return;
         }
-        var emptyNote = empty > 0 ? $" {empty} Plätze frei." : string.Empty;
-        _tolk.SpeakInterrupt($"Ausrüstung: {string.Join(". ", parts)}.{emptyNote}");
+        var emptyNote = empty > 0 ? AccessibilityStrings.SlotsFree(empty) : string.Empty;
+        _tolk.SpeakInterrupt(AccessibilityStrings.EquipmentList(string.Join(". ", parts), emptyNote));
     }
 
     /// <summary>
@@ -83,24 +83,24 @@ public sealed class EquipmentService
     private string SlotLabel(uint baseItemId)
     {
         if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row))
-            return "Ausrüstung";
+            return AccessibilityStrings.SlotEquipment;
         var slot = row.EquipSlotCategory.ValueNullable;
-        if (slot == null) return "Ausrüstung";
+        if (slot == null) return AccessibilityStrings.SlotEquipment;
         var s = slot.Value;
-        if (s.MainHand    > 0) return "Waffe";
-        if (s.OffHand     > 0) return "Nebenhand";
-        if (s.Head        > 0) return "Kopf";
-        if (s.Body        > 0) return "Rumpf";
-        if (s.Gloves      > 0) return "Hände";
-        if (s.Waist       > 0) return "Gürtel";
-        if (s.Legs        > 0) return "Beine";
-        if (s.Feet        > 0) return "Füße";
-        if (s.Ears        > 0) return "Ohren";
-        if (s.Neck        > 0) return "Hals";
-        if (s.Wrists      > 0) return "Handgelenke";
-        if (s.FingerL     > 0 || s.FingerR > 0) return "Ring";
-        if (s.SoulCrystal > 0) return "Jobkristall";
-        return "Ausrüstung";
+        if (s.MainHand    > 0) return AccessibilityStrings.SlotWeapon;
+        if (s.OffHand     > 0) return AccessibilityStrings.SlotOffHand;
+        if (s.Head        > 0) return AccessibilityStrings.SlotHead;
+        if (s.Body        > 0) return AccessibilityStrings.SlotBody;
+        if (s.Gloves      > 0) return AccessibilityStrings.SlotHands;
+        if (s.Waist       > 0) return AccessibilityStrings.SlotWaist;
+        if (s.Legs        > 0) return AccessibilityStrings.SlotLegs;
+        if (s.Feet        > 0) return AccessibilityStrings.SlotFeet;
+        if (s.Ears        > 0) return AccessibilityStrings.SlotEars;
+        if (s.Neck        > 0) return AccessibilityStrings.SlotNeck;
+        if (s.Wrists      > 0) return AccessibilityStrings.SlotWrists;
+        if (s.FingerL     > 0 || s.FingerR > 0) return AccessibilityStrings.SlotRing;
+        if (s.SoulCrystal > 0) return AccessibilityStrings.SlotSoulCrystal;
+        return AccessibilityStrings.SlotEquipment;
     }
 
     private string ResolveItemName(uint baseItemId)
@@ -110,7 +110,7 @@ public sealed class EquipmentService
             var name = row.Name.ExtractText();
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
-        return $"Gegenstand {baseItemId}";
+        return AccessibilityStrings.ItemFallback(baseItemId);
     }
 
     // ── Empfohlene Ausrüstung anlegen (das Spiel wählt, wir lösen nur aus) ──
@@ -137,7 +137,7 @@ public sealed class EquipmentService
     {
         if (_phase != EquipPhase.Idle)
         {
-            _tolk.SpeakInterrupt("Ausrüstungswechsel läuft schon.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.EquipChangeInProgress);
             return;
         }
 
@@ -149,7 +149,7 @@ public sealed class EquipmentService
             var playerState = PlayerState.Instance();
             if (uiModule == null || playerState == null)
             {
-                _tolk.SpeakInterrupt("Ausrüstungsmodul nicht verfügbar.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.EquipModuleUnavailable);
                 return;
             }
 
@@ -157,7 +157,7 @@ public sealed class EquipmentService
             var module = uiModule->GetRecommendEquipModule();
             if (module == null)
             {
-                _tolk.SpeakInterrupt("Ausrüstungsmodul nicht verfügbar.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.EquipModuleUnavailable);
                 return;
             }
 
@@ -166,13 +166,13 @@ public sealed class EquipmentService
             _phase = EquipPhase.WaitingForSetup;
             _phaseStartedAt = DateTime.UtcNow;
             _log.Info($"[Equip] Empfohlene Ausrüstung: Setup gestartet (Job {job}).");
-            _tolk.SpeakInterrupt("Lege empfohlene Ausrüstung an.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ApplyingRecommendedGear);
         }
         catch (Exception ex)
         {
             _phase = EquipPhase.Idle;
             _log.Error(ex, "[Equip] RecommendEquipModule fehlgeschlagen");
-            _tolk.SpeakInterrupt("Ausrüstungswechsel fehlgeschlagen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.EquipChangeFailed);
         }
     }
 
@@ -196,7 +196,7 @@ public sealed class EquipmentService
                     // 3 s and still computing: give up rather than equip stale data.
                     _phase = EquipPhase.Idle;
                     _log.Info("[Equip] Setup nach 3 s nicht fertig, abgebrochen.");
-                    _tolk.SpeakInterrupt("Ausrüstungswechsel hat nicht geklappt.");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.EquipChangeDidntWork);
                     return;
                 }
                 module->EquipRecommendedGear();
@@ -213,9 +213,7 @@ public sealed class EquipmentService
             var after = SnapshotEquipped();
             var changed = CountChangedSlots(_equippedBefore, after);
             _log.Info($"[Equip] Ergebnis: {changed} Plätze geändert.");
-            _tolk.SpeakInterrupt(changed > 0
-                ? $"Empfohlene Ausrüstung angelegt, {changed} Teile gewechselt."
-                : "Ausrüstung unverändert. Entweder schon optimal, oder Wechsel gerade nicht möglich.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.EquipResult(changed));
         }
         catch (Exception ex)
         {

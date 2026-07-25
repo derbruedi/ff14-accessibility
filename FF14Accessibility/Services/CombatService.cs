@@ -59,11 +59,11 @@ public sealed class CombatService
         if (inCombat && !_wasInCombat)
         {
             _lastHpPercent = HpPercent(player.CurrentHp, player.MaxHp);
-            _tolk.Speak("Kampf.");
+            _tolk.Speak(AccessibilityStrings.CombatStart);
         }
         else if (!inCombat && _wasInCombat)
         {
-            _tolk.Speak("Kampf vorbei.");
+            _tolk.Speak(AccessibilityStrings.CombatEnd);
         }
         _wasInCombat = inCombat;
 
@@ -76,7 +76,7 @@ public sealed class CombatService
         {
             if (_lastHpPercent > threshold && hp <= threshold)
             {
-                _tolk.SpeakInterrupt($"HP: {player.CurrentHp} von {player.MaxHp}.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.HpSentence(player.CurrentHp, player.MaxHp));
                 break;
             }
         }
@@ -113,7 +113,7 @@ public sealed class CombatService
             {
                 if (_lastTargetHpPercent > threshold && hp <= threshold)
                 {
-                    _tolk.SpeakInterrupt($"Ziel HP: {target.CurrentHp} von {target.MaxHp}.");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.TargetHpSentence(target.CurrentHp, target.MaxHp));
                     break;
                 }
             }
@@ -130,7 +130,7 @@ public sealed class CombatService
             if (newCast)
             {
                 var name = CastActionName(castId);
-                _tolk.SpeakInterrupt($"Gegner wirkt {name}.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.EnemyCasts(name));
                 _log.Info($"[Combat] Gegner-Cast: id={castId} name='{name}' " +
                           $"unterbrechbar={target.IsCastInterruptible}");
                 _lastCastActionId = castId;
@@ -146,7 +146,7 @@ public sealed class CombatService
             var name = action.Name.ExtractText();
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
-        return "eine Fähigkeit";
+        return AccessibilityStrings.AnAbility;
     }
 
     /// <summary>
@@ -172,7 +172,7 @@ public sealed class CombatService
 
         if (level > _lastLevel)
         {
-            _tolk.SpeakInterrupt($"Stufe {level} erreicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LevelReached(level));
             _log.Info($"[Level] Level-Up: job={job} {_lastLevel} -> {level}");
         }
         _lastLevel = level;
@@ -188,14 +188,14 @@ public sealed class CombatService
     {
         if (_objectTable.LocalPlayer == null)
         {
-            _tolk.SpeakInterrupt("Nicht eingeloggt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
             return;
         }
 
         var ps = PlayerState.Instance();
         if (ps == null)
         {
-            _tolk.SpeakInterrupt("Stufe nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LevelNotAvailable);
             return;
         }
 
@@ -203,14 +203,14 @@ public sealed class CombatService
         var needed = ps->GetCurrentClassJobNeededExp();
         if (needed == 0)
         {
-            _tolk.SpeakInterrupt($"Stufe {level}, Maximalstufe erreicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LevelMax(level));
             _log.Info($"[Level] Stufe={level} (Max)");
             return;
         }
 
         var cur  = ps->GetCurrentClassJobExp();
         var left = needed > cur ? needed - cur : 0;
-        _tolk.SpeakInterrupt($"Stufe {level}. Noch {left} Erfahrungspunkte bis zur nächsten Stufe.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.LevelExpLeft(level, (int)left));
         _log.Info($"[Level] Stufe={level} exp={cur}/{needed} left={left}");
     }
 
@@ -220,22 +220,48 @@ public sealed class CombatService
         var player = _objectTable.LocalPlayer;
         if (player == null)
         {
-            _tolk.SpeakInterrupt("Nicht eingeloggt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
             return;
         }
 
-        var text = player.MaxMp > 0
-            ? $"HP {player.CurrentHp} von {player.MaxHp}, MP {player.CurrentMp} von {player.MaxMp}."
-            : $"HP {player.CurrentHp} von {player.MaxHp}.";
+        var text = AccessibilityStrings.VitalStatus(
+            player.CurrentHp, player.MaxHp, player.CurrentMp, player.MaxMp, player.MaxMp > 0);
 
         if (_targetManager.Target is IBattleChara target && target.MaxHp > 0)
         {
             var name = target.Name.TextValue;
-            if (string.IsNullOrWhiteSpace(name)) name = "Ziel";
-            text += $" {name}, HP {target.CurrentHp} von {target.MaxHp}.";
+            if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.TargetFallbackName;
+            text += AccessibilityStrings.TargetStatusClause(name, target.CurrentHp, target.MaxHp);
         }
 
         _tolk.SpeakInterrupt(text);
+    }
+
+    // Auf Tastendruck: aktueller SP-Stand (Sammelpunkte, engl. GP). Sammler
+    // verbrauchen SP fuer Sammel-Fertigkeiten; der Vorrat regeneriert sich mit
+    // jedem Abbauversuch und ueber Zeit. Ein blinder Sammler kann den GP-Balken
+    // nicht sehen, daher auf Tastendruck - Gegenstueck zur HP/MP-Ansage.
+    public void AnnounceGatheringPoints()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
+            return;
+        }
+
+        // CurrentGp/MaxGp lesen CharacterData.GatheringPoints/MaxGatheringPoints
+        // direkt aus dem Spiel (verifiziert an Dalamud Character 2026-07-24). Nur
+        // eine Sammlerklasse hat einen SP-Vorrat; ist MaxGp 0, gibt es nichts
+        // anzusagen - kein erfundener Wert, sondern die Spielaussage "kein SP".
+        if (player.MaxGp == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGatheringPoints);
+            return;
+        }
+
+        _log.Info($"[SP] {player.CurrentGp}/{player.MaxGp}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.GpValue(player.CurrentGp, player.MaxGp));
     }
 
     private static int HpPercent(uint current, uint max) =>

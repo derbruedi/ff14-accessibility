@@ -3,7 +3,210 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-23, V5.42: Dungeon-Beitritt Sekunden-Spam behoben - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-07-24, V5.45: Englische Ausgabe - Build repariert + Navigation + UIReaderService + Equipment/Combat uebersetzt - GEBAUT, UNGETESTET)
+
+>>> FUER NEUEN CHAT ("weiter"): Lokalisierung Teil 1 (Mod-Ansagen ins Englische, /acc
+    lang de|en|auto) laeuft. Naechste Gruppe nach Spielrelevanz: Plugin.cs-Rest +
+    PlacesService (schliesst die in der Navigation offen gelassene TypeLabel-Entkopplung).
+    Danach Hotbar, AutoWalk, Inventory, Emote, Bank, Gathering, DalamudPluginsService.
+    ALLES ist GEBAUT (0/0) aber IM SPIEL UNGETESTET - Test-Schritte siehe unten.
+    Build: dotnet build H:\ff14\FF14Accessibility\FF14Accessibility.csproj -c Release
+    (kein scripts/-Buildscript trotz CLAUDE.md-Template). Deploy macht der User selbst.
+    Details/Architektur: Memory localization_english.md.
+    Teil 2 (Match-Strings client-sprachrobust fuer EN-Client) = eigenes Projekt, offen.
+
+Ziel: Mod komplett auf Englisch spielbar machen (Ansagen umschaltbar via /acc lang).
+Zielgruppe geklaert: echte EN-Spieler mit ENGLISCHEM Client.
+Ansatz nach Spielrelevanz, saubere Uebersetzung direkt durch Claude, nach jeder Gruppe berichten.
+
+FERTIG (Teil 1, Mod-Ansagen): Titel/Menue/Config/Charaktererstellung (Erst-Batch) +
+Navigations-Gruppe (NavigationService, RouteService, HeadingService) + UIReaderService
+KOMPLETT (7465 Zeilen, 2 Etappen) + Equipment/Combat (EquipmentService, GearInfoService,
+CombatService; VitalsService brauchte nichts). Alle Builds 0/0.
+Zentrale Tabelle: FF14Accessibility/Services/AccessibilityStrings.cs (Muster IsGerman?de:en).
+
+KRITISCHER FUND: Das Projekt kompilierte vorher GAR NICHT. Die /acc lang-Verkabelung
+rief SetLanguage() auf (Plugin.cs:213), aber diese Methode wurde nie geschrieben ->
+CS0103. Der letzte Stand (V5.43/V5.44) war also nicht baubar; die "gebaut, ungetestet"-
+Features wurden vermutlich aus aelterem Code deployt. JETZT behoben.
+
+Was in V5.45 fertig:
+1. SetLanguage() implementiert (Plugin.cs): /acc lang de|en|auto schaltet wirklich um,
+   speichert in Config (ueberlebt Neustart), bestaetigt gesprochen in der neuen Sprache.
+   Loc.cs + Configuration.Language + Loc.Mode-Wiring existierten schon.
+2. NAVIGATIONS-GRUPPE komplett uebersetzt (NavigationService.cs, RouteService.cs,
+   AccessibilityStrings.cs):
+   - Himmelsrichtungen (8 Sektoren), relative Richtung ("leicht links" -> "slightly left"),
+     Distanz ("12 Meter" -> "12 meters"). Betrifft auch neuen HeadingService (V5.43).
+   - Objekt-Browser-Kategorien: sprachunabhaengig per enum NavCategory entkoppelt (Label
+     war vorher Vergleichswert -> waere bei Sprachwechsel gebrochen). Alle Kategorie-Ansagen.
+   - Ziel-/Objekt-/Quest-/Wegpunkt-Ansagen, Gehhilfe/Routen-Meldungen, Routen-Vorschau
+     (DescribeRoute), DescribeKind, DescribeQuestMarker, DescribeGatheringPoint.
+   - Alle neuen Strings zentral in AccessibilityStrings (IsGerman ? de : en).
+   BEWUSST NOCH DEUTSCH (gehoert zu spaeteren Gruppen, dokumentiert im Code):
+   - place.TypeLabel (NavigationService:467) -> an PlacesService-Vergleichslogik gekoppelt
+     (IsAetherytePlace, "Ätheryt"/"Aethernet"), wird mit PlacesService-Gruppe entkoppelt.
+   - DescribeTargetHp (Ziel-Ansage-Suffix) -> Vitals-Gruppe.
+
+Build: dotnet build Release, 0 Warnungen/0 Fehler.
+
+TEST (V5.45): /acc lang en eingeben -> Bestaetigung auf Englisch. Dann:
+- N-Objektbrowser durchblaettern: Kategorien + Objekte auf Englisch ("Enemies", "3 nearby",
+  "Player, 12 meters, slightly left, 1 of 5").
+- Himmelsrichtung beim Drehen auf Englisch ("East").
+- Gehhilfe/Routen-Vorschau: englische Richtungs-/Distanz-Ansagen.
+- /acc lang de -> alles wieder Deutsch. /acc lang auto -> folgt Windows-Sprache.
+- PRUEFEN: Wegpunkt-Ansage zeigt TypeLabel noch deutsch (erwartet, s.o.).
+
+UIReaderService (groesster Brocken, 7465 Zeilen) - IN ARBEIT, thematische Etappen:
+- ETAPPE 1 FERTIG: alle DIREKTEN _tolk.Speak/SpeakInterrupt-Literale uebersetzt
+  (~40 Stellen): Social/Menue-Listen (ListSummary "Menu, N entries", NoEntries,
+  SocialTabHeader, OnlineWindowPrefix), Text-Eingabe-Echo (empty/deleted),
+  Benachrichtigung, ContentsTutorial-Popup (PageOf/EnterCloses/Closed/...),
+  Bestiarium, Gegenstand-Abliefern (Delivery), Zufaelliges Aussehen, Datenzentrum,
+  Gamepad-Kalibrierung, Uebung/Beginnen, Reiter, Kein aktives Menue, Dump-Meldungen.
+  NEBENBEI REPARIERT: 5 kaputt gespeicherte Umlaute (U+FFFD "w�hlen" etc.) in
+  Speak-Strings - durch Ersetzung mit korrektem AccessibilityStrings-Text.
+- ETAPPE 2 FERTIG (zusammengesetzte Ansagen): Inventar/Sammeln "N Gegenstaende" +
+  Item-Stufe/Menge, Item-Tooltip-Stufe, Unbekannter Gegenstand, Konfig-Steuerelemente
+  (Regler/Auswahlliste/Eingabefeld), Reward-Labels (Erfahrung/Gil/weitere Verguetung),
+  Keybind-Zeile (", Taste"/", keine Taste"), Anfaenger-Arena, Benachrichtigung aktivieren.
+  UIReaderService TEIL 1 KOMPLETT: kein deutsches Ansage-Literal mehr (final gegrept).
+  Grenzfall dokumentiert: level.Replace("St.", LevelWord) - Ziel-Wort folgt /acc lang,
+  aber der Match-Input "St." ist DE-Client-spezifisch (Teil 2).
+- BLEIBT DEUTSCH (Match gegen Spiel-UI, Teil 2): "Schließen", "Bestätigen"/"Ok"
+  (ConfirmButtonLabels), Journal-Header "Zusammenfassung"/"Optionen"/"Vergütung"
+  (5497), SocialTabFallback-Liste. Im Code markiert.
+
+WICHTIG - ZWEITEILIGES ZIEL (geklaert 2026-07-24): Zielgruppe = echte EN-Spieler mit
+ENGLISCHEM Client. Daraus folgt:
+  Teil 1 = Mod-Ansagen uebersetzen (/acc lang) - laeuft.
+  Teil 2 = MATCH-STRINGS client-sprachrobust machen (Buttons/Journal-Header per
+  Node-ID oder Lumina-Addon-Sheet statt dt. Text finden) - PFLICHT, eigenes Projekt,
+  betrifft v.a. UIReaderService. Ohne Teil 2 brechen Klick-/Match-Interaktionen im
+  EN-Client. Noch NICHT begonnen.
+
+EQUIPMENT + COMBAT GRUPPE FERTIG:
+- EquipmentService: Ausruestungsliste, Slot-Namen (Waffe/Kopf/.. -> Weapon/Head/..),
+  HQ, empfohlene Ausruestung anlegen (alle Status-/Fehlermeldungen), Item-Fallback.
+- GearInfoService: Stufe/tragbar/nicht tragbar + Gruende (ab Stufe X, nur fuer Klasse,
+  nicht fuer dein Volk).
+- CombatService: HP/MP-Schwellen, Ziel-HP, Gegner-Cast, Level-Up/Level-Exp,
+  Kampf-Beginn/-Ende, HP/MP-Status, SP/GP (SP=dt., GP=engl. beachtet!).
+- VitalsService: KEINE Aenderung noetig (nur Toene, "HP"/"MP" sind Log-Labels).
+- DescribeTargetHp (lag in NavigationService) mit-uebersetzt (TargetHpFragment).
+- Baustein-Methoden fuer "X von Y" -> "X of Y" (HpValue/MpValue/GpValue/...).
+
+NAECHSTE GRUPPEN (nach Spielrelevanz): Plugin.cs (restliche Commands/Hotkey-Ansagen),
+PlacesService (inkl. TypeLabel-Entkopplung), HotbarService, AutoWalkService,
+InventoryService, EmoteService, Bank-Handler (V5.44), Gathering, DalamudPluginsService.
+
+---
+
+## STAND VORHER (2026-07-24, V5.44: Gil-Depot (Bank) barrierefrei - GEBAUT, UNGETESTET)
+
+Neuer Handler fuer das Addon "Bank" (Gil beim Gehilfen anvertrauen/entnehmen),
+gebaut aus dem Dump vom 2026-07-24 (Desktop\FFXIV_UI_Dump.txt, "Bank" Nodes=37).
+
+Vorher: der generische Pfad las beim Oeffnen ALLE Texte als eine Wortkette
+("Gil-Depot, Abbrechen, Ausfuehren, 0, Hinterlegen, Entnehmen, 9.824, 9.824,
+Perrox Torran, Danach, Derzeit, Truhe, 30, ...") - Labels von Werten getrennt,
+einmalig, KEIN Echo beim Tippen des Betrags.
+
+V5.44: "Bank" in SpecialSetup/UpdateAddons (generisch stumm) + eigener
+OnBankUpdate (PostUpdate, deduped). Gelesene Top-Level-Text-Nodes (kollisionsfrei
+per ReadTopText): Spieler id=10 Name / id=12 Derzeit / id=14 Danach; Truhe id=17
+Label / id=23 Name / id=24 Derzeit / id=25 Danach; Betrag = NumericInput-
+Komponente id=32, Kind id=5. Modus-Checkbox id=28.
+- Beim Oeffnen: volle Uebersicht ("Gil-Depot, <Modus>. Betrag 0. <Name>: derzeit
+  X, danach Y. Truhe <Name>: derzeit A, danach B.").
+- Beim Tippen: kompakt "Betrag <n>, <Name> danach <Wert>." (PostUpdate-Dedup).
+- Modus (Hinterlegen/Entnehmen): abgeleitet aus der Spieler-Bilanz (danach<derzeit
+  = Hinterlegen), also aus echtem Spielzustand korrekt sobald ein Betrag steht;
+  nur bei Betrag 0 Notbehelf ueber Checkbox id=28 (ANNAHME checked=Entnehmen,
+  wird geloggt).
+- Knoepfe (Ausfuehren/Abbrechen, +/-) sagt weiter der globale Fokus-Leser beim
+  Durchtabben an (UpdateGlobalFocus, laeuft unabhaengig).
+
+TEST (V5.44): Bei einem Gehilfen "Gil anvertrauen/entnehmen" oeffnen. Erwartung:
+1. Oeffnen sagt Uebersicht mit beiden Kontostaenden + Betrag 0.
+2. Betrag tippen -> jede Aenderung sagt "Betrag <n>, <Name> danach <Wert>".
+3. Zwischen Hinterlegen/Entnehmen umschalten -> Ansage des Modus.
+4. PRUEFEN: Stimmt der angesagte Modus? (Bei Betrag 0 haengt er an der Annahme
+   checked=Entnehmen - Log [Bank] Modus-Checkbox zeigt den Rohwert.) Falls
+   vertauscht: in DeriveBankMode die Checkbox-Zuordnung drehen.
+5. PRUEFEN: Sind Derzeit/Danach auf der TRUHE-Seite (id=24/25) richtig herum?
+   (Aus dem Dump nur best-effort; Spieler-Seite id=12/14 ist eindeutig.)
+
+---
+
+## STAND VORHER (2026-07-24, V5.43: Timer-Spam + Koords-Kopieren + SP-Stand + Himmelsrichtung-beim-Drehen - GEBAUT, UNGETESTET)
+
+Vier Aenderungen im selben Batch (Build 2026-07-24, 0 Warnungen/0 Fehler, nach devPlugins deployt):
+
+1) DUNGEON-TIMER-SPAM (User-Meldung): Im Dungeon las der generische Text-Scanner
+   das Addon "_ToDoList" key=40005 (das Dungeon-Zeitlimit, "87:54" runterzaehlend)
+   JEDE Sekunde vor ([Speak] INT '87:54'). Ursache: IsBareNumber (UIReaderService.cs
+   :2040) erkannte nur Ziffern + ' . , / %' als Zaehler - der DOPPELPUNKT fehlte, also
+   galt "87:54" als echter Text und wurde bei jeder Aenderung gesprochen. FIX: ':' in
+   die Whitelist aufgenommen -> jedes Zeit-/Timerformat (M:SS, H:MM:SS) gilt generell
+   als Zaehler und wird NIRGENDS mehr sekuendlich vorgelesen. Die echten _ToDoList-
+   Ziele (Textinhalte) bleiben. Behebt denselben Grundfehler wie V5.41/42, aber generisch.
+
+2) KOORDS KOPIEREN (User-Wunsch): neue Taste Strg+Umschalt+F2 (KeyCopyCoords) kopiert
+   die eigene aktuelle Karten-Koordinate ("24.1, 21.0") in die Zwischenablage - zum
+   Weitergeben im Chat. Gegenstueck zu Strg+Umschalt+F1 (KeyGotoCoords = zu Koords
+   laufen); das "X, Y"-Format ist genau das, was GotoClipboardCoords zurueckparst.
+   Neu: PlacesService.WorldToMapCoord (exakte algebraische Inverse der verifizierten
+   MapCoordToWorld, Round-Trip bewiesen) + Plugin.WriteClipboardText (Win32-Schreib-
+   Gegenstueck zu ReadClipboardText, kein WinForms/ImGui).
+
+3) SP-STAND-ANSAGE (User-Wunsch): neue Taste Strg+Ende (KeySpStatus) sagt den
+   aktuellen SP-Stand an ("SP 480 von 500") - SP = Sammelpunkte (engl. GP), der
+   Vorrat, den Sammler fuer Sammel-Fertigkeiten verbrauchen und der sich mit jedem
+   Abbauversuch/ueber Zeit regeneriert. Gegenstueck zur HP/MP-Kampfansage.
+   CombatService.AnnounceGatheringPoints liest player.CurrentGp/MaxGp; diese lesen
+   CharacterData.GatheringPoints/MaxGatheringPoints direkt aus dem Spiel (verifiziert
+   an Dalamud Character 2026-07-24, ICharacter.CurrentGp/MaxGp). Gate: MaxGp==0 ->
+   "Keine Sammelpunkte, SP gibt es nur als Sammler" (kein erfundener Wert).
+   ACHTUNG Tasten-Ueberschneidung: Strg+Ende ist im Keybind-Dump CAMERA_SAVE
+   (Kamera-Preset speichern). Plugin schluckt die Taste nicht, also feuert die
+   rein visuelle Kamera-Funktion mit - fuer blindes Spiel folgenlos (wie die
+   akzeptierte Bild-Tasten/Kamera-Zoom-Ueberschneidung). Falls stoerend: Taste in
+   der Config aendern.
+
+4) HIMMELSRICHTUNG BEIM DREHEN (User-Wunsch): neuer HeadingService.cs sagt beim
+   Drehen die Himmelsrichtung an, in die man SCHAUT ("Osten"). Blickvektor =
+   (sin(rot), cos(rot)) in Welt-XZ - die in NavigationService.RelativeAngle
+   verifizierte Rotations-Konvention (Live-Log 2026-07-10) - durch dasselbe
+   verifizierte SectorOf-Mapping wie Positions-Peilungen. Neu in RouteService:
+   HeadingSector(rot) + SectorWord(sektor). Anti-Spam (der Knackpunkt): sagt nur
+   an, wenn die Drehung AUFHOERT (Rotation ~0.15 s still) UND in einem NEUEN
+   8er-Sektor landet - schnelles Durchdrehen mehrerer Sektoren sagt nur den
+   Endsektor. Umschaltbar mit bare N (KeyToggleHeading, in V5.31 freigeraeumt);
+   Toggle sagt "Himmelsrichtung an. <Richtung>." bzw. "aus". Default AN.
+
+TEST 1 (Timer): In einen Dungeon gehen. Erwartung: KEIN sekuendliches Vorlesen des
+   Restzeit-Timers mehr. Dungeon-Ziele werden weiter angesagt.
+TEST 2 (Koords): Irgendwo in der Spielwelt Strg+Umschalt+F2 druecken. Erwartung:
+   Ansage "Koordinaten X, Y kopiert." + im Chat/Notepad einfuegbar (Strg+V) als "X, Y".
+   Gegenprobe: kopierte Koords mit Strg+Umschalt+F1 wieder anlaufen -> muss zur selben
+   Stelle fuehren.
+TEST 3 (SP): Als Minenarbeiter/Gaertner Strg+Ende druecken. Erwartung: Ansage
+   "SP X von Y" mit dem aktuellen Sammelpunkte-Stand. Nach Einsatz einer SP-Fertigkeit
+   sinkt X, ueber Zeit steigt es wieder. Gegenprobe auf einer Kampfklasse: Ansage
+   "Keine Sammelpunkte, SP gibt es nur als Sammler".
+TEST 4 (Himmelsrichtung): Im Spiel die Figur drehen / in eine neue Richtung laufen
+   und kurz halten. Erwartung: Ansage der Himmelsrichtung ("Norden"/"Osten"/...)
+   nach dem Stehenbleiben, NICHT waehrend des Drehens, und nur bei echtem
+   Richtungswechsel (nicht dauernd). Zu gespraechig? Mit N abschalten -> "Himmelsrichtung
+   aus". Wieder N -> "Himmelsrichtung an. <aktuelle Richtung>". PRUEFEN: stimmt die
+   angesagte Richtung mit der tatsaechlichen Blickrichtung ueberein (Nord/Ost nicht
+   vertauscht)? Ggf. an einem bekannten Ausrichtungspunkt gegenpruefen.
+
+---
+
+## HISTORIE (2026-07-23, V5.42: Dungeon-Beitritt Sekunden-Spam behoben - GEBAUT, UNGETESTET)
 
 V5.41-TEST (Log 2026-07-23 12:17): Mein Countdown-Handler funktioniert
 ("Noch 40 Sekunden zum Beitreten" bei 40). ABER: der GENERISCHE Text-Scanner

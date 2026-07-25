@@ -66,8 +66,9 @@ public sealed class RouteService
     // Hence north = -Z, east = +X and the bearing from north is atan2(dx, -dz).
     // Every preview logs its first segment vector so a flipped axis would show
     // up immediately in the first real-world test.
-    private static readonly string[] CompassWords =
-        { "Norden", "Nordosten", "Osten", "Südosten", "Süden", "Südwesten", "Westen", "Nordwesten" };
+    // Language-aware compass words (see AccessibilityStrings.CompassWords). A
+    // property, not a cached array: "/acc lang" switches language at runtime.
+    private static string[] CompassWords => AccessibilityStrings.CompassWords;
 
     private static int SectorOf(float dx, float dz)
     {
@@ -84,6 +85,20 @@ public sealed class RouteService
     /// </summary>
     public static string CompassWord(Vector3 from, Vector3 to)
         => CompassWords[SectorOf(to.X - from.X, to.Z - from.Z)];
+
+    /// <summary>
+    /// The compass sector (0 = Norden .. 7 = Nordwesten) the player is FACING,
+    /// from their rotation. The facing vector is (sin(rot), cos(rot)) in world
+    /// XZ - the rotation convention verified in NavigationService.RelativeAngle
+    /// (Live-Log 2026-07-10) - fed through the same <see cref="SectorOf"/>
+    /// mapping as position bearings, so "you face north" and "north is that way"
+    /// use one consistent compass.
+    /// </summary>
+    public static int HeadingSector(float rotation)
+        => SectorOf(MathF.Sin(rotation), MathF.Cos(rotation));
+
+    /// <summary>The compass word for a sector index; wraps, so any int is safe.</summary>
+    public static string SectorWord(int sector) => CompassWords[((sector % 8) + 8) % 8];
 
     /// <summary>One spoken route segment: metres in one compass direction.</summary>
     public readonly record struct RouteSegment(float Distance, int Sector);
@@ -135,17 +150,17 @@ public sealed class RouteService
     public string DescribeRoute(string targetName, IReadOnlyList<Vector3> waypoints)
     {
         var segments = BuildSegments(waypoints);
-        if (segments.Count == 0) return $"Weg zu {targetName}: praktisch am Ziel.";
+        if (segments.Count == 0) return AccessibilityStrings.RoutePracticallyThere(targetName);
 
         var total = segments.Sum(s => s.Distance);
-        var sb = new StringBuilder($"Weg zu {targetName}, {total:F0} Meter: ");
+        var sb = new StringBuilder(AccessibilityStrings.RouteHeader(targetName, total));
         var spoken = Math.Min(segments.Count, MaxSpokenSegments);
         for (var i = 0; i < spoken; i++)
         {
-            if (i > 0) sb.Append(", dann ");
-            sb.Append($"{segments[i].Distance:F0} Meter nach {CompassWords[segments[i].Sector]}");
+            if (i > 0) sb.Append(AccessibilityStrings.RouteThen);
+            sb.Append(AccessibilityStrings.RouteSegment(segments[i].Distance, CompassWords[segments[i].Sector]));
         }
-        if (segments.Count > MaxSpokenSegments) sb.Append(", dann weiter");
+        if (segments.Count > MaxSpokenSegments) sb.Append(AccessibilityStrings.RouteAndOn);
         sb.Append('.');
 
         // Compass audit: first hop vector next to its spoken word (see mapping note above).

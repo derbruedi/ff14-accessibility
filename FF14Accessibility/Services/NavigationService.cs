@@ -12,6 +12,26 @@ using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace FF14Accessibility.Services;
 
+/// <summary>
+/// Language-independent identity of an object-browser category. Used for all
+/// category logic (which browse mode, which object kinds); the spoken label is
+/// looked up separately via <see cref="AccessibilityStrings.CategoryLabel"/> so
+/// switching announcement language never changes behaviour.
+/// </summary>
+internal enum NavCategory
+{
+    All,
+    Npcs,
+    Enemies,
+    Players,
+    Objects,
+    GatheringNodes,
+    Aetherytes,
+    QuestGoals,
+    AcceptableQuests,
+    Waypoints,
+}
+
 public sealed class NavigationService
 {
     private readonly IClientState _clientState;
@@ -110,9 +130,9 @@ public sealed class NavigationService
             if (target != null && announceTargetChanges && !isOwnSelection)
             {
                 var name = target.Name.TextValue;
-                if (string.IsNullOrWhiteSpace(name)) name = "Unbenannt";
+                if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.Unnamed;
                 var distance = Vector3.Distance(player.Position, target.Position);
-                var text = $"Ziel: {NpcPrefix(target)}{name}, {DescribeKind(target.ObjectKind)}, " +
+                var text = $"{AccessibilityStrings.TargetPrefix}{NpcPrefix(target)}{name}, {DescribeKind(target.ObjectKind)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
                            $"{DescribeTargetHp(target)}.";
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
@@ -134,27 +154,34 @@ public sealed class NavigationService
 
     // Kinds == null marks the marker categories (quest objectives and map
     // waypoints): they browse positions, not ObjectTable game objects.
-    private static readonly (string Label, ObjectKind[]? Kinds)[] Categories =
+    // The category is identified by the language-independent NavCategory key,
+    // NOT by its spoken label, so switching announcement language (/acc lang)
+    // never breaks the category logic. The label is resolved for speech only,
+    // via AccessibilityStrings.CategoryLabel.
+    private static readonly (NavCategory Cat, ObjectKind[]? Kinds)[] Categories =
     {
-        ("Alles",              AllBrowseKinds),
-        ("NPCs",               new[] { ObjectKind.EventNpc }),
-        ("Gegner",             new[] { ObjectKind.BattleNpc }),
-        ("Spieler",            new[] { ObjectKind.Pc }),
-        ("Objekte",            new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
-        ("Sammelpunkte",       new[] { ObjectKind.GatheringPoint }),
+        (NavCategory.All,             AllBrowseKinds),
+        (NavCategory.Npcs,            new[] { ObjectKind.EventNpc }),
+        (NavCategory.Enemies,         new[] { ObjectKind.BattleNpc }),
+        (NavCategory.Players,         new[] { ObjectKind.Pc }),
+        (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        (NavCategory.GatheringNodes,  new[] { ObjectKind.GatheringPoint }),
         // Ätheryten kommen aus den Kartendaten (PlacesService), nicht aus der
         // ObjectTable: die Marker kennen ALLE Ätheryten + Aethernet-Splitter
         // der Zone, die Objektsuche nur die in ~100 m (User-Wunsch 2026-07-13).
-        ("Ätheryten",          null),
-        ("Quest-Ziele",        null),
-        ("Annehmbare Quests",  null),
-        ("Wegpunkte",          null),
+        (NavCategory.Aetherytes,      null),
+        (NavCategory.QuestGoals,      null),
+        (NavCategory.AcceptableQuests,null),
+        (NavCategory.Waypoints,       null),
     };
 
-    private bool IsQuestCategory           => Categories[_categoryIndex].Label == "Quest-Ziele";
-    private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Label == "Annehmbare Quests";
-    private bool IsPlacesCategory          => Categories[_categoryIndex].Label == "Wegpunkte";
-    private bool IsAetheryteCategory       => Categories[_categoryIndex].Label == "Ätheryten";
+    /// <summary>The spoken label of the current category, in the active language.</summary>
+    private string CurrentCategoryLabel => AccessibilityStrings.CategoryLabel(Categories[_categoryIndex].Cat);
+
+    private bool IsQuestCategory           => Categories[_categoryIndex].Cat == NavCategory.QuestGoals;
+    private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Cat == NavCategory.AcceptableQuests;
+    private bool IsPlacesCategory          => Categories[_categoryIndex].Cat == NavCategory.Waypoints;
+    private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -201,13 +228,11 @@ public sealed class NavigationService
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
-            var label = Categories[_categoryIndex].Label;
+            var label = CurrentCategoryLabel;
             var dests = GetQuestDestinations(IsUnacceptedQuestCategory);
             var here = dests.Count(d => d.InCurrentZone);
             var away = dests.Count - here;
-            _tolk.SpeakInterrupt(away > 0
-                ? $"Kategorie {label}: {here} im Gebiet, {away} in anderen Gebieten."
-                : $"Kategorie {label}: {here} im Gebiet.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryQuestCount(label, here, away));
             return;
         }
 
@@ -215,21 +240,19 @@ public sealed class NavigationService
         {
             var places = _places.GetPlaces();
             var exits = places.Count(p => p.IsZoneTransition);
-            _tolk.SpeakInterrupt(exits > 0
-                ? $"Kategorie Wegpunkte: {places.Count} im Gebiet, davon {exits} Übergänge."
-                : $"Kategorie Wegpunkte: {places.Count} im Gebiet.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryWaypointCount(places.Count, exits));
             return;
         }
 
         if (IsAetheryteCategory)
         {
             var aetherytes = _places.GetPlaces().Count(IsAetherytePlace);
-            _tolk.SpeakInterrupt($"Kategorie Ätheryten: {aetherytes} im Gebiet.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryAetheryteCount(aetherytes));
             return;
         }
 
         var count = GetCategoryObjects().Count;
-        _tolk.SpeakInterrupt($"Kategorie {Categories[_categoryIndex].Label}: {count} in der Nähe.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, count));
     }
 
     /// <summary>
@@ -256,7 +279,7 @@ public sealed class NavigationService
         var objects = GetCategoryObjects();
         if (objects.Count == 0)
         {
-            _tolk.SpeakInterrupt($"Keine {Categories[_categoryIndex].Label} in {CycleRange:F0} Metern.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoObjectsInRange(CurrentCategoryLabel, CycleRange));
             return;
         }
 
@@ -293,8 +316,8 @@ public sealed class NavigationService
         var text = $"{description}, " +
                    $"{FormatDistance(distance)}, " +
                    $"{CalculateDirection(player, obj.Position)}, " +
-                   $"{_cycleIndex + 1} von {count}." +
-                   (rejected ? " Achtung, nicht anvisiert." : "");
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
+                   (rejected ? AccessibilityStrings.NotTargetedSuffix : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
         _tolk.SpeakInterrupt(text);
     }
@@ -308,8 +331,8 @@ public sealed class NavigationService
         {
             SelectedQuestDestination = null;
             _tolk.SpeakInterrupt(unaccepted
-                ? "Keine annehmbaren Quests in der Nähe."
-                : "Keine Quest-Ziele. Erst eine Quest annehmen.");
+                ? AccessibilityStrings.NoAcceptableQuests
+                : AccessibilityStrings.NoQuestGoals);
             return;
         }
 
@@ -326,12 +349,12 @@ public sealed class NavigationService
 
         // Main Scenario quests are flagged so a blind player can tell the story
         // apart from side quests (a sighted player sees a distinct marker).
-        var story = dest.IsMainStory ? "Story: " : string.Empty;
+        var story = dest.IsMainStory ? AccessibilityStrings.StoryPrefix : string.Empty;
 
         // The list is level-ordered, so the level has to be audible - otherwise
         // the order is a silent rule the player cannot act on. Omitted when the
         // game gave us no level rather than announcing a made-up "Stufe 0".
-        var level = dest.Level > 0 ? $"Stufe {dest.Level}, " : string.Empty;
+        var level = dest.Level > 0 ? AccessibilityStrings.LevelPrefix(dest.Level) : string.Empty;
 
         // Current objective ("what is still missing", e.g. "Aurelias erlegen 0/3")
         // from the on-screen quest tracker. Only tracked quests have one; the
@@ -355,19 +378,20 @@ public sealed class NavigationService
             var zone = _places.GetMapName(dest.MapId);
             var hop  = _places.FindFirstHopToMap(dest.MapId, out var hops);
             text = $"{level}{story}{dest.QuestName}{todo}, " +
-                   (string.IsNullOrEmpty(zone) ? "in einem anderen Gebiet." : $"im Gebiet {zone}.");
+                   (string.IsNullOrEmpty(zone) ? AccessibilityStrings.InAnotherArea : AccessibilityStrings.InArea(zone));
             if (hop != null)
             {
-                text += $" Dorthin über {hop.Name}, " +
-                        $"{FormatDistance(Distance2D(player.Position, hop.Position))}, " +
-                        $"{CalculateDirection(player, hop.Position)}" +
-                        (hops > 1 ? $", danach noch {hops - 1} weitere Übergänge." : ".");
-                text += " Nummernblock 3 läuft zum Übergang.";
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
             }
             text += detail;
         }
         // Counter last, after the route hints - see CycleObject.
-        text += $" {_cycleIndex + 1} von {count}.";
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Quest] Auswahl: {text}");
         _tolk.SpeakInterrupt(text);
     }
@@ -407,7 +431,7 @@ public sealed class NavigationService
                   $"dist={distance:F1} {compass}");
 
         if (!_config.AnnounceMapFlag) return;
-        _tolk.SpeakInterrupt($"Neue Markierung, {FormatDistance(distance)}, {compass}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.NewFlagMarker(FormatDistance(distance), compass));
     }
 
     // ── Wegpunkte: durch die Karten-Symbole des Gebiets blättern ──
@@ -430,8 +454,8 @@ public sealed class NavigationService
         {
             SelectedPlaceDestination = null;
             _tolk.SpeakInterrupt(aetherytesOnly
-                ? "Keine Ätheryten in diesem Gebiet gefunden."
-                : "Keine Wegpunkte in diesem Gebiet gefunden.");
+                ? AccessibilityStrings.NoAetherytesFound
+                : AccessibilityStrings.NoWaypointsFound);
             return;
         }
 
@@ -441,10 +465,12 @@ public sealed class NavigationService
         SelectedPlaceDestination = place;
 
         // Direction uses X/Z only - the placeholder Y does not affect it.
+        // NOTE: place.TypeLabel is still German here - it is coupled to PlacesService
+        // comparison logic (IsAetherytePlace) and gets translated with that group.
         var text = $"{place.Name}, {place.TypeLabel}, " +
                    $"{FormatDistance(Distance2D(player.Position, place.Position))}, " +
                    $"{CalculateDirection(player, place.Position)}, " +
-                   $"{_cycleIndex + 1} von {count}.";
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Orte] Auswahl: {text} pos=({place.Position.X:F1}|{place.Position.Z:F1})");
         _tolk.SpeakInterrupt(text);
     }
@@ -752,11 +778,9 @@ public sealed class NavigationService
         var name = obj.Name.TextValue;
 
         if (info == null)
-            return string.IsNullOrWhiteSpace(name) ? "Sammelpunkt" : name;
+            return string.IsNullOrWhiteSpace(name) ? AccessibilityStrings.GatheringNodeFallback : name;
 
-        return info.Value.Level > 0
-            ? $"{info.Value.Type}, Stufe {info.Value.Level}"
-            : info.Value.Type;
+        return AccessibilityStrings.GatheringNodeDesc(info.Value.Type, info.Value.Level);
     }
 
     private List<IGameObject> GetCategoryObjects()
@@ -913,7 +937,7 @@ public sealed class NavigationService
         {
             if (!isReroute)
             {
-                _tolk.Speak("Kein Wegenetz, führe in Luftlinie.");
+                _tolk.Speak(AccessibilityStrings.NoNavmeshStraightLine);
                 _log.Info("[Nav] Gehhilfe: Nav.Pathfind nicht verfügbar, Luftlinien-Modus.");
             }
             return;
@@ -937,7 +961,7 @@ public sealed class NavigationService
             if (!_computeAnnounced && (DateTime.UtcNow - _routeRequestedAt).TotalSeconds > 1)
             {
                 _computeAnnounced = true;
-                _tolk.Speak("Weg wird berechnet.");
+                _tolk.Speak(AccessibilityStrings.ComputingRoute);
             }
             return;
         }
@@ -983,7 +1007,7 @@ public sealed class NavigationService
             // immediate direction actually changed.
             var newDirection = DirectionText(RelativeAngle(player, _route[_routeCursor]));
             if (newDirection != previousDirection)
-                _tolk.SpeakInterrupt($"Neuer Weg: {newDirection}.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.NewRoute(newDirection));
             _log.Info($"[Nav] Gehhilfe: Route neu berechnet ({waypoints.Count} Wegpunkte).");
         }
     }
@@ -998,7 +1022,7 @@ public sealed class NavigationService
             if (obj == null)
             {
                 StopWalkGuide();
-                _tolk.SpeakInterrupt("Gehhilfe: Ziel verloren.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.WalkTargetLost);
                 _log.Info($"[Nav] Gehhilfe: Ziel {_walkTargetId:X} nicht mehr in der ObjectTable.");
                 return;
             }
@@ -1010,7 +1034,7 @@ public sealed class NavigationService
         {
             StopWalkGuide();
             _cue.PlayArrivalTone();
-            _tolk.SpeakInterrupt($"Ziel erreicht: {_walkTargetName}.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.TargetReached(_walkTargetName));
             _log.Info($"[Nav] Gehhilfe: Ziel erreicht, dist={distance:F1}");
             return;
         }
@@ -1116,6 +1140,7 @@ public sealed class NavigationService
             var relAngle = RelativeAngle(player, next);
             var dist = Vector3.Distance(player.Position, next);
             _tolk.SpeakInterrupt($"{FormatDistance(dist)}, {DirectionText(relAngle)}{VerticalHint(player, next)}.");
+            // (FormatDistance/DirectionText/VerticalHint are all language-aware.)
             _lastGuideTick = DateTime.UtcNow;
             _log.Info($"[Nav] Gehhilfe: Wegpunkt {(genuineReach ? "erreicht" : "übersprungen")}, " +
                       $"weiter zu {_routeCursor + 1}/{route.Count}, dist={dist:F1}");
@@ -1147,7 +1172,7 @@ public sealed class NavigationService
     private static string VerticalHint(IGameObject player, Vector3 point)
     {
         var dy = point.Y - player.Position.Y;
-        return dy > 1.5f ? ", aufwärts" : dy < -1.5f ? ", abwärts" : string.Empty;
+        return dy > 1.5f ? AccessibilityStrings.VerticalUp : dy < -1.5f ? AccessibilityStrings.VerticalDown : string.Empty;
     }
 
     /// <summary>2D point-to-segment distance on XZ (Y is noisy across slopes).</summary>
@@ -1180,13 +1205,13 @@ public sealed class NavigationService
         var task = _routes.RequestPath(player.Position, position);
         if (task == null)
         {
-            _tolk.SpeakInterrupt("Kein Wegenetz. Das Plugin vnavmesh fehlt oder lädt noch.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoNavmeshPlugin);
             return;
         }
         _previewTask = task;
         _previewName = name;
         _previewDest = position;
-        _tolk.SpeakInterrupt($"Berechne Weg zu {name}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.ComputingRouteTo(name));
     }
 
     /// <summary>Route preview to the current game target.</summary>
@@ -1195,7 +1220,7 @@ public sealed class NavigationService
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel. Erst mit N ein Objekt wählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTargetSelectN);
             return;
         }
         PreviewRoute(target.Position, target.Name.TextValue);
@@ -1227,7 +1252,7 @@ public sealed class NavigationService
     private static string DescribeTargetHp(IGameObject target)
     {
         if (target is IBattleChara bc && bc.MaxHp > 0)
-            return $", HP {bc.CurrentHp} von {bc.MaxHp}";
+            return AccessibilityStrings.TargetHpFragment(bc.CurrentHp, bc.MaxHp);
         return string.Empty;
     }
 
@@ -1270,29 +1295,9 @@ public sealed class NavigationService
     /// quest markers; the exact id is logged so the mapping can be refined from
     /// real data (available "!" vs. active vs. ready-to-turn-in).
     /// </summary>
-    private static string DescribeQuestMarker(uint iconId) => iconId switch
-    {
-        0 => string.Empty,
-        >= 71001 and <= 71006 => "Quest verfügbar",
-        >= 71021 and <= 71046 => "Quest aktiv",
-        >= 71000 and <= 71999 => "Quest",
-        _ => string.Empty,
-    };
+    private static string DescribeQuestMarker(uint iconId) => AccessibilityStrings.QuestMarkerHint(iconId);
 
-    private static string DescribeKind(ObjectKind kind) => kind switch
-    {
-        ObjectKind.Pc             => "Spieler",
-        ObjectKind.BattleNpc      => "Kampf-NPC",
-        ObjectKind.EventNpc       => "NPC",
-        ObjectKind.Treasure       => "Schatz",
-        ObjectKind.Aetheryte      => "Ätheryt",
-        ObjectKind.GatheringPoint => "Sammelpunkt",
-        ObjectKind.EventObj       => "Objekt",
-        ObjectKind.Companion      => "Begleiter",
-        ObjectKind.Retainer       => "Gehilfe",
-        ObjectKind.Mount          => "Reittier",
-        _                         => kind.ToString()
-    };
+    private static string DescribeKind(ObjectKind kind) => AccessibilityStrings.ObjectKindName(kind);
 
     // Ziel per Name setzen (NPC oder Spielername)
     public bool SetTarget(string name)
@@ -1302,13 +1307,13 @@ public sealed class NavigationService
 
         if (obj == null)
         {
-            _tolk.SpeakInterrupt($"Ziel {name} nicht gefunden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.TargetNotFound(name));
             return false;
         }
 
         _trackedObject = obj;
         _trackedName = obj.Name.TextValue;
-        _tolk.SpeakInterrupt($"Verfolge {_trackedName}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.Tracking(_trackedName));
         return true;
     }
 
@@ -1318,20 +1323,20 @@ public sealed class NavigationService
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel anvisiert.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGameTarget);
             return;
         }
 
         _trackedObject = target;
         _trackedName = target.Name.TextValue;
-        _tolk.SpeakInterrupt($"Verfolge {_trackedName}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.Tracking(_trackedName));
     }
 
     public void ClearTarget()
     {
         _trackedObject = null;
         _trackedName = null;
-        _tolk.SpeakInterrupt("Zielverfolgung beendet.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.TrackingStopped);
     }
 
     // Auf Tastendruck: Richtung und Distanz ansagen
@@ -1349,7 +1354,7 @@ public sealed class NavigationService
 
         if (_trackedObject == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel gesetzt. Erst mit N ein Objekt wählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTargetTracked);
             return;
         }
 
@@ -1360,7 +1365,8 @@ public sealed class NavigationService
         var direction = CalculateDirection(player, targetPos);
         var distanceText = FormatDistance(distance);
 
-        _tolk.SpeakInterrupt($"{_trackedName}: {distanceText}, {direction}.");
+        // _trackedName is set in lockstep with _trackedObject (checked non-null above).
+        _tolk.SpeakInterrupt(AccessibilityStrings.TargetDirection(_trackedName!, distanceText, direction));
     }
 
     // Alle nahen NPCs/Spieler auflisten
@@ -1379,7 +1385,7 @@ public sealed class NavigationService
 
         if (nearby.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Objekte in der Nähe.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoNearbyObjects);
             return;
         }
 
@@ -1389,7 +1395,7 @@ public sealed class NavigationService
             return $"{o.Name.TextValue} {FormatDistance(dist)}";
         });
 
-        _tolk.SpeakInterrupt("In der Nähe: " + string.Join(", ", parts));
+        _tolk.SpeakInterrupt(AccessibilityStrings.NearbyList(string.Join(", ", parts)));
     }
 
     private string CalculateDirection(IGameObject player, Vector3 targetPos) =>
@@ -1414,20 +1420,9 @@ public sealed class NavigationService
         return relativeAngle;
     }
 
-    private static string DirectionText(double relativeAngle) => relativeAngle switch
-    {
-        < -135 => "hinter links",
-        < -45  => "links",
-        < -15  => "leicht links",
-        <= 15  => "geradeaus",
-        <= 45  => "leicht rechts",
-        <= 135 => "rechts",
-        _      => "hinter rechts"
-    };
+    private static string DirectionText(double relativeAngle) =>
+        AccessibilityStrings.RelativeDirection(relativeAngle);
 
     private static string FormatDistance(float distance) =>
-        distance < 2f   ? "direkt neben dir" :
-        distance < 10f  ? $"{distance:F0} Meter" :
-        distance < 100f ? $"{distance:F0} Meter" :
-                          $"{distance / 1000:F1} Kilometer";
+        AccessibilityStrings.FormatDistance(distance);
 }

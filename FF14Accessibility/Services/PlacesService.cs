@@ -55,6 +55,12 @@ public sealed class PlacesService
     private static float PixelToWorld(float pixel, ushort sizeFactor, short offset)
         => (pixel - 1024f) * 100f / sizeFactor - offset;
 
+    /// <summary>Inverse of <see cref="PixelToWorld"/>: world coordinate back to
+    /// map pixel (0..2048). Solving world = (pixel-1024)*100/scale - offset for
+    /// pixel gives pixel = (world+offset)*scale/100 + 1024.</summary>
+    private static float WorldToPixel(float world, ushort sizeFactor, short offset)
+        => (world + offset) * sizeFactor / 100f + 1024f;
+
     /// <summary>
     /// Converts the player-facing map coordinates shown in-game (the 1..~42
     /// values, e.g. 24.1 / 21.0) to a world position on the CURRENT map. Y is
@@ -83,6 +89,32 @@ public sealed class PlacesService
         _log.Info($"[Goto] Karte {mapX:0.0}/{mapY:0.0} (Map {mapId}, Scale {map.SizeFactor}, " +
                   $"Off {map.OffsetX}/{map.OffsetY}) -> Welt {worldX:0.0}/{worldZ:0.0}");
         return new Vector3(worldX, 0f, worldZ);
+    }
+
+    /// <summary>
+    /// Converts a world position on the CURRENT map to the player-facing map
+    /// coordinates shown in-game (the 1..~42 values). Exact inverse of
+    /// <see cref="MapCoordToWorld"/> - the same verified formula solved for the
+    /// map coordinate: pixel = WorldToPixel(world), coord = 2*pixel/scale + 1.
+    /// Height (world.Y) is irrelevant - the map is 2D, so only X and Z are used.
+    /// Returns null when the current map is unknown.
+    /// </summary>
+    public (float X, float Y)? WorldToMapCoord(Vector3 world)
+    {
+        var mapId = _clientState.MapId;
+        if (mapId == 0) return null;
+
+        if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map))
+        {
+            _log.Info($"[Coords] Map {mapId} nicht im Sheet - keine Umrechnung.");
+            return null;
+        }
+
+        var pixelX = WorldToPixel(world.X, map.SizeFactor, map.OffsetX);
+        var pixelY = WorldToPixel(world.Z, map.SizeFactor, map.OffsetY);
+        var mapX = pixelX * 2f / map.SizeFactor + 1f;
+        var mapY = pixelY * 2f / map.SizeFactor + 1f;
+        return (mapX, mapY);
     }
 
     /// <summary>Spoken type label of the player-set map flag.</summary>

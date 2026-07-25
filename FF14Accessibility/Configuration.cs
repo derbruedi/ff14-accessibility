@@ -7,6 +7,12 @@ public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 2;
 
+    // Sprache aller Mod-Ansagen. Auto = folgt der Windows-Sprache (deutsches
+    // Windows -> Deutsch, sonst Englisch). Umschaltbar mit "/acc lang de|en|auto".
+    // Spielinhalte (Item-/NPC-Namen, Questtexte) bleiben davon unberuehrt - die
+    // kommen bereits in der Spielsprache vom Spiel. Siehe Loc / AccessibilityStrings.
+    public LanguageMode Language = LanguageMode.Auto;
+
     // Tastaturbelegung. Standard ab V4.21 kollisionsfrei laut Live-Keybind-Dump
     // (2026-07-10): N ist der einzige freie Buchstabe, Strg+F1..F12 sind frei.
     // Format: "Taste" oder "Strg+Umschalt+Taste" (Modifier: Strg, Umschalt, Alt).
@@ -31,9 +37,12 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyAutoWalk     = "Numpad3";          // Auto-Lauf zum Ziel an/aus (braucht vnavmesh)
     public string KeyRoutePreview = "Strg+Numpad5";     // Routen-Vorschau: Weg ansagen ohne zu laufen (Numpad5 hat die tastbare Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 frei)
     public string KeyGotoCoords   = "Strg+Umschalt+F1"; // Zu Koordinaten aus der Zwischenablage laufen (z.B. "24.1 21.0" kopieren, dann Taste). Alle Strg+F/Umschalt+F sind belegt; Strg+F* ist laut Keybind-Dump spielfrei, also ist Strg+Umschalt+F* erst recht frei.
+    public string KeyCopyCoords   = "Strg+Umschalt+F2"; // Eigene aktuelle Karten-Koordinaten in die Zwischenablage kopieren (zum Weitergeben im Chat). Gegenstueck zu KeyGotoCoords; Strg+Umschalt+F* laut Keybind-Dump spielfrei.
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
     public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt
+    public string KeySpStatus     = "Strg+Ende";        // SP-Stand (Sammelpunkte, engl. GP) ansagen - der Vorrat, den Sammler fuer Sammel-Fertigkeiten verbrauchen. Strg+Ende ist im Keybind-Dump CAMERA_SAVE (Kamera-Preset speichern) - rein visuell, fuer blindes Spiel folgenlos (wie die akzeptierte Kamera-Zoom-Ueberschneidung der Bild-Tasten). Plugin schluckt die Taste nicht.
+    public string KeyToggleHeading = "N";               // Himmelsrichtungs-Ansage beim Drehen an/aus. Bare N ist die einzige freie Buchstaben-Taste im Spiel (in V5.31 fuer neue Features freigeraeumt, Keybind-Dump).
     public string KeyDumpUI       = "Strg+F5";          // Node-Tree des aktuellen Addons auf Desktop speichern
     public string KeyWhereAmI     = "Strg+F2";          // Aktives Fenster ansagen + sichtbare Fenster ins Log
     public string KeyReadHotbar   = "Strg+F9";          // Aktionsleiste 1 vorlesen (was liegt auf Taste 1-0)
@@ -86,9 +95,13 @@ public sealed class Configuration : IPluginConfiguration
         KeyWalkGuide    = defaults.KeyWalkGuide;
         KeyAutoWalk     = defaults.KeyAutoWalk;
         KeyRoutePreview = defaults.KeyRoutePreview;
+        KeyGotoCoords   = defaults.KeyGotoCoords;
+        KeyCopyCoords   = defaults.KeyCopyCoords;
         KeyReadUI       = defaults.KeyReadUI;
         KeySilence      = defaults.KeySilence;
         KeyCombatStatus = defaults.KeyCombatStatus;
+        KeySpStatus     = defaults.KeySpStatus;
+        KeyToggleHeading = defaults.KeyToggleHeading;
         KeyDumpUI       = defaults.KeyDumpUI;
         KeyWhereAmI     = defaults.KeyWhereAmI;
         KeyReadHotbar   = defaults.KeyReadHotbar;
@@ -147,6 +160,7 @@ public sealed class Configuration : IPluginConfiguration
     public float NearbyDistance = 30f;
     public bool AnnounceTargetChanges = true;   // Zielwechsel (Tab/F1-F12) ansagen
     public bool AnnounceMapFlag = true;         // neu gesetzte Karten-Markierung ansagen
+    public bool AnnounceHeading = true;         // beim Drehen die Himmelsrichtung ansagen, in die man schaut (nur nach Dreh-Ende + Sektorwechsel, siehe HeadingService). Umschaltbar mit KeyToggleHeading
     public float BeaconVolume = 0.35f;          // Gehhilfe-Ton: 0 = stumm, 1 = volle Lautstärke
 
     // Auto-Lauf: "Noch X Meter" erst nach so vielen zurückgelegten Metern
