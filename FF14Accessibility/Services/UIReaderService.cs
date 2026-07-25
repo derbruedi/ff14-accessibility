@@ -4637,6 +4637,11 @@ public sealed class UIReaderService : IDisposable
 
         if (text != _lastChatEcho)
         {
+            // Mirror the full current line to the braille display (silent) so a
+            // braille reader can read back exactly what they typed (user
+            // 2026-07-25). Independent of EchoTypedCharacters: that flag only
+            // governs the SPOKEN per-character echo below, which stays off.
+            _tolk.Braille(text);
             SpeakTextEchoDiff(_lastChatEcho, text);
             _lastChatEcho = text;
             _log.Info($"[Chat] Echo: '{TolkService.Sanitize(text)}'");

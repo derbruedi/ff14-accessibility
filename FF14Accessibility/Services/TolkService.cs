@@ -163,6 +163,22 @@ public sealed class TolkService : IDisposable
         Remember(text);
     }
 
+    /// <summary>
+    /// Shows text on the braille display ONLY - no speech. Used to mirror a text
+    /// field the user is typing into (chat input) so a braille reader can read
+    /// back what they wrote without any spoken echo (user 2026-07-25). Not routed
+    /// through the speech history/dedup - it is a live display update, not an
+    /// announcement. An empty line is sent as a single space so Tolk actually
+    /// clears the display (it ignores an empty string).
+    /// </summary>
+    public void Braille(string text)
+    {
+        if (!IsAvailable) return;
+        text = Sanitize(text);
+        if (text.Length == 0) text = " ";
+        TolkNative.Tolk_Braille(text);
+    }
+
     public void Silence()
     {
         if (!IsAvailable) return;

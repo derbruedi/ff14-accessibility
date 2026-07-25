@@ -12,6 +12,37 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     ACHTUNG: Der Code ist trotz Release IM SPIEL weiterhin UNGETESTET - Test-Schritte
     unten abarbeiten und bei Fehlern Patch-Release nachschieben.
 
+>>> NEU (2026-07-25, GEBAUT 0/0, UNGETESTET): CHAT-EINGABE-GATE. Problem (User):
+    beim Tippen im Spiel-Chat feuerten Mod-Tasten (N, Numpad, Pfeile, Return...) mit.
+    Fix: IsJustPressed() gibt false zurueck, solange ein Spiel-Textfeld fokussiert ist.
+    Erkannt ueber die spieleigene Funktion RaptureAtkModule.IsTextInputActive()
+    (ilspycmd-verifiziert in FFXIVClientStructs.dll: RaptureAtkModule ->
+    AtkModule.IsTextInputActive, die native Routing-Funktion des Spiels). Zustand wird
+    1x pro Frame in _textInputActive gecacht (Plugin.cs, OnFrameworkUpdate). Die
+    Per-Frame-Update()-Aufrufe (Gehhilfe/Beacon/Heading/Fokus-Reader) laufen weiter,
+    da sie NICHT durch IsJustPressed gehen. Debug-Log [TextInput] active=... loggt bei
+    jedem Wechsel -> im Spiel pruefen, dass es genau beim Chat oeffnen/schliessen flippt.
+    TEST: Chat oeffnen (Enter), "n" tippen -> schreibt "n", kein Objekt-Cycle; Pfeile
+    bewegen Cursor; nach Chat-Schliessen wieder normale Mod-Tasten. Gamepad-D-Pad
+    (SelectYesno) bewusst NICHT gegatet (Tastatur-Nutzer, laeuft nicht ueber IsJustPressed).
+
+>>> NEU (2026-07-25, GEBAUT 0/0, DEBUG-DEPLOYT, UNGETESTET): CHAT-EINGABE AUF BRAILLE.
+    User-Wunsch: beim Tippen im Chat die aktuelle Zeile auf der Braillezeile nachlesen
+    koennen (nur sehen, KEIN Sprach-Echo - das gesprochene Zeichen-Echo hatte User
+    2026-07-22 abgeschaltet, EchoTypedCharacters=false, bleibt aus).
+    Loesung: reiner Braille-Ausgang ergaenzt. Tolk_Braille in Tolk.dll ist exportiert
+    (verifiziert 2026-07-25 via Symbol-Scan; auch Tolk_HasBraille/HasSpeech vorhanden).
+    - TolkNative.Tolk_Braille deklariert (Cdecl, LPWStr).
+    - TolkService.Braille(text): nur Braille, keine Sprache, keine History/Dedup; leere
+      Zeile -> " " damit Tolk das Display leert.
+    - UIReaderService.OnChatLogUpdate: bei jeder Textaenderung _tolk.Braille(text) (volle
+      aktuelle Zeile). Laeuft unter EchoChatInput (true); unabhaengig von
+      EchoTypedCharacters (das steuert nur das gesprochene Echo via SpeakTextEchoDiff).
+    Die vorhandene Infrastruktur (V4.90 OnChatLogUpdate, AddonChatLog.TextInput->IsActive,
+    EvaluatedString) war schon da - es fehlte nur der stille Braille-Pfad.
+    TEST: Chat oeffnen (Enter), tippen -> Braillezeile zeigt live die Zeile; loeschen ->
+    aktualisiert; leer -> Display leer; kein gesprochenes Zeichen-Echo.
+
 ## FRUEHERER STAND (2026-07-24, V5.45: Englische Ausgabe - Build repariert + Navigation + UIReaderService + Equipment/Combat uebersetzt - GEBAUT, UNGETESTET)
 
 >>> FUER NEUEN CHAT ("weiter"): Lokalisierung Teil 1 (Mod-Ansagen ins Englische, /acc

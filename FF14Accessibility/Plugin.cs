@@ -9,6 +9,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FF14Accessibility.Native;
 using FF14Accessibility.Services;
+using FFXIVClientStructs.FFXIV.Client.UI;
 
 namespace FF14Accessibility;
 
@@ -431,6 +432,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool IsJustPressed(string keySpec)
     {
+        // While a game text field has focus (chat, search box, name entry, ...)
+        // every keystroke belongs to that field. Standing down here suppresses
+        // ALL mod hotkeys at once - typing an "n" writes "n" instead of cycling
+        // nearby objects, arrow keys move the text cursor, Return sends the
+        // message (user 2026-07-25). The game's own IsTextInputActive is the
+        // authority on when a field is receiving input. The per-frame Update()
+        // calls in OnFrameworkUpdate do NOT go through here, so the walk guide,
+        // beacon and focus reader keep working while typing.
+        if (_textInputActive) return false;
+
         var (vk, ctrl, shift, alt) = ParseKeySpec(keySpec);
         if (vk < 0 || !_keyJustPressed[vk]) return false;
         // Exact modifier match: bare "N" must NOT fire while Alt is held,
@@ -674,9 +685,35 @@ public sealed class Plugin : IDalamudPlugin
     // the chat yet, so /acc keys would be unreachable for them.
     private bool _keybindsDumped;
 
+    // True while a game text field has keyboard focus. Cached once per frame
+    // (IsJustPressed is called ~60x per frame - one native call is enough) and
+    // read by IsJustPressed to gate every mod hotkey off while the user types.
+    private bool _textInputActive;
+
+    /// <summary>
+    /// True while a game text field (chat, search, name entry, ...) has keyboard
+    /// focus. Reads the game's own <c>RaptureAtkModule.IsTextInputActive</c> -
+    /// the native function the game itself uses to route keystrokes to a text
+    /// box - so this matches the game exactly instead of guessing.
+    /// </summary>
+    private unsafe bool IsGameTextInputActive()
+    {
+        var module = RaptureAtkModule.Instance();
+        return module != null && module->IsTextInputActive();
+    }
+
     private void OnFrameworkUpdate(IFramework framework)
     {
         UpdateKeyEdges();
+
+        // Sample the text-input state once for this frame. Log only on change so
+        // the in-game test can confirm it flips exactly when the chat opens/closes.
+        var textInputActive = IsGameTextInputActive();
+        if (textInputActive != _textInputActive)
+        {
+            _textInputActive = textInputActive;
+            Log.Info($"[TextInput] active={_textInputActive} - mod hotkeys {(_textInputActive ? "suppressed" : "live")}");
+        }
 
         if (!_keybindsDumped && ClientState.IsLoggedIn && _keybinds.IsReady())
         {

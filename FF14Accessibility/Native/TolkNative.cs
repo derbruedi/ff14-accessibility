@@ -60,6 +60,13 @@ internal static class TolkNative
     [return: MarshalAs(UnmanagedType.I1)]
     internal static extern bool Tolk_Speak([MarshalAs(UnmanagedType.LPWStr)] string str, [MarshalAs(UnmanagedType.I1)] bool interrupt);
 
+    // Braille-only output (no speech). Verified exported in the shipped Tolk.dll
+    // 2026-07-25. Used to mirror the chat input line so a braille reader can read
+    // back what they typed without any spoken echo.
+    [DllImport(TolkDll, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool Tolk_Braille([MarshalAs(UnmanagedType.LPWStr)] string str);
+
     [DllImport(TolkDll, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]
     internal static extern bool Tolk_Silence();
