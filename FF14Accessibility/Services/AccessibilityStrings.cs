@@ -37,6 +37,26 @@ public static class AccessibilityStrings
     public static string CategoryLabel(string name) =>
         IsGerman ? $"Kategorie {name}." : $"Category {name}.";
 
+    // ── Reittier-Verzeichnis (MountNoteBook) ─────────────────────────
+    /// <summary>Active view tab of the mount guide (Favorites/Normal/Search).</summary>
+    public static string MountViewFavorites => IsGerman ? "Favoriten." : "Favorites.";
+    public static string MountViewNormal    => IsGerman ? "Alle Reittiere." : "All mounts.";
+    public static string MountViewSearch    => IsGerman ? "Suche." : "Search.";
+
+    /// <summary>Page tab of the mount guide (1-based).</summary>
+    public static string MountPage(int page) =>
+        IsGerman ? $"Seite {page}." : $"Page {page}.";
+
+    /// <summary>Spoken when the focus lands on the mount guide's search box.</summary>
+    public static string MountSearchField => IsGerman ? "Reittier suchen, Eingabefeld." : "Mount search, text field.";
+
+    // ── Umschalt-Zustaende (Checkbox / Radiobutton) ──────────────────
+    /// <summary>Checkbox is ticked / unticked.</summary>
+    public static string StateOn  => IsGerman ? "an" : "on";
+    public static string StateOff => IsGerman ? "aus" : "off";
+    /// <summary>Radio button is the selected option.</summary>
+    public static string RadioSelected => IsGerman ? "ausgewählt" : "selected";
+
     // ── Sprachumschaltung (/acc lang) ────────────────────────────────
     public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
     public static string LanguageEnglish => IsGerman ? "Englisch" : "English";
@@ -515,6 +535,8 @@ public static class AccessibilityStrings
     public static string NotLoggedIn => IsGerman ? "Nicht eingeloggt." : "Not logged in.";
     public static string CombatStart => IsGerman ? "Kampf." : "Combat.";
     public static string CombatEnd => IsGerman ? "Kampf vorbei." : "Combat over.";
+    public static string AoeWarningOn  => IsGerman ? "Flächenwarnung an." : "Area warning on.";
+    public static string AoeWarningOff => IsGerman ? "Flächenwarnung aus." : "Area warning off.";
 
     // "X of Y" building blocks for HP/MP/GP (no trailing punctuation).
     public static string HpValue(uint cur, uint max) => IsGerman ? $"HP {cur} von {max}" : $"HP {cur} of {max}";

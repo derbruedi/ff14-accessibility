@@ -619,6 +619,11 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
 - PROBE-VERIFIZIERT (Dialog-Nodes-Zeilen, Sessions 09:36 + 10:14):
   Talk-Sprechername = Text-Node id=2, Dialogtext = id=3. Der Name-Node
   kommt in Node-Listen-Reihenfolge NACH dem Text (zuletzt).
+- `_BattleTalk` (Kampf-Sprechblase, [ArenaText]-Log 2026-07-26 16:26): NPC-/
+  Lehrer-Ansagen in Instanzen und im Kampfuebungsplatz ("Erledigt zuerst den
+  Thaumaturgie-Lehrer", "Das ist der falsche Gegner!"). Sprechername = Text-Node
+  id=4, Ansagetext = id=6. Wird vom SELBEN Handler (OnTalkUpdate) gelesen; die
+  Sprecher-Node-Id ist addon-abhaengig (Talk=2, _BattleTalk=4). V5.55.
 
 ### ConfigSystem (Systemkonfiguration, Dump 2026-07-11 10:16, 593 Nodes)
 - Kategorie-Tabs: 8× CT=DragDrop(17), NodeIds 7–14 (Indizes [581]–[588],
@@ -650,6 +655,39 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   `.Name` ist `ReadOnlySeString` → `.ExtractText()`; Zugriff
   `IDataManager.GetExcelSheet<Action>().TryGetRow(CastActionId, out row)`.
   Namespace-Kollision mit System.Action → `using LuminaAction = ...`.
+
+### AoE-Form/Radius (Action-Sheet, ilspycmd-verifiziert 2026-07-26)
+Für das AoE-Ausweich-Feature nötig. Lumina `Action`-Sheet-Felder (Offsets aus
+Lumina.Excel.Sheets.Action dekompiliert):
+- `CastType` (byte, @40) — die FORM der Aktion (Kreis / Kegel / Linie / Donut …).
+  ⚠️ Das Sheet liefert NUR die Zahl, keine Bedeutung. Die Zuordnung
+  Zahl→Form ist Community-Wissen, aber NICHT am Code verifiziert → wird per
+  DEBUG-Sonde `CombatService.AoeCastProbe` empirisch belegt, bevor darauf
+  „stehst-drin"-Logik gebaut wird. NICHT hartcodiert raten.
+- `EffectRange` (byte, @41) — Reichweite/Radius.
+- `XAxisModifier` (byte, @42) — Breite (für Linien/Rechtecke).
+- `Omen` / `OmenAlt` (RowRef<Omen>, @28/@30) — Verweis auf die Telegraph-Grafik
+  (Boden-Markierung). Noch nicht ausgewertet.
+- CASTTYPE->FORM (aus [AoeProbe]-Log + OmenPath belegt, Kampfuebungsplatz 2026-07-26):
+  - `2` = KREIS an der Ziel-Position (Feura, EffectRange=5, OmenPath 'general_1b').
+    Zentrum = Ziel-Objekt des Casts (CastTargetObjectId), sonst Caster. Boden-
+    platzierte Kreise ohne Ziel-Objekt haben ihr Zentrum nur in der VFX -> noch offen.
+  - `3` = KEGEL vom Caster in Blickrichtung (Kahlrodung, EffectRange=6=Laenge,
+    OmenPath 'gl_fan090' = 90 Grad voll). Halbwinkel = fan-Zahl/2. Andere Kegel:
+    fan060/fan120 -> Winkel aus dem Namen parsen.
+  - `4` = LINIE/RECHTECK vom Caster in Blickrichtung (Spalten, EffectRange=30=Laenge,
+    XAxisModifier=2, OmenPath 'general02'). ANNAHME: Halbbreite = XAxisModifier
+    (in-game verifizieren). Achtung: EffectRange ist hier die LAENGE, NICHT ein
+    Radius -> Linie als Kreis behandeln = riesige Falsch-Zone (war der V1-Bug).
+  - Unbekannte Typen: konservativ Caster-Kreis (lieber ueber- als unterwarnen).
+  - Geometrie umgesetzt in `CombatService.IsPlayerInAoe` (V5.55).
+- MESS-SONDE (V5.55, #if DEBUG, auto pro Frame): `AoeCastProbe` iteriert die
+  ObjectTable, loggt je castenden IBattleChara (dedupe per casterId, rising edge)
+  `[AoeProbe]` mit castId/Name/CastType/EffectRange/XAxisModifier/Omen + Geometrie
+  (casterPos, rot, playerPos, dist, relBearing per verifizierter Rotations-
+  Konvention, atMe, castTime). Zweck: CastType-Zahlen gegen das mappen, was der
+  Spieler wirklich sieht. Aus Release rauskompiliert.
+
 - Hotbar: `RaptureHotbarModule.Instance()` (via UIModule, direkte statische
   Instance() vorhanden). `GetSlotById(uint hotbarId, uint slotId)` →
   `HotbarSlot*`. UI-„Aktionsleiste 1" = hotbarId 0; 16 Slots/Leiste,

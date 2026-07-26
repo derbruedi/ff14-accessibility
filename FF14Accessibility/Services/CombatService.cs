@@ -1,3 +1,4 @@
+using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
@@ -14,6 +15,7 @@ public sealed class CombatService
     private readonly TolkService           _tolk;
     private readonly Configuration         _config;
     private readonly MessageHistoryService _history;
+    private readonly AoeWarningService     _aoeWarn;
     private readonly IPluginLog            _log;
 
     private bool _wasInCombat   = false;
@@ -36,6 +38,15 @@ public sealed class CombatService
 
     private static readonly int[] HpThresholds = [75, 50, 25, 10];
 
+#if DEBUG
+    // Debug-only AoE-cast probe (AoeCastProbe): maps each nearby enemy cast to its
+    // Lumina Action shape data (CastType/EffectRange/XAxisModifier/Omen) plus caster
+    // geometry, so the CastType->shape numbers can be verified empirically instead of
+    // guessed. Deduped per caster: casterId -> last logged cast action id. Compiled
+    // out of release builds.
+    private readonly Dictionary<ulong, uint> _probedCasts = new();
+#endif
+
     public CombatService(
         IObjectTable objectTable,
         ITargetManager targetManager,
@@ -43,6 +54,7 @@ public sealed class CombatService
         TolkService tolk,
         Configuration config,
         MessageHistoryService history,
+        AoeWarningService aoeWarn,
         IPluginLog log)
     {
         _objectTable   = objectTable;
@@ -51,6 +63,7 @@ public sealed class CombatService
         _tolk          = tolk;
         _config        = config;
         _history       = history;
+        _aoeWarn       = aoeWarn;
         _log           = log;
     }
 
@@ -62,6 +75,10 @@ public sealed class CombatService
 
         TrackLevelUp();
         TrackXpGain();
+
+        // AoE danger tone. Runs regardless of the InCombat flag: a cast telegraph can
+        // appear the instant before combat officially starts, and the flag lags.
+        UpdateAoeWarning(player.GameObjectId, player.Position);
 
         var inCombat = (player.StatusFlags & StatusFlags.InCombat) != 0;
 
@@ -322,6 +339,251 @@ public sealed class CombatService
         _tolk.SpeakInterrupt(AccessibilityStrings.GpValue(player.CurrentGp, player.MaxGp));
     }
 
+    /// <summary>
+    /// Drives the AoE danger tone: ON while the player stands inside the danger zone
+    /// of any nearby enemy that is currently casting, OFF the instant they leave it
+    /// or the cast ends. Because it keys off <c>IsCasting</c>, the tone naturally
+    /// begins with the cast bar and stops when the spell resolves.
+    ///
+    /// GEOMETRY MODEL V1 (WORKAROUND): the danger zone is treated as a CIRCLE centred
+    /// on the caster with radius = <c>Action.EffectRange</c> yalms. The clean solution
+    /// is to read the real telegraph shape and origin from the cast's Omen/VFX object
+    /// (a circle may be ground-placed, and cones/lines need the caster's facing) - but
+    /// that data is not yet decoded (hard research path, see game-api.md "AoE-Form").
+    /// This V1 is verified in-game against the Hall of the Novice circle; the parallel
+    /// AoeCastProbe logs the true Omen shape so cones/lines/off-centre AoEs can be
+    /// modelled next. Distance is horizontal (XZ) only - AoE telegraphs are ground
+    /// planes, so a height difference must not hide or fake danger.
+    /// </summary>
+    private void UpdateAoeWarning(ulong playerId, Vector3 playerPos)
+    {
+        if (!_config.AnnounceAoeWarning) { _aoeWarn.SetActive(false); return; }
+
+        var sheet = _data.GetExcelSheet<LuminaAction>();
+        var inDanger = false;
+
+        foreach (var obj in _objectTable)
+        {
+            if (obj is not IBattleChara bc) continue;
+            // Only hostile combatants: friendly EventNpcs never threaten the player.
+            if (bc.ObjectKind != ObjectKind.BattleNpc) continue;
+            if (bc.GameObjectId == playerId) continue;
+            if (!bc.IsCasting) continue;
+
+            if (!sheet.TryGetRow(bc.CastActionId, out var row)) continue;
+            if (row.EffectRange == 0) continue; // single-target / self-buff: no ground danger
+
+            if (IsPlayerInAoe(bc, row, playerPos)) { inDanger = true; break; }
+        }
+
+        _aoeWarn.SetActive(inDanger);
+    }
+
+    /// <summary>
+    /// Whether the player stands inside the danger zone of one enemy cast. The zone
+    /// shape comes from the action's <c>CastType</c> (verified 2026-07-26 against the
+    /// telegraph graphic name <c>Omen.Path</c>: 2 = circle 'general', 3 = cone
+    /// 'gl_fan090', 4 = line/rect). All maths are horizontal (XZ) only.
+    /// The caster's facing (sin rot, cos rot) uses the project's verified rotation
+    /// convention. Unknown CastTypes fall back to a caster-centred circle so we
+    /// over-warn rather than miss - a false alarm is safer than a silent hit.
+    /// </summary>
+    private bool IsPlayerInAoe(IBattleChara caster, LuminaAction row, Vector3 playerPos)
+    {
+        float range = row.EffectRange;
+        var casterPos = caster.Position;
+        var dx = playerPos.X - casterPos.X;
+        var dz = playerPos.Z - casterPos.Z;
+        var horiz2 = dx * dx + dz * dz;
+
+        switch (row.CastType)
+        {
+            // Circle placed at the cast's target. Centre on the target object if it
+            // is a real object we can resolve; otherwise fall back to the caster.
+            // ASSUMPTION: ground-targeted circles whose centre lives only in the VFX
+            // are not yet solvable (telegraph-reading step) - flagged, verify in-game.
+            case 2:
+            {
+                var center = casterPos;
+                var tid = caster.CastTargetObjectId;
+                if (tid != 0 && tid != caster.GameObjectId)
+                {
+                    foreach (var o in _objectTable)
+                        if (o.GameObjectId == tid) { center = o.Position; break; }
+                }
+                var cx = playerPos.X - center.X;
+                var cz = playerPos.Z - center.Z;
+                return cx * cx + cz * cz <= range * range;
+            }
+
+            // Cone from the caster along its facing. Half-angle parsed from the fan
+            // number in the Omen path (gl_fan090 -> 90 deg total -> 45 deg half).
+            case 3:
+            {
+                if (horiz2 > range * range) return false;
+                var rel = Math.Abs(RelBearingDeg(casterPos, caster.Rotation, playerPos));
+                return rel <= ConeHalfAngleDeg(row);
+            }
+
+            // Line/rectangle from the caster along its facing. Length = EffectRange,
+            // ASSUMPTION half-width = XAxisModifier (verify in-game). Project the
+            // player onto the facing axis: ahead within length, lateral within width.
+            case 4:
+            {
+                var fx = MathF.Sin(caster.Rotation);
+                var fz = MathF.Cos(caster.Rotation);
+                var along = dx * fx + dz * fz;               // forward distance
+                if (along < 0f || along > range) return false;
+                var lateral = MathF.Abs(dx * fz - dz * fx);  // perpendicular distance
+                var halfWidth = row.XAxisModifier > 0 ? row.XAxisModifier : 0.5f;
+                return lateral <= halfWidth;
+            }
+
+            // Not-yet-verified shapes: caster-centred circle (over-warn, never miss).
+            default:
+                return horiz2 <= range * range;
+        }
+    }
+
+    /// <summary>
+    /// Cone half-angle in degrees. The full angle is encoded in the telegraph name,
+    /// e.g. gl_fan090 = 90 deg, so 60/120 deg cones are handled too. Defaults to 45
+    /// deg (a 90 deg cone) when the name carries no fan number.
+    /// </summary>
+    private static float ConeHalfAngleDeg(LuminaAction row)
+    {
+        if (row.Omen.ValueNullable is { } om)
+        {
+            var path = om.Path.ExtractText();
+            var i = path.IndexOf("fan", StringComparison.OrdinalIgnoreCase);
+            if (i >= 0)
+            {
+                i += 3;
+                var j = i;
+                while (j < path.Length && char.IsDigit(path[j])) j++;
+                if (j > i && int.TryParse(path.AsSpan(i, j - i), out var deg) && deg > 0)
+                    return deg / 2f;
+            }
+        }
+        return 45f;
+    }
+
+    /// <summary>
+    /// Bearing from <paramref name="from"/> (facing <paramref name="rot"/>) to
+    /// <paramref name="to"/> in degrees: 0 = directly ahead, positive = right.
+    /// Uses the verified convention facing = (sin rot, cos rot).
+    /// </summary>
+    private static float RelBearingDeg(Vector3 from, float rot, Vector3 to)
+    {
+        var dx = to.X - from.X;
+        var dz = to.Z - from.Z;
+        return NormalizeDeg((MathF.Atan2(dx, dz) - rot) * 180f / MathF.PI);
+    }
+
+    private static float NormalizeDeg(float deg)
+    {
+        while (deg > 180f)  deg -= 360f;
+        while (deg < -180f) deg += 360f;
+        return deg;
+    }
+
     private static int HpPercent(uint current, uint max) =>
         max == 0 ? 0 : (int)(current * 100u / max);
+
+    /// <summary>
+    /// DEBUG-only measuring probe for the AoE-dodge feature. Logs one line per
+    /// nearby enemy cast (rising edge, deduped per caster) that pairs the live cast
+    /// with its Lumina Action shape data - CastType (shape), EffectRange (radius),
+    /// XAxisModifier (width for lines), Omen (telegraph graphic id) - plus the
+    /// caster/player geometry. Its sole purpose is to verify EMPIRICALLY what each
+    /// CastType byte means (circle / cone / line / donut ...) before any "you are
+    /// standing in it" logic is built on those numbers, so the mapping is proven
+    /// against what the player actually sees rather than guessed. Iterates the whole
+    /// object table on purpose: in the Hall of the Novice the AoE often comes from an
+    /// enemy the player is not currently targeting. Compiled out of release builds.
+    /// </summary>
+    public void AoeCastProbe()
+    {
+#if DEBUG
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { _probedCasts.Clear(); return; }
+
+        var playerId  = player.GameObjectId;
+        var playerPos = player.Position;
+        var sheet     = _data.GetExcelSheet<LuminaAction>();
+
+        // Track which casters are still casting this frame, so a caster that has
+        // finished can be dropped from the dedup map and its NEXT cast logs fresh.
+        var seen = new HashSet<ulong>();
+
+        foreach (var obj in _objectTable)
+        {
+            if (obj is not IBattleChara bc) continue;
+            if (!bc.IsCasting) continue;
+            if (bc.GameObjectId == playerId) continue; // never the player's own casts
+
+            seen.Add(bc.GameObjectId);
+
+            var castId = bc.CastActionId;
+            // Already logged this exact cast for this caster? Skip until it changes.
+            if (_probedCasts.TryGetValue(bc.GameObjectId, out var last) && last == castId)
+                continue;
+            _probedCasts[bc.GameObjectId] = castId;
+
+            string name = "?", omenPath = "";
+            byte castType = 0, range = 0, xmod = 0;
+            uint omen = 0, omenAlt = 0;
+            if (sheet.TryGetRow(castId, out var row))
+            {
+                name     = row.Name.ExtractText();
+                castType = row.CastType;
+                range    = row.EffectRange;
+                xmod     = row.XAxisModifier;
+                omen     = row.Omen.RowId;
+                omenAlt  = row.OmenAlt.RowId;
+                // Omen.Path is the telegraph graphic file; its name encodes the real
+                // shape (gl_fan* = cone, gl_circle* = circle, gl_line*/rect* = line),
+                // so this pins the shape from game data instead of guessing CastType.
+                if (row.Omen.ValueNullable is { } om)
+                    omenPath = om.Path.ExtractText();
+            }
+
+            var casterPos = bc.Position;
+            var rot       = bc.Rotation;
+            var atMe      = bc.CastTargetObjectId == playerId;
+            var dist      = Vector3.Distance(casterPos, playerPos);
+
+            // Relative bearing caster -> player using the project's verified rotation
+            // convention (facing = (sin rot, cos rot); relAngle = atan2(dx,dz) - rot).
+            // ~0 deg means the player stands directly in front of the caster - key for
+            // telling cones/lines from circles once we read the logs.
+            var dx     = playerPos.X - casterPos.X;
+            var dz     = playerPos.Z - casterPos.Z;
+            var relDeg = NormalizeDeg((MathF.Atan2(dx, dz) - rot) * 180f / MathF.PI);
+
+            // Format floats with invariant culture up front so decimals are '.' and
+            // never collide with the ',' field separators (German locale would print
+            // "-10,1" for -10.1). Everything else in the line is int/byte/string.
+            var inv       = System.Globalization.CultureInfo.InvariantCulture;
+            var casterStr = $"({casterPos.X.ToString("F1", inv)};{casterPos.Y.ToString("F1", inv)};{casterPos.Z.ToString("F1", inv)})";
+            var playerStr = $"({playerPos.X.ToString("F1", inv)};{playerPos.Y.ToString("F1", inv)};{playerPos.Z.ToString("F1", inv)})";
+
+            _log.Info(
+                $"[AoeProbe] caster='{bc.Name.TextValue}' id={bc.GameObjectId:X} " +
+                $"cast='{name}' castId={castId} CastType={castType} EffectRange={range} " +
+                $"XAxisModifier={xmod} Omen={omen}/{omenAlt} OmenPath='{omenPath}' atMe={atMe} " +
+                $"dist={dist.ToString("F1", inv)} relBearing={relDeg.ToString("F0", inv)} " +
+                $"rot={rot.ToString("F2", inv)} casterPos={casterStr} playerPos={playerStr} " +
+                $"castTime={bc.CurrentCastTime.ToString("F1", inv)}/{bc.TotalCastTime.ToString("F1", inv)}");
+        }
+
+        // Forget casters that stopped casting, so re-casting the same action re-logs.
+        if (_probedCasts.Count > 0)
+        {
+            foreach (var key in _probedCasts.Keys.Where(k => !seen.Contains(k)).ToList())
+                _probedCasts.Remove(key);
+        }
+#endif
+    }
+
 }

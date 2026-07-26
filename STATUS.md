@@ -3,20 +3,139 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, V5.52 OEFFENTLICH RELEASED - XP-Gewinn- + Beute-Ansage, NUR XP IN-GAME BESTAETIGT)
+## STAND JETZT (2026-07-26, V5.55 OEFFENTLICH RELEASED)
+
+>>> V5.55 RELEASE (2026-07-26): buendelt alles seit 5.52 - Reittier-Verzeichnis
+    (V5.53, bestaetigt), Charakterkonfiguration (V5.54, ungetestet), Kampf-Sprechblasen
+    _BattleTalk (BESTAETIGT) und AoE-Warnton (OPT-IN, STANDARD AUS - in-game noch nicht
+    bestaetigt, User-Entscheid). Neue Taste KeyToggleAoeWarning = Strg+Umschalt+F3
+    schaltet den AoE-Ton an/aus (Ansage "Flaechenwarnung an/aus", lokalisiert).
+    Versionsdrift geheilt: csproj/repo.json/Plugin.cs alle auf 5.55. Installer
+    unveraendert (1.1.0, exe+installer.json von v5.52 wiederverwendet, SHA verifiziert).
+    NAECHSTER SCHRITT: AoE-Warnton in-game bestaetigen (Kegel vorn/hinten, Linien-
+    Breite, Kreis-Zentrum), dann spaeterer Release dreht den Standard auf AN.
+
+## VORHERIGER STAND (2026-07-26, AoE-WARNTON: Geometrie je Form + Dauerton)
+
+>>> AoE-AUSWEICHEN (User-Wunsch, Testfeld = Kampfuebungsplatz/Hall of the Novice).
+    User-Spezifikation praezisiert: DAUERTON solange man in der Flaeche steht, startet
+    mit dem Cast, verstummt beim Verlassen der Flaeche ODER Cast-Ende (kein Sprach-
+    Countdown noetig).
+    GEBAUT (Debug, 0 Warnungen, nach devPlugins deployt):
+    - AoeWarningService.cs (neu): eigener MONO-Pulston (660 Hz, Puls 140/110 ms), klar
+      unterscheidbar vom Stereo-Navi-Beacon (880 Hz). SetActive(bool) idempotent,
+      Audio-Device lazy + gegated-still (klickfrei). Config AnnounceAoeWarning (an),
+      AoeWarnVolume (0.5). In Plugin.cs verdrahtet + disposed.
+    - CombatService.UpdateAoeWarning (jeden Frame, unabhaengig vom InCombat-Flag):
+      iteriert ObjectTable, fuer jeden castenden BattleNpc mit EffectRange>0 -> Kreis
+      um den Caster, Radius = EffectRange, HORIZONTALE (XZ) Distanz. Spieler drin ->
+      Ton an, sonst aus.
+    GEOMETRIE-MODELL V1 (WORKAROUND, in Code+Config markiert): Kreis um Caster,
+    r=EffectRange. Echte Telegraph-Form/-Position aus der Omen/VFX noch NICHT gelesen
+    (harter Recherche-Pfad). Gilt sauber nur fuer caster-zentrierte Kreise; Kegel/
+    Linien/boden-platzierte AoEs kommen als naechstes.
+    VERIFIZIERT bisher (Log 15:34): Kahlrodung (Marodeur-Lehrer) castId=5780,
+    CastType=3, EffectRange=6, Omen=4, atMe=False (Trainings-AoE zielt NICHT auf
+    Spieler -> Geometrie statt "Cast auf mich" ist richtig).
+    SONDE erweitert: [AoeProbe] loggt jetzt zusaetzlich OmenPath (Grafik-Dateiname
+    verraet echte Form: gl_fan*=Kegel, gl_circle*=Kreis, gl_line*=Linie).
+    ITERATION 2 (Log 15:46-15:48 ausgewertet): OmenPath belegte die echten Formen ->
+    V1-Kreismodell war fuer ALLE drei Formen falsch. CASTTYPE->FORM verifiziert:
+    2=Kreis (Feura r5), 3=Kegel (Kahlrodung 'gl_fan090', 6=Laenge), 4=Linie (Spalten
+    'general02', 30=LAENGE nicht Radius, Breite=XAxisModifier). Linie-als-Kreis war die
+    Hauptursache fuer die zufaellig wirkenden Piepser (30m-Kreis = halbe Arena).
+    User-Feedback: Ton soll DURCHGEHEND sein, nicht "ein paar mal piepen".
+    GEBAUT (Iteration 2, 0 Warnungen, deployt):
+    - CombatService.IsPlayerInAoe: echte Geometrie je CastType (Kreis am Ziel / Kegel
+      mit fan-Winkel aus OmenPath / Linie entlang Blickrichtung mit Laenge+Breite);
+      unbekannte Typen -> konservativer Caster-Kreis. Alles XZ-horizontal.
+    - AoeAlarmSampleProvider: DURCHGEHENDER Ton (geglaetteter Gain, ~8ms Ramp
+      klickfrei) statt Puls.
+    OFFEN/ANNAHMEN zu verifizieren: (a) Linien-Halbbreite = XAxisModifier? (b) Kreis-
+    Zentrum bei boden-platzierten AoEs (nur in VFX, noch nicht loesbar). (c) Ton endet
+    mit Cast-Ende = Telegraph verschwindet (game-korrekt, User-Erwartung klaeren).
+    TEST OFFEN: Kampfuebungsplatz - Kegel (Marodeur) von vorn = Ton, von hinten =
+    still; Linie (Spalten) nur wenn wirklich in der Bahn; Kreis (Thaumaturg). Ton
+    durchgehend solange drin. Version NICHT gebumpt (kein Release).
+
+>>> _BattleTalk (Kampf-Sprechblase) VORLESEN (2026-07-26): User meldete, in der
+    Kampfarena kommt Text, der nicht vorgelesen wird. DEBUG-Sonde ArenaTextProbe
+    (UIReaderService, #if DEBUG, loggt sichtbaren Text unbedienter Anweisungs-Addons)
+    -> Log 16:26 belegte: Quelle = _BattleTalk (Waffenmeister-Ansagen "Erledigt
+    zuerst den Thaumaturgie-Lehrer", "Das ist der falsche Gegner!"). Struktur:
+    Sprecher=id4, Text=id6. _BattleTalk stand in den Ausschluss-Listen, hatte aber
+    KEINEN Leser. FIX: _BattleTalk an OnTalkUpdate registriert; Sprecher-Node-Id jetzt
+    addon-abhaengig (Talk=2, _BattleTalk=4).
+    >>> IN-GAME BESTAETIGT (Log 16:34): [Speak] "Waffenmeister: Ja! Du hast die Uebung
+    bestanden.", "Waffenmeister: Denk daran ...", auch zweiter Sprecher
+    "Gilden-Gladiator: So ist es richtig!". Sprecher-zuerst + Dedup greifen.
+    ArenaTextProbe wieder ENTFERNT (Zweck erfuellt). Gilt generell fuer alle
+    Instanz-/Boss-Sprechblasen, nicht nur die Arena.
+
+## VORHERIGER STAND (2026-07-26, V5.54 GEBAUT/DEBUG-DEPLOYT, IN-GAME UNGETESTET - Charakterkonfiguration lesbar)
+
+>>> V5.54 (2026-07-26): CHARAKTERKONFIGURATION (ConfigCharacter + ConfigChara*-
+    Unter-Addons) barrierefrei. Struktur per AUTO-Sonde ConfigProbeTick verifiziert
+    (Log 2026-07-26 11:06): 6 Kategorie-Reiter = DragDrop-Icons in ConfigCharacter,
+    Namen aus TOOLTIP (Steuerung/Gegenstaende und Inventar/UI/Namensanzeige/
+    Kommandomenue/Chatlog). Einstellungen liegen in Unter-Addons (ConfigCharaHotbar
+    Display/XHB/XHBCustom/Common ...) als CheckBox/RadioButton mit Text-Label +
+    IsChecked. Luecke: Fokus-Leser sagte nur das Label, nicht den Zustand.
+    Umgesetzt: neuer TryReadConfigFocusRow (erster Zweig in UpdateGlobalFocus,
+    auf Config*-Addons beschraenkt) -> (a) Icon-Reiter per Tooltip benannt (statt
+    „Leer"), (b) CheckBox -> „Label, an/aus", RadioButton -> „Label, ausgewaehlt"
+    (nur wenn checked). Strings StateOn/StateOff/RadioSelected (de/en).
+    SONDEN-UMBAU (User-Wunsch): Debug-Sonden laufen jetzt AUTOMATISCH per #if DEBUG
+    (kein /acc-Toggle mehr); ConfigProbeTick loggt auto in Config*-Addons, komplett
+    aus Release rauskompiliert. Alte Mount-Sonde (/acc mountprobe) GELOESCHT.
+    Plugin.cs auf 5.54; csproj/repo.json noch 5.52 (Release-Sync spaeter).
+    TEST OFFEN: Charakterkonfig oeffnen, Reiter fokussieren -> „Steuerung" usw.;
+    Einstellung fokussieren -> „Reaktivierungszeiten anzeigen, an". OFFEN/optional:
+    Reiter-Ansage bei Schulter-Tasten-Wechsel OHNE Fokuswechsel (bisher nur via
+    Fokus/Tooltip); Eingabefelder in Config (falls vorhanden) benennen.
+
+## VORHERIGER STAND (2026-07-26, V5.53 GEBAUT/DEBUG-DEPLOYT - Reittier-Verzeichnis lesbar, IN-GAME BESTAETIGT)
+
+>>> V5.53 (2026-07-26): REITTIER-VERZEICHNIS (MountNoteBook) barrierefrei. Root-Cause
+    war: die Kacheln sind icon-only DragDrop-Slots ohne Namensknoten; der generische
+    Fokus-Leser behandelte sie als Item-Slots -> leer=„Leer", gefuellt=stumm (Item-
+    Aufloesung scheitert bei Mount-Icon).
+    Verifiziert per NEUER Sonde /acc mountprobe (Ein-Tasten-Raster-Scan, keine
+    Navigation noetig): liest je Kachel FindSlotIcon->IconId und loest ueber das
+    Mount-Sheet (Icon-Feld -> Singular) auf. Live-Log 2026-07-26:
+    „tile node=28 icon=4001 -> 'Gesellschafts-Chocobo'", 31 leere Kacheln (icon=0).
+    ERKENNTNIS: nur BESESSENE Reittiere haben ein Icon; Rest = icon=0/leer.
+    Verworfen: AgentMountNoteBook.CurrentSelection->Id (blieb 0 bei Hover, nur bei
+    Bestaetigung gesetzt); Info-Panel id93/id86 (nur Hilfetext, nie Name).
+    Umgesetzt (User-Wahl „echtes Spielfenster lesen"): neuer Zweig
+    TryReadMountNoteBookFocusRow in UpdateGlobalFocus -> gefuellte Kachel wird per
+    Icon->Mount benannt, leere bleibt „Leer". Icon-Map MountByIcon() gecacht (349).
+    NACHTRAG (User-Wunsch): (a) Ansichts-Reiter-Ansage bei Wechsel via
+    OnMountNoteBookUpdate (PostUpdate) aus agent->ViewType (Favorites=1/Normal=2/
+    Search=3) -> „Favoriten/Alle Reittiere/Suche"; Seitenwechsel aus
+    CurrentSelection->Page -> „Seite X". (b) Suchfeld (TextInput) wird im Fokus als
+    „Reittier suchen, Eingabefeld" angesagt statt „0/40". Strings in
+    AccessibilityStrings (de/en). Plugin.cs auf 5.53. csproj/repo.json noch 5.52.
+    TEST OFFEN: Reittier-Verzeichnis oeffnen, navigieren -> gefuellte Kachel sagt
+    „Gesellschafts-Chocobo", leere „Leer"; Reiter wechseln -> Ansicht/Seite; Fokus
+    auf Suchfeld -> „Reittier suchen, Eingabefeld". /acc mountprobe bleibt als
+    Debug-Sonde drin. OFFEN/optional: Suchfeld-Tipp-Echo (Braille), Checkbox-Status.
+
+## VORHERIGER STAND (2026-07-26, V5.52 OEFFENTLICH RELEASED - XP-Gewinn- + Beute-Ansage, KOMPLETT IN-GAME BESTAETIGT)
 
 >>> V5.52 (2026-07-26): XP- und Loot-Ansage + neuer Nachlese-Kanal "Beute". Auf
-    User-Wunsch (jeder XP-Gewinn sofort, Loot live + Nachlese). Released, EXTERN zu
-    testen (User laesst von anderen pruefen).
+    User-Wunsch (jeder XP-Gewinn sofort, Loot live + Nachlese). Released, KOMPLETT
+    in-game bestaetigt (2026-07-26: User meldet Looten UND Beute-Kanal funktionieren).
     (1) XP-Gewinn live: CombatService.TrackXpGain liest GetCurrentClassJobExp jeden
         Frame, sagt Delta an ("X Erfahrung", nicht-unterbrechend) + schreibt in den
         Beute-Kanal. Baseline pro Job + Level-Up-Ruecksprung stumm nachgezogen.
         >>> IN-GAME BESTAETIGT (Live-Log 2026-07-25: +94/+132/+542, Level-Up sauber).
     (2) Loot live: XivChatType.LootNotice (62), aus Live-[Chat]-Log VERIFIZIERT -
         "Du hast X erhalten" (Gegner-Drops, Gil, GC-Taler, Kristalle). ShouldRead ->
-        Config AnnounceLoot, Nachlese-Kanal "Beute". >>> LOOT-ANSAGE UNGETESTET.
+        Config AnnounceLoot, Nachlese-Kanal "Beute". >>> IN-GAME BESTAETIGT (2026-07-26).
     (3) Neue Nachlese-Kategorie Category.Loot = "Beute" (MessageHistoryService), XP +
         Loot gemeinsam. Erreichbar: Alt+Bild-ab bis "Beute", Umschalt+Bild-auf/-ab.
+        >>> IN-GAME BESTAETIGT (2026-07-26: Beute-Kanal funktioniert).
     Enthaelt ausserdem den bereits verdrahteten Fisch-Sonden-Code (inaktiv, /acc fish;
     Feature ruht, braucht sehende Hilfe). repo.json/csproj/Plugin.cs auf 5.52 synchron.
     Installer unveraendert (1.1.0, exe+installer.json vom v5.51-Release wiederverwendet,

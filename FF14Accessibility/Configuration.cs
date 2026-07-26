@@ -84,6 +84,11 @@ public sealed class Configuration : IPluginConfiguration
     // Tastaturweg lief die Einladung fuer den User schlicht ab (Log 2026-07-18
     // 18:20:48). Strg+F12 laut Keybind-Dump frei.
     public string KeyNotification  = "Strg+F12";        // Offene Benachrichtigung aktivieren (Einladung annehmen)
+    // AoE-Warnton an/aus. Strg+Umschalt+F3 ist frei (nur F1/F2 dieses Clusters sind
+    // fuer Goto/Copy-Coords belegt; Strg+F* ist laut Keybind-Dump spielfrei, also
+    // Strg+Umschalt+F* erst recht). Kampf-Toggle, wird einmal gesetzt - eine
+    // schwerer erreichbare Kombo ist daher unproblematisch.
+    public string KeyToggleAoeWarning = "Strg+Umschalt+F3";
     // Dalamud-Plugin-Liste (V5.13): Dalamuds eigener Plugin-Installer ist ImGui
     // und damit weder vom Screenreader noch vom UIReader lesbar. Gelesen wird
     // deshalb die Datenquelle dahinter (IDalamudPluginInterface.InstalledPlugins).
@@ -111,6 +116,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyCombatStatus = defaults.KeyCombatStatus;
         KeySpStatus     = defaults.KeySpStatus;
         KeyToggleHeading = defaults.KeyToggleHeading;
+        KeyToggleAoeWarning = defaults.KeyToggleAoeWarning;
         KeyDumpUI       = defaults.KeyDumpUI;
         KeyWhereAmI     = defaults.KeyWhereAmI;
         KeyReadHotbar   = defaults.KeyReadHotbar;
@@ -200,6 +206,17 @@ public sealed class Configuration : IPluginConfiguration
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
+
+    // AoE-Ausweich-Warnung (User-Wunsch 2026-07-26): ein Dauerton, solange der
+    // Spieler in der Gefahrenflaeche eines gerade laufenden Gegner-Casts steht.
+    // Startet mit dem Cast, verstummt beim Verlassen der Flaeche oder Cast-Ende.
+    // Geometrie je CastType (Kreis/Kegel/Linie) aus den Telegraph-Daten belegt -
+    // siehe CombatService.IsPlayerInAoe. STANDARD AUS: das Feature ist in-game noch
+    // nicht bestaetigt, darf blinden Spielern also nicht ungeprueft als Kampf-Hilfe
+    // aufgezwungen werden. Opt-in per KeyToggleAoeWarning; spaeterer Release dreht den
+    // Standard auf AN, sobald bestaetigt.
+    public bool AnnounceAoeWarning = false;
+    public float AoeWarnVolume = 0.5f;          // 0 = stumm, 1 = volle Lautstärke
 
     // Fortschritt / Beute
     // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState

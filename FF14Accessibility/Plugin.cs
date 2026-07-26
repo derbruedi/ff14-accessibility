@@ -52,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MessageHistoryService _history;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
+    private readonly AoeWarningService  _aoeWarn;
     private readonly VitalsService      _vitals;
     private readonly HeadingService     _heading;
     private readonly EmoteService       _emote;
@@ -61,8 +62,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.52";
-    private const string PluginVersionTag = "XP-Gewinn- und Beute-Ansage (Loot) mit neuem Nachlese-Kanal";
+    private const string PluginVersion    = "5.55";
+    private const string PluginVersionTag = "Kampf-Sprechblasen (_BattleTalk) vorlesen + AoE-Warnton (opt-in)";
 
     public Plugin()
     {
@@ -208,7 +209,8 @@ public sealed class Plugin : IDalamudPlugin
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, Log);
+        _aoeWarn    = new AoeWarningService(_config, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, _aoeWarn, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -347,6 +349,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("SP-Stand",       _config.KeySpStatus),
             ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
+            ("Flächenwarnung an/aus", _config.KeyToggleAoeWarning),
             ("UI-Dump",        _config.KeyDumpUI),
             ("Aktives Fenster", _config.KeyWhereAmI),
             ("Aktionsleiste",  _config.KeyReadHotbar),
@@ -651,6 +654,21 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    /// <summary>
+    /// Toggles the AoE danger tone (a continuous sound while the player stands in an
+    /// enemy cast's danger zone). Off by default because the geometry is not yet
+    /// in-game confirmed; this key lets the player opt in and test it. Switching off
+    /// silences the tone on the next frame (UpdateAoeWarning honours the flag).
+    /// </summary>
+    private void ToggleAoeWarning()
+    {
+        _config.AnnounceAoeWarning = !_config.AnnounceAoeWarning;
+        PluginInterface.SavePluginConfig(_config);
+        _tolk.SpeakInterrupt(_config.AnnounceAoeWarning
+            ? AccessibilityStrings.AoeWarningOn
+            : AccessibilityStrings.AoeWarningOff);
+    }
+
     private const uint CF_UNICODETEXT = 13;
     private const uint GMEM_MOVEABLE  = 0x0002;
 
@@ -832,6 +850,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
         if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
+        if (IsJustPressed(_config.KeyToggleAoeWarning)) ToggleAoeWarning();
         if (IsJustPressed(_config.KeyReadHotbar))    _hotbar.ReadHotbar();
         if (IsJustPressed(_config.KeyReadInventory))
         {
@@ -892,6 +911,17 @@ public sealed class Plugin : IDalamudPlugin
         // control the game itself considers keyboard-focused - dialogs,
         // options, everything. See UIReaderService.UpdateGlobalFocus.
         _uiReader.UpdateGlobalFocus();
+
+#if DEBUG
+        // Debug-only auto-probe: logs focused config-menu elements while a
+        // Config* window is open. Compiled out of release builds.
+        _uiReader.ConfigProbeTick();
+        // Debug-only auto-probe: logs each nearby enemy cast paired with its Lumina
+        // Action shape data (CastType/EffectRange/XAxisModifier/Omen) so the
+        // CastType->shape mapping can be verified before the AoE-warning feature is
+        // built on it. Compiled out of release builds.
+        _combat.AoeCastProbe();
+#endif
 
         // DC-Auswahl: Nummernblock-Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         // Nummernblock-Tasten werden vom Spiel intern verarbeitet und feuern keine
@@ -1111,6 +1141,7 @@ public sealed class Plugin : IDalamudPlugin
         _uiReader.Dispose();
         _autoWalk.Dispose();
         _beacon.Dispose();
+        _aoeWarn.Dispose();
         _cue.Dispose();
         _vitals.Dispose();
         _tolk.Dispose();

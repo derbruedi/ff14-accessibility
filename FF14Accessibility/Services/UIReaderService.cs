@@ -13,6 +13,7 @@ using DetailKind = FFXIVClientStructs.FFXIV.Client.Enums.DetailKind;
 using LuminaAction = Lumina.Excel.Sheets.Action;
 using LuminaActionTransient = Lumina.Excel.Sheets.ActionTransient;
 using LuminaTrait = Lumina.Excel.Sheets.Trait;
+using LuminaMount = Lumina.Excel.Sheets.Mount;
 
 namespace FF14Accessibility.Services;
 
@@ -39,6 +40,17 @@ public sealed class UIReaderService : IDisposable
     private readonly IDataManager    _data;
     private readonly TooltipService  _tooltips;
     private readonly List<string>    _titleMenuItems = [];
+
+    // Debug probe (/acc mountprobe): one-shot scan of the mount guide grid.
+    // Icon id -> mount name lookup, built once from the Mount sheet and cached.
+    private Dictionary<uint, string>? _mountByIcon;
+
+#if DEBUG
+    // Debug-only auto-probe (ConfigProbeTick): logs each focused element in a
+    // Config* addon (id/type/component/checked/text/tooltip) so the full menu
+    // structure can be mapped from one navigation sweep. Compiled out of release.
+    private string _lastConfigProbeLine = string.Empty;
+#endif
 
     // SelectYesno: labels are read fresh from the dialog buttons on open -
     // the addon is reused with different labels (Ok/Abbrechen, Ja/Nein, ...
@@ -298,6 +310,10 @@ public sealed class UIReaderService : IDisposable
         // -- Talk / TalkSubtitle (NPC-Dialoge, Untertitel) ---------
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Talk", OnTalkUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
+        // Battle dialogue balloon: NPC/instructor callouts during duties and the
+        // combat-training arena ("Erledigt zuerst ...", "Das ist der falsche
+        // Gegner!"). Same reader; speaker node id 4, line id 6 (log 2026-07-26).
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "_BattleTalk", OnTalkUpdate);
 
         // -- Gathering (Sammel-Fenster: Erz abbauen / Holz faellen) -----
         // The item rows are populated a few frames after PostSetup, so read on
@@ -359,6 +375,12 @@ public sealed class UIReaderService : IDisposable
         // so the active one is found via its checked state and announced on
         // switch (user 2026-07-25: tabs were silent).
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
+
+        // MountNoteBook (Reittier-Verzeichnis): announce the active view tab
+        // (Favoriten/Alle/Suche) and page when they change. Source is the
+        // agent's own ViewType + CurrentSelection->Page (verified 2026-07-26 to
+        // track navigation), not the icon-only radio buttons.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
 
         // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
@@ -1077,14 +1099,17 @@ public sealed class UIReaderService : IDisposable
         _lastDialogTexts[name] = dedupKey;
 
         // User wish 2026-07-11: speaker name FIRST ("Miounne: text").
-        // Probe-verified (log 2026-07-11 10:14, every Talk page): the name
-        // is node id=2, the dialog text node id=3. Pinned to id=2 so pages
-        // without a speaker and TalkSubtitle are never reordered wrongly.
+        // The speaker sits in its own text node whose id depends on the addon
+        // (probe-verified): Talk = id 2 (log 2026-07-11 10:14), _BattleTalk = id 4
+        // with the line in id 6 (log 2026-07-26 16:26, the combat-arena instructor).
+        // TalkSubtitle has no speaker node. Pinned per addon so pages without a
+        // speaker are never reordered wrongly.
+        var nameNodeId = name switch { "Talk" => 2u, "_BattleTalk" => 4u, _ => 0u };
         string spoken;
-        var nameSeg = name == "Talk" ? segments.FirstOrDefault(s => s.Id == 2) : default;
+        var nameSeg = nameNodeId != 0 ? segments.FirstOrDefault(s => s.Id == nameNodeId) : default;
         if (nameSeg.Text != null && segments.Count >= 2)
         {
-            var body = JoinDistinctParts(segments.Where(s => s.Id != 2).Select(s => s.Text).ToList(), ". ");
+            var body = JoinDistinctParts(segments.Where(s => s.Id != nameNodeId).Select(s => s.Text).ToList(), ". ");
             spoken = $"{nameSeg.Text}: {body}";
         }
         else
@@ -1452,6 +1477,66 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
+    // -- MountNoteBook: Ansichts-Reiter + Seite -----------------------
+
+    // Last announced view/page, so a switch speaks once. -1 = nothing yet.
+    private int _lastMountView = -1;
+    private int _lastMountPage = -1;
+
+    /// <summary>
+    /// Announces the mount guide's active view tab (Favoriten/Alle/Suche) and
+    /// page when they change. The three views map to AddonMinionMountBase.
+    /// ViewType (Favorites=1, Normal=2, Search=3, ilspycmd 2026-07-26); the page
+    /// is CurrentSelection->Page (0-based). Both come from the agent, which the
+    /// probe proved follows navigation - the on-screen tabs are icon-only radio
+    /// buttons with no readable label.
+    /// </summary>
+    private unsafe void OnMountNoteBookUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastMountView = -1;
+            _lastMountPage = -1;
+            return;
+        }
+
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentMountNoteBook.Instance();
+        if (agent == null) return;
+
+        var view = (int)agent->ViewType;
+        var page = agent->CurrentSelection != null ? (int)agent->CurrentSelection->Page : 0;
+
+        // View change wins - name the tab. On open (_lastMountView < 0) queue
+        // behind the window announcer; a real switch interrupts.
+        if (view != _lastMountView)
+        {
+            var isSwitch = _lastMountView >= 0;
+            _lastMountView = view;
+            _lastMountPage = page;               // a view switch resets the page silently
+            var label = view switch
+            {
+                1 => AccessibilityStrings.MountViewFavorites,
+                2 => AccessibilityStrings.MountViewNormal,
+                3 => AccessibilityStrings.MountViewSearch,
+                _ => string.Empty,
+            };
+            if (string.IsNullOrEmpty(label)) return;
+            _log.Info($"[Mount] Ansicht={view} ('{label}')");
+            if (isSwitch) _tolk.SpeakInterrupt(label);
+            else          _tolk.Speak(label);
+            return;
+        }
+
+        // Same view, page turned - announce "Seite X" (1-based).
+        if (page != _lastMountPage)
+        {
+            _lastMountPage = page;
+            _log.Info($"[Mount] Seite={page + 1}");
+            _tolk.SpeakInterrupt(AccessibilityStrings.MountPage(page + 1));
+        }
+    }
+
     // -- SelectYesno -------------------------------------------------
 
     private unsafe void OnYesNoOpen(AddonEvent type, AddonArgs args)
@@ -1623,7 +1708,27 @@ public sealed class UIReaderService : IDisposable
             _lastFocusedItemName = ResolveFocusedItemName(node);
 
         string text;
-        if (TryReadGatheringFocusRow(node, out var gatherRow))
+        if (TryReadConfigFocusRow(node, out var configRow))
+        {
+            // Character configuration (ConfigCharacter + ConfigChara* panels):
+            // name the icon-only category tab via its tooltip, and append the
+            // on/off (checkbox) or selected (radio) state the generic reader
+            // omits. Ranked first so an icon-only tab never falls into the item
+            // resolver (which would announce "Leer").
+            text = configRow;
+        }
+        else if (TryReadMountNoteBookFocusRow(node, out var mountRow))
+        {
+            // Mount guide (Reittier-Verzeichnis): the tiles are icon-only
+            // DragDrop slots with no name node. The focused tile's icon id is
+            // resolved to the mount name via the Mount sheet (Icon->Singular).
+            // Ranked first so the generic item resolver - which would try to
+            // look the mount icon up as an inventory item and fail (silence) -
+            // never runs for a filled mount tile. Empty tiles fall through to
+            // the "Leer" branch below so cursor moves stay audible.
+            text = mountRow;
+        }
+        else if (TryReadGatheringFocusRow(node, out var gatherRow))
         {
             // Gathering window: speak the row under the cursor cleanly (name is
             // an item link -> ReadClean, plus level/chance). Ranked first so the
@@ -2286,6 +2391,110 @@ public sealed class UIReaderService : IDisposable
     // tooltip appears on keyboard focus, which is strong evidence; if the log
     // shows the id lagging the focused slot, the fallback is to hook
     // AgentActionDetail.HandleActionHover.
+
+    /// <summary>
+    /// Reads the focused element of the character-configuration menus
+    /// (ConfigCharacter and its ConfigChara* sub-panels): the icon-only category
+    /// tabs are named via their tooltip (Steuerung/UI/...), and checkbox/radio
+    /// rows get their on-off state appended ("Label, an" / "Label, ausgewählt")
+    /// which the generic reader omits. Returns false for everything else so the
+    /// normal reading path stays in charge. Scoped to Config* addons only.
+    /// Structure verified via the config probe (2026-07-26): tabs = DragDrop
+    /// with tooltip, settings = CheckBox/RadioButton with a text label + IsChecked.
+    /// </summary>
+    private unsafe bool TryReadConfigFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!FindAddonNameForNode(node).StartsWith("Config", StringComparison.Ordinal)) return false;
+
+        // Climb to the nearest component and remember its node (for the label).
+        AtkComponentBase* comp = null;
+        AtkResNode* compNode = null;
+        var cur = node;
+        for (var up = 0; up < 4 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                comp     = ((AtkComponentNode*)cur)->Component;
+                compNode = cur;
+                break;
+            }
+            cur = cur->ParentNode;
+        }
+        if (comp == null) return false;
+
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.DragDrop:
+                // Category tab: icon only, the name lives in the tooltip.
+                var tip = _tooltips.TryGetTooltipDeep(node);
+                if (string.IsNullOrWhiteSpace(tip)) return false;
+                text = tip;
+                return true;
+
+            case ComponentType.CheckBox:
+            case ComponentType.RadioButton:
+                var label = GetTextFromNodeTree(compNode).Trim();
+                if (string.IsNullOrWhiteSpace(label)) return false;
+                var isChecked = ((AtkComponentButton*)comp)->IsChecked;
+                if (comp->GetComponentType() == ComponentType.CheckBox)
+                    text = $"{label}, {(isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff)}";
+                else
+                    text = isChecked ? $"{label}, {AccessibilityStrings.RadioSelected}" : label;
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// While the mount guide (MountNoteBook) is open and the focus sits on a
+    /// filled mount tile, returns the mount name resolved from the tile's icon
+    /// id via the Mount sheet (Icon-&gt;Singular). Returns false for empty tiles
+    /// (icon id 0) and any non-DragDrop focus, so the caller keeps the "Leer"
+    /// signal for empty slots and its normal reading elsewhere. Verified
+    /// 2026-07-26: tile icon 4001 -&gt; "Gesellschafts-Chocobo".
+    /// </summary>
+    private unsafe bool TryReadMountNoteBookFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible("MountNoteBook")) return false;
+
+        // Focus sits on a control's collision child - climb to the nearest
+        // component and branch on its type (like ResolveFocusedItemName does).
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp == null) return false;
+                switch (comp->GetComponentType())
+                {
+                    case ComponentType.DragDrop:
+                        // Mount tile: resolve the icon id to the mount name.
+                        var icon = FindSlotIcon(comp);
+                        if (icon == null || icon->IconId == 0) return false; // empty -> "Leer"
+                        if (!MountByIcon().TryGetValue(icon->IconId, out var name)) return false;
+                        text = name;
+                        _log.Info($"[Mount] node id={node->NodeId} icon={icon->IconId} -> '{name}'");
+                        return true;
+
+                    case ComponentType.TextInput:
+                        // Search box: the generic reader would announce the raw
+                        // char counter ("0/40"); name the field instead.
+                        text = AccessibilityStrings.MountSearchField;
+                        return true;
+
+                    default:
+                        return false; // other controls keep their generic reading
+                }
+            }
+            cur = cur->ParentNode;
+        }
+        return false;
+    }
 
     /// <summary>
     /// While the skill window is open and the focus sits on a real skill slot,
@@ -7451,6 +7660,77 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
+    /// Per-frame probe body - DEBUG builds only, auto-runs (no command needed).
+    /// While the keyboard focus sits in a Config* addon, logs the focused
+    /// element's id, node type, component type, checked state (radio/checkbox),
+    /// text and tooltip on change. One navigation sweep reveals the whole menu
+    /// (tab names via tooltip, setting labels, active option). The whole body is
+    /// compiled out of release builds, so it never ships or spams normal users.
+    /// </summary>
+    public unsafe void ConfigProbeTick()
+    {
+#if DEBUG
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return;
+        var node = stage->AtkInputManager->FocusedNode;
+        if (node == null) return;
+
+        var addonName = FindAddonNameForNode(node);
+        if (!addonName.StartsWith("Config", StringComparison.Ordinal)) return;
+
+        // Nearest component: type + checked state for radios/checkboxes.
+        var compType = "-";
+        var check    = string.Empty;
+        var cur = node;
+        for (var up = 0; up < 4 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp != null)
+                {
+                    var ct = comp->GetComponentType();
+                    compType = ct.ToString();
+                    if (ct is ComponentType.RadioButton or ComponentType.CheckBox)
+                        check = ((AtkComponentButton*)comp)->IsChecked ? " CHECKED" : " unchecked";
+                }
+                break;
+            }
+            cur = cur->ParentNode;
+        }
+
+        var text = GetTextFromNodeTree(node);
+        var climb = node;
+        for (var up = 0; string.IsNullOrEmpty(text) && up < 3 && climb->ParentNode != null; up++)
+        {
+            climb = climb->ParentNode;
+            text  = GetTextFromNodeTree(climb);
+        }
+        var tip = _tooltips.TryGetTooltipDeep(node) ?? string.Empty;
+
+        var line = $"addon={addonName} id={node->NodeId} type={node->Type} comp={compType}{check} text='{text}' tip='{tip}'";
+        if (line == _lastConfigProbeLine) return;
+        _lastConfigProbeLine = line;
+        _log.Info($"[ConfigProbe] {line}");
+#endif
+    }
+
+    /// <summary>Icon id -&gt; mount name, built once from the Mount sheet and cached.</summary>
+    private Dictionary<uint, string> MountByIcon()
+    {
+        if (_mountByIcon != null) return _mountByIcon;
+        var map = new Dictionary<uint, string>();
+        foreach (var row in _data.GetExcelSheet<LuminaMount>())
+        {
+            if (row.RowId == 0 || row.Icon == 0) continue;
+            var name = row.Singular.ExtractText();
+            if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = name;
+        }
+        _log.Info($"[Mount] Icon-Map gebaut: {map.Count} Reittiere.");
+        return _mountByIcon = map;
+    }
+
+    /// <summary>
     /// Rekursive Node-Ausgabe f�r DumpAddon.
     /// Gibt NodeId, Typ, Flags, Sichtbarkeit und Inhalt aus.
     /// Tiefenlimit = 5, verhindert Stack-Overflow bei tiefen B�umen.
@@ -7522,12 +7802,14 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PreFinalize,      OnAnyAddonClose);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Talk",         OnTalkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "_BattleTalk",  OnTalkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "SelectYesno", OnYesNoReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
