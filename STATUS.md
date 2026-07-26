@@ -3,9 +3,16 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, Numpad3 laeuft zum Tab/F11-Ziel - IN-GAME BESTAETIGT, noch nicht released)
+## STAND JETZT (2026-07-26, V5.56 OEFFENTLICH RELEASED)
 
->>> KAMPF-FIX (User-Wunsch 2026-07-26, IN-GAME BESTAETIGT "laeuft zum gegner"):
+>>> V5.56 RELEASE (2026-07-26): Numpad3-Auto-Lauf folgt dem Tab/F11-Ziel statt einem
+    alten Browser-Marker (siehe Kampf-Fix unten). Versionen synchron csproj/repo.json/
+    Plugin.cs auf 5.56. Installer unveraendert (1.1.0.0, exe+installer.json von v5.55
+    wiederverwendet, SHA verifiziert). v5.56 = "Latest", latest.zip-Weiterleitung liefert
+    578.240 Bytes (verifiziert). Buendelt weiterhin die ungetesteten Teile aus v5.55 mit
+    (Charakterkonfiguration V5.54; AoE-Warnton opt-in, Standard AUS).
+
+>>> KAMPF-FIX (User-Wunsch 2026-07-26, IN-GAME BESTAETIGT "laeuft zum gegner", in v5.56 released):
     Numpad3 (Auto-Lauf) lief bisher NUR zum Spiel-Ziel, wenn KEINE Browser-Marker-
     auswahl aktiv war. Sobald man vorher im Objekt-Browser eine Quest/Wegpunkt/
     Aetheryt/Angelplatz gewaehlt hatte, blieb diese Marker-Auswahl gespeichert und
