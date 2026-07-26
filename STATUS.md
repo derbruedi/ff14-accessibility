@@ -3,7 +3,12 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, V5.57: Ziel folgen - IN-GAME BESTAETIGT, Release laeuft)
+## STAND JETZT (2026-07-26, V5.57 OEFFENTLICH RELEASED)
+
+>>> V5.57 RELEASE (2026-07-26): "Latest", latest.zip-Weiterleitung 579.413 B verifiziert.
+    Installer unveraendert (1.1.0.0, exe+installer.json von v5.56 wiederverwendet, SHA ok).
+
+## VORHERIGER STAND (2026-07-26, V5.57: Ziel folgen - IN-GAME BESTAETIGT)
 
 >>> ZIEL FOLGEN (User-Wunsch 2026-07-26, IN-GAME BESTAETIGT "folgt dem spieler"):
     Neue Taste + (BARE VK_OEM_PLUS 0xBB, NICHT Numpad; im Keybind-Dump frei) folgt dem
