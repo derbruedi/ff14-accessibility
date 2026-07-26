@@ -412,6 +412,20 @@ Zeichen selbst (V4.90). Quelle:
 - QueryPath wirft eine Exception, wenn kein Mesh geladen ist — vor dem
   Invoke `Nav.IsReady` prüfen (RouteService macht das).
 
+### Spieler „folgen" — KEIN natives API (verifiziert per ilspycmd, 2026-07-26)
+Das Kontextmenü „Folgen" existiert im Spiel, ist aber in FFXIVClientStructs
+**nicht** als aufrufbare Funktion freigelegt. Vollständige Assembly dekompiliert
+und durchsucht: die einzigen „Follow"-Treffer sind Begleiter/Mount
+(`CompanionBehaviorState.Follow`, `FollowMountId`), Porträt-Kamera
+(`BannerCameraFollowFlags`) und das Karten-Häkchen (`FollowPlayerCheckbox`,
+`FollowedPlayerMarkerX/Y`). `MoveController` (MoveControl) trägt KEIN Follow-Feld.
+Ein Auslösen ginge nur fragil über `AgentContext.OpenContextMenu` + Eintrag per
+Text finden/`ReceiveEvent` feuern (sprach-/zieltyp-abhängig) — verworfen.
+→ V5.57 baut „Ziel folgen" (Taste +) stattdessen selbst auf vnavmesh: in
+`AutoWalkService.FollowUpdate` wird `SimpleMove.PathfindAndMoveCloseTo` fortlaufend
+auf die AKTUELLE Zielposition neu ausgelöst (Abstand 3 m, Re-Path ab 1,5 m Drift
+oder wenn der Pfad endete, throttled 0,4 s). Stoppt bei Ziel-weg/Zonenwechsel.
+
 ### Kompass-Konvention Welt→Himmelsrichtung (hergeleitet 2026-07-16)
 - Norden = −Z, Osten = +X. Herleitung aus verifizierten Fakten: die
   Pixel→Welt-Formel (oben) bildet Karten-Pixel-X→Welt-X und

@@ -62,8 +62,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.56";
-    private const string PluginVersionTag = "Numpad3-Auto-Lauf folgt dem Tab/F11-Ziel statt einem alten Browser-Marker";
+    private const string PluginVersion    = "5.57";
+    private const string PluginVersionTag = "Ziel folgen (+): dem anvisierten Ziel automatisch folgen (vnavmesh)";
 
     public Plugin()
     {
@@ -341,6 +341,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Kategorie zurück",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
+            ("Ziel folgen",       _config.KeyFollowTarget),
             ("Routen-Vorschau",   _config.KeyRoutePreview),
             ("Zu Koordinaten",    _config.KeyGotoCoords),
             ("Koordinaten kopieren", _config.KeyCopyCoords),
@@ -409,6 +410,9 @@ public sealed class Plugin : IDalamudPlugin
         // (Keybind-Dump 2026-07-17). VK_OEM_COMMA=0xBC, VK_OEM_PERIOD=0xBE.
         // Gueltigkeit prueft UpdateKeyEdges via IKeyState.IsVirtualKeyValid.
         [","] = 0xBC, ["."] = 0xBE,
+        // Ziel folgen (V5.57): die BARE +-Taste (VK_OEM_PLUS=0xBB, NICHT Numpad+)
+        // ist im Keybind-Dump 2026-07-26 NIRGENDS belegt. User-Wunsch: kein Numpad.
+        ["+"] = 0xBB,
         // V5.25: Entf ist im Keybind-Dump NIRGENDS belegt - anders als H, wo
         // das Spiel trotz Strg-Modifier MENU_CRAFT ausloeste. VK_DELETE=0x2E.
         ["Entf"] = 0x2E,
@@ -798,9 +802,10 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyCategoryPrev)) _navigation.PreviousCategory();
         if (IsJustPressed(_config.KeyWalkGuide))
         {
-            // Walk guide and auto-walk are mutually exclusive - only one at a time.
-            // (Only the walk guide sounds the beacon; auto-walk is silent.)
+            // Walk guide, auto-walk and follow are mutually exclusive - one at a
+            // time. (Only the walk guide sounds the beacon; the others are silent.)
             _autoWalk.StopQuiet();
+            _autoWalk.StopFollowQuiet();
             if (_navigation.IsWalkGuideActive)
             {
                 _navigation.ToggleWalkGuide(); // second press: off
@@ -831,6 +836,14 @@ public sealed class Plugin : IDalamudPlugin
                 case MarkerResolve.None:     _autoWalk.Toggle();                          break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
+        }
+        if (IsJustPressed(_config.KeyFollowTarget))
+        {
+            // Follow the current game target continuously (own vnavmesh follow -
+            // FFXIV has no plugin-callable native follow). A walk guide would fight
+            // over movement, so end it first.
+            _navigation.StopWalkGuideQuiet();
+            _autoWalk.ToggleFollow();
         }
         if (IsJustPressed(_config.KeyRoutePreview))
         {
@@ -905,7 +918,7 @@ public sealed class Plugin : IDalamudPlugin
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk
         // target announcements are muted (soft-target churn while passing NPCs).
-        _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive);
+        _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
         // Global UI focus (AtkInputManager.FocusedNode): announces whatever
         // control the game itself considers keyboard-focused - dialogs,
@@ -1103,6 +1116,7 @@ public sealed class Plugin : IDalamudPlugin
             "Strg+Bild auf, Kategorie zurück. " +
             "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
             "Nummernblock 3, automatisch zum Ziel laufen. " +
+            "Plus, dem anvisierten Ziel folgen an oder aus. " +
             "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
             "F, zum Ziel hindrehen. W, laufen. " +
             "Strg+F1, diese Hilfe. " +

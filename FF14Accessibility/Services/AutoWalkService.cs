@@ -53,6 +53,11 @@ public sealed class AutoWalkService : IDisposable
     /// grab the soft target every few steps and each one would be announced
     /// with distance and direction (user feedback 2026-07-10).</summary>
     public bool IsActive => _active;
+
+    /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).
+    /// Plugin.cs suppresses target-change announcements while this is true, for the
+    /// same reason as <see cref="IsActive"/>.</summary>
+    public bool IsFollowing => _following;
     private DateTime _startedAt;
     private ulong _targetId;           // 0 for position destinations (quest markers)
     private string _targetName = string.Empty;
@@ -172,6 +177,9 @@ public sealed class AutoWalkService : IDisposable
     /// <summary>Starts the auto-walk to the current game target, or stops a running one.</summary>
     public void Toggle()
     {
+        // Starting a one-shot walk cancels a running follow (they share vnavmesh).
+        StopFollowQuiet();
+
         if (_active)
         {
             Stop(announce: true);
@@ -205,6 +213,8 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     public void ToggleToPosition(Vector3 position, string name, float stopRange)
     {
+        StopFollowQuiet();
+
         if (_active)
         {
             Stop(announce: true);
@@ -218,6 +228,164 @@ public sealed class AutoWalkService : IDisposable
         _destPosition = position;
         _stopRange = stopRange;
         BeginWalk();
+    }
+
+    // ── Ziel folgen (kontinuierlich) ─────────────────────────────────
+    //
+    // Unlike Toggle() - which computes ONE path and stops on arrival - follow
+    // keeps re-issuing PathfindAndMoveCloseTo to the target's CURRENT position,
+    // so the character trails a moving player and stops when they stop (user
+    // request 2026-07-26). FFXIV has no plugin-callable native "follow" (verified
+    // against FFXIVClientStructs: MoveController carries no follow, only companion/
+    // mount/camera/map "follow" exist), so this rebuilds it on vnavmesh - the same
+    // engine the auto-walk already uses.
+
+    private bool _following;
+    private ulong _followTargetId;
+    private string _followName = string.Empty;
+    private ushort _followStartTerritory;
+    private Vector3 _lastFollowDest;      // target position the last path was issued for
+    private DateTime _lastFollowPathAt;
+
+    /// <summary>Trail distance in yalms: stop this far behind the target.</summary>
+    private const float FollowDistance = 3f;
+    /// <summary>Only re-path once the target has drifted this far from the last
+    /// commanded destination - keeps a slow-moving target from re-pathing per frame.</summary>
+    private const float FollowRepathMove = 1.5f;
+    /// <summary>Minimum seconds between re-paths (throttle for vnavmesh).</summary>
+    private const double FollowRepathIntervalS = 0.4;
+
+    /// <summary>
+    /// Starts following the current game target, or stops a running follow.
+    /// The character trails the target at <see cref="FollowDistance"/> and halts
+    /// when the target halts; a second key press ends it. Mutually exclusive with
+    /// the one-shot auto-walk (the caller stops the walk guide first).
+    /// </summary>
+    public void ToggleFollow()
+    {
+        if (_following)
+        {
+            StopFollow(announce: true);
+            return;
+        }
+
+        // A running one-shot walk and follow must not fight over vnavmesh.
+        if (_active) Stop(announce: false);
+
+        var target = _targetManager.Target ?? _targetManager.SoftTarget;
+        if (target == null)
+        {
+            _tolk.SpeakInterrupt("Kein Ziel zum Folgen. Erst ein Ziel anwählen.");
+            return;
+        }
+        if (target.GameObjectId == (_objectTable.LocalPlayer?.GameObjectId ?? 0))
+        {
+            _tolk.SpeakInterrupt("Das bist du selbst.");
+            return;
+        }
+
+        _following = true;
+        _followTargetId = target.GameObjectId;
+        _followName = string.IsNullOrWhiteSpace(target.Name.TextValue)
+            ? AccessibilityStrings.Unnamed : target.Name.TextValue;
+        _followStartTerritory = (ushort)_clientState.TerritoryType;
+        _lastFollowDest = default;         // force the first path immediately
+        _lastFollowPathAt = DateTime.MinValue;
+        _log.Info($"[Nav] Folgen: gestartet -> {_followName} (id={_followTargetId:X})");
+        _tolk.SpeakInterrupt($"Folge {_followName}.");
+    }
+
+    private void StopFollow(bool announce)
+    {
+        if (!_following) return;
+        _following = false;
+
+        // try-catch: IPC into a foreign plugin (see Toggle)
+        try { _pathStop.InvokeAction(); }
+        catch (Exception ex) { _log.Error(ex, "[Nav] Folgen: Path.Stop fehlgeschlagen"); }
+
+        _log.Info("[Nav] Folgen: gestoppt.");
+        if (announce) _tolk.SpeakInterrupt("Folgen beendet.");
+    }
+
+    /// <summary>Ends a running follow without announcement (e.g. when a walk takes over).</summary>
+    public void StopFollowQuiet() => StopFollow(announce: false);
+
+    /// <summary>Runs every frame while follow is active. Re-issues the vnavmesh path
+    /// toward the target's current position and ends the follow when the target
+    /// vanishes, the player leaves, or the zone changes.</summary>
+    private void FollowUpdate()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null)
+        {
+            // Logout/zone change - vnavmesh drops the path itself.
+            StopFollow(announce: false);
+            return;
+        }
+
+        if ((ushort)_clientState.TerritoryType != _followStartTerritory)
+        {
+            _log.Info("[Nav] Folgen: Gebiet gewechselt, beende.");
+            StopFollow(announce: false);
+            _tolk.SpeakInterrupt("Folgen beendet, Gebiet gewechselt.");
+            return;
+        }
+
+        var target = _objectTable.FirstOrDefault(o => o.GameObjectId == _followTargetId);
+        if (target == null)
+        {
+            _log.Info($"[Nav] Folgen: Ziel {_followTargetId:X} nicht mehr da, beende.");
+            StopFollow(announce: false);
+            _tolk.SpeakInterrupt($"{_followName} ist weg. Folgen beendet.");
+            return;
+        }
+
+        var dest = target.Position;
+        var distance = Vector3.Distance(player.Position, dest);
+        var now = DateTime.UtcNow;
+
+        // Nothing to do while already within trail distance - let the target
+        // pull away first (the character stops when the target stops).
+        if (distance <= FollowDistance + 0.5f) return;
+
+        // Throttle re-paths and skip while one is still being computed.
+        if ((now - _lastFollowPathAt).TotalSeconds < FollowRepathIntervalS) return;
+
+        bool running, computing;
+        // try-catch: IPC into a foreign plugin (see Toggle)
+        try
+        {
+            computing = _pathfindInProgress.InvokeFunc();
+            running   = _pathIsRunning.InvokeFunc();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[Nav] Folgen: Status-IPC fehlgeschlagen, breche ab");
+            StopFollow(announce: false);
+            _tolk.SpeakInterrupt("Folgen abgebrochen, vnavmesh antwortet nicht.");
+            return;
+        }
+        if (computing) return;
+
+        // Re-path when the target drifted enough OR the previous path already
+        // finished (we are idle but still beyond the trail distance - the target
+        // walked off while we stood still).
+        if (Vector3.Distance(dest, _lastFollowDest) < FollowRepathMove && running) return;
+
+        // try-catch: IPC into a foreign plugin (vnavmesh may vanish mid-follow)
+        try
+        {
+            _moveCloseTo.InvokeFunc(dest, false, FollowDistance);
+            _lastFollowDest = dest;
+            _lastFollowPathAt = now;
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[Nav] Folgen: MoveCloseTo fehlgeschlagen, breche ab");
+            StopFollow(announce: false);
+            _tolk.SpeakInterrupt("Folgen abgebrochen, vnavmesh nicht verfügbar.");
+        }
     }
 
     // ── Wegenetz-Aufbau mitverfolgen ──
@@ -375,6 +543,10 @@ public sealed class AutoWalkService : IDisposable
         // navmesh finishes loading, precisely BECAUSE they cannot walk yet.
         MonitorMeshBuild();
 
+        // Follow is a separate, continuously re-pathing mode; it never overlaps
+        // the one-shot walk (each cancels the other on start).
+        if (_following) { FollowUpdate(); return; }
+
         if (!_active) return;
 
         var player = _objectTable.LocalPlayer;
@@ -530,5 +702,9 @@ public sealed class AutoWalkService : IDisposable
     private static string FormatRemaining(float distance) =>
         float.IsNaN(distance) ? "Ziel unbekannt" : $"{distance:F0} Meter";
 
-    public void Dispose() => StopQuiet();
+    public void Dispose()
+    {
+        StopFollowQuiet();
+        StopQuiet();
+    }
 }

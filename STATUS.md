@@ -3,7 +3,20 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, V5.56 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-26, V5.57: Ziel folgen - IN-GAME BESTAETIGT, Release laeuft)
+
+>>> ZIEL FOLGEN (User-Wunsch 2026-07-26, IN-GAME BESTAETIGT "folgt dem spieler"):
+    Neue Taste + (BARE VK_OEM_PLUS 0xBB, NICHT Numpad; im Keybind-Dump frei) folgt dem
+    anvisierten Ziel fortlaufend. WICHTIG: FFXIV hat KEIN plugin-aufrufbares natives
+    Follow (ilspycmd-verifiziert, siehe game-api.md "Spieler folgen") - daher selbst
+    ueber vnavmesh gebaut: AutoWalkService.FollowUpdate loest PathfindAndMoveCloseTo
+    fortlaufend auf die aktuelle Zielposition neu aus (Abstand 3 m, Re-Path ab 1,5 m
+    Drift/Pfad-Ende, throttled 0,4 s). Haelt an wenn Ziel steht; stoppt bei Ziel-weg/
+    Zonenwechsel; schliesst sich mit Auto-Lauf/Gehhilfe gegenseitig aus. Config
+    KeyFollowTarget="+", IsFollowing unterdrueckt Ziel-Ansagen wie IsActive.
+    Versionen synchron auf 5.57.
+
+## VORHERIGER STAND (2026-07-26, V5.56 OEFFENTLICH RELEASED)
 
 >>> V5.56 RELEASE (2026-07-26): Numpad3-Auto-Lauf folgt dem Tab/F11-Ziel statt einem
     alten Browser-Marker (siehe Kampf-Fix unten). Versionen synchron csproj/repo.json/
