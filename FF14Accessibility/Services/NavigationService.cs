@@ -84,6 +84,7 @@ public sealed class NavigationService
     }
 
     private ulong _lastSeenTargetId;   // hard/soft target id from the previous frame
+    private ulong _lastSeenHardTargetId; // hard target only (Tab/F1-F12/F/click), for marker priority
     private ulong _ownSelectionId;     // CycleObject announced this id itself already
 
     /// <summary>
@@ -115,6 +116,31 @@ public sealed class NavigationService
         }
 
         PollMapFlag(player);
+
+        // "Most recent choice wins": acquiring a game target with the game's OWN
+        // keys (Tab, F1-F12, F, mouse click) drops any object-browser marker
+        // still selected from earlier (a quest goal, waypoint, aetheryte or
+        // fishing spot). Without this, Numpad3 kept walking to that stale marker
+        // instead of the enemy just targeted in combat (user 2026-07-26) - the
+        // marker is checked BEFORE the game target in TryResolveMarkerDestination.
+        //
+        // HARD target only (ITargetManager.Target): SoftTarget churns as the
+        // player passes NPCs, and an ambient soft target must never wipe a marker
+        // the player just picked. Browser enemy/NPC selections set the hard target
+        // too, but flag themselves via _ownSelectionId - those are left alone
+        // (their categories carry no marker anyway, so this is only belt-and-braces).
+        var hardTargetId = _targetManager.Target?.GameObjectId ?? 0;
+        if (hardTargetId != _lastSeenHardTargetId)
+        {
+            _lastSeenHardTargetId = hardTargetId;
+            if (hardTargetId != 0 && hardTargetId != _ownSelectionId
+                && (SelectedQuestDestination != null || SelectedPlaceDestination != null))
+            {
+                _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
+                SelectedQuestDestination = null;
+                SelectedPlaceDestination = null;
+            }
+        }
 
         // Announce only when the ACTUAL target changes. V4.24 compared against
         // the id CycleObject WANTED to set - when the game rejected the set

@@ -3,7 +3,23 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, V5.55 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-26, Numpad3 laeuft zum Tab/F11-Ziel - IN-GAME BESTAETIGT, noch nicht released)
+
+>>> KAMPF-FIX (User-Wunsch 2026-07-26, IN-GAME BESTAETIGT "laeuft zum gegner"):
+    Numpad3 (Auto-Lauf) lief bisher NUR zum Spiel-Ziel, wenn KEINE Browser-Marker-
+    auswahl aktiv war. Sobald man vorher im Objekt-Browser eine Quest/Wegpunkt/
+    Aetheryt/Angelplatz gewaehlt hatte, blieb diese Marker-Auswahl gespeichert und
+    Numpad3 lief weiter zum alten Marker statt zum mit Tab/F11 anvisierten Gegner
+    (TryResolveMarkerDestination prueft Marker VOR dem Spiel-Ziel).
+    FIX (NavigationService.Update, Debug gebaut, 0 Warnungen, nach devPlugins deployt):
+    "Zuletzt gewaehlt gewinnt" - ein NEU anvisiertes HART-Ziel (Tab/F1-F12/F/Klick)
+    verwirft eine noch aktive Browser-Markerauswahl (SelectedQuest/PlaceDestination
+    = null). Nur Hart-Ziel, nicht SoftTarget (vorbeilaufende NPCs duerfen die Auswahl
+    nicht abraeumen); Browser-eigene Gegnerauswahl via _ownSelectionId ausgenommen.
+    Neues Feld _lastSeenHardTargetId. Log-Zeile "[Nav] Spiel-Ziel ... anvisiert".
+    NAECHSTER SCHRITT: Release schneiden (wird V5.56) - noch NICHT versioniert/released.
+
+## VORHERIGER STAND (2026-07-26, V5.55 OEFFENTLICH RELEASED)
 
 >>> V5.55 RELEASE (2026-07-26): buendelt alles seit 5.52 - Reittier-Verzeichnis
     (V5.53, bestaetigt), Charakterkonfiguration (V5.54, ungetestet), Kampf-Sprechblasen

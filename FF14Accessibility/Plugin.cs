@@ -62,8 +62,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.55";
-    private const string PluginVersionTag = "Kampf-Sprechblasen (_BattleTalk) vorlesen + AoE-Warnton (opt-in)";
+    private const string PluginVersion    = "5.56";
+    private const string PluginVersionTag = "Numpad3-Auto-Lauf folgt dem Tab/F11-Ziel statt einem alten Browser-Marker";
 
     public Plugin()
     {
