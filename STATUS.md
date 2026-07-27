@@ -5,6 +5,10 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-07-27, V5.58 OEFFENTLICH RELEASED)
 
+>>> V5.58 RELEASE (2026-07-27): "Latest", latest.zip-Weiterleitung 587.056 B verifiziert
+    (vorher 579.413). Installer unveraendert (1.1.0.0, exe+installer.json von v5.57
+    wiederverwendet, SHA 5787445B... verifiziert). 4 Assets dran.
+
 >>> SYSTEMKONFIGURATION BARRIEREFREI (User-Wunsch 2026-07-27, IN-GAME BESTAETIGT, in v5.58 released):
     Runde Feinschliff am Reiter "Sound" + Config allgemein (UIReaderService/AccessibilityStrings):
     - Lautstaerke-Regler: KURZFORM "Hauptlautstaerke, 100 %" statt langem "Regler, von 0 bis 100"
