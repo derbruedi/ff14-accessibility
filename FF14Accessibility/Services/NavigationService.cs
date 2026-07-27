@@ -546,9 +546,12 @@ public sealed class NavigationService
         var spot = spots[_cycleIndex];
 
         // Reuse PlaceDestination so the existing walk guide picks it up unchanged.
+        // IsWaterSpot only for raw water-centre spots (snap to nearest bank);
+        // hand-verified override coordinates are already the exact castable spot,
+        // so they walk straight there like a map flag (spot.IsExact).
         SelectedPlaceDestination = new PlaceDestination(
             spot.Name, AccessibilityStrings.FishingSpotType, spot.Position,
-            IsZoneTransition: false, TargetMapId: 0);
+            IsZoneTransition: false, TargetMapId: 0, IsWaterSpot: !spot.IsExact);
 
         var text = AccessibilityStrings.FishingSpotEntry(spot.Name, spot.Level) + ", " +
                    $"{FormatDistance(Distance2D(player.Position, spot.Position))}, " +

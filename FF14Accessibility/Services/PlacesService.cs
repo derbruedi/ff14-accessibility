@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
@@ -13,12 +14,17 @@ namespace FF14Accessibility.Services;
 /// data is 2D) and set to 0 - resolve via navmesh before walking.</param>
 /// <param name="IsZoneTransition">True for exits into another map.</param>
 /// <param name="TargetMapId">Destination map for transitions, 0 otherwise.</param>
+/// <param name="IsWaterSpot">True for fishing spots: the position is the CENTRE
+/// of the water, not walkable ground. The walk resolves it to the nearest bank
+/// (wide horizontal search) instead of the generic 10 m floor snap, which misses
+/// a bank tens of metres out and lands the player away from the water.</param>
 public sealed record PlaceDestination(
     string Name,
     string TypeLabel,
     Vector3 Position,
     bool IsZoneTransition,
-    uint TargetMapId);
+    uint TargetMapId,
+    bool IsWaterSpot = false);
 
 /// <summary>
 /// Reads the static map symbols (zone exits, aetherytes, named places) of the

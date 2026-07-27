@@ -43,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
     private readonly FishingService     _fishing;
+    private readonly GatheringService   _gathering;
     private readonly BestiaryService    _bestiary;
     private readonly RouteService       _routes;
     private readonly NavigationService  _navigation;
@@ -59,11 +60,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly KeybindService     _keybinds;
     private readonly DalamudPluginsService _dalamudPlugins;
     private readonly TooltipService _tooltips;
+    private readonly TripleTriadService _tripleTriad;
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.57";
-    private const string PluginVersionTag = "Ziel folgen (+): dem anvisierten Ziel automatisch folgen (vnavmesh)";
+    private const string PluginVersion    = "5.58";
+    private const string PluginVersionTag = "Systemkonfiguration barrierefrei: Lautstaerke in %, Schalter an/aus + ausgegraut";
 
     public Plugin()
     {
@@ -197,7 +199,8 @@ public sealed class Plugin : IDalamudPlugin
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
-        _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
+        _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);
+        _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _routes       = new RouteService(PluginInterface, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _routes, _config, DataManager, Log);
@@ -215,6 +218,7 @@ public sealed class Plugin : IDalamudPlugin
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
+        _tripleTriad = new TripleTriadService(GameGui, _tolk, Log);
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
@@ -289,6 +293,15 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "fishobj":
                 _fishing.ProbeNearbyObjects();
+                break;
+            case "fishhere":
+                _fishing.CaptureHere();
+                break;
+            case "gather":
+                _gathering.AnnounceSpotsInCurrentZone();
+                break;
+            case "gathergo":
+                GatherWalkToNearest();
                 break;
             case "help":
                 AnnounceHelp();
@@ -377,6 +390,8 @@ public sealed class Plugin : IDalamudPlugin
             ("Plugin-Liste weiter",  _config.KeyPluginsNext),
             ("Plugin-Liste zurück",  _config.KeyPluginsPrev),
             ("Plugin-Einstellungen", _config.KeyPluginsConfig),
+            ("Kartenspiel Brett", _config.KeyReadBoard),
+            ("Kartenspiel Hand",  _config.KeyReadHand),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -550,6 +565,29 @@ public sealed class Plugin : IDalamudPlugin
         // Fresh start every time: stop a running walk first, then head out.
         if (_autoWalk.IsActive) _autoWalk.StopQuiet();
         _autoWalk.ToggleToPosition(floor, name, 2.5f);
+    }
+
+    /// <summary>Walks to the nearest gathering spot the active job can work
+    /// (/acc gathergo). The spot list comes from the zone's LGB layout, so it
+    /// reaches clusters anywhere on the map, not only loaded ones.</summary>
+    private void GatherWalkToNearest()
+    {
+        var spot = _gathering.GetNearestSpot();
+        if (spot == null)
+        {
+            _tolk.SpeakInterrupt("Keine Sammelstellen für deinen Beruf in dieser Zone.");
+            return;
+        }
+
+        var floor = _autoWalk.ResolveFloorPoint(spot.Position) ?? spot.Position;
+        var name  = $"Sammelstelle, Stufe {spot.Level}";
+        Log.Info($"[Gather] Laufe zu GP={spot.GatheringPointId} '{spot.TypeName}' " +
+                 $"Welt=({spot.Position.X:F1}|{spot.Position.Z:F1}) Boden Y={floor.Y:F1}");
+        _tolk.SpeakInterrupt($"Laufe zu {name}.");
+
+        _navigation.StopWalkGuideQuiet();
+        if (_autoWalk.IsActive) _autoWalk.StopQuiet();
+        _autoWalk.ToggleToPosition(floor, name, 3f);
     }
 
     /// <summary>
@@ -893,15 +931,19 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyChatCatNext))   _history.SwitchCategory(+1);
         if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
         if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
+        if (IsJustPressed(_config.KeyReadBoard))     _tripleTriad.ReadBoard();
+        if (IsJustPressed(_config.KeyReadHand))      _tripleTriad.ReadHand();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
         if (IsJustPressed(_config.KeyDumpUI))
         {
-            _uiReader.DumpFocusedAddon();
-            // Also dump every nearby object (incl. nameless/untargetable) so we
-            // can locate audible-but-unlisted things like the quest-battle circle.
-            _navigation.DumpNearbyObjects();
+            // Dump the focused menu/window first. Only when there is NO such
+            // window (overworld) fall back to the nearby-object/marker probe -
+            // otherwise its "N Objekte im Log" announcement would override the
+            // menu-dump confirmation and it looks as if F5 stopped dumping menus.
+            if (!_uiReader.DumpFocusedAddon())
+                _navigation.DumpNearbyObjects();
         }
         // F2 â€” aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
@@ -920,6 +962,9 @@ public sealed class Plugin : IDalamudPlugin
         // target announcements are muted (soft-target churn while passing NPCs).
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
+        // Speaks "Angelbereit" when the player faces castable water and "Biss"
+        // on a bite - the last-mile fishing cues (reads the game's own state).
+        _fishing.Update();
         // Global UI focus (AtkInputManager.FocusedNode): announces whatever
         // control the game itself considers keyboard-focused - dialogs,
         // options, everything. See UIReaderService.UpdateGlobalFocus.
@@ -1044,7 +1089,14 @@ public sealed class Plugin : IDalamudPlugin
             // Map markers are 2D - resolve the walkable height via the
             // navmesh first (player height as search origin).
             var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-            var floor   = _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY });
+            // Fishing spots are water CENTRES: snap to the nearest bank (wide
+            // search) so the player lands at the water, not on a floor the
+            // generic 10 m snap happens to find. Fall back to the generic
+            // resolver if no bank is found (e.g. vnavmesh not ready).
+            var floor   = place.IsWaterSpot
+                ? (_autoWalk.ResolveNearestBank(place.Position with { Y = playerY })
+                   ?? _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY }))
+                : _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY });
             if (floor == null)
             {
                 _tolk.SpeakInterrupt($"Kein begehbarer Punkt bei {place.Name} gefunden.");

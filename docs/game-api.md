@@ -651,6 +651,27 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   eigenständige Top-Level-Texte (id 575 „Farbwahrnehmung" usw.).
 - Fußnoten-Buttons: „Voreinstellung"/„Schließen"/„Anwenden" (Comp 1001?
   via Kind id=2-Text).
+- Lautstärke-Regler (Reiter „Sound", V5.58): Zeilen-Muster Top-Level-Text-Label
+  → Stumm-CheckBox Comp(1027) → Slider Comp(1023); Label = nächster vorangehender
+  Top-Level-Text (NearestPrecedingLabel). Slider laufen 0..100 → als Prozent
+  ansagen. `NearestPrecedingLabel` findet z. B. „Hauptlautstärke" vor Slider id=113.
+  KURZFORM für 0..100-Slider: „Label, Wert %" (kein „Regler, von 0 bis 100" —
+  die Langform wurde beim schnellen Navigieren abgeschnitten, User 2026-07-27).
+- FALLE Doppel-Ansage (V5.58): Audio-Slider tragen den Wert als Text-Kind id=2
+  („100"); der GENERISCHE Fokus-Leser las diese nackte Zahl ~14 ms nach der
+  Config-Ansage und würgte das Label ab. Fix: nackte Zahlen überspringen, solange
+  ConfigSystem sichtbar ist (wie bei JournalResult).
+- Schalter-Zustand (V5.58): CheckBox-Ansage „Label, Schalter, an/aus"; deaktivierte
+  („ausgegraut") erkannt an **`NodeFlags.Enabled` (0x20) gelöscht** am Komponenten-
+  Node — ilspycmd-verifiziert gegen FFXIVClientStructs; Dump: aktiv F=0x2033 vs.
+  ausgegraut F=0x2013 (z. B. Hintergrund-Wiedergabe-Unterpunkte bei Master AUS,
+  und der „Anwenden"-Button vor einer Änderung).
+- Barrierefreiheit = Reiter 8 (DragDrop, Tooltip „Barrierefreiheit"). Seite schaltet
+  beim NAVIGIEREN um und wird gelesen (Farbwahrnehmung/Töne visualisieren/Transparenz
+  etc.). Enter wird in ConfigSystem vom Spiel geschluckt (IKeyState sieht es nicht) →
+  die eigene Reiter-Enter-Aktivierung (TryActivateFocusedConfigTab) feuert dort nie;
+  für den Seitenwechsel aber nicht nötig. Überschrift zeigt „Anzeigeeinstellungen"
+  (offener kosmetischer Punkt).
 - JournalDetail: Begleit-Addon (nie fokussiert, ChildAddonAttached an
   Journal). Inhalt liegt im Comp CT=JournalCanvas(20), direkte Text-Kinder:
   id=38 Quest-Titel, id=9 Stufe, id=8 Beschreibungstext, id=7 Label
@@ -1029,3 +1050,35 @@ der ObjectTable auftauchen (und als welche ObjectKind), und die X/Z-Skalierung.
 - Verwandte Typen (falls je gebraucht): AddonFishingNote, AddonFishGuide2,
   AgentFishGuide, AddonSpearFishing, InstanceContentOceanFishing (Meeresangeln),
   Lumina SpearfishingNotebook.
+
+## Triple Triad (Kartenspiel) — AddonTripleTriad
+
+Verifiziert per ilspycmd gegen FFXIVClientStructs.dll (2026-07-26).
+
+- Addon-Name: `"TripleTriad"` (GetAddonByName). Struct `AddonTripleTriad`
+  (Size 4056, `[Inherits<AtkUnitBase>]`, **`[GenerateInterop(false)]`** →
+  KEINE generierten Span-Accessoren!).
+- Kartenlisten sind `internal FixedSizeArray*<TripleTriadCard>` — aus dem Plugin
+  NICHT direkt zugreifbar. Deshalb per Pointer-Arithmetik an den verifizierten
+  Offsets lesen (Stride = `sizeof(TripleTriadCard)` = 168):
+  - `_blueDeck` @576  — FixedSizeArray5 = eigene Hand (Spieler ist immer Blau)
+  - `_redDeck`  @1416 — FixedSizeArray5 = Gegnerhand
+  - `_board`    @2256 — FixedSizeArray9 = 3x3-Brett, row-major (Feld 1..9)
+  - Die Offsets liegen exakt auf Stride 168 aufeinander (576+5*168=1416,
+    1416+5*168=2256) → Stride cross-verifiziert.
+- `TripleTriadCard` (Size 168, public struct in AddonTripleTriad):
+  - `CardRarity`@128 (byte), `CardType`@129 (enum None/Primal/Scion/Beastman/Garland),
+  - `CardOwner`@130 (enum **Empty=0, Blue=1, Red=2**),
+  - `NumSideU`@131, `NumSideD`@132, `NumSideR`@133, `NumSideL`@134 (byte, Kantenwerte
+    1..10; das Spiel zeigt 10 als "A"),
+  - `HasCard`@164 (bool — Brett: Feld belegt; Hand: Slot noch nicht gespielt).
+- `AddonTripleTriad.TurnState`@568 (enum **Waiting=0, NormalMove=1, MaskedMove=2**).
+  HYPOTHESE (in-game noch zu verifizieren): Waiting = nicht am Zug, Normal/MaskedMove
+  = du bist am Zug. Rohwert wird von TripleTriadService geloggt ([TripleTriad]).
+- GEBAUT (Debug, ungetestet): `TripleTriadService.ReadBoard()` (Strg+Umschalt+F4) +
+  `ReadHand()` (Strg+Umschalt+F5). Brett: Kartenzahl beider Seiten, Zug-Zustand,
+  dann Feld 1..9. Hand: eigene Karten per festem Slot (1..5), gespielte Slots
+  uebersprungen. NOCH IN-GAME ZU TESTEN.
+- Offene Frage fuer den Test: Ob der Spielcursor in der Hand gespielte Slots
+  ueberspringt oder die Karten kompaktiert — davon haengt ab, ob die feste
+  Slot-Nummer (aktuell) oder eine laufende Nummer die richtige Referenz ist.

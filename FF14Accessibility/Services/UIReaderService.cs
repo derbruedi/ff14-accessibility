@@ -382,6 +382,21 @@ public sealed class UIReaderService : IDisposable
         // track navigation), not the icon-only radio buttons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
 
+#if DEBUG
+        // Debug audit probe: the pre-match Triple Triad confirmation window
+        // (TripleTriadRequest) has no FFXIVClientStructs struct and its reward
+        // cards are icon-only in the node tree. Dump the addon's AtkValues so the
+        // reward-item / card / rule ids can be mapped to sheet names before the
+        // real reader is built. Compiled out of release; remove once done.
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup, "TripleTriadRequest", OnTripleTriadRequestProbe);
+
+        // Debug audit probe: verify the AddonTripleTriad board/deck card offsets
+        // actually yield real edge numbers + owners, and log the focused node id
+        // so board-cell / hand focus can be mapped for the per-card announcer.
+        // Compiled out of release; remove once the reader is built.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "TripleTriad", OnTripleTriadBoardProbe);
+#endif
+
         // -- SelectString / SelectIconString ----------------------
         foreach (var name in SelectStringAddons)
             _addonLifecycle.RegisterListener(AddonEvent.PostSetup, name, OnSelectStringOpen);
@@ -1860,6 +1875,12 @@ public sealed class UIReaderService : IDisposable
             // dem Zaehler-Node und wuerde bei jedem Tastendruck sprechen -
             // das Tipp-Echo (OnCharaMakeInputUpdate) uebernimmt dort.
             if (IsBareNumber(text) && IsAddonVisible("CharaMakeDataInputString")) return;
+            // ConfigSystem sliders carry their value as a bare-number text node
+            // ("100"/"15"). AnnounceConfigGlobalFocus already speaks
+            // "<label>, <value> %" for them; this generic reader otherwise fired
+            // ~14 ms later with the raw number and cut the label off (log
+            // 2026-07-27 15:42: "Hauptlautstärke, 100 %" interrupted by "100").
+            if (IsBareNumber(text) && IsAddonVisible("ConfigSystem")) return;
             // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
             // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
@@ -2438,9 +2459,20 @@ public sealed class UIReaderService : IDisposable
                 if (string.IsNullOrWhiteSpace(label)) return false;
                 var isChecked = ((AtkComponentButton*)comp)->IsChecked;
                 if (comp->GetComponentType() == ComponentType.CheckBox)
-                    text = $"{label}, {(isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff)}";
+                    // Name the control type ("Schalter") so a toggle is not
+                    // mistaken for a plain info label (user report 2026-07-27:
+                    // "da steht an, ich weiss nicht ob das ein Schalter ist").
+                    text = $"{label}, {AccessibilityStrings.SwitchControl}, {(isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff)}";
                 else
                     text = isChecked ? $"{label}, {AccessibilityStrings.RadioSelected}" : label;
+                // NodeFlags.Enabled (0x20, ilspy-verified against FFXIVClientStructs)
+                // is cleared when the control is greyed out - e.g. the background-
+                // playback sub-toggles while their master switch is off, or the
+                // "Anwenden" button before a change (dump 2026-07-27: greyed nodes
+                // F=0x2013 vs. active F=0x2033). Announcing it tells the user WHY a
+                // switch will not flip - the same cue a sighted player gets.
+                if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+                    text = $"{text}, {AccessibilityStrings.StateDisabled}";
                 return true;
 
             default:
@@ -3109,6 +3141,9 @@ public sealed class UIReaderService : IDisposable
     private nint _csFocusTop;
     private int _csFocusTopIdx = -1;
     private string _csFocusValue = string.Empty;
+    // True while the focused control is a 0..100 slider - its value is spoken as
+    // a percentage ("100 %") on focus AND while adjusting. Reset per fresh focus.
+    private bool _csFocusPercent;
 
     /// <summary>
     /// Announces text-less config controls (sliders, drop-downs, category
@@ -3140,7 +3175,7 @@ public sealed class UIReaderService : IDisposable
             {
                 _csFocusValue = newValue;
                 _log.Info($"[CS] Wert-Änderung: '{newValue}'");
-                _tolk.SpeakInterrupt(newValue);
+                _tolk.SpeakInterrupt(FormatSliderSpeech(newValue, _csFocusPercent));
             }
             return;
         }
@@ -3150,6 +3185,7 @@ public sealed class UIReaderService : IDisposable
         var owner = FindTopLevelOwner(addon, focus, out var ownerIdx);
         _csFocusTop = (nint)owner;
         _csFocusTopIdx = ownerIdx;
+        _csFocusPercent = false; // only 0..100 sliders set this true below
         if (owner == null)
         {
             _log.Info($"[CS] Fokus (global): Node 0x{(nint)focus:X} gehört keinem Top-Level-Control");
@@ -3167,10 +3203,19 @@ public sealed class UIReaderService : IDisposable
             {
                 // AtkComponentSlider.Value/MinValue/MaxValue (ilspycmd-verified 2026-07-16)
                 var slider = (AtkComponentSlider*)comp;
+                // Volume/config sliders run 0..100 -> read the value as a
+                // percentage ("100 %"). _csFocusValue stays the RAW number so the
+                // value-change branch above still detects changes reliably.
+                _csFocusPercent = slider->MinValue == 0 && slider->MaxValue == 100;
                 _csFocusValue = slider->Value.ToString();
-                desc = AccessibilityStrings.SliderDesc(
-                    NearestPrecedingLabel(addon, _csFocusTopIdx), _csFocusValue,
-                    slider->MinValue, slider->MaxValue);
+                var sliderLabel = NearestPrecedingLabel(addon, _csFocusTopIdx);
+                // Percentage sliders (volumes) get the SHORT form "label, value %"
+                // so it finishes speaking before the user moves on; other sliders
+                // keep the full form with their real min/max range.
+                desc = _csFocusPercent
+                    ? AccessibilityStrings.SliderPercent(sliderLabel, _csFocusValue)
+                    : AccessibilityStrings.SliderDesc(sliderLabel, _csFocusValue,
+                        slider->MinValue, slider->MaxValue);
                 break;
             }
             case ComponentType.DropDownList:
@@ -3198,6 +3243,11 @@ public sealed class UIReaderService : IDisposable
         _log.Info($"[CS] Fokus (global): {desc}");
         _tolk.SpeakInterrupt(desc);
     }
+
+    /// <summary>Speech form of a config control value: percentage sliders (0..100)
+    /// read as "100 %"; dropdown selections and non-percentage sliders unchanged.</summary>
+    private static string FormatSliderSpeech(string value, bool percent) =>
+        percent ? $"{value} %" : value;
 
     /// <summary>Current value of a config control as speech: slider number or
     /// drop-down selection; "" for types without a trackable value.</summary>
@@ -7461,8 +7511,11 @@ public sealed class UIReaderService : IDisposable
     /// Findet das aktuell sichtbare/aktive Addon und dumpt seinen Node-Tree.
     /// Wird von Plugin.cs �ber F5 aufgerufen (kein Chat-Fenster n�tig).
     /// Sucht in einer festen Priorit�tsliste, die den Titelbildschirm abdeckt.
+    /// Gibt true zur�ck, wenn ein Men�/Fenster gedumpt wurde; false, wenn nichts
+    /// zu dumpen war (Spielwelt) - dann darf der Aufrufer die Objekt-Sonde laufen
+    /// lassen, ohne die Men�-Dump-Ansage zu �berschreiben.
     /// </summary>
-    public unsafe void DumpFocusedAddon()
+    public unsafe bool DumpFocusedAddon()
     {
         // First choice: whatever the game itself reports as focused
         // (FocusedUnitsList). Covers unknown menus like character creation
@@ -7513,7 +7566,7 @@ public sealed class UIReaderService : IDisposable
 
                 _log.Info($"[Dump] Fokussierte Addons (alle im Dump): {string.Join(", ", names)}");
                 DumpAddons(names);
-                return;
+                return true;
             }
             _log.Info("[Dump] Fokussierte Addons vorhanden, aber keins sichtbar - Fallback auf Kandidatenliste.");
         }
@@ -7547,7 +7600,7 @@ public sealed class UIReaderService : IDisposable
             if (!a->IsVisible) continue;
             _log.Info($"[Dump] Aktives Addon erkannt: {name}");
             DumpAddon(name);
-            return;
+            return true;
         }
 
         // Last resort: dump EVERY visible addon that is not pure HUD noise.
@@ -7571,12 +7624,12 @@ public sealed class UIReaderService : IDisposable
                 _log.Info($"[Dump] Kein fokussiertes/bekanntes Addon - dumpe {rest.Count} sichtbare Nicht-HUD-Fenster: {string.Join(", ", rest)}");
                 DumpAddons(rest);
                 _tolk.SpeakInterrupt(AccessibilityStrings.UnknownWindowDumped(rest.Count));
-                return;
+                return true;
             }
         }
 
-        _tolk.SpeakInterrupt(AccessibilityStrings.NoActiveAddonToDump);
         _log.Info("[Dump] Kein sichtbares Addon in der Kandidatenliste gefunden.");
+        return false;
     }
 
     /// <summary>
@@ -7714,6 +7767,107 @@ public sealed class UIReaderService : IDisposable
         _log.Info($"[ConfigProbe] {line}");
 #endif
     }
+
+#if DEBUG
+    // One-shot per session: guards the TripleTriadRequest AtkValue dump so it fires
+    // on the first open only (the values are set in OnSetup, present at PostSetup).
+    private bool _ttReqProbeDone;
+
+    /// <summary>
+    /// Audit probe: logs every AtkValue of the pre-match TripleTriadRequest window
+    /// (index / type / value) so the reward-item ids, opponent-deck card ids and
+    /// rule ids can be identified against the TripleTriad / Item / TripleTriadRule
+    /// Lumina sheets. The window carries no struct, so this is the only grounded way
+    /// to name the icon-only reward cards. Delete after the reader is built.
+    /// </summary>
+    private unsafe void OnTripleTriadRequestProbe(AddonEvent type, AddonArgs args)
+    {
+        if (_ttReqProbeDone) return;
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        _ttReqProbeDone = true;
+
+        var values = addon->AtkValuesSpan;
+        _log.Info($"[TTReq] TripleTriadRequest PostSetup, AtkValuesCount={values.Length}");
+        for (var i = 0; i < values.Length; i++)
+        {
+            var v = values[i];
+            var shown = v.Type switch
+            {
+                AtkValueType.Int    => v.Int.ToString(),
+                AtkValueType.Bool   => v.Byte.ToString(),
+                AtkValueType.UInt   => v.UInt.ToString(),
+                AtkValueType.Int64  => v.Int64.ToString(),
+                AtkValueType.UInt64 => v.UInt64.ToString(),
+                AtkValueType.Float  => v.Float.ToString("0.###"),
+                AtkValueType.String or AtkValueType.ConstString or AtkValueType.ManagedString
+                    => v.String.HasValue ? v.String.ToString() : "<null-str>",
+                _ => "-",
+            };
+            _log.Info($"[TTReq] [{i}] {v.Type} = {shown}");
+        }
+    }
+
+    // Card-array offsets inside AddonTripleTriad (ilspycmd-verified 2026-07-26).
+    private const int TtBlueDeckOffset = 576;   // FixedSizeArray5 = player hand
+    private const int TtRedDeckOffset  = 1416;  // FixedSizeArray5 = opponent hand
+    private const int TtBoardOffset    = 2256;  // FixedSizeArray9 = 3x3 board
+    private string _ttBoardLastSig = string.Empty;
+
+    /// <summary>
+    /// Audit probe for the live board (AddonTripleTriad): logs the raw card structs
+    /// (HasCard / owner / edge numbers) of all 9 board cells and both 5-card hands
+    /// whenever the state changes. Purpose: confirm the pointer-offset reading yields
+    /// real edge numbers + owners before the per-card focus announcer is built, and
+    /// capture how owner flips look mid-game. Compiled out of release; remove when done.
+    /// </summary>
+    private unsafe void OnTripleTriadBoardProbe(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) { _ttBoardLastSig = string.Empty; return; }
+
+        var stride = sizeof(AddonTripleTriad.TripleTriadCard);
+        var tt     = (byte*)addon;
+
+        AddonTripleTriad.TripleTriadCard* Card(int off, int i) =>
+            (AddonTripleTriad.TripleTriadCard*)(tt + off + i * stride);
+
+        // Build a change signature over everything we care about.
+        var sig = new StringBuilder();
+        sig.Append((int)((AddonTripleTriad*)addon)->TurnState).Append('|');
+        for (var i = 0; i < 9; i++)
+        {
+            var c = Card(TtBoardOffset, i);
+            sig.Append(c->HasCard ? 1 : 0).Append((int)c->CardOwner)
+               .Append(c->NumSideU).Append(c->NumSideR).Append(c->NumSideD).Append(c->NumSideL).Append(',');
+        }
+        for (var i = 0; i < 5; i++)
+        {
+            var c = Card(TtBlueDeckOffset, i);
+            sig.Append(c->HasCard ? 1 : 0).Append(c->NumSideU).Append(c->NumSideR).Append(c->NumSideD).Append(c->NumSideL).Append(';');
+        }
+        var s = sig.ToString();
+        if (s == _ttBoardLastSig) return;
+        _ttBoardLastSig = s;
+
+        _log.Info($"[TTBoard] TurnState={(int)((AddonTripleTriad*)addon)->TurnState} ({((AddonTripleTriad*)addon)->TurnState})");
+        for (var i = 0; i < 9; i++)
+        {
+            var c = Card(TtBoardOffset, i);
+            _log.Info($"[TTBoard] board[{i}] Has={c->HasCard} owner={c->CardOwner} U={c->NumSideU} R={c->NumSideR} D={c->NumSideD} L={c->NumSideL} type={c->CardType}");
+        }
+        for (var i = 0; i < 5; i++)
+        {
+            var c = Card(TtBlueDeckOffset, i);
+            _log.Info($"[TTBoard] blue[{i}] Has={c->HasCard} owner={c->CardOwner} U={c->NumSideU} R={c->NumSideR} D={c->NumSideD} L={c->NumSideL}");
+        }
+        for (var i = 0; i < 5; i++)
+        {
+            var c = Card(TtRedDeckOffset, i);
+            _log.Info($"[TTBoard] red[{i}] Has={c->HasCard} owner={c->CardOwner} U={c->NumSideU} R={c->NumSideR} D={c->NumSideD} L={c->NumSideL}");
+        }
+    }
+#endif
 
     /// <summary>Icon id -&gt; mount name, built once from the Mount sheet and cached.</summary>
     private Dictionary<uint, string> MountByIcon()

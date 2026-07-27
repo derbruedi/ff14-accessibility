@@ -56,6 +56,12 @@ public static class AccessibilityStrings
     public static string StateOff => IsGerman ? "aus" : "off";
     /// <summary>Radio button is the selected option.</summary>
     public static string RadioSelected => IsGerman ? "ausgewählt" : "selected";
+    /// <summary>Control-type word for a checkbox, so the user knows it is a
+    /// toggle they can flip - not just an informational label.</summary>
+    public static string SwitchControl => IsGerman ? "Schalter" : "switch";
+    /// <summary>Control is greyed out / not currently changeable (NodeFlags.Enabled
+    /// cleared) - e.g. a sub-toggle while its master switch is off.</summary>
+    public static string StateDisabled => IsGerman ? "ausgegraut" : "greyed out";
 
     // ── Sprachumschaltung (/acc lang) ────────────────────────────────
     public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
@@ -114,6 +120,59 @@ public static class AccessibilityStrings
         IsGerman
             ? $"{label}, Tab {index} von {count}"
             : $"{label}, tab {index} of {count}";
+
+    // ── Triple Triad (Kartenspiel) ───────────────────────────────────
+    // Fields read directly from AddonTripleTriad (Board/BlueDeck/RedDeck,
+    // ilspycmd-verified). Numbers are pre-formatted by the service (1-9, 10 -> "A")
+    // so the digit/A convention stays language-independent.
+    public static string CardGameTitle => IsGerman ? "Kartenspiel" : "Card game";
+
+    /// <summary>The four edge numbers of a card, in a fixed clockwise-from-top order.</summary>
+    public static string CardSides(string up, string right, string down, string left) =>
+        IsGerman
+            ? $"oben {up}, rechts {right}, unten {down}, links {left}"
+            : $"top {up}, right {right}, bottom {down}, left {left}";
+
+    /// <summary>Owner of a card that sits on the board or in a hand.</summary>
+    public static string CardOwnerYours => IsGerman ? "deine" : "yours";
+    public static string CardOwnerEnemy => IsGerman ? "gegnerische" : "enemy";
+
+    /// <summary>One board cell (1-based), either empty or holding a card.</summary>
+    public static string BoardCellEmpty(int cell) =>
+        IsGerman ? $"Feld {cell}: leer" : $"Cell {cell}: empty";
+
+    public static string BoardCellCard(int cell, string owner, string sides) =>
+        IsGerman ? $"Feld {cell}: {owner}, {sides}" : $"Cell {cell}: {owner}, {sides}";
+
+    /// <summary>One hand card (1-based).</summary>
+    public static string HandCard(int index, string sides) =>
+        IsGerman ? $"Karte {index}: {sides}" : $"Card {index}: {sides}";
+
+    /// <summary>Focus announcement for a single card (board cell or hand card).</summary>
+    public static string FocusBoardCell(int cell, string content) =>
+        IsGerman ? $"Feld {cell}, {content}" : $"Cell {cell}, {content}";
+
+    public static string FocusHandCard(int index, int count, string sides) =>
+        IsGerman ? $"Handkarte {index} von {count}, {sides}" : $"Hand card {index} of {count}, {sides}";
+
+    public static string CardGameNotOpen =>
+        IsGerman ? "Kartenspiel ist nicht offen." : "Card game is not open.";
+
+    public static string BoardIntro(int yours, int enemy) =>
+        IsGerman
+            ? $"Brett. Deine Karten {yours}, gegnerische {enemy}."
+            : $"Board. Your cards {yours}, enemy {enemy}.";
+
+    public static string HandIntro(int count) =>
+        IsGerman ? $"Deine Hand, {count} Karten." : $"Your hand, {count} cards.";
+
+    public static string HandEmpty =>
+        IsGerman ? "Keine Handkarten mehr." : "No hand cards left.";
+
+    // HYPOTHESE (in-game zu verifizieren): TurnState NormalMove/MaskedMove = du bist
+    // am Zug, Waiting = Gegner/warten. Der Rohwert wird zusaetzlich geloggt.
+    public static string YourTurn => IsGerman ? "Du bist am Zug." : "Your turn.";
+    public static string WaitingTurn => IsGerman ? "Warten." : "Waiting.";
 
     // ── Fenster-Ansage (F2 / /acc win) ───────────────────────────────
     public static string ActiveWindow(string name, int visibleCount) =>
@@ -240,6 +299,16 @@ public static class AccessibilityStrings
 
     public static string NoFishingSpots =>
         IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
+
+    /// <summary>Spoken the moment the game reports the player can cast from where
+    /// they stand and face - the orientation cue a blind fisher rotates until
+    /// they hear (FishingEventHandler.CanFish flips true in the ready stance).</summary>
+    public static string FishReady =>
+        IsGerman ? "Angelbereit." : "Ready to fish.";
+
+    /// <summary>Spoken on a bite - strike now (FishingState -> Bite).</summary>
+    public static string FishBite =>
+        IsGerman ? "Biss!" : "Bite!";
 
     public static string CategoryObjectCount(string label, int count) =>
         IsGerman
@@ -499,6 +568,11 @@ public static class AccessibilityStrings
         IsGerman
             ? $"{label}, Regler, {value}, von {min} bis {max}."
             : $"{label}, slider, {value}, from {min} to {max}.";
+    // Short form for 0..100 percentage sliders (volumes): the "%" already implies
+    // the range, so drop "slider" and "from 0 to 100" - the long form got cut off
+    // by the next control while navigating quickly (user report 2026-07-27).
+    public static string SliderPercent(string label, string value) =>
+        IsGerman ? $"{label}, {value} %" : $"{label}, {value}%";
     public static string DropdownDesc(string label, string value) =>
         IsGerman ? $"{label}, Auswahlliste, {value}." : $"{label}, dropdown, {value}.";
     public static string InputFieldValue(string typed) =>

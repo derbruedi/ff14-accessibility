@@ -174,6 +174,41 @@ public sealed class AutoWalkService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Resolves a fishing spot's WATER-CENTRE position to the nearest walkable
+    /// bank you can cast from. Fishing spots sit in the middle of the water where
+    /// no mesh exists, so the generic <see cref="ResolveFloorPoint"/> (a 10 m box
+    /// plus a straight-down cast) either finds nothing or snaps to a lakebed far
+    /// below - the player then does not land at the water. Here we search a WIDE
+    /// horizontal area (banks can be tens of metres from the centre) but a THIN
+    /// vertical slab around the player's height, so the nearest point returned is
+    /// the bank at water-surface level, never a floor above or below it.
+    /// Returns null (caller falls back to the generic resolver) when vnavmesh is
+    /// missing/not ready or no bank is found within range.
+    /// </summary>
+    public Vector3? ResolveNearestBank(Vector3 waterCentre)
+    {
+        // try-catch: IPC into a foreign plugin (vnavmesh may be missing/loading).
+        try
+        {
+            if (!_navIsReady.InvokeFunc()) return null;
+
+            // 75 m horizontal covers a bank well out from a large water centre;
+            // 8 m vertical keeps the result at the player's level (the bank),
+            // not a lakebed or bridge. NearestPoint returns the CLOSEST mesh
+            // point in the box, so the near bank always wins over a far one.
+            var bank = _nearestPoint.InvokeFunc(waterCentre, 75f, 8f);
+            _log.Info($"[Angeln] Ufer: NearestPoint ({waterCentre.X:F1}|{waterCentre.Y:F1}|{waterCentre.Z:F1}) -> " +
+                      (bank.HasValue ? $"({bank.Value.X:F1}|{bank.Value.Y:F1}|{bank.Value.Z:F1})" : "null"));
+            return bank;
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "[Angeln] Ufer-Query-IPC fehlgeschlagen");
+            return null;
+        }
+    }
+
     /// <summary>Starts the auto-walk to the current game target, or stops a running one.</summary>
     public void Toggle()
     {

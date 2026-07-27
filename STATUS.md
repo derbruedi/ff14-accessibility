@@ -3,7 +3,25 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-26, V5.57 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-27, V5.58 OEFFENTLICH RELEASED)
+
+>>> SYSTEMKONFIGURATION BARRIEREFREI (User-Wunsch 2026-07-27, IN-GAME BESTAETIGT, in v5.58 released):
+    Runde Feinschliff am Reiter "Sound" + Config allgemein (UIReaderService/AccessibilityStrings):
+    - Lautstaerke-Regler: KURZFORM "Hauptlautstaerke, 100 %" statt langem "Regler, von 0 bis 100"
+      (Langform wurde beim schnellen Navigieren abgeschnitten). Beim Verstellen nur "99 %".
+      0..100-Slider werden generell als Prozent gelesen (SliderPercent).
+    - Doppel-Ansage gefixt: der generische Fokus-Leser sprach die nackte Slider-Zahl ("100")
+      ~14 ms nach der Config-Ansage und wuergte das Label ab -> nackte Zahlen in ConfigSystem
+      unterdrueckt (Muster wie JournalResult).
+    - Schalter: "Label, Schalter, an/aus"; deaktivierte zusaetzlich "ausgegraut" aus
+      NodeFlags.Enabled (0x20, ilspycmd-verifiziert; aktiv F=0x2033 vs. ausgegraut F=0x2013).
+    - Barrierefreiheit-Reiter (Reiter 8): Seite schaltet beim Navigieren um und wird gelesen
+      (Enter schluckt das Spiel, IKeyState sieht es nicht - fuer den Wechsel nicht noetig).
+    - Strg+F5-Menue-Dump wird nicht mehr von der Objekt-Sonde ueberschrieben (DumpFocusedAddon
+      gibt bool zurueck; Objekt-Sonde nur noch ohne offenes Fenster).
+    Versionen synchron csproj/repo.json/Plugin.cs auf 5.58.
+    OFFEN (kosmetisch): Barrierefreiheit-Seite meldet Ueberschrift "Anzeigeeinstellungen".
+    MITGEBUENDELT ungetestet: Triple Triad + Gathering (aus frueheren Sessions, im Arbeitsbaum).
 
 >>> V5.57 RELEASE (2026-07-26): "Latest", latest.zip-Weiterleitung 579.413 B verifiziert.
     Installer unveraendert (1.1.0.0, exe+installer.json von v5.56 wiederverwendet, SHA ok).

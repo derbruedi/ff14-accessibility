@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Dalamud.Configuration;
 
 namespace FF14Accessibility;
@@ -97,6 +98,11 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyPluginsNext    = "Umschalt+F1";     // Plugin-Liste: naechstes Plugin (1. Druck = Uebersicht)
     public string KeyPluginsPrev    = "Umschalt+F2";     // Plugin-Liste: vorheriges Plugin
     public string KeyPluginsConfig  = "Umschalt+F12";    // Einstellungen des gewaehlten Plugins oeffnen (ImGui, nicht vorlesbar)
+    // Triple Triad (Kartenspiel). Nur im offenen TripleTriad-Fenster nuetzlich, sonst
+    // still. Strg+Umschalt+F4/F5 sind frei (F1-F3 dieses Clusters sind Goto/Copy-Coords
+    // bzw. AoE-Toggle; Strg+F* ist laut Keybind-Dump spielfrei, Strg+Umschalt+F* erst recht).
+    public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
+    public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -140,6 +146,8 @@ public sealed class Configuration : IPluginConfiguration
         KeyChatCatNext   = defaults.KeyChatCatNext;
         KeyChatReadOlder = defaults.KeyChatReadOlder;
         KeyChatReadNewer = defaults.KeyChatReadNewer;
+        KeyReadBoard     = defaults.KeyReadBoard;
+        KeyReadHand      = defaults.KeyReadHand;
     }
 
     // Chat
@@ -244,4 +252,11 @@ public sealed class Configuration : IPluginConfiguration
     // rohen Text-Scan dieser HUD-Elemente trotzdem hoeren moechte (z.B. Debugging).
     public bool SuppressStatusBarSpam = true;   // _StatusCustom0-Sprint-Countdown stumm
     public bool SuppressFlyTextSpam   = true;   // _FlyText-Kampfzahlen stumm
+
+    // Angeln: pro Angelplatz gemerkte Auswurf-Koordinate ("/acc fishhere"). Fuer
+    // Stadt-/Hafen-Plaetze, deren Sheet-Koordinate auf trockenem Land liegt, merkt
+    // sich der Spieler die echte Stelle, an der er steht. Schluessel = FishingSpot-
+    // Zeilen-ID (sprachunabhaengig); Wert = [KarteX, KarteY]. Bleibt ueber Sitzungen
+    // erhalten. Siehe FishingService.CaptureHere / GetSpotsInCurrentZone.
+    public Dictionary<uint, float[]> FishingSpotOverrides = new();
 }
