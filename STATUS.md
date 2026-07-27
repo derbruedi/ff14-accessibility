@@ -3,7 +3,37 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-27, V5.58 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-27, V5.59 OEFFENTLICH RELEASED)
+
+>>> V5.59 RELEASE (2026-07-27): "Latest", latest.zip-Weiterleitung 592.761 B
+    verifiziert (vorher 587.056). Installer unveraendert (1.1.0.0, exe+installer.json von
+    v5.58 wiederverwendet, SHA 5787445B... verifiziert passend zur exe). 4 Assets dran.
+    Versionen synchron csproj/repo.json/Plugin.cs auf 5.59.
+
+>>> MOD-ANSAGEN KOMPLETT ZWEISPRACHIG (User-Wunsch 2026-07-27, in v5.59 released):
+    Der Client laeuft eh auf Englisch - es mussten nur die MOD-Ausgaben uebersetzt
+    werden. Gefunden & behoben: ~120 hartkodierte deutsche Fragmente in 13 Dateien
+    liefen an Loc/AccessibilityStrings vorbei -> EN-Nutzer hoerten dort trotz
+    /acc lang en IMMER Deutsch. Alle jetzt via AccessibilityStrings (IsGerman ? de : en).
+    Migriert: AutoWalkService (Auto-Lauf/Folgen/Wegenetz, ~30), Plugin.cs (Koordinaten-
+    Lauf, Versionsansage, kompletter /acc help-Text, Himmelsrichtung, Quest/Marker,
+    Bestiarium), HotbarService (Aktionsleiste/Skill-Browser inkl. SlotLabel/
+    TargetBarSummary/SkillBrowseEntry), NavigationService (Gehhilfe), EmoteService,
+    DalamudPluginsService (inkl. Describe/BuildOverview-Zustandswoerter), Fishing- +
+    GatheringService (CompassDirection -> AccessibilityStrings.CompassAdjectives,
+    SpotListLine), InventoryService, MessageHistoryService (ChatCategoryName),
+    BeaconService, ChatReaderService (Kanal-Praefixe ChatPrefix/OwnChatPrefix +
+    von/an-Konnektoren - versteckte Luecke!), PlacesService (gesprochene NAMEN
+    FlagName/TransitionToName/AetheryteFallbackName; TypeLabel bleibt dt. Identitaet),
+    UIReader-Reste (Kategorie/Benachrichtigung/Countdown).
+    FIX: veraltete Ansage "Erst mit N ein Objekt waehlen" -> "Bild ab"/"Page Down"
+    (Objekt-Browser liegt seit V5.31 auf Bild-auf/-ab, nicht mehr N).
+    BEWUSST deutsch: Debug-Sonden (#if DEBUG) + /acc keys-Desktop-Dumpdatei (Diagnose).
+    Build 0/0 (Debug + Release). IM SPIEL NOCH UNGETESTET (nur Kompilierung verifiziert).
+    OFFEN (Teil 2, eigenes Projekt): Client-Match-Strings (Buttons/Journal-Header)
+    robust machen - betrifft v.a. UIReaderService, fuer EN-Client noch relevant.
+
+## VORHERIGER STAND (2026-07-27, V5.58 OEFFENTLICH RELEASED)
 
 >>> V5.58 RELEASE (2026-07-27): "Latest", latest.zip-Weiterleitung 587.056 B verifiziert
     (vorher 579.413). Installer unveraendert (1.1.0.0, exe+installer.json von v5.57
