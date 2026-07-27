@@ -224,7 +224,7 @@ public sealed class AutoWalkService : IDisposable
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel. Erst mit N ein Objekt wählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTargetSelectN);
             return;
         }
 
@@ -310,12 +310,12 @@ public sealed class AutoWalkService : IDisposable
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel zum Folgen. Erst ein Ziel anwählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowNoTarget);
             return;
         }
         if (target.GameObjectId == (_objectTable.LocalPlayer?.GameObjectId ?? 0))
         {
-            _tolk.SpeakInterrupt("Das bist du selbst.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowSelf);
             return;
         }
 
@@ -327,7 +327,7 @@ public sealed class AutoWalkService : IDisposable
         _lastFollowDest = default;         // force the first path immediately
         _lastFollowPathAt = DateTime.MinValue;
         _log.Info($"[Nav] Folgen: gestartet -> {_followName} (id={_followTargetId:X})");
-        _tolk.SpeakInterrupt($"Folge {_followName}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.Following(_followName));
     }
 
     private void StopFollow(bool announce)
@@ -340,7 +340,7 @@ public sealed class AutoWalkService : IDisposable
         catch (Exception ex) { _log.Error(ex, "[Nav] Folgen: Path.Stop fehlgeschlagen"); }
 
         _log.Info("[Nav] Folgen: gestoppt.");
-        if (announce) _tolk.SpeakInterrupt("Folgen beendet.");
+        if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.FollowStopped);
     }
 
     /// <summary>Ends a running follow without announcement (e.g. when a walk takes over).</summary>
@@ -363,7 +363,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Info("[Nav] Folgen: Gebiet gewechselt, beende.");
             StopFollow(announce: false);
-            _tolk.SpeakInterrupt("Folgen beendet, Gebiet gewechselt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowStoppedZone);
             return;
         }
 
@@ -372,7 +372,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Info($"[Nav] Folgen: Ziel {_followTargetId:X} nicht mehr da, beende.");
             StopFollow(announce: false);
-            _tolk.SpeakInterrupt($"{_followName} ist weg. Folgen beendet.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowTargetGone(_followName));
             return;
         }
 
@@ -398,7 +398,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Error(ex, "[Nav] Folgen: Status-IPC fehlgeschlagen, breche ab");
             StopFollow(announce: false);
-            _tolk.SpeakInterrupt("Folgen abgebrochen, vnavmesh antwortet nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowAbortedNoResponse);
             return;
         }
         if (computing) return;
@@ -419,7 +419,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Error(ex, "[Nav] Folgen: MoveCloseTo fehlgeschlagen, breche ab");
             StopFollow(announce: false);
-            _tolk.SpeakInterrupt("Folgen abgebrochen, vnavmesh nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FollowAbortedUnavailable);
         }
     }
 
@@ -474,7 +474,7 @@ public sealed class AutoWalkService : IDisposable
                 // Step 0 counts as spoken, so 0 % never announces itself.
                 _lastSpokenMeshStep = 0;
                 _log.Info("[Nav] Wegenetz-Aufbau gestartet.");
-                _tolk.SpeakInterrupt("Wegenetz wird geladen.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.MeshLoading);
                 return;
             }
 
@@ -483,7 +483,7 @@ public sealed class AutoWalkService : IDisposable
             {
                 _lastSpokenMeshStep = step;
                 _log.Info($"[Nav] Wegenetz-Aufbau: {step * 20} % (progress={progress:F2})");
-                _tolk.SpeakInterrupt($"Wegenetz {step * 20} Prozent.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.MeshPercent(step * 20));
             }
             return;
         }
@@ -493,8 +493,8 @@ public sealed class AutoWalkService : IDisposable
         _lastSpokenMeshStep = -1;
         _log.Info($"[Nav] Wegenetz-Aufbau beendet, bereit={ready}");
         _tolk.SpeakInterrupt(ready
-            ? "Wegenetz fertig geladen."
-            : "Wegenetz-Aufbau abgebrochen.");
+            ? AccessibilityStrings.MeshReady
+            : AccessibilityStrings.MeshAborted);
     }
 
     /// <summary>Queues the vnavmesh path. False (with announcement) when vnavmesh is not ready.</summary>
@@ -508,22 +508,22 @@ public sealed class AutoWalkService : IDisposable
             {
                 var progress = _navBuildProgress.InvokeFunc();
                 _tolk.SpeakInterrupt(progress >= 0
-                    ? $"Wegenetz lädt noch, {progress * 100:F0} Prozent. Gleich nochmal versuchen."
-                    : "Wegenetz ist noch nicht bereit. Gleich nochmal versuchen.");
+                    ? AccessibilityStrings.MeshStillLoading(progress * 100)
+                    : AccessibilityStrings.MeshNotReady);
                 return false;
             }
 
             if (!_moveCloseTo.InvokeFunc(destination, false, stopRange))
             {
                 // MoveTo returns false only while a previous pathfind is queued
-                _tolk.SpeakInterrupt("Wegfindung läuft schon. Gleich nochmal versuchen.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.PathfindBusy);
                 return false;
             }
         }
         catch (Exception ex)
         {
             _log.Error(ex, "[Nav] Auto-Lauf: vnavmesh-IPC fehlgeschlagen (Plugin installiert?)");
-            _tolk.SpeakInterrupt("Auto-Lauf nicht verfügbar. Das Plugin vnavmesh fehlt oder ist nicht geladen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
             return false;
         }
         return true;
@@ -544,7 +544,7 @@ public sealed class AutoWalkService : IDisposable
         _lastDiagAt = DateTime.UtcNow;
         _log.Info($"[Nav] Auto-Lauf: gestartet zu {_targetName} (id={_targetId:X}, stopRange={_stopRange:F1}, " +
                   $"dist={Vector3.Distance(_objectTable.LocalPlayer?.Position ?? default, _destPosition):F1})");
-        _tolk.SpeakInterrupt($"Laufe zu {_targetName}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(_targetName));
     }
 
     /// <summary>Stops a running auto-walk without any announcement (e.g. when the walk guide takes over).</summary>
@@ -568,7 +568,7 @@ public sealed class AutoWalkService : IDisposable
         }
 
         _log.Info("[Nav] Auto-Lauf: gestoppt.");
-        if (announce) _tolk.SpeakInterrupt("Auto-Lauf gestoppt.");
+        if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkStopped);
     }
 
     /// <summary>Watches the running walk. Called every frame from Plugin.OnFrameworkUpdate.</summary>
@@ -600,7 +600,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _active = false;
             _log.Info($"[Nav] Auto-Lauf: Gebiet gewechselt ({_startTerritory} -> {_clientState.TerritoryType}), Ziel erreicht.");
-            _tolk.SpeakInterrupt("Angekommen, neues Gebiet erreicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ArrivedNewZone);
             return;
         }
 
@@ -616,7 +616,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Error(ex, "[Nav] Auto-Lauf: Status-IPC fehlgeschlagen, breche ab");
             Stop(announce: false);
-            _tolk.SpeakInterrupt("Auto-Lauf abgebrochen, vnavmesh antwortet nicht.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkAbortedNoResponse);
             return;
         }
 
@@ -693,7 +693,7 @@ public sealed class AutoWalkService : IDisposable
         if (step > 0 && distance <= _lastProgressDistance - step)
         {
             _lastProgressDistance = distance;
-            _tolk.SpeakInterrupt($"Noch {FormatRemaining(distance)}.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.StillToGo(distance));
             _log.Info($"[Nav] Auto-Lauf: läuft, dist={distance:F1} running={running} computing={computing}");
         }
 
@@ -704,8 +704,8 @@ public sealed class AutoWalkService : IDisposable
             var arrived = distance <= _stopRange + 1.5f;
             _log.Info($"[Nav] Auto-Lauf: Pfad beendet, dist={distance:F1}, angekommen={arrived}");
             _tolk.SpeakInterrupt(arrived
-                ? $"Ziel erreicht: {_targetName}."
-                : $"Auto-Lauf beendet, noch {FormatRemaining(distance)}.");
+                ? AccessibilityStrings.TargetReached(_targetName)
+                : AccessibilityStrings.AutoWalkEndedRemaining(distance));
             return;
         }
 
@@ -719,8 +719,8 @@ public sealed class AutoWalkService : IDisposable
             _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit 5 s, dist={distance:F1}, angekommen={arrived}");
             Stop(announce: false);
             _tolk.SpeakInterrupt(arrived
-                ? $"Ziel erreicht: {_targetName}."
-                : $"Ich stecke fest, noch {FormatRemaining(distance)}. Auto-Lauf beendet.");
+                ? AccessibilityStrings.TargetReached(_targetName)
+                : AccessibilityStrings.StuckRemaining(distance));
             return;
         }
 
@@ -730,12 +730,9 @@ public sealed class AutoWalkService : IDisposable
         {
             _active = false;
             _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
-            _tolk.SpeakInterrupt($"Kein Weg zu {_targetName} gefunden.{_places.BuildNoPathHint(_destPosition)}");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoPathTo(_targetName, _places.BuildNoPathHint(_destPosition)));
         }
     }
-
-    private static string FormatRemaining(float distance) =>
-        float.IsNaN(distance) ? "Ziel unbekannt" : $"{distance:F0} Meter";
 
     public void Dispose()
     {

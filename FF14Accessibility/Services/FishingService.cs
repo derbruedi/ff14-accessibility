@@ -167,7 +167,7 @@ public sealed class FishingService
         var spots = GetSpotsInCurrentZone();
         if (spots.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Angelplätze in dieser Zone.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFishingSpots);
             _log.Info($"[Fish] Gebiet {_clientState.TerritoryType}: keine FishingSpot-Einträge.");
             return;
         }
@@ -179,12 +179,12 @@ public sealed class FishingService
         {
             var dist    = PlacesService.Distance2D(playerPos, s.Position);
             var compass = CompassDirection(playerPos, s.Position);
-            lines.Add($"{s.Name}, Stufe {s.Level}, {dist:F0} Meter {compass}");
+            lines.Add(AccessibilityStrings.SpotListLine(s.Name, s.Level, dist, compass));
             _log.Info($"[Fish]   '{s.Name}' Stufe={s.Level} Welt=({s.Position.X:F1}|{s.Position.Z:F1}) " +
                       $"Dist={dist:F0} m {compass}");
         }
 
-        _tolk.SpeakInterrupt($"{spots.Count} Angelplätze: " + string.Join(". ", lines) + ".");
+        _tolk.SpeakInterrupt(AccessibilityStrings.FishingSpotsList(spots.Count, string.Join(". ", lines)));
     }
 
     /// <summary>
@@ -216,15 +216,14 @@ public sealed class FishingService
         var dist   = PlacesService.Distance2D(player.Position, target.Position);
         if (dist > CaptureMaxDistance)
         {
-            _tolk.SpeakInterrupt($"Kein Angelplatz nah genug. Nächster: {target.Name}, {dist:F0} Meter. " +
-                                 "Stell dich an die Angelstelle und drück erneut.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFishingSpotNearEnough(target.Name, dist));
             return;
         }
 
         var coord = _places.WorldToMapCoord(player.Position);
         if (coord is not { } c)
         {
-            _tolk.SpeakInterrupt("Aktuelle Karte unbekannt, kann die Stelle nicht merken.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.MapUnknownCantRemember);
             return;
         }
 
@@ -232,7 +231,7 @@ public sealed class FishingService
         _pluginInterface.SavePluginConfig(_config);
         _log.Info($"[Fish] Merke Angelplatz '{target.Name}' (Row {target.RowId}) = Karte {c.X:F1}/{c.Y:F1} " +
                   $"Welt ({player.Position.X:F1}|{player.Position.Z:F1}).");
-        _tolk.SpeakInterrupt($"Angelplatz {target.Name} hier gemerkt: Karte {c.X:F1}, {c.Y:F1}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.FishingSpotRemembered(target.Name, c.X, c.Y));
     }
 
     /// <summary>
@@ -355,12 +354,7 @@ public sealed class FishingService
         var deg = MathF.Atan2(dx, -dz) * 180f / MathF.PI;
         if (deg < 0) deg += 360f;
 
-        string[] names =
-        {
-            "nördlich", "nordöstlich", "östlich", "südöstlich",
-            "südlich", "südwestlich", "westlich", "nordwestlich",
-        };
         var index = (int)MathF.Round(deg / 45f) % 8;
-        return names[index];
+        return AccessibilityStrings.CompassAdjectives[index];
     }
 }

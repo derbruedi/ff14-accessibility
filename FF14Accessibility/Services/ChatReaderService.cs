@@ -58,7 +58,7 @@ public sealed class ChatReaderService : IDisposable
         // when reading back a conversation.
         var archiveName = isOwn ? ownName : senderText;
         var addressee = msg.LogKind == XivChatType.TellOutgoing && !string.IsNullOrWhiteSpace(senderText)
-            ? $" an {senderText}"
+            ? AccessibilityStrings.ChatAddressee(senderText)
             : string.Empty;
 
         // Nachlese-Archiv füllen (BEVOR der Echo-Schutz greift, damit auch
@@ -90,7 +90,7 @@ public sealed class ChatReaderService : IDisposable
         else if (string.IsNullOrWhiteSpace(senderText))
             fullText = string.IsNullOrEmpty(prefix) ? messageText : $"{prefix}: {messageText}";
         else
-            fullText = $"{prefix} von {senderText}: {messageText}";
+            fullText = AccessibilityStrings.ChatFromLine(prefix, senderText, messageText);
 
         var interrupt = msg.LogKind is XivChatType.Say or XivChatType.Shout or XivChatType.Party
                                     or XivChatType.Alliance or XivChatType.TellIncoming
@@ -170,38 +170,12 @@ public sealed class ChatReaderService : IDisposable
         _                         => MessageHistoryService.Category.System
     };
 
-    private static string GetChatPrefix(XivChatType type) => type switch
-    {
-        XivChatType.Say           => "Sagt",
-        XivChatType.Shout         => "Ruft",
-        XivChatType.Party         => "Gruppe",
-        XivChatType.Alliance      => "Allianz",
-        XivChatType.TellIncoming  => "Flüstert",
-        XivChatType.FreeCompany   => "FC",
-        XivChatType.SystemMessage => "System",
-        XivChatType.ErrorMessage  => "Fehler",
-        XivChatType.TellOutgoing  => "Flüstert an",
-        XivChatType.Yell          => "Brüllt",
-        XivChatType.CrossParty    => "Gruppe",
-        XivChatType.Echo          => "Echo",
-        XivChatType.Gathering     => "",   // full sentence, no channel prefix
-        XivChatType.LootNotice    => "",   // full sentence, no channel prefix
-        _                         => "Chat"
-    };
+    // Spoken channel prefixes are bilingual and live in AccessibilityStrings
+    // (ChatPrefix / OwnChatPrefix), so "/acc lang" switches them too.
+    private static string GetChatPrefix(XivChatType type) => AccessibilityStrings.ChatPrefix(type);
 
-    /// <summary>Prefix for the player's own messages ("Du sagst: ...").</summary>
-    private static string GetOwnChatPrefix(XivChatType type) => type switch
-    {
-        XivChatType.Say          => "Du sagst",
-        XivChatType.Shout        => "Du rufst",
-        XivChatType.Yell         => "Du brüllst",
-        XivChatType.Party        => "Du zur Gruppe",
-        XivChatType.CrossParty   => "Du zur Gruppe",
-        XivChatType.Alliance     => "Du zur Allianz",
-        XivChatType.FreeCompany  => "Du zur FC",
-        XivChatType.TellOutgoing => "Du flüsterst",
-        _                        => "Du"
-    };
+    /// <summary>Prefix for the player's own messages ("You say: ...").</summary>
+    private static string GetOwnChatPrefix(XivChatType type) => AccessibilityStrings.OwnChatPrefix(type);
 
     public void Dispose() => _chatGui.ChatMessage -= OnChatMessage;
 }

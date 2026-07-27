@@ -1433,8 +1433,8 @@ public sealed class UIReaderService : IDisposable
         // On open the window announcer names the window first - queue the
         // initial category behind it instead of cutting it off; tab switches
         // interrupt as usual.
-        if (isSwitch) _tolk.SpeakInterrupt($"Kategorie {category}.");
-        else          _tolk.Speak($"Kategorie {category}.");
+        if (isSwitch) _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLabel(category));
+        else          _tolk.Speak(AccessibilityStrings.CategoryLabel(category));
     }
 
     // -- GrandCompanyExchange: Kategorie-Reiter -----------------------
@@ -2235,7 +2235,7 @@ public sealed class UIReaderService : IDisposable
 
         // The invitation message itself already came through chat and toast;
         // what is missing is the way to answer it.
-        _tolk.Speak($"Benachrichtigung. Mit {_config.KeyNotification} annehmen.");
+        _tolk.Speak(AccessibilityStrings.NotificationAccept(_config.KeyNotification));
     }
 
     /// <summary>True for text that is only digits and separators (a currency
@@ -4298,7 +4298,7 @@ public sealed class UIReaderService : IDisposable
         {
             _lastFinderSecondsSpoken = seconds;
             _log.Info($"[Finder] Countdown-Ansage: {seconds} s");
-            _tolk.Speak($"Noch {seconds} Sekunden zum Beitreten.");
+            _tolk.Speak(AccessibilityStrings.SecondsToJoin(seconds));
         }
     }
 

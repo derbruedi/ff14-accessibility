@@ -109,7 +109,7 @@ public sealed class NavigationService
                 // Player gone (logout/zone change) - the tracked object is
                 // invalid now, so end the guide instead of beeping stale data.
                 StopWalkGuide();
-                _tolk.SpeakInterrupt("Gehhilfe beendet.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideEnded);
                 _log.Info("[Nav] Gehhilfe: beendet, Spieler nicht mehr verfügbar.");
             }
             return;
@@ -945,7 +945,7 @@ public sealed class NavigationService
         if (_walkGuideActive)
         {
             StopWalkGuide();
-            _tolk.SpeakInterrupt("Gehhilfe aus.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideOff);
             _log.Info("[Nav] Gehhilfe: manuell ausgeschaltet.");
             return;
         }
@@ -953,7 +953,7 @@ public sealed class NavigationService
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
         {
-            _tolk.SpeakInterrupt("Kein Ziel. Erst mit N ein Objekt wählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTargetSelectN);
             return;
         }
 
@@ -983,7 +983,7 @@ public sealed class NavigationService
         _lastGuideTick = DateTime.UtcNow;
         ClearRoute();
         _beacon.Start();
-        _tolk.SpeakInterrupt($"Gehhilfe an: {_walkTargetName}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideOn(_walkTargetName));
         _log.Info($"[Nav] Gehhilfe: gestartet zu {name} (id={targetId:X}, ankunft={arrivalRange:F1})");
 
         var player = _objectTable.LocalPlayer;
@@ -1074,7 +1074,7 @@ public sealed class NavigationService
             // route if this was a re-route, otherwise guide straight-line.
             if (_route == null && !_routeTaskIsReroute)
             {
-                _tolk.Speak($"Kein Weg gefunden, führe in Luftlinie.{_places.BuildNoPathHint(_walkDestPosition)}");
+                _tolk.Speak(AccessibilityStrings.NoPathStraightLine(_places.BuildNoPathHint(_walkDestPosition)));
                 _log.Info("[Nav] Gehhilfe: kein Weg gefunden, Luftlinien-Modus.");
             }
             return;
@@ -1335,7 +1335,7 @@ public sealed class NavigationService
 
         if (waypoints == null || waypoints.Count == 0)
         {
-            _tolk.SpeakInterrupt($"Kein Weg zu {_previewName} gefunden.{_places.BuildNoPathHint(_previewDest)}");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoPathTo(_previewName, _places.BuildNoPathHint(_previewDest)));
             return;
         }
         _tolk.SpeakInterrupt(_routes.DescribeRoute(_previewName, waypoints));

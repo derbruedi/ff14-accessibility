@@ -44,21 +44,18 @@ public sealed class EmoteService
 
         _index = ((_index + direction) % _emotes.Count + _emotes.Count) % _emotes.Count;
         var (_, name, command) = _emotes[_index];
-        var msg = name;
-        if (!string.IsNullOrEmpty(command)) msg += $", Befehl {command}";
-        msg += $", {_index + 1} von {_emotes.Count}";
-        _tolk.SpeakInterrupt(msg);
+        _tolk.SpeakInterrupt(AccessibilityStrings.EmoteBrowseEntry(name, command, _index + 1, _emotes.Count));
     }
 
     /// <summary>Performs the currently selected emote via the game's emote function.</summary>
     public unsafe void ExecuteSelected()
     {
         if (!EnsureList()) return;
-        if (_index < 0) { _tolk.SpeakInterrupt("Kein Emote gewählt. Erst durchblättern."); return; }
+        if (_index < 0) { _tolk.SpeakInterrupt(AccessibilityStrings.NoEmoteSelected); return; }
 
         var (id, name, _) = _emotes[_index];
         var agent = AgentEmote.Instance();
-        if (agent == null) { _tolk.SpeakInterrupt("Emote nicht verfügbar."); return; }
+        if (agent == null) { _tolk.SpeakInterrupt(AccessibilityStrings.EmoteUnavailable); return; }
 
         // External game call: guard it (the function pointer can be null if the
         // signature drifts on a patch, and ExecuteEmote touches game state).
@@ -70,7 +67,7 @@ public sealed class EmoteService
         }
         catch (Exception ex)
         {
-            _tolk.SpeakInterrupt("Emote fehlgeschlagen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.EmoteFailed);
             _log.Error(ex, $"[Emote] ExecuteEmote fehlgeschlagen: id={id} '{name}'");
         }
     }
@@ -87,14 +84,14 @@ public sealed class EmoteService
 
         if (!_clientState.IsLoggedIn)
         {
-            _tolk.SpeakInterrupt("Nicht eingeloggt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
             return false;
         }
 
         var agent = AgentEmote.Instance();
         if (agent == null)
         {
-            _tolk.SpeakInterrupt("Emotes noch nicht bereit.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.EmotesNotReady);
             return false;
         }
 
@@ -114,7 +111,7 @@ public sealed class EmoteService
 
         if (_emotes.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Emotes verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoEmotesAvailable);
             return false;
         }
         return true;

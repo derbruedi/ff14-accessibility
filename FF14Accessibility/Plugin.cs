@@ -64,8 +64,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.58";
-    private const string PluginVersionTag = "Systemkonfiguration barrierefrei: Lautstaerke in %, Schalter an/aus + ausgegraut";
+    private const string PluginVersion    = "5.59";
+    private const string PluginVersionTag = "Mod-Ansagen komplett zweisprachig - Englisch vollstaendig uebersetzt (/acc lang en); veraltete N-Tasten-Meldung gefixt";
 
     public Plugin()
     {
@@ -224,7 +224,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
 
         Log.Info($"FF14 Accessibility Plugin V{PluginVersion} [{PluginVersionTag}] geladen.");
-        _tolk.Speak($"FF14 Accessibility Version {PluginVersion.Replace(".", " Punkt ")} bereit.");
+        _tolk.Speak(AccessibilityStrings.VersionReady(PluginVersion));
     }
 
     private void RegisterCommands()
@@ -535,7 +535,7 @@ public sealed class Plugin : IDalamudPlugin
         catch (System.Exception ex)
         {
             Log.Warning($"[Goto] Zwischenablage nicht lesbar: {ex.Message}");
-            _tolk.SpeakInterrupt("Zwischenablage konnte nicht gelesen werden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ClipboardUnreadable);
             return;
         }
 
@@ -543,8 +543,7 @@ public sealed class Plugin : IDalamudPlugin
         if (coords == null)
         {
             Log.Info($"[Goto] Keine Koordinaten in der Zwischenablage: '{clip}'");
-            _tolk.SpeakInterrupt("Keine Koordinaten in der Zwischenablage gefunden. " +
-                                 "Erst die Zahlen kopieren, dann die Taste drücken.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoCoordsInClipboard);
             return;
         }
 
@@ -552,15 +551,15 @@ public sealed class Plugin : IDalamudPlugin
         var approx = _places.MapCoordToWorld(mapX, mapY);
         if (approx == null)
         {
-            _tolk.SpeakInterrupt("Aktuelle Karte unbekannt, kann nicht umrechnen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.MapUnknownConvert);
             return;
         }
 
         // Snap the 2D map point onto the walkable mesh (map coords carry no height).
         var floor = _autoWalk.ResolveFloorPoint(approx.Value) ?? approx.Value;
-        var name  = $"Koordinaten {mapX:0.0}, {mapY:0.0}";
+        var name  = AccessibilityStrings.CoordsName(mapX, mapY);
         Log.Info($"[Goto] {name} -> Welt {approx.Value.X:0.0}/{approx.Value.Z:0.0}, Boden {floor.Y:0.0}");
-        _tolk.SpeakInterrupt($"Laufe zu Koordinaten {mapX:0.0}, {mapY:0.0}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingToCoords(mapX, mapY));
 
         // Fresh start every time: stop a running walk first, then head out.
         if (_autoWalk.IsActive) _autoWalk.StopQuiet();
@@ -575,15 +574,15 @@ public sealed class Plugin : IDalamudPlugin
         var spot = _gathering.GetNearestSpot();
         if (spot == null)
         {
-            _tolk.SpeakInterrupt("Keine Sammelstellen für deinen Beruf in dieser Zone.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGatheringSpotsJob);
             return;
         }
 
         var floor = _autoWalk.ResolveFloorPoint(spot.Position) ?? spot.Position;
-        var name  = $"Sammelstelle, Stufe {spot.Level}";
+        var name  = AccessibilityStrings.GatheringSpotName(spot.Level);
         Log.Info($"[Gather] Laufe zu GP={spot.GatheringPointId} '{spot.TypeName}' " +
                  $"Welt=({spot.Position.X:F1}|{spot.Position.Z:F1}) Boden Y={floor.Y:F1}");
-        _tolk.SpeakInterrupt($"Laufe zu {name}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
 
         _navigation.StopWalkGuideQuiet();
         if (_autoWalk.IsActive) _autoWalk.StopQuiet();
@@ -631,14 +630,14 @@ public sealed class Plugin : IDalamudPlugin
         var player = ObjectTable.LocalPlayer;
         if (player == null)
         {
-            _tolk.SpeakInterrupt("Position unbekannt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PositionUnknown);
             return;
         }
 
         var coords = _places.WorldToMapCoord(player.Position);
         if (coords == null)
         {
-            _tolk.SpeakInterrupt("Aktuelle Karte unbekannt, kann Koordinaten nicht bestimmen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.MapUnknownCoords);
             return;
         }
 
@@ -656,19 +655,19 @@ public sealed class Plugin : IDalamudPlugin
         catch (System.Exception ex)
         {
             Log.Warning($"[CopyCoords] Zwischenablage nicht schreibbar: {ex.Message}");
-            _tolk.SpeakInterrupt("Zwischenablage konnte nicht beschrieben werden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ClipboardNotWritable);
             return;
         }
 
         if (!ok)
         {
             Log.Warning("[CopyCoords] Zwischenablage konnte nicht geoeffnet/beschrieben werden.");
-            _tolk.SpeakInterrupt("Zwischenablage konnte nicht beschrieben werden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ClipboardNotWritable);
             return;
         }
 
         Log.Info($"[CopyCoords] Koordinaten {text} kopiert (Welt {player.Position.X:0.0}/{player.Position.Z:0.0}).");
-        _tolk.SpeakInterrupt($"Koordinaten {mapX:0.0}, {mapY:0.0} kopiert.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.CoordsCopied(mapX, mapY));
     }
 
     /// <summary>
@@ -686,13 +685,11 @@ public sealed class Plugin : IDalamudPlugin
         if (_config.AnnounceHeading)
         {
             var dir = _heading.CurrentHeadingWord();
-            _tolk.SpeakInterrupt(dir.Length > 0
-                ? $"Himmelsrichtung an. {dir}."
-                : "Himmelsrichtung an.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HeadingOn(dir));
         }
         else
         {
-            _tolk.SpeakInterrupt("Himmelsrichtung aus.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HeadingOff);
         }
     }
 
@@ -1056,14 +1053,14 @@ public sealed class Plugin : IDalamudPlugin
                 var hop = _places.FindFirstHopToMap(quest.MapId, out _);
                 if (hop == null)
                 {
-                    _tolk.SpeakInterrupt($"{quest.QuestName} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.QuestInAnotherZoneNoHop(quest.QuestName));
                     return MarkerResolve.Failed;
                 }
                 var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
                 var floor   = _autoWalk.ResolveFloorPoint(hop.Position with { Y = playerY });
                 if (floor == null)
                 {
-                    _tolk.SpeakInterrupt($"Kein begehbarer Punkt am {hop.Name} gefunden.");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
                     return MarkerResolve.Failed;
                 }
                 position = floor.Value;
@@ -1099,7 +1096,7 @@ public sealed class Plugin : IDalamudPlugin
                 : _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY });
             if (floor == null)
             {
-                _tolk.SpeakInterrupt($"Kein begehbarer Punkt bei {place.Name} gefunden.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(place.Name));
                 return MarkerResolve.Failed;
             }
             position = floor.Value;
@@ -1145,8 +1142,8 @@ public sealed class Plugin : IDalamudPlugin
         {
             var habitat = _bestiary.GetHabitat(monsterName);
             _tolk.SpeakInterrupt(habitat != null
-                ? $"Kein {monsterName} in der Nähe. Lebt in {habitat}."
-                : $"Kein {monsterName} in der Nähe.");
+                ? AccessibilityStrings.NoMonsterNearbyHabitat(monsterName, habitat)
+                : AccessibilityStrings.NoMonsterNearby(monsterName));
             return;
         }
 
@@ -1154,47 +1151,13 @@ public sealed class Plugin : IDalamudPlugin
         // set (V4.24), so read back and warn instead of walking untargeted.
         TargetManager.Target = nearest;
         if (TargetManager.Target?.GameObjectId != nearest.GameObjectId)
-            _tolk.SpeakInterrupt("Achtung, nicht anvisiert.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotTargetedWarning);
         _autoWalk.Toggle();
     }
 
     private void AnnounceHelp()
     {
-        _tolk.SpeakInterrupt(
-            "Tasten: " +
-            "Bild ab, nächstes Objekt ansagen und anvisieren. " +
-            "Bild auf, vorheriges Objekt. " +
-            "Strg+Bild ab, Kategorie vorwärts. " +
-            "Strg+Bild auf, Kategorie zurück. " +
-            "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
-            "Nummernblock 3, automatisch zum Ziel laufen. " +
-            "Plus, dem anvisierten Ziel folgen an oder aus. " +
-            "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
-            "F, zum Ziel hindrehen. W, laufen. " +
-            "Strg+F1, diese Hilfe. " +
-            "Strg+F2, aktives Fenster. " +
-            "Strg+F10, Menü vorlesen. " +
-            "Strg+F11, Sprache stoppen. " +
-            "Strg+Entfernen, HP und MP ansagen. " +
-            "Strg+F9, gewählte Aktionsleiste vorlesen. " +
-            "Strg+F6, angelegte Ausrüstung vorlesen. " +
-            "Strg+F7, empfohlene Ausrüstung anlegen. " +
-            "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
-            "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
-            "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
-            "Umschalt+F9, Ziel-Taste der Leiste wählen. " +
-            "Umschalt+F10, gewählten Skill auf die Ziel-Taste legen. " +
-            "Befehle: " +
-            "/acc nav, Richtung zum Ziel. " +
-            "/acc set, Aktuelles Ziel verfolgen. " +
-            "/acc clear, Ziel aufheben. " +
-            "/acc near, Objekte in der Nähe. " +
-            "/acc status, HP und MP ansagen. " +
-            "/acc ui, Menü vorlesen. " +
-            "/acc win, Aktives Fenster ansagen. " +
-            "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
-            "/acc stop, Sprache stoppen."
-        );
+        _tolk.SpeakInterrupt(AccessibilityStrings.HelpFull);
     }
 
     public void Dispose()

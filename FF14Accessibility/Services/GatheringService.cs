@@ -179,7 +179,7 @@ public sealed class GatheringService
         var spots = GetSpotsInCurrentZone();
         if (spots.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Sammelstellen für deinen Beruf in dieser Zone.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGatheringSpotsJob);
             return;
         }
 
@@ -189,10 +189,10 @@ public sealed class GatheringService
         {
             var dist    = PlacesService.Distance2D(playerPos, s.Position);
             var compass = CompassDirection(playerPos, s.Position);
-            lines.Add($"{ShortTypeName(s.TypeName)}, Stufe {s.Level}, {dist:F0} Meter {compass}");
+            lines.Add(AccessibilityStrings.SpotListLine(ShortTypeName(s.TypeName), s.Level, dist, compass));
         }
 
-        _tolk.SpeakInterrupt($"{spots.Count} Sammelstellen: " + string.Join(". ", lines) + ".");
+        _tolk.SpeakInterrupt(AccessibilityStrings.GatheringSpotsList(spots.Count, string.Join(". ", lines)));
     }
 
     /// <summary>The nearest gathering spot the active job can work, or null.</summary>
@@ -240,12 +240,7 @@ public sealed class GatheringService
         var deg = MathF.Atan2(dx, -dz) * 180f / MathF.PI;
         if (deg < 0) deg += 360f;
 
-        string[] names =
-        {
-            "nördlich", "nordöstlich", "östlich", "südöstlich",
-            "südlich", "südwestlich", "westlich", "nordwestlich",
-        };
         var index = (int)MathF.Round(deg / 45f) % 8;
-        return names[index];
+        return AccessibilityStrings.CompassAdjectives[index];
     }
 }

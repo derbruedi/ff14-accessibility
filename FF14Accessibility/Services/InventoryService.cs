@@ -50,7 +50,7 @@ public sealed class InventoryService
 
         if (gil < 0 && keyItems.Count == 0 && bagItems.Count == 0)
         {
-            _tolk.SpeakInterrupt("Inventar ist leer.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.InventoryEmpty);
             return;
         }
 
@@ -58,9 +58,9 @@ public sealed class InventoryService
         if (gil >= 0)
             parts.Add($"{ResolveItemName(1)}: {gil}");
         if (keyItems.Count > 0)
-            parts.Add($"Schlüsselgegenstände: {string.Join(", ", keyItems)}");
+            parts.Add(AccessibilityStrings.KeyItemsLabel(string.Join(", ", keyItems)));
         if (bagItems.Count > 0)
-            parts.Add($"Tasche, {bagItems.Count} Gegenstände: {string.Join(", ", bagItems)}");
+            parts.Add(AccessibilityStrings.BagLabel(bagItems.Count, string.Join(", ", bagItems)));
 
         _tolk.SpeakInterrupt(string.Join(". ", parts) + ".");
     }
@@ -75,7 +75,7 @@ public sealed class InventoryService
         var gil = GetGil();
         _tolk.SpeakInterrupt(gil >= 0
             ? $"{ResolveItemName(1)}: {gil}"
-            : "Gil-Stand nicht verfügbar.");
+            : AccessibilityStrings.GilUnavailable);
     }
 
     /// <summary>
@@ -107,10 +107,10 @@ public sealed class InventoryService
                 if (item.IsEmpty || item.ItemId == 0) continue;
 
                 var name = ResolveItemName(item.BaseItemId);
-                var hq = item.IsHq ? " Hoch-Qualität" : string.Empty;
+                var hq = item.IsHq ? AccessibilityStrings.HighQuality : string.Empty;
                 _log.Info($"[Inventory] {page} slot={item.InventorySlot} id={item.ItemId} " +
                           $"qty={item.Quantity} hq={item.IsHq} name='{name}'");
-                result.Add(item.Quantity > 1 ? $"{name} mal {item.Quantity}{hq}" : $"{name}{hq}");
+                result.Add(item.Quantity > 1 ? AccessibilityStrings.ItemStack(name, item.Quantity, hq) : $"{name}{hq}");
             }
         }
         return result;
@@ -127,7 +127,7 @@ public sealed class InventoryService
             var name = ResolveKeyItemName(item.ItemId);
             _log.Info($"[Inventory] KeyItems slot={item.InventorySlot} id={item.ItemId} " +
                       $"qty={item.Quantity} name='{name}'");
-            result.Add(item.Quantity > 1 ? $"{name} mal {item.Quantity}" : name);
+            result.Add(item.Quantity > 1 ? AccessibilityStrings.ItemStack(name, item.Quantity, string.Empty) : name);
         }
         return result;
     }
@@ -249,7 +249,7 @@ public sealed class InventoryService
             var name = row.Name.ExtractText();
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
-        return $"Gegenstand {baseItemId}";
+        return AccessibilityStrings.ItemFallback(baseItemId);
     }
 
     private string ResolveKeyItemName(uint id)
@@ -259,6 +259,6 @@ public sealed class InventoryService
             var name = row.Name.ExtractText();
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
-        return $"Schlüsselgegenstand {id}";
+        return AccessibilityStrings.KeyItemFallback(id);
     }
 }

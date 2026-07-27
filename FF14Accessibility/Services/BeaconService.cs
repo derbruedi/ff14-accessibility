@@ -44,7 +44,7 @@ public sealed class BeaconService : IDisposable
         catch (Exception ex)
         {
             _log.Error(ex, "[Nav] Beacon: Audio-Ausgabe konnte nicht starten");
-            _tolk.SpeakInterrupt("Ton-Beacon nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.BeaconUnavailable);
             Stop();
         }
     }

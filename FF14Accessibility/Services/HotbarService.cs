@@ -72,11 +72,11 @@ public sealed class HotbarService
     private string SlotLabel(int bar, int slot)
     {
         if (bar == MainHotbarIndex)
-            return $"Taste {BoundKeyFor(bar, slot) ?? SlotKeyNames[slot]}";
+            return AccessibilityStrings.SlotMainKey(BoundKeyFor(bar, slot) ?? SlotKeyNames[slot]);
         var key = BoundKeyFor(bar, slot);
         return key != null
-            ? $"Leiste {bar + 1}, Taste {key}"
-            : $"Leiste {bar + 1}, Slot {slot + 1}";
+            ? AccessibilityStrings.SlotBarKey(bar + 1, key)
+            : AccessibilityStrings.SlotBarSlot(bar + 1, slot + 1);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public sealed class HotbarService
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
-            _tolk.SpeakInterrupt("Aktionsleiste nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
             _log.Warning("[Hotbar] RaptureHotbarModule.Instance() ist null.");
             return;
         }
@@ -105,8 +105,8 @@ public sealed class HotbarService
 
             var name = ResolveName(s->CommandType, s->CommandId, s->PopUpHelp.ToString());
             var keyLabel = bar == MainHotbarIndex
-                ? $"Taste {SlotKeyNames[slot]}"
-                : (BoundKeyFor(bar, slot) is { } key ? $"Taste {key}" : $"Slot {slot + 1}");
+                ? AccessibilityStrings.SlotMainKey(SlotKeyNames[slot])
+                : (BoundKeyFor(bar, slot) is { } key ? AccessibilityStrings.SlotMainKey(key) : AccessibilityStrings.SlotNumberWord(slot + 1));
             _log.Info($"[Hotbar] Leiste {bar + 1} Slot {slot} ({keyLabel}): type={s->CommandType} " +
                       $"id={s->CommandId} name='{name}'");
             parts.Add($"{keyLabel}, {name}");
@@ -114,11 +114,11 @@ public sealed class HotbarService
 
         if (parts.Count == 0)
         {
-            _tolk.SpeakInterrupt($"Aktionsleiste {bar + 1} ist leer.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarEmpty(bar + 1));
             return;
         }
 
-        _tolk.SpeakInterrupt($"Aktionsleiste {bar + 1}. " + string.Join(". ", parts) + ".");
+        _tolk.SpeakInterrupt(AccessibilityStrings.HotbarPrefix(bar + 1) + string.Join(". ", parts) + ".");
     }
 
     /// <summary>
@@ -195,11 +195,8 @@ public sealed class HotbarService
         _skillIndex = ((_skillIndex + direction) % _skills.Count + _skills.Count) % _skills.Count;
         var (id, name, level) = _skills[_skillIndex];
 
-        var msg = $"{name}, Stufe {level}";
         var location = FindSlotLocationFor(id);
-        if (location != null) msg += $", liegt auf {location}";
-        msg += $", {_skillIndex + 1} von {_skills.Count}";
-        _tolk.SpeakInterrupt(msg);
+        _tolk.SpeakInterrupt(AccessibilityStrings.SkillBrowseEntry(name, level, location, _skillIndex + 1, _skills.Count));
     }
 
     /// <summary>
@@ -213,7 +210,7 @@ public sealed class HotbarService
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
-            _tolk.SpeakInterrupt("Aktionsleiste nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
             return;
         }
 
@@ -229,9 +226,7 @@ public sealed class HotbarService
             if (BoundKeyFor(_targetBar, slot) != null) anyKey = true;
         }
 
-        var msg = $"Ziel-Leiste {_targetBar + 1}, {filled} von {SlotsToRead} belegt";
-        if (!anyKey) msg += ", keine Tasten zugewiesen";
-        _tolk.SpeakInterrupt(msg + ".");
+        _tolk.SpeakInterrupt(AccessibilityStrings.TargetBarSummary(_targetBar + 1, filled, SlotsToRead, anyKey));
     }
 
     /// <summary>
@@ -243,16 +238,16 @@ public sealed class HotbarService
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
-            _tolk.SpeakInterrupt("Aktionsleiste nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
             return;
         }
 
         _targetSlot = (_targetSlot + 1) % SlotsToRead;
         var s = module->GetSlotById((uint)_targetBar, (uint)_targetSlot);
         var current = s == null || s->CommandType == RaptureHotbarModule.HotbarSlotType.Empty
-            ? "leer"
+            ? AccessibilityStrings.InputEmpty
             : ResolveName(s->CommandType, s->CommandId, s->PopUpHelp.ToString());
-        _tolk.SpeakInterrupt($"Ziel-{SlotLabel(_targetBar, _targetSlot)}: {current}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.TargetSlotCurrent(SlotLabel(_targetBar, _targetSlot), current));
     }
 
     /// <summary>
@@ -267,19 +262,19 @@ public sealed class HotbarService
     {
         if (_skillIndex < 0 || _skillIndex >= _skills.Count)
         {
-            _tolk.SpeakInterrupt("Kein Skill gewählt. Erst mit dem Skill-Browser blättern.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
             return;
         }
         if (_targetSlot < 0)
         {
-            _tolk.SpeakInterrupt("Keine Ziel-Taste gewählt. Erst die Ziel-Taste wählen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTargetSlot);
             return;
         }
 
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
-            _tolk.SpeakInterrupt("Aktionsleiste nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
             return;
         }
 
@@ -313,7 +308,7 @@ public sealed class HotbarService
         }
         catch (Exception ex)
         {
-            _tolk.SpeakInterrupt("Belegen fehlgeschlagen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailed);
             _log.Error(ex, $"[Hotbar] SetAndSaveSlot/LoadSavedHotbar krachte: bar={bar} slot={slot} action={id} '{name}'");
             return;
         }
@@ -330,12 +325,12 @@ public sealed class HotbarService
         var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
         if (s != null && s->CommandType == RaptureHotbarModule.HotbarSlotType.Action && s->CommandId == actionId)
         {
-            _tolk.SpeakInterrupt($"{name} liegt jetzt auf {SlotLabel(bar, slot)}.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.SkillAssigned(name, SlotLabel(bar, slot)));
             _log.Info($"[Hotbar] Belegt (nach 2 Frames): Leiste {bar + 1} Slot {slot} = action {actionId} '{name}'");
         }
         else
         {
-            _tolk.SpeakInterrupt("Belegen fehlgeschlagen, die Taste hat sich nicht geändert.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailedNoChange);
             _log.Warning($"[Hotbar] SetAndSaveSlot ohne Wirkung (nach 2 Frames): bar={bar} slot={slot} soll action {actionId} " +
                          $"'{name}', ist {(module == null ? "Modul null" : DescribeSlotRaw(module, bar, slot))}");
         }
@@ -380,7 +375,7 @@ public sealed class HotbarService
     {
         if (!_clientState.IsLoggedIn)
         {
-            _tolk.SpeakInterrupt("Nicht eingeloggt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
             return false;
         }
 
@@ -388,7 +383,7 @@ public sealed class HotbarService
         var ui = UIState.Instance();
         if (ps == null || ui == null)
         {
-            _tolk.SpeakInterrupt("Spielerdaten noch nicht bereit.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PlayerDataNotReady);
             return false;
         }
 
@@ -435,7 +430,7 @@ public sealed class HotbarService
 
         if (_skills.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Skills gefunden.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillsFound);
             return false;
         }
         return true;

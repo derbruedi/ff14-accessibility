@@ -59,7 +59,7 @@ public sealed class DalamudPluginsService
         }
 
         _index = ((_index + direction) % _plugins.Count + _plugins.Count) % _plugins.Count;
-        _tolk.Speak($"{Describe(_plugins[_index])}, {_index + 1} von {_plugins.Count}");
+        _tolk.Speak($"{Describe(_plugins[_index])}, {AccessibilityStrings.Counter(_index + 1, _plugins.Count)}");
     }
 
     /// <summary>
@@ -70,14 +70,14 @@ public sealed class DalamudPluginsService
     public void OpenConfigOfSelected()
     {
         if (!RefreshList()) return;
-        if (_index < 0) { _tolk.SpeakInterrupt("Kein Plugin gewählt. Erst durchblättern."); return; }
+        if (_index < 0) { _tolk.SpeakInterrupt(AccessibilityStrings.NoPluginSelected); return; }
 
         var plugin = _plugins[_index];
         var name   = SafeName(plugin);
 
         if (!TryGet(() => plugin.HasConfigUi, out var hasConfig) || !hasConfig)
         {
-            _tolk.SpeakInterrupt($"{name} hat keine Einstellungen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PluginNoSettings(name));
             return;
         }
 
@@ -86,12 +86,12 @@ public sealed class DalamudPluginsService
         try
         {
             plugin.OpenConfigUi();
-            _tolk.SpeakInterrupt($"Einstellungen von {name} geöffnet. Das Fenster ist nicht vorlesbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PluginSettingsOpened(name));
             _log.Info($"[DalamudPlugins] ConfigUi geöffnet: {name}");
         }
         catch (Exception ex)
         {
-            _tolk.SpeakInterrupt($"Einstellungen von {name} lassen sich nicht öffnen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PluginSettingsCantOpen(name));
             _log.Error(ex, $"[DalamudPlugins] OpenConfigUi fehlgeschlagen für {name}");
         }
     }
@@ -112,14 +112,14 @@ public sealed class DalamudPluginsService
         }
         catch (Exception ex)
         {
-            _tolk.SpeakInterrupt("Plugin-Liste nicht verfügbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.PluginListUnavailable);
             _log.Error(ex, "[DalamudPlugins] InstalledPlugins nicht lesbar");
             return false;
         }
 
         if (_plugins.Count == 0)
         {
-            _tolk.SpeakInterrupt("Keine Plugins installiert.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoPluginsInstalled);
             _log.Info("[DalamudPlugins] Liste leer");
             return false;
         }
@@ -138,12 +138,12 @@ public sealed class DalamudPluginsService
         var outdated  = _plugins.Count(p => TryGet(() => p.IsOutdated, out var v) && v);
         var banned    = _plugins.Count(p => TryGet(() => p.IsBanned, out var v) && v);
 
-        if (notLoaded > 0) problems.Add($"{notLoaded} nicht geladen");
-        if (outdated  > 0) problems.Add($"{outdated} veraltet");
-        if (banned    > 0) problems.Add($"{banned} gesperrt");
+        if (notLoaded > 0) problems.Add(AccessibilityStrings.PluginCountNotLoaded(notLoaded));
+        if (outdated  > 0) problems.Add(AccessibilityStrings.PluginCountOutdated(outdated));
+        if (banned    > 0) problems.Add(AccessibilityStrings.PluginCountBanned(banned));
 
-        var state = problems.Count == 0 ? "alle geladen" : string.Join(", ", problems);
-        var msg   = $"{_plugins.Count} Plugins, {state}.";
+        var state = problems.Count == 0 ? AccessibilityStrings.PluginAllLoaded : string.Join(", ", problems);
+        var msg   = AccessibilityStrings.PluginOverview(_plugins.Count, state);
         _log.Info($"[DalamudPlugins] Übersicht: {msg}");
         return msg;
     }
@@ -153,18 +153,18 @@ public sealed class DalamudPluginsService
         var parts = new List<string> { SafeName(plugin) };
 
         if (TryGet(() => plugin.Version, out var version) && version != null)
-            parts.Add($"Version {version}");
+            parts.Add(AccessibilityStrings.PluginVersionLabel(version.ToString()));
         else
             _log.Info($"[DalamudPlugins] {SafeName(plugin)}: keine Version gemeldet");
 
         // State first in importance order - "not loaded" is the one that explains
         // why a feature is missing (e.g. auto-walk without vnavmesh).
         if (TryGet(() => plugin.IsLoaded, out var loaded))
-            parts.Add(loaded ? "geladen" : "nicht geladen");
-        if (TryGet(() => plugin.IsOutdated, out var outdated) && outdated) parts.Add("veraltet");
-        if (TryGet(() => plugin.IsBanned,   out var banned)   && banned)   parts.Add("gesperrt");
-        if (TryGet(() => plugin.IsDev,      out var dev)      && dev)      parts.Add("Entwickler-Plugin");
-        if (TryGet(() => plugin.HasConfigUi, out var config)  && config)   parts.Add("hat Einstellungen");
+            parts.Add(loaded ? AccessibilityStrings.PluginLoaded : AccessibilityStrings.PluginNotLoaded);
+        if (TryGet(() => plugin.IsOutdated, out var outdated) && outdated) parts.Add(AccessibilityStrings.PluginOutdated);
+        if (TryGet(() => plugin.IsBanned,   out var banned)   && banned)   parts.Add(AccessibilityStrings.PluginBanned);
+        if (TryGet(() => plugin.IsDev,      out var dev)      && dev)      parts.Add(AccessibilityStrings.PluginDev);
+        if (TryGet(() => plugin.HasConfigUi, out var config)  && config)   parts.Add(AccessibilityStrings.PluginHasConfig);
 
         return string.Join(", ", parts) + ".";
     }

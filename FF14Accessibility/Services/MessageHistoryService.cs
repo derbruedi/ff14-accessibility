@@ -22,20 +22,8 @@ public sealed class MessageHistoryService
         Category.Loot,
     };
 
-    private static readonly Dictionary<Category, string> Names = new()
-    {
-        [Category.Dialogue]    = "Dialoge",
-        [Category.Say]         = "Sagen",
-        [Category.Shout]       = "Rufen",
-        [Category.Party]       = "Gruppe",
-        [Category.Alliance]    = "Allianz",
-        [Category.Tell]        = "Flüstern",
-        [Category.FreeCompany] = "Freie Gesellschaft",
-        [Category.System]      = "System",
-        // Beute-Kanal: XP-Gewinne und eingesammelte Gegenstaende zum Nachlesen
-        // (User-Wunsch 2026-07-25).
-        [Category.Loot]        = "Beute",
-    };
+    // Spoken category names are bilingual and live in AccessibilityStrings
+    // (ChatCategoryName), so "/acc lang" switches them too.
 
     private const int Max = 50;
     private readonly Dictionary<Category, List<string>> _buffers = new();
@@ -74,9 +62,7 @@ public sealed class MessageHistoryService
         _cursor   = -1;
         var cat = Order[_catIndex];
         var n   = _buffers[cat].Count;
-        _tolk.SpeakInterrupt(n == 0
-            ? $"{Names[cat]}, leer"
-            : $"{Names[cat]}, {n} {(n == 1 ? "Nachricht" : "Nachrichten")}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.CategorySummary(AccessibilityStrings.ChatCategoryName(cat), n));
     }
 
     /// <summary>Reads the previous (older) message; first press reads the newest.</summary>
@@ -87,7 +73,7 @@ public sealed class MessageHistoryService
 
         if (_cursor == -1)      _cursor = buf.Count - 1;
         else if (_cursor > 0)   _cursor--;
-        else { _tolk.SpeakInterrupt("Anfang des Verlaufs."); return; }
+        else { _tolk.SpeakInterrupt(AccessibilityStrings.HistoryStart); return; }
         Announce(buf);
     }
 
@@ -97,14 +83,14 @@ public sealed class MessageHistoryService
         var buf = _buffers[Order[_catIndex]];
         if (buf.Count == 0) { AnnounceEmpty(); return; }
 
-        if (_cursor == -1 || _cursor >= buf.Count - 1) { _tolk.SpeakInterrupt("Ende des Verlaufs."); return; }
+        if (_cursor == -1 || _cursor >= buf.Count - 1) { _tolk.SpeakInterrupt(AccessibilityStrings.HistoryEnd); return; }
         _cursor++;
         Announce(buf);
     }
 
     private void AnnounceEmpty()
-        => _tolk.SpeakInterrupt($"{Names[Order[_catIndex]]}, leer");
+        => _tolk.SpeakInterrupt(AccessibilityStrings.CategoryEmpty(AccessibilityStrings.ChatCategoryName(Order[_catIndex])));
 
     private void Announce(List<string> buf)
-        => _tolk.SpeakInterrupt($"{buf[_cursor]}, {_cursor + 1} von {buf.Count}");
+        => _tolk.SpeakInterrupt($"{buf[_cursor]}, {AccessibilityStrings.Counter(_cursor + 1, buf.Count)}");
 }

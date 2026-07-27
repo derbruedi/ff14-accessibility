@@ -174,8 +174,8 @@ public sealed class PlacesService
         if (flag.MapId != _clientState.MapId) return null;
 
         return new PlaceDestination(
-            FlagTypeLabel,
-            FlagTypeLabel,
+            AccessibilityStrings.FlagName,   // spoken name (bilingual)
+            FlagTypeLabel,                    // internal type identity (stays German)
             new Vector3(flag.XFloat, 0f, flag.YFloat),
             IsZoneTransition: false,
             TargetMapId: 0);
@@ -228,7 +228,7 @@ public sealed class PlacesService
                     }
                     if (string.IsNullOrWhiteSpace(name)) name = subtext;
                     if (string.IsNullOrWhiteSpace(name)) continue;
-                    name = $"Übergang nach {name}";
+                    name = AccessibilityStrings.TransitionToName(name);
                     type = "Übergang";
                     isTransition = true;
                     break;
@@ -238,7 +238,7 @@ public sealed class PlacesService
                         ? aetheryte.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty
                         : string.Empty;
                     if (string.IsNullOrWhiteSpace(name)) name = subtext;
-                    if (string.IsNullOrWhiteSpace(name)) name = "Ätheryt";
+                    if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.AetheryteFallbackName;
                     type = "Ätheryt";
                     break;
 
@@ -384,7 +384,10 @@ public sealed class PlacesService
         var dist = Distance2D(shard.Position, destination);
         if (dist > 100f) return string.Empty;
         _log.Info($"[Nav] Kein-Weg-Tipp: {shard.TypeLabel} {shard.Name} liegt {dist:F0} m vom Ziel.");
-        return $" Das Ziel liegt nahe {shard.TypeLabel} {shard.Name}. Reise per Aethernet dorthin.";
+        // TypeLabel is an internal identity string (matched as "Ätheryt"/"Aethernet"
+        // elsewhere), so it must not be translated - the spoken hint uses only the
+        // game-provided Name and a translated frame.
+        return AccessibilityStrings.NoPathAetheryteHint(shard.Name);
     }
 
     /// <summary>2D distance (X/Z) - marker positions carry no usable height.</summary>
