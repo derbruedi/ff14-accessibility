@@ -38,7 +38,7 @@ public sealed class CueService : IDisposable
     {
         if (_config.RouteCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
-        _provider!.Trigger(_config.RouteCueVolume, 1568f, 1568f);
+        _provider!.Trigger(_config.RouteCueVolume, 1175f, 1175f);
     }
 
     /// <summary>
@@ -49,7 +49,7 @@ public sealed class CueService : IDisposable
     {
         if (_config.RouteCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
-        _provider!.Trigger(_config.RouteCueVolume, 1320f, 990f);
+        _provider!.Trigger(_config.RouteCueVolume, 988f, 659f);
     }
 
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
@@ -90,30 +90,31 @@ public sealed class CueService : IDisposable
 }
 
 /// <summary>
-/// Generates one-shot cues on the NAudio playback thread. Outputs silence
-/// until <see cref="Trigger"/> queues a blip; a blip is two 70 ms notes whose
-/// frequencies the caller picks per cue (rising = enemy targeted, steady high
-/// = waypoint reached, falling = arrived). The trigger fields are written
-/// from the framework thread and read on the audio thread.
+/// Generates one-shot cues on the NAudio playback thread. Outputs silence until
+/// <see cref="Trigger"/> queues a cue; a cue is two struck bell-notes (warm
+/// crystalline timbre, exponential ring-out via <see cref="ToneSynth"/>) whose
+/// frequencies the caller picks per cue (steady high = waypoint reached, falling
+/// = arrived). The trigger fields are written from the framework thread and read
+/// on the audio thread.
 /// </summary>
 internal sealed class CueSampleProvider : ISampleProvider
 {
     private const int Rate = 44100;
-    private const int NoteSamples = Rate * 70 / 1000;   // 70 ms per note
-    private const int TotalSamples = NoteSamples * 2;    // two notes per cue
-    private const int RampSamples = Rate * 4 / 1000;     // 4 ms fade to avoid clicks
+    private const int NoteSamples = Rate * 260 / 1000;      // 260 ms slot per note
+    private const int TotalSamples = NoteSamples * 2;        // two notes per cue
+    private const int AttackSamples = Rate * 4 / 1000;       // 4 ms click-free onset
+    private const float DecayTauSamples = Rate * 80 / 1000f; // ~80 ms ring per note
 
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2);
 
     private volatile float _volume;
-    private volatile float _note1 = 990f;
-    private volatile float _note2 = 1320f;
+    private volatile float _note1 = 988f;
+    private volatile float _note2 = 1319f;
     private volatile int _remaining;   // samples left to play; 0 = silent
     private double _phase;
 
-    /// <summary>Queues a single two-note cue at the given volume (0..1) and
-    /// note frequencies (keep clear of the beacon's 220-880 Hz range).
-    /// Restarts if already playing.</summary>
+    /// <summary>Queues a single two-note cue at the given volume (0..1) and note
+    /// frequencies. Restarts if already playing.</summary>
     public void Trigger(float volume, float note1, float note2)
     {
         _volume = Math.Clamp(volume, 0f, 1f);
@@ -133,10 +134,16 @@ internal sealed class CueSampleProvider : ISampleProvider
             if (remaining > 0)
             {
                 var pos = TotalSamples - remaining;
+                var inNote = pos % NoteSamples;
+                // Re-strike at each note boundary. The pluck envelope is 0 at the
+                // strike instant, so resetting the phase here stays click-free.
+                if (inNote == 0) _phase = 0;
+
                 var freq = pos < NoteSamples ? _note1 : _note2;
+                var env = ToneSynth.PluckEnvelope(inNote, AttackSamples, DecayTauSamples);
                 _phase += 2.0 * Math.PI * freq / Rate;
                 if (_phase > 2.0 * Math.PI) _phase -= 2.0 * Math.PI;
-                sample = (float)Math.Sin(_phase) * Envelope(pos) * _volume;
+                sample = ToneSynth.Timbre(_phase, env) * env * _volume;
                 _remaining = remaining - 1;
             }
 
@@ -144,14 +151,5 @@ internal sealed class CueSampleProvider : ISampleProvider
             buffer[offset + 2 * i + 1] = sample;
         }
         return frames * 2;
-    }
-
-    // Fade each note in/out so note boundaries and start/end are click-free.
-    private static float Envelope(int pos)
-    {
-        var inNote = pos % NoteSamples;
-        if (inNote < RampSamples) return inNote / (float)RampSamples;
-        var remainingInNote = NoteSamples - inNote;
-        return remainingInNote < RampSamples ? remainingInNote / (float)RampSamples : 1f;
     }
 }

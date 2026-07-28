@@ -80,10 +80,12 @@ public sealed class BeaconService : IDisposable
         var provider = _provider;
         if (provider == null) return;
 
-        // Pitch: 880 Hz straight ahead, one octave down per 90° off,
-        // i.e. 220 Hz when the target is directly behind.
+        // Pitch: a warm D5 (587 Hz) straight ahead, gliding down about an octave
+        // and a half to ~208 Hz when the target is directly behind. The lower,
+        // gentler range is far less piercing than the old 220-880 Hz sweep while
+        // still giving clear "ahead = high" steering feedback.
         var absAngle = Math.Abs(relAngleDegrees);
-        provider.Frequency = (float)(880.0 * Math.Pow(2.0, -absAngle / 90.0));
+        provider.Frequency = (float)(587.0 * Math.Pow(2.0, -absAngle / 120.0));
 
         // Pan follows the side the target is on: sin(0°)=0 centered,
         // sin(±90°)=±1 fully left/right, sin(±180°)=0 centered again
@@ -100,21 +102,23 @@ public sealed class BeaconService : IDisposable
 }
 
 /// <summary>
-/// Generates the beacon signal: a beep every 0.5 s (150 ms long, 5 ms
-/// attack/release ramps against clicks) with live-adjustable frequency,
-/// equal-power pan and volume. Read runs on the NAudio playback thread;
-/// the volatile fields are written from the framework thread.
+/// Generates the beacon signal: a soft plucked bell-note every 0.5 s with a warm
+/// crystalline timbre (<see cref="ToneSynth"/>) and live-adjustable frequency,
+/// equal-power pan and volume. The note is struck (short attack) and rings out
+/// with an exponential decay, leaving quiet space before the next one - much
+/// gentler on the ear than the old flat 150 ms sine beep. Read runs on the NAudio
+/// playback thread; the volatile fields are written from the framework thread.
 /// </summary>
 internal sealed class BeaconSampleProvider : ISampleProvider
 {
     private const int Rate = 44100;
-    private const int BeepPeriodSamples = Rate / 2;       // one beep every 0.5 s
-    private const int BeepLengthSamples = Rate * 150 / 1000; // 150 ms beep
-    private const int RampSamples = Rate * 5 / 1000;      // 5 ms fade in/out
+    private const int BeepPeriodSamples = Rate / 2;           // one pluck every 0.5 s
+    private const int AttackSamples = Rate * 4 / 1000;        // 4 ms click-free onset
+    private const float DecayTauSamples = Rate * 110 / 1000f; // ~110 ms ring-out (near-silent by ~350 ms)
 
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2);
 
-    public volatile float Frequency = 880f;
+    public volatile float Frequency = 587f;
     public volatile float Pan;                 // -1 = left, +1 = right
     public volatile float Volume = 0.35f;
     public volatile float DistanceFactor = 1f; // 1 = close/loud, 0.2 = far/quiet
@@ -127,15 +131,20 @@ internal sealed class BeaconSampleProvider : ISampleProvider
         var frames = count / 2;
         for (var i = 0; i < frames; i++)
         {
-            var envelope = Envelope(_posInPeriod);
+            // Each 0.5 s period strikes a fresh pluck; reset the phase at the
+            // period start (the previous note has decayed to near-silence, so
+            // this is click-free) to keep every note identical.
+            if (_posInPeriod == 0) _phase = 0;
+
+            var env = ToneSynth.PluckEnvelope(_posInPeriod, AttackSamples, DecayTauSamples);
             var sample = 0f;
-            if (envelope > 0f)
+            if (env > 0.0008f)
             {
-                // Phase accumulator: frequency changes stay click-free
-                // because the phase is continuous.
                 _phase += 2.0 * Math.PI * Frequency / Rate;
                 if (_phase > 2.0 * Math.PI) _phase -= 2.0 * Math.PI;
-                sample = (float)Math.Sin(_phase) * envelope * Volume * DistanceFactor;
+                // Brightness follows the envelope so the overtones fade first, the
+                // way a real struck bell mellows as it rings out.
+                sample = ToneSynth.Timbre(_phase, env) * env * Volume * DistanceFactor;
             }
 
             var panAngle = (Pan + 1f) * MathF.PI / 4f;
@@ -146,13 +155,5 @@ internal sealed class BeaconSampleProvider : ISampleProvider
         }
 
         return frames * 2;
-    }
-
-    private static float Envelope(int posInPeriod)
-    {
-        if (posInPeriod >= BeepLengthSamples) return 0f;
-        if (posInPeriod < RampSamples) return posInPeriod / (float)RampSamples;
-        var remaining = BeepLengthSamples - posInPeriod;
-        return remaining < RampSamples ? remaining / (float)RampSamples : 1f;
     }
 }

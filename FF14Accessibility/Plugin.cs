@@ -303,6 +303,9 @@ public sealed class Plugin : IDalamudPlugin
             case "gathergo":
                 GatherWalkToNearest();
                 break;
+            case "soundtest":
+                SoundTest();
+                break;
             case "help":
                 AnnounceHelp();
                 break;
@@ -1153,6 +1156,28 @@ public sealed class Plugin : IDalamudPlugin
         if (TargetManager.Target?.GameObjectId != nearest.GameObjectId)
             _tolk.SpeakInterrupt(AccessibilityStrings.NotTargetedWarning);
         _autoWalk.Toggle();
+    }
+
+    /// <summary>
+    /// Auditions the generated audio cues on demand ("/acc soundtest") so a blind
+    /// player can judge and tune the sounds without walking around in-game: the
+    /// navigation beacon is swept ahead -> right -> behind (pitch/pan/volume all
+    /// move), then the waypoint and arrival cues play. Timed with framework ticks
+    /// (~60/s); the beacon strikes a pluck every 0.5 s, so ~0.7 s per angle lets
+    /// each be heard clearly.
+    /// </summary>
+    private void SoundTest()
+    {
+        _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestRunning);
+
+        _beacon.Start();
+        _beacon.Update(0, 6f);                                             // ahead, close = high + loud + centered
+        Framework.RunOnTick(() => _beacon.Update(45, 12f),  delayTicks: 42);  // to the right
+        Framework.RunOnTick(() => _beacon.Update(120, 25f), delayTicks: 84);  // behind-right, lower
+        Framework.RunOnTick(() => _beacon.Update(180, 45f), delayTicks: 126); // directly behind, lowest + quiet
+        Framework.RunOnTick(() => _beacon.Stop(),           delayTicks: 168);
+        Framework.RunOnTick(() => _cue.PlayWaypointTone(),  delayTicks: 180);
+        Framework.RunOnTick(() => _cue.PlayArrivalTone(),   delayTicks: 220);
     }
 
     private void AnnounceHelp()

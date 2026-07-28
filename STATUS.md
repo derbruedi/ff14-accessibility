@@ -3,7 +3,36 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-27, V5.59 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-28, FREIBRIEFE - IN ARBEIT, NICHT RELEASED)
+
+>>> FREIBRIEFE (Levequests) - neue Objekt-Browser-Kategorie (User-Wunsch 2026-07-28):
+    Eine Kategorie "Freibriefe" im Kategorie-Rad (Bild-auf/-ab), aus der man SOWOHL
+    zum Geber-NPC (Levemete) ALS AUCH zum Ziel des angenommenen Freibriefs laufen kann.
+    - VERIFIZIERT (ilspycmd, Map-Singleton): GuildLeveAssignmentMarkers (StdList) = Geber,
+      LevequestMarkers (Span 16) = Ziele. Beide MarkerInfo -> AddMarkerDestinations
+      komplett wiederverwendet. Leve-Ziel ist eine QuestDestination -> fliesst in
+      SelectedQuestDestination -> Numpad3-Auto-Lauf/Gehhilfe/Zonen-Routing geschenkt.
+    - Neues QuestMarkerRole-Enum (Quest/LeveGiver/LeveObjective) an QuestDestination.
+      Rollen-Prefix bilingual via AccessibilityStrings.LeveRolePrefix. Kategorie nur
+      sichtbar wenn Leve-Marker vorhanden (wie Angelplaetze).
+    - IN-GAME BESTAETIGT: "Freibrief-Geber: Gildenfreibriefe, direkt neben dir" /
+      "Freibrief-Ziel: Stufe 10, Reinemachen, 0,2 km, hinter rechts". Geber icon=71041,
+      Ziele icon=60492, Label/Tooltip = Leve-Name, terr/map korrekt.
+    - GEGNER: Freibrief-Gegner werden schon durch bestehende NpcPrefix->QuestMarkerHint
+      (NamePlateIconId 71000er -> "Quest") als quest-relevant angesagt. User akzeptiert
+      "Quest" -> KEINE eigene Freibrief-Gegner-Erkennung noetig. Temp-Sonde wieder entfernt.
+    - DEDUP: Spiel liefert pro Leve mehrere identische Marker (gleiche Position) -> roh 11.
+      GetLevequestDestinations() fasst nach (Role, Name, gerundete X/Z) zusammen; Zaehl-
+      Ansage nutzt dieselbe deduplizierte Liste.
+    OFFEN (naechste Session): Dedup-Zahl in-game bestaetigen (soll ~5 statt 11 sein).
+    Danach releasen. Debug-Build deployt, 0/0. NOCH NICHT released.
+    Dateien: QuestMarkerService.cs (Role-Enum + GetLevequestDestinations), NavigationService.cs
+    (NavCategory.Levequests + Cycle/Dedup), AccessibilityStrings.cs (Labels/Rollen), keine
+    neue Taste.
+    NEBENHER uncommitted (SEPARATES Feature, NICHT anfassen): Klangtest ToneSynth/
+    /acc soundtest (BeaconService/CueService/Plugin.cs).
+
+## VORHERIGER STAND (2026-07-27, V5.59 OEFFENTLICH RELEASED)
 
 >>> V5.59 RELEASE (2026-07-27): "Latest", latest.zip-Weiterleitung 592.761 B
     verifiziert (vorher 587.056). Installer unveraendert (1.1.0.0, exe+installer.json von

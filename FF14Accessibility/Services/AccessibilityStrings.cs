@@ -272,6 +272,7 @@ public static class AccessibilityStrings
         NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
         NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
         NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
+        NavCategory.Levequests       => IsGerman ? "Freibriefe"        : "Levequests",
         NavCategory.Waypoints        => IsGerman ? "Wegpunkte"         : "Waypoints",
         _                            => cat.ToString(),
     };
@@ -298,6 +299,26 @@ public static class AccessibilityStrings
         IsGerman
             ? $"Kategorie Ätheryten: {count} im Gebiet."
             : $"Category Aetherytes: {count} in this area.";
+
+    // ── Freibriefe (Levequests): Geber-NPCs + Ziele ──
+    public static string CategoryLevequestCount(int givers, int goals) =>
+        IsGerman
+            ? $"Kategorie Freibriefe: {givers} Geber, {goals} Ziele."
+            : $"Category Levequests: {givers} givers, {goals} goals.";
+
+    /// <summary>Spoken role prefix so the player knows whether a leve destination
+    /// is the Levemete (accept/hand in) or the objective (do the task).</summary>
+    public static string LeveRolePrefix(QuestMarkerRole role) => role switch
+    {
+        QuestMarkerRole.LeveGiver     => IsGerman ? "Freibrief-Geber: " : "Levequest giver: ",
+        QuestMarkerRole.LeveObjective => IsGerman ? "Freibrief-Ziel: "  : "Levequest goal: ",
+        _                             => string.Empty,
+    };
+
+    public static string NoLevequests =>
+        IsGerman
+            ? "Keine Freibriefe. Erst bei einem Freibrief-Geber annehmen."
+            : "No levequests. Accept one from a levemete first.";
 
     // Fishing spots (Angelplätze). Type label used when the spot flows through
     // the shared PlaceDestination path; entry adds the required fishing level.
@@ -770,6 +791,12 @@ public static class AccessibilityStrings
             : (IsGerman ? "Himmelsrichtung an." : "Compass heading on.");
     public static string HeadingOff =>
         IsGerman ? "Himmelsrichtung aus." : "Compass heading off.";
+
+    /// <summary>Spoken at the start of "/acc soundtest" (audition the cue sounds).</summary>
+    public static string SoundTestRunning =>
+        IsGerman
+            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft."
+            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival.";
 
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>

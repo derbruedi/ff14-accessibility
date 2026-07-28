@@ -8,6 +8,22 @@ using LuminaQuest = Lumina.Excel.Sheets.Quest;
 
 namespace FF14Accessibility.Services;
 
+/// <summary>
+/// The role a marker plays, so the announcement can tell the player what a
+/// destination IS. Regular quests carry no role; levequests split into the
+/// giver NPC (Levemete, where a leve is accepted/handed in) and the objective
+/// location (where the leve task is done) - the user wants to walk to both.
+/// </summary>
+public enum QuestMarkerRole
+{
+    /// <summary>A normal quest objective (no extra spoken role).</summary>
+    Quest,
+    /// <summary>A levequest giver NPC (Levemete) - where leves are accepted.</summary>
+    LeveGiver,
+    /// <summary>The objective location of an accepted levequest.</summary>
+    LeveObjective,
+}
+
 /// <summary>One quest objective location, read from the game's map markers.</summary>
 /// <param name="QuestName">Quest name from the marker label.</param>
 /// <param name="Detail">Marker tooltip (may repeat the quest name).</param>
@@ -18,6 +34,7 @@ namespace FF14Accessibility.Services;
 /// <param name="InCurrentZone">Whether the marker is in the player's current zone.</param>
 /// <param name="IsMainStory">Whether the quest belongs to the Main Scenario.</param>
 /// <param name="Level">Required quest level, 0 when unknown.</param>
+/// <param name="Role">Giver NPC vs. objective for levequests; Quest otherwise.</param>
 public sealed record QuestDestination(
     string QuestName,
     string Detail,
@@ -27,7 +44,8 @@ public sealed record QuestDestination(
     uint MapId,
     bool InCurrentZone,
     bool IsMainStory,
-    int Level);
+    int Level,
+    QuestMarkerRole Role = QuestMarkerRole.Quest);
 
 /// <summary>
 /// Reads the objective markers of ACCEPTED quests from the game's map
@@ -152,6 +170,43 @@ public sealed class QuestMarkerService
     }
 
     /// <summary>
+    /// All levequest ("Freibrief") destinations: the giver NPCs (Levemete, where
+    /// leves are accepted / handed in) AND the objective locations of accepted
+    /// leves, so a blind player can walk to both from one category (user request
+    /// 2026-07-28).
+    ///
+    /// Sources, ilspycmd-verified on the Map singleton (2026-07-28):
+    ///   Map.GuildLeveAssignmentMarkers (StdList&lt;MarkerInfo&gt;) = giver NPCs,
+    ///   Map.LevequestMarkers (Span, 16 slots of MarkerInfo)       = objectives.
+    /// Both reuse the SAME MarkerInfo extraction as regular quests, so their raw
+    /// label/tooltip/territory/position are logged per marker ([LeveGiver] /
+    /// [LeveGoal]) - the first in-game test confirms what the game actually puts
+    /// in these fields (runtime content of leve markers was not verifiable offline).
+    /// </summary>
+    public unsafe List<QuestDestination> GetLevequestDestinations()
+    {
+        var result = new List<QuestDestination>();
+        var map = Map.Instance();
+        if (map == null)
+        {
+            _log.Warning("[Leve] Map.Instance() ist null - keine Freibrief-Marker lesbar.");
+            return result;
+        }
+
+        var currentTerritory = _clientState.TerritoryType;
+
+        // Giver NPCs (Levemete): a StdList, only real entries, no empty slots.
+        foreach (var marker in map->GuildLeveAssignmentMarkers)
+            AddMarkerDestinations(result, marker, currentTerritory, "LeveGiver", QuestMarkerRole.LeveGiver);
+
+        // Objectives of accepted leves: a fixed 16-slot span, empty slots blank.
+        foreach (ref var marker in map->LevequestMarkers)
+            AddMarkerDestinations(result, marker, currentTerritory, "LeveGoal", QuestMarkerRole.LeveObjective);
+
+        return result;
+    }
+
+    /// <summary>
     /// Maps quest name -> current objective text ("what is still missing", e.g.
     /// "Aurelias mit Hermetik erlegen 0/3") by reading the on-screen quest tracker
     /// (_ToDoList). The objective text only exists in the running tracker - the
@@ -212,7 +267,8 @@ public sealed class QuestMarkerService
     /// variable regardless of ref-ness.
     /// </summary>
     private unsafe void AddMarkerDestinations(
-        List<QuestDestination> result, MarkerInfo marker, uint currentTerritory, string tag)
+        List<QuestDestination> result, MarkerInfo marker, uint currentTerritory, string tag,
+        QuestMarkerRole role = QuestMarkerRole.Quest)
     {
         var questName = marker.Label.ToString();
         if (string.IsNullOrWhiteSpace(questName)) return; // empty slot
@@ -243,7 +299,7 @@ public sealed class QuestMarkerService
                       $"lvlMarker={data.RecommendedLevel} lvlSheet={sheetLevel}");
             var level = data.RecommendedLevel > 0 ? data.RecommendedLevel : sheetLevel;
             result.Add(new QuestDestination(questName, tooltip, data.Position,
-                data.Radius, data.TerritoryTypeId, data.MapId, inZone, isMainStory, level));
+                data.Radius, data.TerritoryTypeId, data.MapId, inZone, isMainStory, level, role));
         }
     }
 }

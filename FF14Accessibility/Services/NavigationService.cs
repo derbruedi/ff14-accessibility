@@ -30,6 +30,7 @@ internal enum NavCategory
     Aetherytes,
     QuestGoals,
     AcceptableQuests,
+    Levequests,
     Waypoints,
 }
 
@@ -207,6 +208,10 @@ public sealed class NavigationService
         (NavCategory.Aetherytes,      null),
         (NavCategory.QuestGoals,      null),
         (NavCategory.AcceptableQuests,null),
+        // Freibriefe: giver NPCs (Levemete) + objectives of accepted leves, both
+        // from the Map singleton (QuestMarkerService), not the ObjectTable - the
+        // markers know the NPC and the task spot even out of streaming range.
+        (NavCategory.Levequests,      null),
         (NavCategory.Waypoints,       null),
     };
 
@@ -215,6 +220,7 @@ public sealed class NavigationService
 
     private bool IsQuestCategory           => Categories[_categoryIndex].Cat == NavCategory.QuestGoals;
     private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Cat == NavCategory.AcceptableQuests;
+    private bool IsLevequestCategory       => Categories[_categoryIndex].Cat == NavCategory.Levequests;
     private bool IsPlacesCategory          => Categories[_categoryIndex].Cat == NavCategory.Waypoints;
     private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
@@ -272,6 +278,17 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsLevequestCategory)
+        {
+            // Deduplicated list, so the spoken count matches what the player
+            // actually cycles through (the raw markers are mostly dupes).
+            var leves = GetLevequestDestinations();
+            var givers = leves.Count(d => d.Role == QuestMarkerRole.LeveGiver);
+            var goals  = leves.Count(d => d.Role == QuestMarkerRole.LeveObjective);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestCount(givers, goals));
+            return;
+        }
+
         if (IsPlacesCategory)
         {
             var places = _places.GetPlaces();
@@ -310,6 +327,12 @@ public sealed class NavigationService
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
             CycleQuestDestination(direction, player, IsUnacceptedQuestCategory);
+            return;
+        }
+
+        if (IsLevequestCategory)
+        {
+            CycleLevequestDestination(direction, player);
             return;
         }
 
@@ -442,6 +465,103 @@ public sealed class NavigationService
         // Counter last, after the route hints - see CycleObject.
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Quest] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // ── Freibriefe: Geber-NPCs + Ziele angenommener Leves ──
+    //
+    // Both come from the same Map markers as regular quests, so a leve
+    // destination is a QuestDestination and flows into the SAME downstream path
+    // (SelectedQuestDestination -> Numpad3 auto-walk, walk guide, cross-zone
+    // routing) unchanged. The only leve-specific bit is the spoken ROLE prefix
+    // (giver NPC vs. objective) so the player knows which they are walking to.
+
+    /// <summary>Leve destinations, in-zone first, then nearest by walk distance;
+    /// within that givers before objectives so "where do I pick one up" is
+    /// audible before "where do I go with the one I have".
+    ///
+    /// The game emits SEVERAL marker entries per leve, all pointing at the SAME
+    /// spot (log 2026-07-28: one leve gave 3-4 identical positions), so the raw
+    /// list is mostly dupes - a blind player would cycle through the same leve at
+    /// the same place again and again. Collapse to one entry per (role, name,
+    /// rounded position): identical spots merge, but two different leves that
+    /// happen to share a spot stay separate (distinct names), and givers at
+    /// different locations stay separate (distinct positions).</summary>
+    private List<QuestDestination> GetLevequestDestinations()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return new List<QuestDestination>();
+
+        var ordered = _questMarkers.GetLevequestDestinations()
+            .OrderByDescending(d => d.InCurrentZone)
+            .ThenBy(d => d.Role == QuestMarkerRole.LeveGiver ? 0 : 1)
+            .ThenBy(d => EffectiveWalkDistance(player.Position, d))
+            .ThenBy(d => d.QuestName, StringComparer.Ordinal);
+
+        var seen = new HashSet<(QuestMarkerRole, string, int, int)>();
+        var result = new List<QuestDestination>();
+        foreach (var d in ordered)
+        {
+            // Round to whole metres so float jitter never splits one real spot.
+            var key = (d.Role, d.QuestName, (int)MathF.Round(d.Position.X), (int)MathF.Round(d.Position.Z));
+            if (seen.Add(key)) result.Add(d);
+        }
+        return result;
+    }
+
+    private void CycleLevequestDestination(int direction, IGameObject player)
+    {
+        var dests = GetLevequestDestinations();
+        if (dests.Count == 0)
+        {
+            SelectedQuestDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoLevequests);
+            return;
+        }
+
+        var count = dests.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var dest = dests[_cycleIndex];
+        SelectedQuestDestination = dest;
+
+        // Role tells the player what this destination IS: the Levemete to accept
+        // a leve, or the spot to carry an accepted one out (user request).
+        var role = AccessibilityStrings.LeveRolePrefix(dest.Role);
+        // Marker tooltip often names the actual objective ("Mit X sprechen");
+        // append only when it adds something beyond the leve name.
+        var detail = !string.IsNullOrWhiteSpace(dest.Detail) && dest.Detail != dest.QuestName
+            ? $" {dest.Detail}."
+            : string.Empty;
+        var level = dest.Level > 0 ? AccessibilityStrings.LevelPrefix(dest.Level) : string.Empty;
+
+        string text;
+        if (dest.InCurrentZone)
+        {
+            text = $"{role}{level}{dest.QuestName}, " +
+                   $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
+                   $"{CalculateDirection(player, dest.Position)}.{detail}";
+        }
+        else
+        {
+            // Leve in another zone: name the target zone and the transition that
+            // leads there (same BFS route the quest category uses).
+            var zone = _places.GetMapName(dest.MapId);
+            var hop  = _places.FindFirstHopToMap(dest.MapId, out var hops);
+            text = $"{role}{level}{dest.QuestName}, " +
+                   (string.IsNullOrEmpty(zone) ? AccessibilityStrings.InAnotherArea : AccessibilityStrings.InArea(zone));
+            if (hop != null)
+            {
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
+            }
+            text += detail;
+        }
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Leve] Auswahl: {text}");
         _tolk.SpeakInterrupt(text);
     }
 
@@ -641,6 +761,13 @@ public sealed class NavigationService
         // switching to fisher, just like aetherytes are always shown.
         if (Categories[index].Cat == NavCategory.FishingSpots)
             return _fishing.GetSpotsInCurrentZone().Count > 0;
+
+        // Freibriefe only where the game actually reports leve markers (a giver
+        // NPC nearby or an accepted leve) - no empty "0 Freibriefe" in zones
+        // without any. An empty answer inside the category is still a real
+        // answer once it IS offered, exactly like the gathering category.
+        if (Categories[index].Cat == NavCategory.Levequests)
+            return _questMarkers.GetLevequestDestinations().Count > 0;
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
