@@ -7,12 +7,17 @@ using ClientFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framewo
 namespace FF14Accessibility.Services;
 
 /// <summary>
-/// Non-verbal HP/MP feedback: every time the fill level crosses a 10 % step -
-/// downwards (damage, spending mana) or upwards (healing, regeneration) - a
-/// short tone plays whose STEREO POSITION is the fill level. Full = hard right,
-/// empty = hard left, 50 % = centered (user choice 2026-07-20). HP and MP are
-/// told apart by pitch, an octave apart, so both can sound in the same frame
-/// without being confused: HP high, MP low.
+/// Non-verbal HP/MP feedback: every time the fill level crosses a 10 % step a
+/// short struck bell/pluck note plays, encoding the situation on four separate
+/// perceptual axes so nothing blurs together (user choices 2026-07-20 / -07-28):
+///  - which bar: HP and MP each have their own voice - HP high and warm/round,
+///    MP lower and glassy/overtone-rich (pitch AND timbre, so they can sound in
+///    the same frame without being confused).
+///  - direction: the pitch glides up for healing/regen, down for damage/spend.
+///  - fill level: STEREO POSITION. Full = hard right, empty = hard left, 50 % =
+///    centered.
+///  - danger: below 25 % HP the note pulses (tremolo) as a critical alarm; mana
+///    never pulses, empty mana is not life-threatening.
 ///
 /// Tones only play while the game window has focus (user request 2026-07-20) -
 /// nobody wants the bar beeping at them from another application.
@@ -22,9 +27,8 @@ namespace FF14Accessibility.Services;
 /// This is deliberately separate from CombatService's spoken HP thresholds -
 /// speech interrupts, these tones do not.
 ///
-/// The tone generation is kept behind <see cref="PlayTone"/> because the plan
-/// is to swap the sine beeps for real sound samples later; only this service
-/// changes then.
+/// The synthesis lives in <see cref="VitalsSampleProvider"/> and shares the
+/// mod's <see cref="ToneSynth"/> voice with the navigation cues.
 /// </summary>
 public sealed class VitalsService : IDisposable
 {
@@ -47,11 +51,20 @@ public sealed class VitalsService : IDisposable
     private bool _windowActive = true;
     private bool _loggedWindowState;   // log the first reading, then only changes
 
-    // Pitches: an octave apart and clear of the walk beacon's octave steps
-    // (880/440/220 Hz) and the route cues (990-1568 Hz).
-    // HP is the HIGHER of the two (user choice 2026-07-20, after hearing both).
-    private const float HpFrequency = 1046f;  // C6 - health, the high signal
-    private const float MpFrequency = 523f;   // C5 - mana, the low signal
+    // Each bar is a distinct "instrument", told apart on TWO perceptual axes at
+    // once so they can never be confused (user choice 2026-07-28):
+    //  - pitch: HP high, MP low (HP the higher one, user choice 2026-07-20), and
+    //    deliberately NOT an exact octave apart - octaves sound alike (octave
+    //    equivalence), which is what made the old sine beeps easy to mix up.
+    //  - timbre: HP is warm/round (almost pure, few overtones); MP is glassy and
+    //    overtone-rich. Brightness feeds ToneSynth.Timbre.
+    // Both stay clear of the walk beacon's octaves (880/440/220 Hz) and the route
+    // cues (990-1568 Hz).
+    private static readonly VitalVoice HpVoice = new(Frequency: 1046f, Brightness: 0.20f, CriticalAlarm: true);
+    private static readonly VitalVoice MpVoice = new(Frequency: 494f,  Brightness: 1.00f, CriticalAlarm: false);
+
+    // Below this fill level HP is "critical" and its tone pulses (see PlayTone).
+    private const int CriticalPercent = 25;
 
     public VitalsService(IObjectTable objectTable, Configuration config, IPluginLog log)
     {
@@ -77,8 +90,8 @@ public sealed class VitalsService : IDisposable
 
         UpdateWindowActive();
 
-        TrackVital(player.CurrentHp, player.MaxHp, HpFrequency, ref _hpLevel, "HP");
-        TrackVital(player.CurrentMp, player.MaxMp, MpFrequency, ref _mpLevel, "MP");
+        TrackVital(player.CurrentHp, player.MaxHp, HpVoice, ref _hpLevel, "HP");
+        TrackVital(player.CurrentMp, player.MaxMp, MpVoice, ref _mpLevel, "MP");
     }
 
     /// <summary>
@@ -107,7 +120,7 @@ public sealed class VitalsService : IDisposable
     /// A big hit that skips several steps yields ONE tone for the step actually
     /// reached, not a salvo.
     /// </summary>
-    private void TrackVital(uint current, uint max, float frequency, ref int lastLevel, string label)
+    private void TrackVital(uint current, uint max, VitalVoice voice, ref int lastLevel, string label)
     {
         // max == 0 means the bar does not exist for this job (no mana) or the
         // data is not ready yet. Either way: nothing to compare against.
@@ -131,6 +144,10 @@ public sealed class VitalsService : IDisposable
         var previous = lastLevel;
         lastLevel = level;   // track even while silent, see below
 
+        // Rising step = healing/regen -> tone glides up; falling = damage/spend
+        // -> tone glides down. This is the "which way is it going" axis.
+        var direction = level > previous ? +1 : -1;
+
         // Window in the background: the step is recorded but stays silent. The
         // bookkeeping MUST continue anyway - otherwise everything that happened
         // while tabbed out would be announced in one go on return.
@@ -140,9 +157,15 @@ public sealed class VitalsService : IDisposable
             return;
         }
 
-        _log.Debug($"[Vitals] {label} {previous * 10}% -> {percent}% (Stufe {level})");
-        PlayTone(frequency, PanFor(percent));
+        _log.Debug($"[Vitals] {label} {previous * 10}% -> {percent}% (Stufe {level}, {(direction > 0 ? "auf" : "ab")})");
+        PlayTone(voice, PanFor(percent), direction, IsCritical(voice, percent));
     }
+
+    /// <summary>True when this bar should sound the critical alarm at this fill
+    /// level - HP only, below <see cref="CriticalPercent"/>. Empty mana is not
+    /// life-threatening, so MP never pulses.</summary>
+    private static bool IsCritical(VitalVoice voice, int percent) =>
+        voice.CriticalAlarm && percent < CriticalPercent;
 
     /// <summary>
     /// Fill level (percent) to 10 % step 0..10, with 2 points of hysteresis so
@@ -171,15 +194,36 @@ public sealed class VitalsService : IDisposable
     /// <summary>Fill level to stereo position: 100 % = +1 (right), 50 % = 0, 0 % = -1 (left).</summary>
     private static float PanFor(int percent) => Math.Clamp(percent / 50f - 1f, -1f, 1f);
 
+    // A whole tone (2 semitones) of glide, enough to hear the direction while the
+    // note keeps its identity. Up = healing/gain, down = damage/spend.
+    private const float GlideUp   = 1.122f;   // 2^( 2/12)
+    private const float GlideDown = 0.891f;   // 2^(-2/12)
+
     /// <summary>
-    /// Queues one tone. Swap point for real sound samples later - the callers
-    /// only ever say "this bar, this fill level".
+    /// Queues one tone for a bar. <paramref name="direction"/> &gt; 0 glides the
+    /// pitch up (healing/gain), &lt; 0 glides it down (damage/spend);
+    /// <paramref name="urgent"/> makes it pulse as a critical-HP alarm.
     /// </summary>
-    private void PlayTone(float frequency, float pan)
+    private void PlayTone(VitalVoice voice, float pan, int direction, bool urgent)
     {
         if (_config.VitalCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
-        _provider!.Enqueue(frequency, pan, _config.VitalCueVolume);
+        var glide = direction >= 0 ? GlideUp : GlideDown;
+        _provider!.Enqueue(voice.Frequency, pan, _config.VitalCueVolume, voice.Brightness, glide, urgent);
+    }
+
+    /// <summary>
+    /// Plays a single vitals tone on demand for the "/acc soundtest" audition, so
+    /// a blind player can judge the sounds without waiting for combat.
+    /// <paramref name="health"/> picks the HP or MP voice, <paramref name="direction"/>
+    /// the glide (up = heal, down = damage), <paramref name="percent"/> the fill
+    /// level (drives the stereo position and, for HP, the critical pulse).
+    /// Bypasses the per-frame window/step tracking but honours the volume setting.
+    /// </summary>
+    public void PlayTestTone(bool health, int direction, int percent)
+    {
+        var voice = health ? HpVoice : MpVoice;
+        PlayTone(voice, PanFor(percent), direction, IsCritical(voice, percent));
     }
 
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
@@ -219,21 +263,34 @@ public sealed class VitalsService : IDisposable
     }
 }
 
-internal readonly record struct VitalTone(float Frequency, float Pan, float Volume);
+/// <summary>One bar's fixed voice: base pitch, timbre brightness (fed to
+/// <see cref="ToneSynth.Timbre"/>), and whether it sounds the critical alarm
+/// when it runs low. HP and MP each have their own so they stay distinct.</summary>
+internal readonly record struct VitalVoice(float Frequency, float Brightness, bool CriticalAlarm);
+
+internal readonly record struct VitalTone(
+    float Frequency, float Pan, float Volume, float Brightness, float GlideFactor, bool Urgent);
 
 /// <summary>
-/// Generates the HP/MP tones on the NAudio playback thread: silence until a
-/// tone is queued, then a 90 ms sine at the queued pitch and equal-power pan
-/// (5 ms ramps against clicks). Queued rather than overwritten so an HP and an
-/// MP step in the same frame are both heard, one after the other.
+/// Generates the HP/MP tones on the NAudio playback thread: silence until a tone
+/// is queued, then a ~150 ms struck bell/pluck note (warm crystalline timbre via
+/// <see cref="ToneSynth"/>, exponential ring-out) at the queued pitch and
+/// equal-power pan. The pitch glides a whole tone over the note - up for
+/// healing/gain, down for damage/spend - and, when <c>Urgent</c> is set, a fast
+/// tremolo makes it pulse as the critical-HP alarm. Queued rather than
+/// overwritten so an HP and an MP step in the same frame are both heard.
 /// </summary>
 internal sealed class VitalsSampleProvider : ISampleProvider
 {
-    private const int Rate        = 44100;
-    private const int ToneSamples = Rate * 90 / 1000;   // 90 ms per tone
-    private const int GapSamples  = Rate * 40 / 1000;   // 40 ms between queued tones
-    private const int RampSamples = Rate * 5 / 1000;    // 5 ms fade in/out
-    private const int MaxQueued   = 4;                  // burst guard
+    private const int   Rate            = 44100;
+    private const int   ToneSamples     = Rate * 150 / 1000;   // 150 ms per note
+    private const int   GapSamples      = Rate * 35 / 1000;    // 35 ms between queued notes
+    private const int   AttackSamples   = Rate * 4 / 1000;     // 4 ms click-free onset
+    private const int   ReleaseSamples  = Rate * 8 / 1000;     // 8 ms fade-out against the tail click
+    private const float DecayTauSamples = Rate * 60 / 1000f;   // ~60 ms ring
+    private const float TremoloHz       = 14f;                 // critical-HP pulse rate
+    private const float TremoloDepth    = 0.5f;                // how deep the pulse dips
+    private const int   MaxQueued       = 4;                   // burst guard
 
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2);
 
@@ -245,12 +302,18 @@ internal sealed class VitalsSampleProvider : ISampleProvider
     private int _gap;         // samples of silence left before the next tone
     private double _phase;
 
-    public void Enqueue(float frequency, float pan, float volume)
+    public void Enqueue(float frequency, float pan, float volume, float brightness, float glideFactor, bool urgent)
     {
         // Dropping under a burst is intentional: a wall of tones carries no
         // more information than the last few, and must not lag behind reality.
         if (_queue.Count >= MaxQueued) return;
-        _queue.Enqueue(new VitalTone(frequency, Math.Clamp(pan, -1f, 1f), Math.Clamp(volume, 0f, 1f)));
+        _queue.Enqueue(new VitalTone(
+            frequency,
+            Math.Clamp(pan, -1f, 1f),
+            Math.Clamp(volume, 0f, 1f),
+            Math.Clamp(brightness, 0f, 1f),
+            glideFactor,
+            urgent));
     }
 
     public int Read(float[] buffer, int offset, int count)
@@ -273,14 +336,32 @@ internal sealed class VitalsSampleProvider : ISampleProvider
 
             if (_remaining > 0)
             {
-                var pos = ToneSamples - _remaining;
+                var pos      = ToneSamples - _remaining;
+                var progress = pos / (float)ToneSamples;
+
+                // Glide the pitch across the note: linearly interpolate the
+                // frequency from the base up/down to base * GlideFactor.
+                var freq = _current.Frequency * (1f + (_current.GlideFactor - 1f) * progress);
 
                 // Phase accumulator, as in the beacon: continuous phase keeps
-                // the tone click-free.
-                _phase += 2.0 * Math.PI * _current.Frequency / Rate;
+                // the tone click-free even while the frequency slides.
+                _phase += 2.0 * Math.PI * freq / Rate;
                 if (_phase > 2.0 * Math.PI) _phase -= 2.0 * Math.PI;
 
-                sample = (float)Math.Sin(_phase) * Envelope(pos) * _current.Volume;
+                // Pluck envelope; brightness fades with it so overtones ring out
+                // first (a struck bell mellows as it decays). Extra short release
+                // ramp guarantees the tail is click-free.
+                var env = ToneSynth.PluckEnvelope(pos, AttackSamples, DecayTauSamples);
+                if (_remaining < ReleaseSamples) env *= _remaining / (float)ReleaseSamples;
+
+                sample = ToneSynth.Timbre(_phase, _current.Brightness * env) * env * _current.Volume;
+
+                // Critical-HP alarm: pulse the amplitude so it sounds urgent.
+                if (_current.Urgent)
+                {
+                    var tremolo = 1f - TremoloDepth * 0.5f * (1f - MathF.Cos(2f * MathF.PI * TremoloHz * pos / Rate));
+                    sample *= tremolo;
+                }
 
                 _remaining--;
                 if (_remaining == 0) _gap = GapSamples;
@@ -293,12 +374,5 @@ internal sealed class VitalsSampleProvider : ISampleProvider
         }
 
         return frames * 2;
-    }
-
-    private static float Envelope(int pos)
-    {
-        if (pos < RampSamples) return pos / (float)RampSamples;
-        var remaining = ToneSamples - pos;
-        return remaining < RampSamples ? remaining / (float)RampSamples : 1f;
     }
 }

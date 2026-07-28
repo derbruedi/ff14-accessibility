@@ -795,8 +795,16 @@ public static class AccessibilityStrings
     /// <summary>Spoken at the start of "/acc soundtest" (audition the cue sounds).</summary>
     public static string SoundTestRunning =>
         IsGerman
-            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft."
-            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival.";
+            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft, dann HP- und Mana-Töne."
+            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival, then HP and mana tones.";
+
+    // Labels spoken before each HP/MP tone in the sound test, so the audition is
+    // self-explaining.
+    public static string SoundTestHpHeal    => IsGerman ? "HP, Heilung"       : "HP, healing";
+    public static string SoundTestHpDamage  => IsGerman ? "HP, Schaden"       : "HP, damage";
+    public static string SoundTestHpCritical=> IsGerman ? "HP, kritisch"      : "HP, critical";
+    public static string SoundTestMpGain    => IsGerman ? "Mana, Aufladung"   : "Mana, restored";
+    public static string SoundTestMpSpend   => IsGerman ? "Mana, Verbrauch"   : "Mana, spent";
 
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>

@@ -64,8 +64,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.59";
-    private const string PluginVersionTag = "Mod-Ansagen komplett zweisprachig - Englisch vollstaendig uebersetzt (/acc lang en); veraltete N-Tasten-Meldung gefixt";
+    private const string PluginVersion    = "5.60";
+    private const string PluginVersionTag = "HP- und Mana-Toene neu: warmer Glockenklang, Richtung hoerbar (Heilung steigt, Schaden faellt), Kritisch-Warnung pocht; Freibriefe im Objekt-Browser (zum Geber und zum Ziel laufen)";
 
     public Plugin()
     {
@@ -1178,6 +1178,23 @@ public sealed class Plugin : IDalamudPlugin
         Framework.RunOnTick(() => _beacon.Stop(),           delayTicks: 168);
         Framework.RunOnTick(() => _cue.PlayWaypointTone(),  delayTicks: 180);
         Framework.RunOnTick(() => _cue.PlayArrivalTone(),   delayTicks: 220);
+
+        // HP/MP tones: each case is announced, then the tone plays ~0.4 s later so
+        // the label does not step on it. ~90 ticks (~1.5 s) between cases. Percent
+        // drives the stereo position; the HP-critical case is <25 % so it pulses.
+        VitalsTestStep(delay: 300, AccessibilityStrings.SoundTestHpHeal,     health: true,  direction: +1, percent: 80);
+        VitalsTestStep(delay: 390, AccessibilityStrings.SoundTestHpDamage,   health: true,  direction: -1, percent: 55);
+        VitalsTestStep(delay: 480, AccessibilityStrings.SoundTestHpCritical, health: true,  direction: -1, percent: 15);
+        VitalsTestStep(delay: 570, AccessibilityStrings.SoundTestMpGain,     health: false, direction: +1, percent: 80);
+        VitalsTestStep(delay: 660, AccessibilityStrings.SoundTestMpSpend,    health: false, direction: -1, percent: 40);
+    }
+
+    /// <summary>One HP/MP audition step: speak the label, then play the matching
+    /// vitals tone a beat later so speech and tone do not overlap.</summary>
+    private void VitalsTestStep(int delay, string label, bool health, int direction, int percent)
+    {
+        Framework.RunOnTick(() => _tolk.SpeakInterrupt(label),                       delayTicks: delay);
+        Framework.RunOnTick(() => _vitals.PlayTestTone(health, direction, percent),  delayTicks: delay + 24);
     }
 
     private void AnnounceHelp()
