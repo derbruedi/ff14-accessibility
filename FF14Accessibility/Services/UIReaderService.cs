@@ -1657,6 +1657,15 @@ public sealed class UIReaderService : IDisposable
     private string _lastFocusedNodeText = string.Empty;
     private string _lastFocusedItemName = string.Empty;
 
+    // ActionMenu (Aktionen & Talente): the name+level is spoken the instant the
+    // focus lands; the long skill description is only queued after the focus has
+    // dwelled on the SAME skill for ActionDescDwellSeconds (user choice
+    // 2026-07-31), so quickly scanning the list never drowns in descriptions.
+    private uint _actionDwellId;          // action id the dwell clock is timing (0 = none)
+    private long _actionDwellTick;        // Stopwatch timestamp the focus reached it
+    private bool _actionDwellDescSpoken;  // description already queued for this dwell?
+    private const double ActionDescDwellSeconds = 0.4;
+
     public unsafe void UpdateGlobalFocus()
     {
         FlushPendingRaceDescription();
@@ -1811,6 +1820,11 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
                 text = iconRow;
         }
+
+        // Deferred skill description: runs BEFORE the dedup return so it keeps
+        // ticking while the focus is parked on one skill (the dedup below would
+        // otherwise short-circuit every same-skill frame).
+        HandleActionMenuDwell(node);
 
         if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
         _lastFocusedNodePtr  = (nint)node;
@@ -2535,10 +2549,85 @@ public sealed class UIReaderService : IDisposable
     /// when nothing resolves - the caller then falls back to the generic reader,
     /// so those headers keep their own labels.
     /// </summary>
+    /// <summary>
+    /// Speaks the focused skill's long description, but only once the focus has
+    /// dwelled on the SAME skill for <see cref="ActionDescDwellSeconds"/>. The
+    /// name+level was already spoken (interrupting) by the focus path; the
+    /// description is queued NON-interrupting via TolkService.Speak, so it follows
+    /// the name instead of cutting it, and any move to another skill flushes it
+    /// through the next interrupting name. Called every frame from
+    /// UpdateGlobalFocus. Resets whenever the focus leaves ActionMenu or an
+    /// action slot, so a quick pass never queues anything.
+    /// </summary>
+    private unsafe void HandleActionMenuDwell(AtkResNode* node)
+    {
+        if (!IsAddonVisible("ActionMenu") || !FocusIsActionSlot(node))
+        {
+            _actionDwellId = 0;
+            return;
+        }
+
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
+        var id = agent == null ? 0u : agent->ActionId;
+        if (id == 0)
+        {
+            _actionDwellId = 0;
+            return;
+        }
+
+        if (id != _actionDwellId)
+        {
+            // Focus just reached this skill (its name is being spoken this same
+            // frame) - start the clock, description not yet due.
+            _actionDwellId         = id;
+            _actionDwellTick       = System.Diagnostics.Stopwatch.GetTimestamp();
+            _actionDwellDescSpoken = false;
+            return;
+        }
+
+        if (_actionDwellDescSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _actionDwellTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _actionDwellDescSpoken = true; // one-shot per dwell, even if desc is empty
+        var desc = ActionMenuDescription(agent->ActionKind, id);
+        if (!string.IsNullOrEmpty(desc)) _tolk.Speak(desc);
+    }
+
     private unsafe bool TryReadActionMenuFocusRow(AtkResNode* node, out string text)
     {
         text = string.Empty;
         if (!IsAddonVisible("ActionMenu")) return false;
+
+#if DEBUG
+        // Probe: the description reader was never confirmed on keyboard focus, and
+        // the rows now expose a text node (name+level+MP) that FocusIsActionSlot
+        // rejects. Log the focused component type AND the detail agent's id/kind
+        // for every ActionMenu focus, so we can see (a) what component the row
+        // text sits on and (b) whether AgentActionDetail tracks the keyboard-
+        // focused row. Delete with the feature once wired.
+        {
+            var probeAgent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
+            var probeComp = "none";
+            var c = node;
+            for (var up = 0; up < 5 && c != null; up++)
+            {
+                if ((int)c->Type >= 1000)
+                {
+                    var comp = ((AtkComponentNode*)c)->Component;
+                    probeComp = comp == null ? "null" : comp->GetComponentType().ToString();
+                    break;
+                }
+                c = c->ParentNode;
+            }
+            var probeId   = probeAgent == null ? 0u : probeAgent->ActionId;
+            var probeKind = probeAgent == null ? "null" : probeAgent->ActionKind.ToString();
+            _log.Info($"[ActionMenuProbe] node id={node->NodeId} comp={probeComp} " +
+                      $"agentId={probeId} agentKind={probeKind} slotGate={FocusIsActionSlot(node)}");
+        }
+#endif
+
         if (!FocusIsActionSlot(node)) return false;
 
         var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
@@ -2589,8 +2678,10 @@ public sealed class UIReaderService : IDisposable
         _                                              => string.Empty,
     };
 
-    /// <summary>"Name, Stufe X, Beschreibung" for an action. Level and
-    /// description are omitted when the sheets carry none.</summary>
+    /// <summary>"Name, Stufe X" for an action - the short line spoken the instant
+    /// the focus lands. The long description is deferred to the dwell handler
+    /// (HandleActionMenuDwell) so scanning the list stays fast. Level is omitted
+    /// when the sheet carries none.</summary>
     private string DescribeAction(uint id)
     {
         if (!_data.GetExcelSheet<LuminaAction>().TryGetRow(id, out var row)) return string.Empty;
@@ -2599,13 +2690,17 @@ public sealed class UIReaderService : IDisposable
 
         var sb = new StringBuilder(name);
         if (row.ClassJobLevel > 0) sb.Append(AccessibilityStrings.LevelSuffix(row.ClassJobLevel));
-
-        if (_data.GetExcelSheet<LuminaActionTransient>().TryGetRow(id, out var trans))
-        {
-            var desc = FlattenDescription(trans.Description.ExtractText());
-            if (desc.Length > 0) sb.Append($", {desc}");
-        }
         return sb.ToString();
+    }
+
+    /// <summary>The flattened tooltip description of an action, or empty for kinds
+    /// that carry none (traits, unresolved ids). Spoken separately, and only after
+    /// the focus dwells - see HandleActionMenuDwell.</summary>
+    private string ActionMenuDescription(DetailKind kind, uint id)
+    {
+        if (kind is not (DetailKind.Action or DetailKind.CraftingAction)) return string.Empty;
+        if (!_data.GetExcelSheet<LuminaActionTransient>().TryGetRow(id, out var trans)) return string.Empty;
+        return FlattenDescription(trans.Description.ExtractText());
     }
 
     /// <summary>"Name, Stufe X" for a trait (the Trait sheet has no description).</summary>
@@ -5979,7 +6074,7 @@ public sealed class UIReaderService : IDisposable
                 var name = _inventory.ResolveIconName(icon->IconId);
                 if (string.IsNullOrEmpty(name)) continue;
                 var qty = ReadIconQuantity(icon);
-                items.Add(qty.Length > 0 ? $"{qty} mal {name}" : name);
+                items.Add(qty.Length > 0 ? AccessibilityStrings.RewardItemQuantity(qty, name) : name);
             }
             else
             {
@@ -6010,7 +6105,7 @@ public sealed class UIReaderService : IDisposable
             _lastRewardLog = rewardLog;
             _log.Info($"[Quest] JournalResult Belohnung: {rewardLog}");
         }
-        return "Belohnung: " + string.Join(". ", parts);
+        return AccessibilityStrings.RewardPrefix + string.Join(". ", parts);
     }
 
     /// <summary>First visible, purely numeric text (digits plus . , space) in a

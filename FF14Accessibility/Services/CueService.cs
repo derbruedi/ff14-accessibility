@@ -52,6 +52,18 @@ public sealed class CueService : IDisposable
         _provider!.Trigger(_config.RouteCueVolume, 988f, 659f);
     }
 
+    /// <summary>
+    /// Ability off cooldown: a short RISING two-note blip (G5 -> C6). Rising =
+    /// "available", deliberately distinct from the waypoint (steady) and arrival
+    /// (falling) cues so a ready skill is unmistakable. Non-positional.
+    /// </summary>
+    public void PlaySkillReadyTone()
+    {
+        if (_config.SkillReadyCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.SkillReadyCueVolume, 784f, 1047f);
+    }
+
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
     private bool EnsureOutput()
     {

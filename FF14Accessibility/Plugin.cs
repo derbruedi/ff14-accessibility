@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TolkService        _tolk;
     private readonly BeaconService      _beacon;
     private readonly CueService         _cue;
+    private readonly CooldownService    _cooldown;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
     private readonly EquipmentService   _equipment;
@@ -64,8 +65,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.60";
-    private const string PluginVersionTag = "HP- und Mana-Toene neu: warmer Glockenklang, Richtung hoerbar (Heilung steigt, Schaden faellt), Kritisch-Warnung pocht; Freibriefe im Objekt-Browser (zum Geber und zum Ziel laufen)";
+    private const string PluginVersion    = "5.61";
+    private const string PluginVersionTag = "Faehigkeit-wieder-bereit-Ansage (Ton + Name bei ausgeklungener Abklingzeit); Skill-Zuweisungs-Menue (Strg+Numpad0); englische Quest-Belohnungen jetzt sauber englisch";
 
     public Plugin()
     {
@@ -214,6 +215,7 @@ public sealed class Plugin : IDalamudPlugin
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, _aoeWarn, Log);
+        _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -306,6 +308,10 @@ public sealed class Plugin : IDalamudPlugin
             case "soundtest":
                 SoundTest();
                 break;
+            case "cooldowns":
+            case "cd":
+                ToggleSkillReady();
+                break;
             case "help":
                 AnnounceHelp();
                 break;
@@ -381,11 +387,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Ausrüstung",     _config.KeyReadEquipment),
             ("Beste Ausrüstung", _config.KeyEquipBest),
             ("Zufälliges Aussehen", _config.KeyRandomLook),
-            ("Skill zurück",   _config.KeySkillPrev),
-            ("Skill weiter",   _config.KeySkillNext),
-            ("Skill-Ziel-Taste", _config.KeySkillSlot),
-            ("Skill belegen",  _config.KeySkillAssign),
-            ("Skill-Ziel-Leiste", _config.KeySkillBar),
+            ("Skill-Menü",     _config.KeySkillMenu),
             ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
             ("Nachlese älter", _config.KeyChatReadOlder),
@@ -420,6 +422,11 @@ public sealed class Plugin : IDalamudPlugin
         // Nummernblock â€” TitleDCWorldMap Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         ["Numpad2"] = 0x62, ["Numpad4"] = 0x64,
         ["Numpad6"] = 0x66, ["Numpad8"] = 0x68,
+        // Skill-Menü (V5.61): Numpad0=VK_NUMPAD0 (0x60), Numpad-Komma/Dezimal=
+        // VK_DECIMAL (0x6E). Beide sind im Spiel belegt (OK / CANCEL), werden
+        // aber nur solange das modale Menue offen ist per KeyState=false
+        // geschluckt. Muessen hier stehen, damit UpdateKeyEdges sie trackt.
+        ["Numpad0"] = 0x60, ["NumpadKomma"] = 0x6E,
         // Freie Tasten laut Keybind-Dump 2026-07-10 (N = einziger freier BARE
         // Buchstabe). H und L sind bare belegt (MENU_CRAFT / MENU_LINKSHELL),
         // aber mit Modifier frei - nur so (Strg+H, Strg+L) konfiguriert.
@@ -518,6 +525,38 @@ public sealed class Plugin : IDalamudPlugin
         return KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL] == ctrl
             && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]   == shift
             && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU]    == alt;
+    }
+
+    // Numpad keys that drive the modal skill menu. All are game-bound
+    // (8/2=move, 0=OK, comma=cancel), so they are swallowed while the menu is
+    // open. VKs: NUMPAD8=0x68, NUMPAD2=0x62, NUMPAD0=0x60, DECIMAL=0x6E.
+    private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E };
+
+    /// <summary>
+    /// While the modal skill menu is open, the numpad drives it and the game
+    /// must not see those keys (they are movement / OK / cancel). Acts on the
+    /// fresh "just pressed" edge (computed by UpdateKeyEdges before this runs),
+    /// then forces every menu key up in KeyState so a held key never leaks
+    /// movement or a confirm to the game between edges. No-op while closed, so
+    /// the numpad works normally the rest of the time.
+    /// </summary>
+    private void HandleSkillMenuKeys()
+    {
+        if (!_hotbar.IsSkillMenuOpen) return;
+
+        // Bare presses only (IsJustPressed already requires no modifiers here).
+        if (IsJustPressed("Numpad8"))          _hotbar.SkillMenuBrowse(-1);
+        else if (IsJustPressed("Numpad2"))     _hotbar.SkillMenuBrowse(+1);
+        else if (IsJustPressed("Numpad0"))     _hotbar.SkillMenuConfirm();
+        else if (IsJustPressed("NumpadKomma")) _hotbar.SkillMenuBack();
+
+        // Swallow the keys from the game for as long as the menu is open.
+        foreach (var vk in SkillMenuVks)
+        {
+            var key = (Dalamud.Game.ClientState.Keys.VirtualKey)vk;
+            if (KeyState.IsVirtualKeyValid(vk) && KeyState[key])
+                KeyState[key] = false;
+        }
     }
 
     /// <summary>
@@ -709,6 +748,15 @@ public sealed class Plugin : IDalamudPlugin
         _tolk.SpeakInterrupt(_config.AnnounceAoeWarning
             ? AccessibilityStrings.AoeWarningOn
             : AccessibilityStrings.AoeWarningOff);
+    }
+
+    private void ToggleSkillReady()
+    {
+        _config.AnnounceSkillReady = !_config.AnnounceSkillReady;
+        PluginInterface.SavePluginConfig(_config);
+        _tolk.SpeakInterrupt(_config.AnnounceSkillReady
+            ? AccessibilityStrings.SkillReadyAnnounceOn
+            : AccessibilityStrings.SkillReadyAnnounceOff);
     }
 
     private const uint CF_UNICODETEXT = 13;
@@ -922,11 +970,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
-        if (IsJustPressed(_config.KeySkillPrev))     _hotbar.CycleSkillPrev();
-        if (IsJustPressed(_config.KeySkillNext))     _hotbar.CycleSkillNext();
-        if (IsJustPressed(_config.KeySkillSlot))     _hotbar.CycleTargetSlot();
-        if (IsJustPressed(_config.KeySkillAssign))   _hotbar.AssignSelectedSkill();
-        if (IsJustPressed(_config.KeySkillBar))      _hotbar.CycleTargetBar();
+        if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();
+        HandleSkillMenuKeys();
         if (IsJustPressed(_config.KeyChatCatPrev))   _history.SwitchCategory(-1);
         if (IsJustPressed(_config.KeyChatCatNext))   _history.SwitchCategory(+1);
         if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
@@ -949,6 +994,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
+        _cooldown.Update();
         // HP/MP tones on every 10 % step (pan = fill level). Independent of
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.

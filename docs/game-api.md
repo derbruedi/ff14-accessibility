@@ -736,6 +736,28 @@ Lumina.Excel.Sheets.Action dekompiliert):
   `IsSlotUsable(type, id)`, `IsSlotActionTargetInRange2(type, id)` (für
   spätere Cooldown-/Reichweiten-Ansage, noch ungenutzt).
 
+### Cooldown / Recast (ActionManager, ilspycmd-verifiziert 2026-07-30)
+- `ActionManager.Instance()` → `ActionManager*`. Alle Cooldown-Abfragen nehmen
+  `ActionType` (Enum: None=0, **Action=1**, Item=2, GeneralAction=5 …) + actionId.
+- INSTANZ-Methoden (`am->…`):
+  - `GetRecastTime(ActionType, uint id) → float` = GESAMT-Abklingzeit der Action
+    (unabhaengig vom aktuellen Stand). GCD-Skills ~2,5 s; echte Fähigkeiten (oGCD)
+    deutlich mehr. `CooldownService` nutzt Schwelle >3 s, um GCD auszuschliessen —
+    ohne die build-spezifische GCD-Recast-Gruppen-Id raten zu muessen.
+  - `IsRecastTimerActive(ActionType, uint id) → bool` = laeuft die Abklingzeit noch
+    (true = auf Cooldown). Fallende Kante true→false = „wieder bereit".
+  - `GetRecastTimeElapsed(ActionType, uint id) → float` = bisher verstrichen.
+  - `IsActionOffCooldown(ActionType, uint id) → bool`.
+  - `GetCurrentCharges(uint id) → uint` (Instanz).
+- STATISCH (ohne thisPtr): `ActionManager.GetMaxCharges(uint id, uint level) → ushort`.
+  maxCharges>1 = Ladungs-Fähigkeit; dann zaehlt die Ladungs-Anzahl (IsRecast-
+  TimerActive bleibt bis VOLL true, deshalb Ladungen als Signal nutzen).
+- Weiter vorhanden (noch ungenutzt): `GetRecastGroup(int type, uint id) → int`
+  (GCD-Gruppe existiert, Nr. build-abhaengig — NICHT hartkodiert), `GetActionRange`,
+  `GetActionCost`, `GetAdjustedRecastTime`, `StartCooldown`, `GetActionStatus`.
+- Genutzt von `CooldownService` (V5.61): Standard-Leisten 0..9 durchgehen, Action-
+  Slots dedupen, GCD per >3 s ausschliessen, Kante on→off ansagen (Ton+Name).
+
 ### Hotbar UMBELEGEN + gelernte Skills (ilspycmd-verifiziert 2026-07-17)
 - `RaptureHotbarModule.SetAndSaveSlot(uint hotbarId, uint slotId,
   HotbarSlotType commandType, uint commandId, bool ignoreSharedHotbars=false,

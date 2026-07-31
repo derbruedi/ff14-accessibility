@@ -58,13 +58,11 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
     public string KeyEquipBest     = "Strg+F7";         // Empfohlene Ausrüstung anlegen - Spiel-eigener Optimierer (Strg+F7 laut Keybind-Dump frei)
     public string KeyRandomLook    = "Strg+F8";         // Charaktererschaffung: "Zufälliges Aussehen"-Knopf drücken (Strg+F8 laut Keybind-Dump frei)
-    // Skill-Browser (V4.75): Aktionsleiste 1 per Tastatur umbelegen. Umschalt+F7-F10
-    // laut Keybind-Dump frei (Umschalt+F1-F12 alle frei, F3-F6 nutzt das Plugin schon).
-    public string KeySkillPrev     = "Umschalt+F7";     // Skill-Browser: vorheriger gelernter Skill
-    public string KeySkillNext     = "Umschalt+F8";     // Skill-Browser: nächster gelernter Skill
-    public string KeySkillSlot     = "Umschalt+F9";     // Ziel-Taste weiterschalten (sagt aktuelle Belegung an)
-    public string KeySkillAssign   = "Umschalt+F10";    // Gewählten Skill auf die Ziel-Taste legen
-    public string KeySkillBar      = "Umschalt+F11";    // Ziel-Leiste weiterschalten (Kommandomenü 1-10; Umschalt+F11 laut Keybind-Dump frei)
+    // Skill-Menü (V5.61): modaler Nummernblock-Assistent zum Umbelegen der
+    // Leisten (ersetzt die frueheren 5 Umschalt+F7-F11-Einzeltasten). Oeffnen mit
+    // Strg+Numpad0 (laut Keybind-Dump frei; Spiel belegt bei Strg+Numpad nur
+    // 2/4/6/8), danach navigiert der Nummernblock im Menue (8/2/0/Komma).
+    public string KeySkillMenu     = "Strg+Numpad0";
     // Nachlese-Browser (V4.90): kategorisierter Chat-/Dialog-/System-Verlauf.
     // Das ganze Paar liegt auf dem Bild-Tasten-Cluster, der nachweislich
     // modifier-sauber ist (Objekt-Browser auf bare/Strg+Bild funktioniert):
@@ -137,11 +135,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyBestiary      = defaults.KeyBestiary;
         KeyReadEquipment = defaults.KeyReadEquipment;
         KeyEquipBest     = defaults.KeyEquipBest;
-        KeySkillPrev     = defaults.KeySkillPrev;
-        KeySkillNext     = defaults.KeySkillNext;
-        KeySkillSlot     = defaults.KeySkillSlot;
-        KeySkillAssign   = defaults.KeySkillAssign;
-        KeySkillBar      = defaults.KeySkillBar;
+        KeySkillMenu     = defaults.KeySkillMenu;
         KeyChatCatPrev   = defaults.KeyChatCatPrev;
         KeyChatCatNext   = defaults.KeyChatCatNext;
         KeyChatReadOlder = defaults.KeyChatReadOlder;
@@ -227,6 +221,12 @@ public sealed class Configuration : IPluginConfiguration
     // Standard auf AN, sobald bestaetigt.
     public bool AnnounceAoeWarning = false;
     public float AoeWarnVolume = 0.5f;          // 0 = stumm, 1 = volle Lautstärke
+
+    // Fähigkeit-bereit-Ansage (User-Wunsch 2026-07-30): wenn eine Fähigkeit mit
+    // echter Abklingzeit (oGCD) wieder einsatzbereit ist, Ton + Name ansagen.
+    // GCD-Angriffsskills ausgeschlossen (CooldownService). STANDARD AN.
+    public bool AnnounceSkillReady = true;
+    public float SkillReadyCueVolume = 0.5f;    // 0 = stumm, 1 = volle Lautstärke
 
     // Fortschritt / Beute
     // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState

@@ -3,7 +3,83 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-28, FREIBRIEFE - IN ARBEIT, NICHT RELEASED)
+## STAND JETZT (2026-07-31, v5.61 OEFFENTLICH RELEASED)
+
+>>> RELEASE v5.61 (2026-07-31): buendelt drei Dinge seit v5.60:
+    - Faehigkeit-wieder-bereit-Ansage (unten) - vom User IN-GAME BESTAETIGT ("funktioniert").
+    - Skill-Zuweisungs-Menue (Strg+Numpad0) - war schon in-game bestaetigt.
+    - LOKALISIERUNGS-FIX Quest-Belohnungen: bei englischer Ausgabe standen noch zwei
+      deutsche Woerter drin. Behoben in AccessibilityStrings: RewardPrefix ("Belohnung: "/
+      "Reward: ") und RewardItemQuantity (DE "5 mal Trank" / EN einfach "5 Potion", ohne
+      "times" - User-Wunsch). UIReaderService.BuildRewardText nutzt jetzt beide.
+    - Versions-Sync 5.61 in Plugin.cs/csproj/repo.json, 4 Assets released (Installer-exe +
+      installer.json unveraendert von v5.60 uebernommen, SHA verifiziert).
+
+>>> FAEHIGKEIT-WIEDER-BEREIT (User-Wunsch 2026-07-30, IN-GAME BESTAETIGT): Ton + Ansage, sobald eine
+    Fähigkeit mit echter Abklingzeit wieder einsetzbar ist (blind kein Cooldown-
+    Icon sichtbar). User waehlte "automatisch alle Fähigkeiten".
+    - NEUER CooldownService (jeden Frame aus OnFrameworkUpdate): Standard-Leisten
+      0..9 durchgehen, Action-Slots dedupen, pro Action via ActionManager pruefen.
+    - GCD AUSGESCHLOSSEN: Angriffs-Skills teilen den ~2,5-s-Global-Cooldown ->
+      wuerden nonstop feuern. Schwelle GetRecastTime > 3 s trennt GCD (<=2,5 s) von
+      echten oGCD-Fähigkeiten, ohne die build-spezifische GCD-Gruppen-Id zu raten.
+    - Kante on->off Cooldown (IsRecastTimerActive true->false) -> Ton + Name
+      ("Blutbad bereit"). Ladungs-Fähigkeiten (GetMaxCharges>1): bei neuer Ladung
+      via GetCurrentCharges ("... bereit, 1 von 2 Ladungen"). Erst-Sichtung feuert
+      NICHT (TryGetValue-Guard); Jobwechsel loescht Zustand (keine Falsch-Kante).
+    - Ton: CueService.PlaySkillReadyTone = STEIGENDER Zweiklang (784->1047 Hz),
+      klar getrennt von Wegpunkt (stetig) und Ankunft (fallend). Eigene Lautstaerke
+      SkillReadyCueVolume (0.5). Config AnnounceSkillReady STANDARD AN, Toggle per
+      /acc cooldowns (oder /acc cd).
+    - ActionManager-Cooldown-API ilspycmd-verifiziert -> docs/game-api.md.
+    - Dateien: CooldownService.cs (neu), CueService.cs (PlaySkillReadyTone),
+      Configuration.cs (AnnounceSkillReady/SkillReadyCueVolume), AccessibilityStrings.cs
+      (SkillReady/SkillChargeReady/Toggle + Hilfe), Plugin.cs (Konstruktion,
+      Update-Aufruf, /acc cooldowns).
+    - Build 0/0 (Debug), nach devPlugins deployt. IM SPIEL NOCH UNGETESTET.
+    OFFEN (In-Game verifizieren):
+      1. Fähigkeit auf Cooldown -> kommt beim Bereitwerden Ton + korrekter Name?
+      2. KEIN GCD-Spam (Angriffsskills alle 2,5 s)? Falls doch: Schwelle/Gruppe pruefen.
+      3. Ladungs-Fähigkeiten (z. B. 2 Ladungen): Ansage pro Ladung sinnvoll?
+      4. Lautstaerke ok? /acc cooldowns schaltet an/aus?
+
+## VORHERIGER STAND (2026-07-30, SKILL-MENUE - IN-GAME BESTAETIGT)
+
+>>> SKILL-ZUWEISUNGS-MENUE (User-Wunsch 2026-07-30, IN-GAME BESTAETIGT): geführtes modales Menue
+    zum Umbelegen der Aktionsleisten, ersetzt die frueheren 5 Umschalt+F7-F11-
+    Einzeltasten (User fand das Jonglieren "bloed").
+    - Ablauf: Strg+Numpad0 oeffnet -> mit Numpad 8/2 durch die Skills blaettern
+      -> Numpad 0 waehlt -> durch die Ziel-Tasten blaettern (angesagt als echte
+      Taste + was drauf liegt) -> Numpad 0 belegt -> Erfolg. Numpad-Komma =
+      zurueck/abbrechen. Strg+Numpad0 nochmal = schliessen (Toggle).
+    - Mechanik war KOMPLETT schon da (HotbarService: Skill-Liste, Slots,
+      SetAndSaveSlot+LoadSavedHotbar verifiziert). NEU nur die modale Menue-
+      Schicht + Tasten-ABFANGEN.
+    - TASTEN-ABFANGEN ist der einzige neue, UNVERIFIZIERTE Teil: der Numpad ist
+      im Spiel fast komplett belegt (8/2/4/6=Bewegung, 0=OK, Komma=CANCEL, 7/9=
+      Tab, 5=Kamera; NUR Numpad3 frei - Keybind-Dump 2026-07-30). Das Plugin
+      setzt daher solange das Menue offen ist KeyState[vk]=false fuer Numpad
+      8/2/0/Komma (Plugin.HandleSkillMenuKeys), damit die Figur stillsteht.
+      Ob dieses Schlucken zuverlaessig greift, MUSS in-game geprueft werden -
+      das Plugin hat vorher NIE Tasten geschluckt (reines Lesen).
+    - Ziel-Liste: Leiste 1 immer (Tasten 1-0,11,12) + auf Leisten 2-10 nur Slots
+      mit gebundener Taste (nur die koennen feuern). Flache Liste, blaetterbar.
+    - Dateien: HotbarService.cs (SkillMenuStep-Maschine, ToggleSkillMenu/
+      SkillMenuBrowse/Confirm/Back, BuildTargetList, AssignSkillToSlot-Core),
+      Plugin.cs (KeyNameToVK: Numpad0=0x60/NumpadKomma=0x6E; HandleSkillMenuKeys;
+      Dispatch), Configuration.cs (KeySkillMenu, alte 5 raus),
+      AccessibilityStrings.cs (SkillMenu*-Strings DE+EN, Hilfe-Text).
+    - Build 0/0 (Debug), nach devPlugins deployt. IM SPIEL NOCH UNGETESTET.
+    OFFEN (naechste Session, In-Game verifizieren):
+      1. Oeffnet Strg+Numpad0 das Menue? Blaettern mit 8/2, waehlen mit 0,
+         zurueck mit Komma?
+      2. STEHT DIE FIGUR STILL beim Blättern (Tasten-Schlucken wirkt)?
+      3. Wird der Skill wirklich belegt (Erfolgsansage + im Spiel sichtbar)?
+      4. NumLock-Tuecke: sieht das Plugin bare Numpad ueberhaupt (bei NumLock an
+         ja laut Numpad3-Auto-Lauf; bei aus evtl. nicht)?
+    Falls Schlucken zickt: Rueckfall auf freie F-Tasten (mit User besprochen).
+
+## VORHERIGER STAND (2026-07-28, FREIBRIEFE - IN ARBEIT, NICHT RELEASED)
 
 >>> FREIBRIEFE (Levequests) - neue Objekt-Browser-Kategorie (User-Wunsch 2026-07-28):
     Eine Kategorie "Freibriefe" im Kategorie-Rad (Bild-auf/-ab), aus der man SOWOHL

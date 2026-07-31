@@ -624,6 +624,12 @@ public static class AccessibilityStrings
     public static string[] RewardCurrencyLabels =>
         IsGerman ? new[] { "Erfahrung", "Gil" } : new[] { "EXP", "Gil" };
     public static string MoreReward => IsGerman ? "weitere Vergütung" : "further reward";
+    /// <summary>Prefix spoken in front of the whole quest-completion reward summary.</summary>
+    public static string RewardPrefix => IsGerman ? "Belohnung: " : "Reward: ";
+    /// <summary>A reward item with a quantity: German "&lt;qty&gt; mal &lt;name&gt;",
+    /// English just "&lt;qty&gt; &lt;name&gt;" (no "times").</summary>
+    public static string RewardItemQuantity(string qty, string name) =>
+        IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
 
     // ── Keybind-Zeile (Config) ───────────────────────────────────────
     public static string KeyBindingLine(string label, IReadOnlyList<string> keys) =>
@@ -850,10 +856,7 @@ public static class AccessibilityStrings
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
-          "Umschalt+F7 und F8, Skill-Browser zurück und vor. " +
-          "Umschalt+F11, Ziel-Leiste wechseln, 1 bis 10. " +
-          "Umschalt+F9, Ziel-Taste der Leiste wählen. " +
-          "Umschalt+F10, gewählten Skill auf die Ziel-Taste legen. " +
+          "Strg+Nummernblock 0, Skill-Menü öffnen: Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück. " +
           "Befehle: " +
           "/acc nav, Richtung zum Ziel. " +
           "/acc set, Aktuelles Ziel verfolgen. " +
@@ -863,6 +866,7 @@ public static class AccessibilityStrings
           "/acc ui, Menü vorlesen. " +
           "/acc win, Aktives Fenster ansagen. " +
           "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
+          "/acc cooldowns, Fähigkeit-bereit-Ansage an oder aus. " +
           "/acc stop, Sprache stoppen."
         : "Keys: " +
           "Page Down, announce and target the next object. " +
@@ -883,10 +887,7 @@ public static class AccessibilityStrings
           "Ctrl+F6, read worn equipment. " +
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
-          "Shift+F7 and F8, skill browser back and forward. " +
-          "Shift+F11, switch target hotbar, 1 to 10. " +
-          "Shift+F9, choose the target slot on the bar. " +
-          "Shift+F10, put the selected skill on the target slot. " +
+          "Ctrl+Numpad 0, open the skill menu: Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back. " +
           "Commands: " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +
@@ -896,6 +897,7 @@ public static class AccessibilityStrings
           "/acc ui, read the current menu. " +
           "/acc win, announce the active window. " +
           "/acc keys, save the game's key bindings to the desktop. " +
+          "/acc cooldowns, ability-ready announcements on or off. " +
           "/acc stop, stop speech.";
 
     // ════════════════════════════════════════════════════════════════
@@ -1039,6 +1041,39 @@ public static class AccessibilityStrings
         IsGerman
             ? $"{name}, Stufe {level}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
             : $"{name}, level {level}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+
+    // ── Skill-Zuweisungs-Menü (modal, Nummernblock) ──
+    /// <summary>Spoken when the modal skill menu opens, with the browse hint.</summary>
+    public static string SkillMenuOpened(int count) =>
+        IsGerman
+            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back.";
+    /// <summary>Spoken after a skill is chosen: now pick the target key.</summary>
+    public static string SkillMenuPickTarget(string skillName, int count) =>
+        IsGerman
+            ? $"{skillName} gewählt. Ziel-Taste wählen, {count} verfügbar. Nummernblock 8 und 2 blättern, Nummernblock 0 belegt, Nummernblock Komma zurück."
+            : $"{skillName} selected. Choose a target key, {count} available. Numpad 8 and 2 to browse, Numpad 0 assigns, Numpad decimal to go back.";
+    /// <summary>One browsed target key: its label, what is on it now, position in list.</summary>
+    public static string SkillMenuTargetEntry(string slotLabel, string current, int index, int count) =>
+        IsGerman
+            ? $"{slotLabel}, aktuell {current}, {index} von {count}"
+            : $"{slotLabel}, currently {current}, {index} of {count}";
+    public static string SkillMenuClosed =>
+        IsGerman ? "Skill-Menü geschlossen." : "Skill menu closed.";
+    public static string SkillMenuNoTargets =>
+        IsGerman ? "Keine belegbaren Tasten gefunden." : "No assignable keys found.";
+
+    // ── CooldownService: Fähigkeit wieder bereit ──
+    public static string SkillReady(string name) =>
+        IsGerman ? $"{name} bereit." : $"{name} ready.";
+    public static string SkillChargeReady(string name, uint charges, ushort maxCharges) =>
+        IsGerman
+            ? $"{name} bereit, {charges} von {maxCharges} Ladungen."
+            : $"{name} ready, {charges} of {maxCharges} charges.";
+    public static string SkillReadyAnnounceOn =>
+        IsGerman ? "Fähigkeit-bereit-Ansage an." : "Ability-ready announcements on.";
+    public static string SkillReadyAnnounceOff =>
+        IsGerman ? "Fähigkeit-bereit-Ansage aus." : "Ability-ready announcements off.";
 
     // ════════════════════════════════════════════════════════════════
     //  EmoteService
