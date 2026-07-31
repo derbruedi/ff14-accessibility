@@ -3,7 +3,29 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-31, v5.61 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-31, v5.62 OEFFENTLICH RELEASED)
+
+>>> RELEASE v5.62 (2026-07-31): Quest-Belohnungen nennen jetzt auch die
+    GEGENSTANDS-BESCHREIBUNG (User-Wunsch), Muster wie bei den Fähigkeiten: erst
+    der Belohnungs-Name, dann die Beschreibung.
+    - InventoryService.ResolveItemDescription(itemId) -> Item.Description (Lumina).
+      UIReaderService.BuildRewardText holt via ResolveIconItem jetzt Name+ItemId,
+      haengt FlattenDescription(desc) an (AccessibilityStrings.RewardItemWithDescription
+      = "name. desc"). Jede Item-Belohnung ist eine eigene, mit ". " getrennte Einheit.
+    - BUG beim ersten Test (Log 16:46:38): String war KORREKT (Beschreibung drin),
+      aber die Ansage wurde 4 ms spaeter vom generischen Fokus-Leser abgeschnitten,
+      der den auto-fokussierten "Abschliessen"-Knopf ansagte; danach Oszillations-
+      Spam (Spiel wechselt Fokus alle ~1 s ueber Belohnungs-Slot/Waehrung). ZWEI FIXES:
+      1. OnQuestWindowUpdate setzt beim JournalResult-Reward _dialogOpenedAt ->
+         InDialogOpenGuard (1 s) unterdrueckt die Erst-Knopf-Ansage.
+      2. UpdateGlobalFocus: bei sichtbarem JournalResult werden Item-Slots
+         (_lastFocusedItemName gesetzt) uebersprungen -> kein "10 mal X"-Spam mehr;
+         Ablehnen/Abschliessen-Knoepfe kommen weiter durch.
+    - Build 0/0. IN-GAME nach den Fixes noch nicht rueckgemeldet (User bat direkt um Release).
+    OFFEN (In-Game verifizieren): Belohnung inkl. Beschreibung komplett ohne Abschneiden?
+    Kein "10 mal X"-Spam? Knopf-Wechsel Ablehnen/Abschliessen hoerbar?
+
+
 
 >>> RELEASE v5.61 (2026-07-31): buendelt drei Dinge seit v5.60:
     - Faehigkeit-wieder-bereit-Ansage (unten) - vom User IN-GAME BESTAETIGT ("funktioniert").

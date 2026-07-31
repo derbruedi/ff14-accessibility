@@ -223,6 +223,20 @@ public sealed class InventoryService
         return _iconSheetCache.TryGetValue(iconId, out var sheet) ? sheet : (string.Empty, 0);
     }
 
+    /// <summary>The tooltip description of an Item sheet row, or "" when there is
+    /// none (itemId 0, key items, or a row without a description). Raw sheet text -
+    /// the caller flattens line breaks for speech.</summary>
+    public string ResolveItemDescription(uint itemId)
+    {
+        if (itemId == 0) return string.Empty;
+        if (_data.GetExcelSheet<LuminaItem>().TryGetRow(itemId, out var row))
+        {
+            var desc = row.Description.ExtractText();
+            if (!string.IsNullOrWhiteSpace(desc)) return desc;
+        }
+        return string.Empty;
+    }
+
     private Dictionary<uint, (string Name, uint ItemId)> BuildIconSheetCache()
     {
         var map = new Dictionary<uint, (string, uint)>();

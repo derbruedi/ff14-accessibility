@@ -65,8 +65,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.61";
-    private const string PluginVersionTag = "Faehigkeit-wieder-bereit-Ansage (Ton + Name bei ausgeklungener Abklingzeit); Skill-Zuweisungs-Menue (Strg+Numpad0); englische Quest-Belohnungen jetzt sauber englisch";
+    private const string PluginVersion    = "5.62";
+    private const string PluginVersionTag = "Quest-Belohnungen nennen jetzt auch die Gegenstands-Beschreibung (erst Belohnung, dann Beschreibung); Belohnungs-Ansage wird nicht mehr vom Abschliessen-Knopf abgeschnitten";
 
     public Plugin()
     {

@@ -1885,6 +1885,14 @@ public sealed class UIReaderService : IDisposable
             // those while that window is open; buttons ("Abschließen") and item
             // names are non-numeric and still pass through.
             if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
+            // The reward item slots resolve to an item name ("10 mal
+            // Universalköder") and the game cycles focus across them every ~1 s
+            // while JournalResult is open (log 2026-07-31 16:46:40+). The
+            // dedicated reward reader already spoke them in full WITH the
+            // description, so re-announcing the bare slot name here only spams and
+            // interrupts - stay silent for item slots (the Ablehnen/Abschließen
+            // buttons carry no item name and still pass through).
+            if (!string.IsNullOrEmpty(_lastFocusedItemName) && IsAddonVisible("JournalResult")) return;
             // Zeichen-Zaehler eines Textfelds ("3/40"): der Fokus sitzt auf
             // dem Zaehler-Node und wuerde bei jedem Tastendruck sprechen -
             // das Tipp-Echo (OnCharaMakeInputUpdate) uebernimmt dort.
@@ -5950,6 +5958,14 @@ public sealed class UIReaderService : IDisposable
         _lastQuestText[name] = text;
         _log.Info($"[Quest] {name}: '{text}'");
         _tolk.SpeakInterrupt(text);
+
+        // JournalResult auto-focuses its "Abschließen" button the instant it
+        // opens; without this guard the generic focus reader speaks that button
+        // ~4 ms later and cuts the reward summary off before its description (log
+        // 2026-07-31 16:46:38.100 reward -> .104 'Abschließen'). Reuse the
+        // dialog-open guard so the focus reader and button probe both stay quiet
+        // for the first second while the reward line plays.
+        if (name == "JournalResult") _dialogOpenedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -6071,10 +6087,16 @@ public sealed class UIReaderService : IDisposable
             var icon = FindSlotIcon(comp);
             if (icon != null && icon->IconId != 0)
             {
-                var name = _inventory.ResolveIconName(icon->IconId);
+                var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
                 if (string.IsNullOrEmpty(name)) continue;
-                var qty = ReadIconQuantity(icon);
-                items.Add(qty.Length > 0 ? AccessibilityStrings.RewardItemQuantity(qty, name) : name);
+                var qty   = ReadIconQuantity(icon);
+                var label = qty.Length > 0 ? AccessibilityStrings.RewardItemQuantity(qty, name) : name;
+                // Reward name first, then its item description (flattened) - same
+                // "name, then description" order as the ability tooltips.
+                var desc = FlattenDescription(_inventory.ResolveItemDescription(itemId));
+                items.Add(desc.Length > 0
+                    ? AccessibilityStrings.RewardItemWithDescription(label, desc)
+                    : label);
             }
             else
             {
@@ -6085,8 +6107,9 @@ public sealed class UIReaderService : IDisposable
 
         if (items.Count == 0 && amounts.Count == 0) return string.Empty;
 
-        var parts = new List<string>();
-        if (items.Count > 0) parts.Add(string.Join(", ", items));
+        // Each reward item is its own part so its trailing description stays
+        // clearly separated from the next reward (all parts join with ". ").
+        var parts = new List<string>(items);
 
         // WORKAROUND: the currency TYPE is only shown as a UI image (no resolvable
         // icon id), so we label the amounts by position - JournalResult always

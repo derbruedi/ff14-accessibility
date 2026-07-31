@@ -630,6 +630,10 @@ public static class AccessibilityStrings
     /// English just "&lt;qty&gt; &lt;name&gt;" (no "times").</summary>
     public static string RewardItemQuantity(string qty, string name) =>
         IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
+    /// <summary>A reward item followed by its description - name first, then the
+    /// description, like the ability tooltips (period so the reader pauses).</summary>
+    public static string RewardItemWithDescription(string label, string description) =>
+        $"{label}. {description}";
 
     // ── Keybind-Zeile (Config) ───────────────────────────────────────
     public static string KeyBindingLine(string label, IReadOnlyList<string> keys) =>
