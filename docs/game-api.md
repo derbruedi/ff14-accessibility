@@ -534,6 +534,28 @@ Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,
 - Leere Slots: vermutlich MarkerData.Count==0 bzw. Label leer — per
   Probe verifizieren, nicht raten.
 
+### FATE (ilspycmd-verifiziert 2026-07-31)
+Quelle: `FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager` (Singleton,
+`FateManager.Instance()`). Hält NUR die FATEs der aktuellen Zone; FATEs
+stehen NIE im Quest-Journal (reine Welt-Ereignisse).
+- `FateManager` (Size 208): `CurrentFate`@136 (`FateContext*` — das FATE, in
+  dem der Spieler gerade steht), `Fates`@144 (`StdVector<Pointer<FateContext>>`
+  = alle aktiven FATEs), `SyncedFateId`@168.
+  Methoden: `GetCurrentFateId()`, `GetFateById(ushort)`,
+  `TryGetFatePosition(ushort, out Vector3)`, `IsInFateRadius(Vector3*)`,
+  `LevelSync()`, `IsSyncedToFate(FateContext*)`.
+- `FateContext` (Size 10704): `FateId`@24 (ushort), `Name`@192 (Utf8String —
+  mit `.ToString()` lesen, NICHT ExtractText!), `Description`@296,
+  `Objective`@400, `State`@940 (`FateState`), `Progress`@951 (byte, 0–100 %),
+  `Level`@2035 (byte), `MaxLevel`@2036 (byte), `IconId`@2004,
+  `Location`@2128 (Vector3, WELT-Koordinaten — taugt direkt als Nav-Ziel).
+- `FateState` (byte): `Preparing`=3 (erscheint gerade), `Running`=4 (aktiv,
+  beitretbar), `Ending`=5, `Ended`=7, `Failed`=8.
+- `StdVector<T>`: `Count` (int) + Indexer `[i]` → `ref T`; iterieren per
+  for-Schleife. `Pointer<FateContext>.Value` → `FateContext*`.
+- Genutzt in FateService (Objekt-Browser-Kategorie „FATEs"): listet Running +
+  Preparing, Numpad3 läuft zur `Location` (als in-Zone-QuestDestination).
+
 ### Journal / JournalDetail (F5-Dumps 2026-07-10/11)
 - Journal (Taste J, „ARCHIV"): Quest-Liste = Comp CT=TreeList(12), Zeilen
   sind ListItemRenderer mit id=4 (Stufe „St. 1") + id=3 (Quest-Name);

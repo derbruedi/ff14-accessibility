@@ -44,6 +44,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
     private readonly FishingService     _fishing;
+    private readonly FateService        _fates;
     private readonly GatheringService   _gathering;
     private readonly BestiaryService    _bestiary;
     private readonly RouteService       _routes;
@@ -65,8 +66,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.62";
-    private const string PluginVersionTag = "Quest-Belohnungen nennen jetzt auch die Gegenstands-Beschreibung (erst Belohnung, dann Beschreibung); Belohnungs-Ansage wird nicht mehr vom Abschliessen-Knopf abgeschnitten";
+    private const string PluginVersion    = "5.63";
+    private const string PluginVersionTag = "Neue Objekt-Browser-Kategorie FATEs (aktive Welt-FATEs finden und per Numpad3 hinlaufen); Skill-Beschreibung in der Kommandoliste wieder vorgelesen (Tastatur-Regression behoben)";
 
     public Plugin()
     {
@@ -201,10 +202,11 @@ public sealed class Plugin : IDalamudPlugin
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
         _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);
+        _fates        = new FateService(ClientState);
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _routes       = new RouteService(PluginInterface, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _routes, _config, DataManager, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _config, DataManager, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
         _history    = new MessageHistoryService(_tolk);
         // Must exist before the UI reader: that one asks it for the labels of

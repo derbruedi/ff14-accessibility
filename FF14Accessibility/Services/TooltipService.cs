@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using DetailKind = FFXIVClientStructs.FFXIV.Client.Enums.DetailKind;
 
 namespace FF14Accessibility.Services;
 
@@ -50,9 +51,20 @@ public sealed unsafe class TooltipService : IDisposable
     private readonly Hook<DetachTooltipDelegate>? _detachHook;
     private readonly Hook<DetachByAddonDelegate>? _detachByAddonHook;
 
+    /// <summary>The action a slot's tooltip is bound to: the ActionId the game
+    /// hands to AttachTooltip plus its DetailKind (Action/Trait/...). Mirrors what
+    /// AgentActionDetail would carry on mouse hover - but the binding is created
+    /// when the addon is built, so it is present under keyboard focus too, where
+    /// the agent stays at id 0 (verified via [ActionMenuProbe], 2026-07-31).</summary>
+    public readonly record struct ActionRef(uint Id, DetailKind Kind);
+
     /// <summary>Node pointer to label. Also keyed by addon id so a closing window clears in one go.</summary>
     private readonly Dictionary<nint, string> _byNode   = new();
     private readonly Dictionary<nint, ushort> _addonOf  = new();
+
+    /// <summary>Node pointer to the action its tooltip binds (skill window etc.),
+    /// filled from AtkTooltipType.Action attaches. Same lifetime as <see cref="_byNode"/>.</summary>
+    private readonly Dictionary<nint, ActionRef> _actionByNode = new();
 
     /// <summary>True when the hooks are installed and the map is being maintained.</summary>
     public bool IsActive => _attachHook != null;
@@ -110,6 +122,19 @@ public sealed unsafe class TooltipService : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// The action the game bound to this node's tooltip, or null. Like
+    /// <see cref="TryGetTooltipDeep"/> it climbs parents, because keyboard focus
+    /// sits on a slot's Collision child while the tooltip hangs on the DragDrop
+    /// component. Callers treat null as "nothing known" and stay silent.
+    /// </summary>
+    public ActionRef? TryGetActionDeep(AtkResNode* node, int maxDepth = 3)
+    {
+        for (var i = 0; node != null && i <= maxDepth; i++, node = node->ParentNode)
+            if (_actionByNode.TryGetValue((nint)node, out var a) && a.Id != 0) return a;
+        return null;
+    }
+
     private void OnAttach(
         AtkTooltipManager* self, AtkTooltipType type, ushort parentId,
         AtkResNode* targetNode, AtkTooltipManager.AtkTooltipArgs* args)
@@ -132,6 +157,20 @@ public sealed unsafe class TooltipService : IDisposable
                     }
                 }
             }
+            // Action slots (skill window etc.) bind an Action tooltip carrying the
+            // ActionId + DetailKind instead of text. Reading TextArgs on it would
+            // reinterpret the id as a pointer, so this is a separate, flag-guarded
+            // branch. The addon populates it at build time, so it is available
+            // under keyboard focus - unlike AgentActionDetail.ActionId.
+            else if (targetNode != null && (type & AtkTooltipType.Action) != 0)
+            {
+                var a = args->ActionArgs;
+                if (a.Id > 0)
+                {
+                    _actionByNode[(nint)targetNode] = new ActionRef((uint)a.Id, a.Kind);
+                    _addonOf[(nint)targetNode]      = parentId;
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -146,6 +185,7 @@ public sealed unsafe class TooltipService : IDisposable
         if (targetNode != null)
         {
             _byNode.Remove((nint)targetNode);
+            _actionByNode.Remove((nint)targetNode);
             _addonOf.Remove((nint)targetNode);
         }
 
@@ -163,6 +203,7 @@ public sealed unsafe class TooltipService : IDisposable
         foreach (var key in stale)
         {
             _byNode.Remove(key);
+            _actionByNode.Remove(key);
             _addonOf.Remove(key);
         }
 
@@ -179,6 +220,7 @@ public sealed unsafe class TooltipService : IDisposable
         _detachByAddonHook?.Disable();
         _detachByAddonHook?.Dispose();
         _byNode.Clear();
+        _actionByNode.Clear();
         _addonOf.Clear();
     }
 }

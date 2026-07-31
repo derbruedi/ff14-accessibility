@@ -3,7 +3,79 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-31, v5.62 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-07-31, SKILL-BESCHREIBUNG-REGRESSION IN-GAME BESTAETIGT - RELEASE OFFEN)
+
+>>> User „ja funktioniert": Beschreibung kommt in der Kommandoliste wieder (Name sofort,
+    Beschreibung nach ~0,4 s). Verifikations-Sonden entfernt ([TooltipAction] raus,
+    [ActionDetail] auf #if DEBUG). Build 0/0, deployt. Details unten.
+    OFFEN: Release v5.63 - buendelt diesen Fix + FATE-Kategorie (beide in-game bestaetigt).
+
+
+>>> BUG (User 2026-07-31): In der Kommandoliste (Addon ActionMenu, "Aktionen &
+    Talente") wird die Skill-BESCHREIBUNG nicht mehr vorgelesen (Name+Stufe kommt).
+    ROOT CAUSE per echtem dalamud.log belegt (nicht geraten): [ActionMenuProbe]
+    zeigt bei jedem Tastaturfokus auf einem DragDrop-Slot agentId=0 agentKind=None -
+    AgentActionDetail.ActionId ist unter Tastaturfokus tot (Regression v5.30->v5.62),
+    keine einzige [ActionDetail]-Erfolgszeile. Name kommt weiter ueber den generischen
+    Tree-Reader (Zeile hat inzwischen Text-Node), Beschreibung gibt es NUR ueber die ID.
+    FIX (saubere Spiel-Quelle statt Agent): Das Spiel bindet pro Slot einen
+    Action-Tooltip mit der ActionId+DetailKind (AtkComponentDragDrop.AttachTooltip,
+    type=Action, args.Id = AgentActionDetail.ActionId lt. ilspycmd). Diese Bindung
+    entsteht beim Bauen des Addons -> auch bei Tastaturfokus da.
+    - TooltipService: erfasst jetzt zusaetzlich Action-Tooltips (node->ActionRef{Id,Kind}),
+      neuer Leser TryGetActionDeep(node); gleiche Detach/Dispose-Aufraeumung wie Text.
+      #if DEBUG [TooltipAction]-Log als Beweis.
+    - UIReaderService: TryReadActionMenuFocusRow + HandleActionMenuDwell holen id+kind
+      jetzt aus _tooltips.TryGetActionDeep statt aus AgentActionDetail. Alter
+      [ActionMenuProbe]-Block entfernt. Lumina-Aufloesung (DescribeAction/Trait +
+      ActionMenuDescription) unveraendert.
+    - Build 0/0 (Debug), deployt. IM SPIEL NOCH UNGETESTET.
+    OFFEN (In-Game verifizieren):
+      1. Skill in Kommandoliste per Tastatur anwaehlen: Name+Stufe SOFORT, nach ~0,4 s
+         die Beschreibung? (Kommandos UND Eigenschaften/Traits.)
+      2. Log-Beweis: [TooltipAction ...] beim Oeffnen + [ActionDetail ... -> '...']
+         beim Blaettern; kein Silence mehr.
+      3. GeneralAction (z.B. Sprint) bleibt weiter ohne Beschreibung (bekannte Grenze).
+
+## VORHERIGER STAND (2026-07-31, FATE-KATEGORIE - IN-GAME BESTAETIGT, RELEASE OFFEN)
+
+>>> FATE-KATEGORIE IN-GAME BESTAETIGT (User „das mit den fates funktioniert").
+    #if DEBUG [FateProbe]-Sonde entfernt (FateService nimmt jetzt nur IClientState).
+    Build 0/0, deployt. NUR NOCH RELEASE offen (Versions-Bump 5.63 + voller Ablauf).
+    Grenze: NUR aktuelle Zone - map-uebergreifend client-seitig unmoeglich (Server pusht
+    aktive FATEs nur fuer die aktuelle Zone; auch sehende Spieler sehen fremde nicht).
+
+## VORHERIGER STAND (2026-07-31, FATE-KATEGORIE - GEBAUT, IN-GAME UNGETESTET)
+
+>>> FATE-KATEGORIE im Objekt-Browser (User-Wunsch 2026-07-31): FATEs sehen und
+    direkt hinlaufen. FATEs stehen NIE im Aufgaben-Journal (reine Welt-Ereignisse)
+    -> blind sonst nicht auffindbar.
+    - NEUER FateService.cs: liest FateManager.Instance()->Fates (StdVector<Pointer<
+      FateContext>>), filtert State Running(4)=aktiv + Preparing(3)=startet gleich,
+      liefert FateInfo (Name/Level/Progress/Position/IsPreparing). Alles ilspycmd-
+      verifiziert -> docs/game-api.md "FATE". #if DEBUG [FateProbe] loggt jedes FATE
+      (Position-Verifikation), nach In-Game-Test loeschen.
+    - NavigationService: neue NavCategory.Fates (null-Kinds, wie Quest-Ziele). Kategorie
+      erscheint NUR wenn die Zone aktive FATEs hat (IsCategoryAvailable). Ansage beim
+      Blaettern: "Name, Stufe X, Y Prozent" (bzw. "startet gleich"), + Distanz + Richtung
+      + Zaehler (User-Wahl: voller Kontext inkl. Fortschritt; aktive + erscheinende).
+    - HINLAUFEN geschenkt: FATE-Ziel wird als in-Zone-QuestDestination gesetzt ->
+      fliesst durch den BESTEHENDEN Numpad3-Auto-Lauf (SelectedQuestDestination),
+      keine neue Lauf-Logik. FateContext.Location = Weltkoordinate.
+    - Bedienung: Objekt-Browser wie gehabt (Strg+Bild-auf/-ab = Kategorie bis "FATEs",
+      Bild-auf/-ab = FATE waehlen, Numpad3 = hinlaufen). Keine neue Taste.
+    - Dateien: FateService.cs (neu), NavigationService.cs (Kategorie+Cycle+Verfuegbar),
+      AccessibilityStrings.cs (CategoryLabel/CategoryFateCount/FateEntry/NoFatesInZone,
+      DE+EN), Plugin.cs (FateService konstruiert+injiziert), docs/game-api.md.
+    - Build 0/0 (Debug), deployt. IM SPIEL NOCH UNGETESTET.
+    OFFEN (In-Game verifizieren):
+      1. Erscheint "FATEs" im Kategorie-Rad, wenn ein FATE aktiv ist? Zahl korrekt?
+      2. Ansage beim Blaettern sinnvoll (Name/Stufe/Prozent/Distanz/Richtung)?
+      3. Laeuft Numpad3 wirklich zum FATE (Location = Weltkoordinate, [FateProbe]-Log
+         gegen Spielerposition pruefen)? Landet man IM FATE-Kreis?
+      4. "startet gleich" fuer Preparing-FATEs korrekt?
+
+## VORHERIGER STAND (2026-07-31, v5.62 OEFFENTLICH RELEASED)
 
 >>> RELEASE v5.62 (2026-07-31): Quest-Belohnungen nennen jetzt auch die
     GEGENSTANDS-BESCHREIBUNG (User-Wunsch), Muster wie bei den Fähigkeiten: erst

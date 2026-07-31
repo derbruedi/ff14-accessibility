@@ -376,6 +376,11 @@ public sealed class UIReaderService : IDisposable
         // switch (user 2026-07-25: tabs were silent).
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
 
+        // Inventory (Standard-Inventar): announce the active bag tab (Tasche
+        // 1..4) on switch. The tabs are RadioButtons found via their checked
+        // state (dump 2026-07-31), so the announcement is input-agnostic.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Inventory", OnInventoryUpdate);
+
         // MountNoteBook (Reittier-Verzeichnis): announce the active view tab
         // (Favoriten/Alle/Suche) and page when they change. Source is the
         // agent's own ViewType + CurrentSelection->Page (verified 2026-07-26 to
@@ -1492,6 +1497,60 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
+    // -- Inventory: Taschen-Reiter -----------------------------------
+
+    // Active bag tab last announced, so switching speaks it once.
+    private string _lastInventoryTab = string.Empty;
+
+    /// <summary>
+    /// Announces the active bag tab of the standard inventory ("Tasche 1".."4")
+    /// when it changes - the four numbered tabs plus one unlabeled tab are
+    /// RadioButtons (dump 2026-07-31: Comp(1001)/RadioButton, label = text child
+    /// id=2). The active one is the checked button (IsChecked = AtkComponentButton
+    /// Flags bit 18). Same eingabe-agnostic pattern as GrandCompanyExchange, so it
+    /// fires no matter how the tab is switched (click, key, gamepad).
+    /// </summary>
+    private unsafe void OnInventoryUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastInventoryTab = string.Empty;
+            return;
+        }
+
+        var tab = ReadCheckedInventoryTab(addon);
+        if (string.IsNullOrEmpty(tab) || tab == _lastInventoryTab) return;
+
+        var isSwitch = _lastInventoryTab.Length > 0;
+        _lastInventoryTab = tab;
+        _log.Info($"[Inventory] Aktiver Reiter: '{tab}'");
+        // On open the item/window announcer speaks first - queue the initial tab
+        // behind it; a real tab switch interrupts.
+        if (isSwitch) _tolk.SpeakInterrupt(tab);
+        else          _tolk.Speak(tab);
+    }
+
+    /// <summary>The spoken label of the currently checked bag tab, or "" if none
+    /// is checked yet. A numbered tab reads "Tasche &lt;n&gt;"; the game's one
+    /// unlabeled tab falls back to a neutral phrase rather than a made-up number.</summary>
+    private unsafe string ReadCheckedInventoryTab(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.RadioButton) continue;
+            if (!((AtkComponentButton*)comp)->IsChecked) continue;
+            var label = TolkService.Sanitize(ReadComponentTextById(comp, 2)).Trim();
+            return string.IsNullOrWhiteSpace(label)
+                ? AccessibilityStrings.InventoryTabOther
+                : AccessibilityStrings.InventoryTab(label);
+        }
+        return string.Empty;
+    }
+
     // -- MountNoteBook: Ansichts-Reiter + Seite -----------------------
 
     // Last announced view/page, so a switch speaks once. -1 = nothing yet.
@@ -1656,6 +1715,9 @@ public sealed class UIReaderService : IDisposable
     private nint   _lastFocusedNodePtr;
     private string _lastFocusedNodeText = string.Empty;
     private string _lastFocusedItemName = string.Empty;
+    // Item sheet row of the focused slot (0 = focus is not on a resolved item);
+    // set by ResolveFocusedItemName so the description dwell can look it up.
+    private uint   _lastFocusedItemId;
 
     // ActionMenu (Aktionen & Talente): the name+level is spoken the instant the
     // focus lands; the long skill description is only queued after the focus has
@@ -1665,6 +1727,16 @@ public sealed class UIReaderService : IDisposable
     private long _actionDwellTick;        // Stopwatch timestamp the focus reached it
     private bool _actionDwellDescSpoken;  // description already queued for this dwell?
     private const double ActionDescDwellSeconds = 0.4;
+
+    // Item slots (bags, armoury, shop, hand-over): the name+count is spoken the
+    // instant the focus lands; the tooltip DESCRIPTION is only queued after the
+    // focus has dwelled on the SAME item for the same interval (user choice
+    // 2026-07-31, mirrors the skill window) - so quickly scanning the bag never
+    // drowns in descriptions. Keyed by Item sheet row, not node pointer, so
+    // moving between two stacks of the same item does not re-read the text.
+    private uint _itemDwellId;            // item id the dwell clock is timing (0 = none)
+    private long _itemDwellTick;          // Stopwatch timestamp the focus reached it
+    private bool _itemDwellDescSpoken;    // description already queued for this dwell?
 
     public unsafe void UpdateGlobalFocus()
     {
@@ -1732,6 +1804,7 @@ public sealed class UIReaderService : IDisposable
             _lastFocusedItemName = ResolveFocusedItemName(node);
 
         string text;
+        var itemBranchActive = false; // set true only when the item name is what gets announced
         if (TryReadConfigFocusRow(node, out var configRow))
         {
             // Character configuration (ConfigCharacter + ConfigChara* panels):
@@ -1771,6 +1844,7 @@ public sealed class UIReaderService : IDisposable
         else if (!string.IsNullOrEmpty(_lastFocusedItemName))
         {
             text = _lastFocusedItemName;
+            itemBranchActive = true; // only THEN does the item description dwell apply
         }
         else if (TryReadConfigKeybindFocusRow(node, out var keybindRow))
         {
@@ -1825,6 +1899,13 @@ public sealed class UIReaderService : IDisposable
         // ticking while the focus is parked on one skill (the dedup below would
         // otherwise short-circuit every same-skill frame).
         HandleActionMenuDwell(node);
+
+        // Deferred item description (same reason it runs before the dedup return):
+        // after the name was spoken, add the tooltip text once the focus has
+        // dwelled on the item briefly. Only when the item name is what actually
+        // got announced - a specialized reader (skill/mount/gathering) winning the
+        // announcement must not trigger an item description underneath it.
+        HandleItemDescriptionDwell(itemBranchActive);
 
         if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
         _lastFocusedNodePtr  = (nint)node;
@@ -2335,6 +2416,8 @@ public sealed class UIReaderService : IDisposable
     /// </summary>
     private unsafe string ResolveFocusedItemName(AtkResNode* node)
     {
+        _lastFocusedItemId = 0; // reset first; set below only for a resolved item
+
         // Climb to the nearest ancestor-or-self COMPONENT node (the focus sits
         // on the slot's collision child). Evaluate exactly that component: if it
         // is an item slot (has an icon) resolve the name, otherwise stop - do
@@ -2365,6 +2448,7 @@ public sealed class UIReaderService : IDisposable
 
                 var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
                 if (string.IsNullOrEmpty(name)) return string.Empty;
+                _lastFocusedItemId = itemId; // remembered for the description dwell
 
                 // Equipment gets level + wearability appended ("Bronzegladius,
                 // Stufe 5, tragbar") - the info a blind player needs when
@@ -2422,18 +2506,20 @@ public sealed class UIReaderService : IDisposable
 
     // -- Skill-Fenster (ActionMenu: Aktionen & Talente) --------------
     //
-    // The list rows are pure icon slots (dump 2026-07-21: ListItemRenderer ->
-    // DragDrop -> Icon, no text node). Name, level and description therefore
-    // come from the game's OWN action-detail agent: AgentActionDetail carries
-    // the hovered ActionId + ActionKind (ilspycmd 2026-07-21), resolved through
-    // the Lumina Action/ActionTransient/Trait sheets - nothing is scraped from
-    // the flaky UI and nothing is guessed.
+    // The list rows are icon slots (DragDrop -> Icon). Name, level and long
+    // description come from the ActionId the game binds to each slot, resolved
+    // through the Lumina Action/ActionTransient/Trait sheets - nothing is scraped
+    // from the flaky UI and nothing is guessed.
     //
-    // OPEN runtime question (to be confirmed via the [ActionDetail] log): does
-    // AgentActionDetail follow KEYBOARD focus, not just mouse hover? The text
-    // tooltip appears on keyboard focus, which is strong evidence; if the log
-    // shows the id lagging the focused slot, the fallback is to hook
-    // AgentActionDetail.HandleActionHover.
+    // SOURCE OF THE ActionId: originally AgentActionDetail.ActionId. That REGRESSED
+    // between v5.30 and v5.62 - under keyboard focus the agent stays at ActionId 0
+    // (proven by [ActionMenuProbe]: agentId=0 on every DragDrop focus, 2026-07-31),
+    // so the description went silent while the name still came through the generic
+    // tree reader (the rows gained a text node). The ActionId is now taken from the
+    // slot's Action tooltip binding, captured by TooltipService.TryGetActionDeep:
+    // the game creates that binding when the addon is built (AtkComponentDragDrop.
+    // AttachTooltip, type=Action, args.Id = AgentActionDetail.ActionId per
+    // ilspycmd), so it is present for keyboard focus, not just mouse hover.
 
     /// <summary>
     /// Reads the focused element of the character-configuration menus
@@ -2575,13 +2661,15 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
-        var id = agent == null ? 0u : agent->ActionId;
-        if (id == 0)
+        // Same source as TryReadActionMenuFocusRow: the slot's tooltip binding,
+        // which (unlike AgentActionDetail) survives keyboard focus.
+        var action = _tooltips.TryGetActionDeep(node);
+        if (action == null)
         {
             _actionDwellId = 0;
             return;
         }
+        var id = action.Value.Id;
 
         if (id != _actionDwellId)
         {
@@ -2599,8 +2687,49 @@ public sealed class UIReaderService : IDisposable
         if (elapsed < ActionDescDwellSeconds) return;
 
         _actionDwellDescSpoken = true; // one-shot per dwell, even if desc is empty
-        var desc = ActionMenuDescription(agent->ActionKind, id);
+        var desc = ActionMenuDescription(action.Value.Kind, id);
         if (!string.IsNullOrEmpty(desc)) _tolk.Speak(desc);
+    }
+
+    /// <summary>
+    /// Queues the tooltip description of the focused inventory item once the
+    /// focus has dwelled on the SAME item for ActionDescDwellSeconds - the name
+    /// was already spoken when the focus landed (ResolveFocusedItemName), so this
+    /// only adds "Beschreibung: ..." after a short pause. Mirrors
+    /// HandleActionMenuDwell so scanning the bag stays fast: quick cursor moves
+    /// never reach the dwell threshold and hear names only.
+    ///
+    /// Keyed by Item id (not node pointer), so sliding between two stacks of the
+    /// same item does not re-read the text. JournalResult is excluded because its
+    /// reward reader already speaks the description in full when the window opens.
+    /// </summary>
+    private void HandleItemDescriptionDwell(bool itemFocusActive)
+    {
+        var id = _lastFocusedItemId;
+        if (!itemFocusActive || id == 0 || IsAddonVisible("JournalResult"))
+        {
+            _itemDwellId = 0;
+            return;
+        }
+
+        if (id != _itemDwellId)
+        {
+            // Focus just reached this item (its name is being spoken this same
+            // frame) - start the clock, description not yet due.
+            _itemDwellId         = id;
+            _itemDwellTick       = System.Diagnostics.Stopwatch.GetTimestamp();
+            _itemDwellDescSpoken = false;
+            return;
+        }
+
+        if (_itemDwellDescSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _itemDwellTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _itemDwellDescSpoken = true; // one-shot per dwell, even if desc is empty
+        var desc = FlattenDescription(_inventory.ResolveItemDescription(id));
+        if (!string.IsNullOrEmpty(desc)) _tolk.Speak(AccessibilityStrings.ItemDescription(desc));
     }
 
     private unsafe bool TryReadActionMenuFocusRow(AtkResNode* node, out string text)
@@ -2608,48 +2737,24 @@ public sealed class UIReaderService : IDisposable
         text = string.Empty;
         if (!IsAddonVisible("ActionMenu")) return false;
 
-#if DEBUG
-        // Probe: the description reader was never confirmed on keyboard focus, and
-        // the rows now expose a text node (name+level+MP) that FocusIsActionSlot
-        // rejects. Log the focused component type AND the detail agent's id/kind
-        // for every ActionMenu focus, so we can see (a) what component the row
-        // text sits on and (b) whether AgentActionDetail tracks the keyboard-
-        // focused row. Delete with the feature once wired.
-        {
-            var probeAgent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
-            var probeComp = "none";
-            var c = node;
-            for (var up = 0; up < 5 && c != null; up++)
-            {
-                if ((int)c->Type >= 1000)
-                {
-                    var comp = ((AtkComponentNode*)c)->Component;
-                    probeComp = comp == null ? "null" : comp->GetComponentType().ToString();
-                    break;
-                }
-                c = c->ParentNode;
-            }
-            var probeId   = probeAgent == null ? 0u : probeAgent->ActionId;
-            var probeKind = probeAgent == null ? "null" : probeAgent->ActionKind.ToString();
-            _log.Info($"[ActionMenuProbe] node id={node->NodeId} comp={probeComp} " +
-                      $"agentId={probeId} agentKind={probeKind} slotGate={FocusIsActionSlot(node)}");
-        }
-#endif
-
         if (!FocusIsActionSlot(node)) return false;
 
-        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentActionDetail.Instance();
-        if (agent == null) return false;
-        var id = agent->ActionId;
-        if (id == 0) return false;
-        var kind = agent->ActionKind;
+        // Source the action from the tooltip binding the game creates for the
+        // slot, NOT from AgentActionDetail: the agent stays at ActionId 0 under
+        // keyboard focus (regression proven via [ActionMenuProbe], 2026-07-31 -
+        // agentId=0 on every DragDrop focus), while the tooltip binding is made
+        // when the addon is built and is present for keyboard focus too.
+        var action = _tooltips.TryGetActionDeep(node);
+        if (action == null) return false;
+        var kind = action.Value.Kind;
+        var id   = action.Value.Id;
 
         var info = DescribeActionDetail(kind, id);
         if (string.IsNullOrEmpty(info)) return false;
 
-        // Verification: proves ActionId/Kind follow the focused slot. Once
-        // confirmed in-game this line can drop to debug level.
+#if DEBUG
         _log.Info($"[ActionDetail] node id={node->NodeId} kind={kind} id={id} -> '{info}'");
+#endif
         text = info;
         return true;
     }
@@ -7763,7 +7868,11 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        DumpAddons([addonName.Trim()]);
+        // Accept several space-separated names ("/acc dump A B C") so related
+        // windows (e.g. the inventory container variants) can be captured in one
+        // file - DumpAddons already writes them into a single block.
+        var names = addonName.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        DumpAddons(names);
     }
 
     /// <summary>
@@ -8081,6 +8190,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Inventory", OnInventoryUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);

@@ -268,6 +268,7 @@ public static class AccessibilityStrings
         NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
         NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
+        NavCategory.Fates            => "FATEs",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
         NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
         NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
@@ -299,6 +300,26 @@ public static class AccessibilityStrings
         IsGerman
             ? $"Kategorie Ätheryten: {count} im Gebiet."
             : $"Category Aetherytes: {count} in this area.";
+
+    // ── FATEs: aktive Welt-Ereignisse der Zone ──
+    public static string CategoryFateCount(int active, int preparing) =>
+        preparing > 0
+            ? (IsGerman
+                ? $"Kategorie FATEs: {active} aktiv, {preparing} starten gleich."
+                : $"Category FATEs: {active} active, {preparing} starting soon.")
+            : (IsGerman
+                ? $"Kategorie FATEs: {active} aktiv."
+                : $"Category FATEs: {active} active.");
+
+    /// <summary>One FATE line: name, level, then either the completion percent or,
+    /// for a not-yet-started FATE, a "starting soon" note.</summary>
+    public static string FateEntry(string name, int level, byte progress, bool preparing) =>
+        IsGerman
+            ? $"{name}, Stufe {level}, {(preparing ? "startet gleich" : $"{progress} Prozent")}"
+            : $"{name}, level {level}, {(preparing ? "starting soon" : $"{progress} percent")}";
+
+    public static string NoFatesInZone =>
+        IsGerman ? "Keine FATEs in diesem Gebiet." : "No FATEs in this area.";
 
     // ── Freibriefe (Levequests): Geber-NPCs + Ziele ──
     public static string CategoryLevequestCount(int givers, int goals) =>
@@ -634,6 +655,22 @@ public static class AccessibilityStrings
     /// description, like the ability tooltips (period so the reader pauses).</summary>
     public static string RewardItemWithDescription(string label, string description) =>
         $"{label}. {description}";
+
+    /// <summary>The tooltip description spoken on its own after the focus has
+    /// dwelled on an inventory item (the name was already announced when the
+    /// focus landed) - prefixed so the user knows what is being read.</summary>
+    public static string ItemDescription(string description) =>
+        IsGerman ? $"Beschreibung: {description}" : $"Description: {description}";
+
+    // ── Inventar-Reiter (Inventory) ──────────────────────────────────
+    /// <summary>The active inventory bag tab, announced on switch. The label is
+    /// the game's own tab number ("1".."4").</summary>
+    public static string InventoryTab(string label) =>
+        IsGerman ? $"Tasche {label}" : $"Bag {label}";
+    /// <summary>Fallback for an inventory tab the game leaves unlabeled - so the
+    /// user still hears that focus reached a tab, without inventing a number.</summary>
+    public static string InventoryTabOther =>
+        IsGerman ? "Inventar, weiterer Reiter" : "Inventory, other tab";
 
     // ── Keybind-Zeile (Config) ───────────────────────────────────────
     public static string KeyBindingLine(string label, IReadOnlyList<string> keys) =>

@@ -26,6 +26,7 @@ internal enum NavCategory
     Players,
     Objects,
     GatheringNodes,
+    Fates,
     FishingSpots,
     Aetherytes,
     QuestGoals,
@@ -45,6 +46,7 @@ public sealed class NavigationService
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService _places;
     private readonly FishingService _fishing;
+    private readonly FateService _fates;
     private readonly RouteService _routes;
     private readonly Configuration _config;
     private readonly IDataManager _data;
@@ -64,6 +66,7 @@ public sealed class NavigationService
         QuestMarkerService questMarkers,
         PlacesService places,
         FishingService fishing,
+        FateService fates,
         RouteService routes,
         Configuration config,
         IDataManager data,
@@ -78,6 +81,7 @@ public sealed class NavigationService
         _questMarkers = questMarkers;
         _places = places;
         _fishing = fishing;
+        _fates = fates;
         _routes = routes;
         _config = config;
         _data = data;
@@ -197,6 +201,10 @@ public sealed class NavigationService
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
         (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         (NavCategory.GatheringNodes,  new[] { ObjectKind.GatheringPoint }),
+        // FATEs kommen aus dem FateManager (FateService), nicht aus der ObjectTable:
+        // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
+        // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
+        (NavCategory.Fates,           null),
         // Angelplätze kommen aus dem FishingSpot-Sheet (FishingService), nicht aus
         // der ObjectTable: das Sheet kennt ALLE Angelplätze der Zone (das Spiel
         // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
@@ -224,6 +232,7 @@ public sealed class NavigationService
     private bool IsPlacesCategory          => Categories[_categoryIndex].Cat == NavCategory.Waypoints;
     private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
+    private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -311,6 +320,14 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsFateCategory)
+        {
+            var fates = _fates.GetActiveFates();
+            var preparing = fates.Count(f => f.IsPreparing);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryFateCount(fates.Count - preparing, preparing));
+            return;
+        }
+
         var count = GetCategoryObjects().Count;
         _tolk.SpeakInterrupt(AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, count));
     }
@@ -345,6 +362,12 @@ public sealed class NavigationService
         if (IsFishingCategory)
         {
             CycleFishingDestination(direction, player);
+            return;
+        }
+
+        if (IsFateCategory)
+        {
+            CycleFateDestination(direction, player);
             return;
         }
 
@@ -465,6 +488,54 @@ public sealed class NavigationService
         // Counter last, after the route hints - see CycleObject.
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Quest] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // ── FATEs: aktive Welt-Ereignisse der Zone anlaufen ──
+    //
+    // FATEs are always in the current zone (FateManager only holds this zone's),
+    // so a FATE destination is modelled as an in-zone QuestDestination and flows
+    // through the SAME downstream path (SelectedQuestDestination -> Numpad3
+    // auto-walk, walk guide) unchanged - no separate steering needed.
+    private void CycleFateDestination(int direction, IGameObject player)
+    {
+        var fates = _fates.GetActiveFates()
+            .OrderBy(f => Vector3.Distance(player.Position, f.Position))
+            .ToList();
+        if (fates.Count == 0)
+        {
+            SelectedQuestDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFatesInZone);
+            return;
+        }
+
+        var count = fates.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var fate = fates[_cycleIndex];
+
+        // Reuse the quest destination path: the FATE is in the current zone with a
+        // full 3D world position, so it resolves and walks like any in-zone quest
+        // goal. Radius 0 -> the default stop range lands the player near the FATE
+        // centre, well inside its participation circle.
+        SelectedQuestDestination = new QuestDestination(
+            QuestName: fate.Name,
+            Detail: string.Empty,
+            Position: fate.Position,
+            Radius: 0f,
+            TerritoryTypeId: (ushort)_clientState.TerritoryType,
+            MapId: 0,
+            InCurrentZone: true,
+            IsMainStory: false,
+            Level: fate.Level);
+
+        // Name first, then level, then progress (user choice 2026-07-31), then
+        // position - the same "content first, counter last" order as the other
+        // cyclers.
+        var text = $"{AccessibilityStrings.FateEntry(fate.Name, fate.Level, fate.Progress, fate.IsPreparing)}, " +
+                   $"{FormatDistance(Vector3.Distance(player.Position, fate.Position))}, " +
+                   $"{CalculateDirection(player, fate.Position)}. " +
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Fate] Auswahl: {text} (id={fate.FateId})");
         _tolk.SpeakInterrupt(text);
     }
 
@@ -768,6 +839,12 @@ public sealed class NavigationService
         // answer once it IS offered, exactly like the gathering category.
         if (Categories[index].Cat == NavCategory.Levequests)
             return _questMarkers.GetLevequestDestinations().Count > 0;
+
+        // FATEs only where the zone actually has an active/preparing one - no
+        // empty "0 FATEs" category in zones without any (same rule as fishing
+        // spots and leves).
+        if (Categories[index].Cat == NavCategory.Fates)
+            return _fates.GetActiveFates().Count > 0;
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
