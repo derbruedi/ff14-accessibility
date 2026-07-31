@@ -72,15 +72,6 @@ public sealed class CooldownService
 
     private byte _trackedJob = byte.MaxValue;
 
-#if DEBUG
-    // Audit probe: throttled to once per second so a single combat test produces
-    // a readable snapshot of exactly what the scanner sees. Delete with the probe
-    // once the feature is verified in-game.
-    private long _lastProbeMs;
-    private bool _probeThisFrame;
-    private int  _probeActionCount;
-#endif
-
     /// <summary>Called every frame from Plugin.OnFrameworkUpdate.</summary>
     public unsafe void Update()
     {
@@ -103,12 +94,6 @@ public sealed class CooldownService
 
         var level = (uint)ps->CurrentLevel;
 
-#if DEBUG
-        var nowMs = System.Environment.TickCount64;
-        _probeThisFrame = nowMs - _lastProbeMs >= 1000;
-        if (_probeThisFrame) { _lastProbeMs = nowMs; _probeActionCount = 0; }
-#endif
-
         _seen.Clear();
         for (var bar = 0; bar < StandardBarCount; bar++)
         for (var slot = 0; slot < SlotsPerBar; slot++)
@@ -116,49 +101,17 @@ public sealed class CooldownService
             var s = hotbars->GetSlotById((uint)bar, (uint)slot);
             if (s == null) continue;
             if (s->CommandType != RaptureHotbarModule.HotbarSlotType.Action)
-            {
-#if DEBUG
-                // Sprint and other General Actions land here: the scanner only
-                // handles Action slots, so this line explains why they never fire.
-                if (_probeThisFrame && s->CommandId != 0 &&
-                    s->CommandType == RaptureHotbarModule.HotbarSlotType.GeneralAction)
-                    _log.Info($"[CooldownProbe]   skip GeneralAction id={s->CommandId} (bar {bar} slot {slot})");
-#endif
                 continue;
-            }
 
             var id = s->CommandId;
             if (id == 0 || !_seen.Add(id)) continue;   // dedupe across slots/bars
 
             EvaluateAction(am, id, level);
         }
-
-#if DEBUG
-        if (_probeThisFrame)
-            _log.Info($"[CooldownProbe] job={ps->CurrentClassJobId} lvl={level} " +
-                      $"actionSlotsFound={_probeActionCount} (>{GcdRecastCeiling}s recast = tracked oGCD)");
-#endif
     }
 
     private unsafe void EvaluateAction(ActionManager* am, uint id, uint level)
     {
-#if DEBUG
-        // Log every scanned Action BEFORE the GCD filter, so the snapshot shows
-        // both the GCD skills we drop and the oGCDs we keep, with their real
-        // runtime recast/charge/active values.
-        if (_probeThisFrame)
-        {
-            _probeActionCount++;
-            var rt  = am->GetRecastTime(ActionType.Action, id);
-            var mc  = ActionManager.GetMaxCharges(id, level);
-            var act = am->IsRecastTimerActive(ActionType.Action, id);
-            var ch  = am->GetCurrentCharges(id);
-            _log.Info($"[CooldownProbe]   id={id} '{ActionName(id)}' recast={rt:F1}s " +
-                      $"maxCharges={mc} charges={ch} active={act} " +
-                      $"{(rt > GcdRecastCeiling ? "-> TRACKED" : "-> skipped (GCD)")}");
-        }
-#endif
-
         var maxCharges = ActionManager.GetMaxCharges(id, level);
         if (maxCharges < 1) maxCharges = 1;
         var charges = am->GetCurrentCharges(id);
