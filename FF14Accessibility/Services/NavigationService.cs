@@ -1662,6 +1662,13 @@ public sealed class NavigationService
         var direction = CalculateDirection(player, targetPos);
         var distanceText = FormatDistance(distance);
 
+#if DEBUG
+        var dx = targetPos.X - playerPos.X;
+        var dz = targetPos.Z - playerPos.Z;
+        _log.Info($"[NavDirProbe] rot={player.Rotation:F3} dx={dx:F2} dz={dz:F2} " +
+                   $"angle={RelativeAngle(player, targetPos):F1} word='{direction}'");
+#endif
+
         // _trackedName is set in lockstep with _trackedObject (checked non-null above).
         _tolk.SpeakInterrupt(AccessibilityStrings.TargetDirection(_trackedName!, distanceText, direction));
     }

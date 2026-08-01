@@ -3,12 +3,66 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-07-31, SKILL-BESCHREIBUNG-REGRESSION IN-GAME BESTAETIGT - RELEASE OFFEN)
+## STAND JETZT (2026-08-01, QUEST-BELOHNUNG BESTAETIGT, ZWEI PUNKTE NOCH OFFEN)
 
->>> User „ja funktioniert": Beschreibung kommt in der Kommandoliste wieder (Name sofort,
-    Beschreibung nach ~0,4 s). Verifikations-Sonden entfernt ([TooltipAction] raus,
-    [ActionDetail] auf #if DEBUG). Build 0/0, deployt. Details unten.
-    OFFEN: Release v5.63 - buendelt diesen Fix + FATE-Kategorie (beide in-game bestaetigt).
+>>> Session 2026-08-01, drei Baustellen parallel angefasst. Punkt 3 (Quest-
+    Belohnung) vom User als funktionierend bestaetigt ("geht erstmal"), Punkte 1+2
+    testet der User bei Gelegenheit. NICHTS committed, NICHTS released - alles nur
+    Debug gebaut + nach devPlugins deployt.
+
+    3. QUEST-BELOHNUNG MIT MEHREREN FESTEN ITEMS — IN-GAME BESTAETIGT (User
+       2026-08-01, "geht erstmal"). Zwei Fixes uebereinander:
+       a) BuildRewardText (UIReaderService) haengt an jedes Ruestungs-Item jetzt
+          zusaetzlich die Stufe/Tragbarkeit an (_gearInfo.DescribeGear), weil
+          Lumina Item.Description bei Ruestung meist LEER ist.
+       b) UpdateGlobalFocus hat jetzt Parameter navKeyHeld (Plugin.cs prueft
+          GEHALTENEN Zustand von Pfeiltasten UND Nummernblock 2/4/6/8); Belohnungs-
+          felder werden nur noch stumm geschaltet, wenn KEINE Richtungstaste
+          gehalten wird - Blaettern durch Belohnungsfelder funktioniert jetzt.
+       Kein detaillierter Log-Beweis fuer alle drei Einzelpunkte eingeholt, User-
+       Bestaetigung war pauschal ("geht erstmal") - bei erneuten Problemen hier
+       nachhaken. NOCH NICHT COMMITTED/RELEASED.
+
+    1. RICHTUNGS-VERDACHT (User: "links ist rechts, vorne ist hinten" bei Ziel-/
+       Wegpunkt-Richtung, /acc nav). NavigationService.AnnounceDirection hat jetzt
+       eine #if DEBUG [NavDirProbe]-Sonde (rot/dx/dz/angle/word). Testablauf
+       vereinbart: Tab-Ziel + /acc set + /acc nav, dann Numpad-Rechtsdrehung (User
+       bestaetigt Standard-Steuerung, nicht Legacy), erneut /acc nav, vergleichen ob
+       Ansage Richtung "geradeaus" wandert. NOCH NICHT DURCHGEFUEHRT (kein Gegner in
+       der Naehe). OFFEN: Test nachholen (User testet bei Gelegenheit), danach Sonde
+       wieder raus.
+
+    2. AUTO-LAUF SCHEITERT AN SENKRECHTEM AUFSTIEG (Quest "Mitglied der
+       Galgenvoegel" auf dem Schiff "Astalicia", Limsa Lominsa/Fischers Bodden).
+       Log-Beweis (dalamud.log 11:22-11:55): Route springt in ~1 m seitlicher
+       Strecke 9 m nach oben (Y 7,4 -> 16,4) - vermutlich Leiter/Deck-Aufgang, den
+       vnavmesh/SimpleMove nicht erklimmen kann (KEIN Mod-Bug, vnavmesh-Grenze wie
+       das bereits dokumentierte Netz-Bug-Muster von 2026-07-12/13). ABER: "Die
+       Astalicia" als QUEST-ZIEL (Kategorie Quest-Ziele, nicht die NPC-Kategorie)
+       laeuft zuverlaessig an Bord (Log: zweimal angekommen=True, keine Hoehen-
+       Spruenge). Empfehlung an User: darueber an Bord, dann manuell im
+       abgegrenzten Schiffsbereich nach Treppe/Leiter suchen.
+       DARAUS NEUER FEATURE-WUNSCH (User): generische Erkennung von Eingaengen/
+       Treppen fuer blinde Spieler. Noch NICHT recherchiert. Naechster Schritt
+       verabredet: User soll Strg+F5 (DumpNearbyObjects, bereits vorhanden) direkt
+       am Aufstiegspunkt der Astalicia ausloesen, damit [ObjProbe]-Log zeigt, ob
+       Leiter/Tuer/Aufgang als eigenes Objekt (z.B. EventObj) existiert, auf das man
+       aufbauen koennte. USER HAT DIE SONDE NOCH NICHT AUSGELOEST - im Log bisher
+       keine [ObjProbe]-Zeilen von dieser Session. User testet bei Gelegenheit.
+
+    NEBENBEI: uia_test.ps1 (unbekanntes UIAutomation-Testskript fuer den
+    Installer, nicht dokumentiert) auf User-Wunsch geloescht.
+
+## VORHERIGER STAND (2026-07-31, v5.63 OEFFENTLICH RELEASED)
+
+>>> RELEASE v5.63 (2026-07-31): buendelt zwei in-game bestaetigte Features:
+    - FATE-Kategorie im Objekt-Browser (aktive Welt-FATEs finden + Numpad3 hinlaufen).
+    - Skill-Beschreibung in der Kommandoliste wieder da (Tastatur-Regression: ActionId
+      jetzt aus der Action-Tooltip-Bindung statt aus dem toten AgentActionDetail).
+    Versions-Sync 5.63 (csproj/Plugin.cs/repo.json), Commit 38960a9 auf main gepusht,
+    4 Assets released (latest.zip + versionierte Kopie neu; Installer-exe + installer.json
+    unveraendert aus v5.62 uebernommen, SHA verifiziert MATCH). API bestaetigt v5.63 = latest,
+    kein Draft/Prerelease. KEINE offenen Verifikationen.
 
 
 >>> BUG (User 2026-07-31): In der Kommandoliste (Addon ActionMenu, "Aktionen &

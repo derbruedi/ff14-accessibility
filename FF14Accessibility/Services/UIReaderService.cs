@@ -1738,7 +1738,7 @@ public sealed class UIReaderService : IDisposable
     private long _itemDwellTick;          // Stopwatch timestamp the focus reached it
     private bool _itemDwellDescSpoken;    // description already queued for this dwell?
 
-    public unsafe void UpdateGlobalFocus()
+    public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
         FlushPendingRaceDescription();
 
@@ -1966,14 +1966,34 @@ public sealed class UIReaderService : IDisposable
             // those while that window is open; buttons ("Abschließen") and item
             // names are non-numeric and still pass through.
             if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
-            // The reward item slots resolve to an item name ("10 mal
+            // JournalResult's OWN reward slots resolve to an item name ("10 mal
             // Universalköder") and the game cycles focus across them every ~1 s
-            // while JournalResult is open (log 2026-07-31 16:46:40+). The
-            // dedicated reward reader already spoke them in full WITH the
-            // description, so re-announcing the bare slot name here only spams and
-            // interrupts - stay silent for item slots (the Ablehnen/Abschließen
-            // buttons carry no item name and still pass through).
-            if (!string.IsNullOrEmpty(_lastFocusedItemName) && IsAddonVisible("JournalResult")) return;
+            // while the window is open (log 2026-07-31 16:46:40+). The dedicated
+            // reward reader already spoke them in full WITH the description, so
+            // re-announcing the bare slot name here only spams and interrupts -
+            // stay silent for those (the Ablehnen/Abschließen buttons carry no
+            // item name and still pass through).
+            //
+            // EXCEPTION 1 - the optional-reward CHOICE grid is a SEPARATE addon
+            // (JournalRewardItem) laid over JournalResult (log 2026-07-31 21:05:
+            // addon='JournalRewardItem' slots, resolved but silent). There the
+            // player deliberately arrows through the options to PICK one and must
+            // hear each - it never auto-oscillates - so it is excluded from the
+            // suppression and read normally. Keyed on the FOCUSED node's addon,
+            // not global visibility, so JournalResult's own slots stay muted.
+            //
+            // EXCEPTION 2 - the original spam this suppression targets is the
+            // GAME auto-cycling focus with no key held (log 2026-07-31 16:46:40+,
+            // item slot <-> currency, ~1 s, nobody touching a key). A player
+            // deliberately arrowing through several fixed reward items to hear
+            // each one's level/wearability is the opposite case and must not be
+            // silenced too (user 2026-08-01: "will aber durchblaettern"). Held
+            // arrow-key state (not just-pressed) survives OS key-repeat, unlike
+            // an edge flag, so it stays true for the whole time a key is held.
+            if (!string.IsNullOrEmpty(_lastFocusedItemName)
+                && IsAddonVisible("JournalResult")
+                && FindAddonNameForNode(node) != "JournalRewardItem"
+                && !navKeyHeld) return;
             // Zeichen-Zaehler eines Textfelds ("3/40"): der Fokus sitzt auf
             // dem Zaehler-Node und wuerde bei jedem Tastendruck sprechen -
             // das Tipp-Echo (OnCharaMakeInputUpdate) uebernimmt dort.
@@ -6196,6 +6216,15 @@ public sealed class UIReaderService : IDisposable
                 if (string.IsNullOrEmpty(name)) continue;
                 var qty   = ReadIconQuantity(icon);
                 var label = qty.Length > 0 ? AccessibilityStrings.RewardItemQuantity(qty, name) : name;
+                // Equipment gear info (level/wearability) - the same lookup the
+                // per-slot focus reader uses (ResolveFocusedItemName). Lumina's
+                // Item.Description is usually EMPTY for gear (armor carries no
+                // lore text, only stats), so without this the bulk announcement
+                // silently dropped the one thing a blind player needs to judge
+                // an equipment reward - and re-querying it per slot afterwards
+                // is suppressed as anti-oscillation spam (user 2026-08-01).
+                var gear = _gearInfo.DescribeGear(itemId);
+                if (gear.Length > 0) label = $"{label}, {gear}";
                 // Reward name first, then its item description (flattened) - same
                 // "name, then description" order as the ability tooltips.
                 var desc = FlattenDescription(_inventory.ResolveItemDescription(itemId));

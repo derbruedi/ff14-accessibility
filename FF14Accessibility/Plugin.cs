@@ -66,8 +66,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.63";
-    private const string PluginVersionTag = "Neue Objekt-Browser-Kategorie FATEs (aktive Welt-FATEs finden und per Numpad3 hinlaufen); Skill-Beschreibung in der Kommandoliste wieder vorgelesen (Tastatur-Regression behoben)";
+    private const string PluginVersion    = "5.64";
+    private const string PluginVersionTag = "Quest-Belohnung mit mehreren festen Items: Stufe/Tragbarkeit bei Ruestungsteilen + Blaettern durch Belohnungsfelder bei gehaltener Richtungstaste";
 
     public Plugin()
     {
@@ -1016,7 +1016,21 @@ public sealed class Plugin : IDalamudPlugin
         // Global UI focus (AtkInputManager.FocusedNode): announces whatever
         // control the game itself considers keyboard-focused - dialogs,
         // options, everything. See UIReaderService.UpdateGlobalFocus.
-        _uiReader.UpdateGlobalFocus();
+        // Held (not just-pressed) state: survives OS key-repeat for the whole
+        // time a direction key stays down, so JournalResult can tell deliberate
+        // reward browsing from the game's own unprompted focus auto-cycle.
+        // User's in-game menu navigation is the NUMPAD (2/4/6/8 - same as the
+        // DC-map and skill-menu navigation above), not the arrow keys - checked
+        // both here since arrow keys still move focus in some native windows.
+        var navKeyHeld = KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.UP]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.DOWN]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.LEFT]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.RIGHT]
+            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x68]  // Numpad8
+            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x62]  // Numpad2
+            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x64]  // Numpad4
+            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x66]; // Numpad6
+        _uiReader.UpdateGlobalFocus(navKeyHeld);
 
 #if DEBUG
         // Debug-only auto-probe: logs focused config-menu elements while a
