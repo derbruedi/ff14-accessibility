@@ -1,0 +1,278 @@
+﻿=== DUMP: ConfigCharaChatLogGen | Vis=True | Nodes=46 ===
+[0] id=1 Res F=0x24B3 V
+[1] id=3 Res F=0x2073 V
+[2] id=46 Collision F=0x2333 V
+[3] id=6 Res F=0x2033 V
+[4] id=40 Res F=0x2033 V
+[5] id=45 Comp(1016) F=0x2013   [CT=Base(0) Ch=2]
+  [0] id=3 Comp(1014) F=0x2013 V [CT=Button(1) Ch=3]
+    [0] id=4 Collision F=0x273A V
+    [1] id=3 NineGrid F=0x203A V
+    [2] id=2 Text F=0x203A V "Reiter 4"
+  [1] id=2 Text F=0x2033 V ""
+[6] id=44 Comp(1016) F=0x2233   [CT=Base(0) Ch=2]
+  [0] id=3 Comp(1014) F=0x2033 V [CT=Button(1) Ch=3]
+    [0] id=4 Collision F=0x273A V
+    [1] id=3 NineGrid F=0x203A V
+    [2] id=2 Text F=0x203A V "Ereignis"
+  [1] id=2 Text F=0x2033 V ""
+[7] id=43 Comp(1016) F=0x2233   [CT=Base(0) Ch=2]
+  [0] id=3 Comp(1014) F=0x2033 V [CT=Button(1) Ch=3]
+    [0] id=4 Collision F=0x273A V
+    [1] id=3 NineGrid F=0x203A V
+    [2] id=2 Text F=0x203A V "Kampf"
+  [1] id=2 Text F=0x2033 V ""
+[8] id=42 Comp(1016) F=0x2233   [CT=Base(0) Ch=2]
+  [0] id=3 Comp(1014) F=0x2033 V [CT=Button(1) Ch=3]
+    [0] id=4 Collision F=0x273A V
+    [1] id=3 NineGrid F=0x203A V
+    [2] id=2 Text F=0x203A V "Allgemein"
+  [1] id=2 Text F=0x2033 V ""
+[9] id=41 Text F=0x2033 V "Chatfilter"
+[10] id=37 Res F=0x2033 V
+[11] id=39 Comp(1001) F=0x2033 V [CT=Button(1) Ch=3]
+  [0] id=4 Collision F=0x273A V
+  [1] id=3 NineGrid F=0x203A V
+  [2] id=2 Text F=0x203A V "Festlegen"
+[12] id=38 Text F=0x2033 V "Textfarbe im Chatlog"
+[13] id=34 Res F=0x2033 V
+[14] id=36 Comp(1001) F=0x2033 V [CT=Button(1) Ch=3]
+  [0] id=4 Collision F=0x273A V
+  [1] id=3 NineGrid F=0x203A V
+  [2] id=2 Text F=0x203A V "Einstellungen"
+[15] id=35 Text F=0x2033 V "Chat-Sprechblasen"
+[16] id=26 Res F=0x2033 V
+[17] id=31 Res F=0x2033 V
+[18] id=33 Comp(1007) F=0x2333 V [CT=DropDownList(10) Ch=2]
+  [0] id=3 Comp(1009) F=0x010F   [CT=List(9) Ch=12] [ListLen=2 Sel=0]
+    [0] id=7 Collision F=0x253F V
+    [1] id=6 NineGrid F=0x20B3 V
+    [2] id=5 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00BA V
+      [3] id=2 Text F=0x003A V "24-Stunden-Format"
+    [3] id=51001 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [4] id=51002 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [5] id=51003 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [6] id=51004 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [7] id=51005 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [8] id=51006 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [9] id=4 Comp(1005) F=0x200D   [CT=ScrollBar(13) Ch=2]
+      [0] id=3 Comp(1003) F=0x2093 V [CT=Button(1) Ch=1]
+        [0] id=2 Collision F=0x27B3 V
+      [1] id=2 Comp(1004) F=0x2010 V [CT=Button(1) Ch=2]
+        [0] id=3 Collision F=0x27B3 V
+        [1] id=2 NineGrid F=0x20B3 V
+    [10] id=3 Comp(1008) F=0x002E   [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+    [11] id=2 Comp(1008) F=0x002B   [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+  [1] id=2 Comp(1006) F=0x203B V [CT=CheckBox(3) Ch=4]
+    [0] id=5 Collision F=0x27B3 V
+    [1] id=4 NineGrid F=0x203A V
+    [2] id=3 Text F=0x203A V "24-Stunden-Format"
+    [3] id=2 Image F=0x2033 V
+[19] id=32 Text F=0x2033 V "Zeitanzeige"
+[20] id=28 Res F=0x2033 V
+[21] id=30 Comp(1007) F=0x2333 V [CT=DropDownList(10) Ch=2]
+  [0] id=3 Comp(1009) F=0x010F   [CT=List(9) Ch=12] [ListLen=2 Sel=0]
+    [0] id=7 Collision F=0x253F V
+    [1] id=6 NineGrid F=0x20B3 V
+    [2] id=5 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00BA V
+      [3] id=2 Text F=0x003A V "Ortszeit"
+    [3] id=51001 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [4] id=51002 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [5] id=51003 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [6] id=51004 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [7] id=51005 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [8] id=51006 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [9] id=4 Comp(1005) F=0x200D   [CT=ScrollBar(13) Ch=2]
+      [0] id=3 Comp(1003) F=0x2093 V [CT=Button(1) Ch=1]
+        [0] id=2 Collision F=0x27B3 V
+      [1] id=2 Comp(1004) F=0x2010 V [CT=Button(1) Ch=2]
+        [0] id=3 Collision F=0x27B3 V
+        [1] id=2 NineGrid F=0x20B3 V
+    [10] id=3 Comp(1008) F=0x002E   [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+    [11] id=2 Comp(1008) F=0x002B   [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+  [1] id=2 Comp(1006) F=0x203B V [CT=CheckBox(3) Ch=4]
+    [0] id=5 Collision F=0x27B3 V
+    [1] id=4 NineGrid F=0x203A V
+    [2] id=3 Text F=0x203A V "Ortszeit"
+    [3] id=2 Image F=0x2033 V
+[22] id=29 Text F=0x2033 V "Zeiteinstellungen"
+[23] id=27 Text F=0x2033 V "Zeitstempel anzeigen"
+[24] id=7 Res F=0x2033 V
+[25] id=18 Res F=0x2033 V
+[26] id=25 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Chatlog-Fenstergröße entriegeln"
+[27] id=24 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Senden von Gegenstandsbeschreibung aktivieren"
+[28] id=23 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Bei Erreichen der Maximal-Flughöhe Warnung anzeigen"
+[29] id=22 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Bei Kommandos Reaktivierungs-Warnungen anzeigen"
+[30] id=21 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Bei Kommandos Warnungen anzeigen"
+[31] id=20 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Schimpfwort-Filter aktivieren"
+[32] id=19 Comp(1010) F=0x2033 V [CT=CheckBox(3) Ch=4]
+  [0] id=5 Collision F=0x27B3 V
+  [1] id=4 Image F=0x2032 V
+  [2] id=3 Image F=0x2032 V
+  [3] id=2 Text F=0x203A V "Lippenbewegungen bei Chat aktivieren"
+[33] id=15 Res F=0x2033 V
+[34] id=17 Comp(1013) F=0x2533 V [CT=Slider(6) Ch=4]
+  [0] id=5 Comp(1011) F=0x203A V [CT=Button(1) Ch=2]
+    [0] id=3 Collision F=0x27B3 V
+    [1] id=2 NineGrid F=0x20B3 V
+  [1] id=4 NineGrid F=0x203A V
+  [2] id=3 Comp(1012) F=0x2033 V [CT=Button(1) Ch=2]
+    [0] id=3 Collision F=0x2733 V
+    [1] id=2 Image F=0x2033 V
+  [3] id=2 Text F=0x2038 V "40"
+[35] id=16 Text F=0x2033 V "Transparenz der Chat-Eingabe"
+[36] id=12 Res F=0x2033 V
+[37] id=14 Comp(1007) F=0x2333 V [CT=DropDownList(10) Ch=2]
+  [0] id=3 Comp(1009) F=0x010F   [CT=List(9) Ch=12] [ListLen=12 Sel=0]
+    [0] id=7 Collision F=0x253F V
+    [1] id=6 NineGrid F=0x20B3 V
+    [2] id=5 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V "12"
+    [3] id=51001 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [4] id=51002 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [5] id=51003 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [6] id=51004 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [7] id=51005 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [8] id=51006 Comp(1002) F=0x023B V [CT=ListItemRenderer(14) Ch=4]
+      [0] id=5 Collision F=0x07B3 V
+      [1] id=4 NineGrid F=0x00BA V
+      [2] id=3 NineGrid F=0x00AA  
+      [3] id=2 Text F=0x003A V ""
+    [9] id=4 Comp(1005) F=0x203D V [CT=ScrollBar(13) Ch=2]
+      [0] id=3 Comp(1003) F=0x20B3 V [CT=Button(1) Ch=1]
+        [0] id=2 Collision F=0x27B3 V
+      [1] id=2 Comp(1004) F=0x2030 V [CT=Button(1) Ch=2]
+        [0] id=3 Collision F=0x27B3 V
+        [1] id=2 NineGrid F=0x20B3 V
+    [10] id=3 Comp(1008) F=0x003E V [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+    [11] id=2 Comp(1008) F=0x002B   [CT=Base(0) Ch=1]
+      [0] id=2 Image F=0x20B3 V
+  [1] id=2 Comp(1006) F=0x203B V [CT=CheckBox(3) Ch=4]
+    [0] id=5 Collision F=0x27B3 V
+    [1] id=4 NineGrid F=0x203A V
+    [2] id=3 Text F=0x203A V "12"
+    [3] id=2 Image F=0x2033 V
+[38] id=13 Text F=0x2033 V "Schriftgröße der Chat-Eingabe"
+[39] id=11 Text F=0x2033 V "Chatlog-Einstellungen"
+[40] id=8 Res F=0x2033 V
+[41] id=10 Comp(1001) F=0x2033 V [CT=Button(1) Ch=3]
+  [0] id=4 Collision F=0x273A V
+  [1] id=3 NineGrid F=0x203A V
+  [2] id=2 Text F=0x203A V "Namensanzeige"
+[42] id=9 Text F=0x2033 V "Namensanzeige"
+[43] id=5 Comp(1015) F=0x203B V [CT=Base(0) Ch=1]
+  [0] id=2 Image F=0x20B3 V
+[44] id=4 Comp(1015) F=0x203B V [CT=Base(0) Ch=1]
+  [0] id=2 Image F=0x20B3 V
+[45] id=2 Comp(1005) F=0x2237 V [CT=ScrollBar(13) Ch=2]
+  [0] id=3 Comp(1003) F=0x20B3 V [CT=Button(1) Ch=1]
+    [0] id=2 Collision F=0x23B3 V
+  [1] id=2 Comp(1004) F=0x2030 V [CT=Button(1) Ch=2]
+    [0] id=3 Collision F=0x23B3 V
+    [1] id=2 NineGrid F=0x20B3 V

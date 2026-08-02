@@ -3,7 +3,61 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02, BELOHNUNGSFENSTER NUR NOCH BEIM BLAETTERN + OBJEKT-BROWSER LAEUFT ZU NICHT-ZIELBAREN OBJEKTEN, V5.66 RELEASED)
+## STAND JETZT (2026-08-02, NAECHSTE BAUSTELLE: CHATLOG-EINSTELLUNGEN NICHT AUSLESBAR)
+
+>>> OFFENE BAUSTELLE fuer die naechste Sitzung. NICHTS davon ist gebaut.
+
+    FENSTER: `ConfigCharaChatLogGen` (Charakterkonfiguration -> Kategorie
+    "Chatlog"). Dump gesichert unter `docs/dumps/ConfigCharaChatLogGen_2026-08-02.txt`
+    (46 Nodes) - der Desktop-Dump wird beim naechsten Strg+F5 ueberschrieben.
+    Inhalt laut Dump: 4 Reiter (Allgemein/Kampf/Ereignis/"Reiter 4"), 7 CheckBoxen
+    mit Klartext, 3 DropDownLists (Zeitanzeige "24-Stunden-Format" ListLen=2,
+    Zeiteinstellungen "Ortszeit" ListLen=2, Schriftgroesse "12" ListLen=12),
+    1 Slider "Transparenz der Chat-Eingabe" (Wert 40), 3 Buttons (Festlegen /
+    Einstellungen / Namensanzeige).
+
+    BEFUND 1 - FALSCHE ANSAGE, URSACHE BELEGT. User: "er liest Sachen vor die
+    eigentlich nicht in dem Fenster sein sollten". Log 2026-08-02:
+    15:34:56.523 'Immer, 3 Eintraege' (beim Oeffnen ConfigCharacter) und
+    15:35:01.408 '24-Stunden-Format, 2 Eintraege' (1 s nach Kategoriewechsel auf
+    Chatlog). URSACHE: `FindListInAddon` (UIReaderService ~7018) sucht die
+    Fenster-Hauptliste und steigt dabei EINE Ebene in jede Komponente hinab -
+    dort findet es die List(9) INNERHALB der DropDownList(10) und haelt sie fuer
+    das Fenstermenue. Folgen: (a) der Wert des ersten Auswahlfelds wird beim
+    Oeffnen als Fensterinhalt gesprochen, (b) `PushMenu` registriert das Panel
+    als Listen-Menue -> die Navigation verfolgt danach dieses eine Dropdown
+    statt der echten Bedienelemente (passt zu "Menue wird nicht aktualisiert").
+    GEPLANTER FIX: in der INNEREN Schleife von FindListInAddon Komponenten vom
+    Typ DropDownList ueberspringen (aeussere Ebene unveraendert lassen).
+    NEBENWIRKUNG BEDENKEN: ohne Listen-Treffer faellt das Panel in den
+    generischen Pfad und `ReadAllTexts` wuerde beim Oeffnen ~20 Textfragmente am
+    Stueck vorlesen. Mit dem User klaeren, ob das gewollt ist oder ob beim
+    Oeffnen gar nichts kommen soll (Kategoriename "Chatlog" wurde ohnehin gerade
+    angesagt).
+
+    BEFUND 2 - OFFEN, NICHT ENTSCHIEDEN: Bewegt sich der Fokus im Panel
+    ueberhaupt? Im Log steht GENAU EINE Fokuszeile in ConfigCharaChatLogGen
+    (15:35:08, Button "Namensanzeige"), danach 7 s nichts, dann zurueck in
+    ConfigCharacter - aber genau in diese 7 s fielen Strg+F5 (15:35:10) und
+    Strg+F2 (15:35:12). Also unklar, ob der User nicht navigiert hat oder ob der
+    Fokus dort tot ist. TEST, DER NOCH FEHLT: Panel oeffnen, NUR mit Nummernblock
+    2/8/4/6 ca. 10 s durch die Optionen, keine Dump-Taste dazwischen, dann Log
+    auf [Focus]/[ConfigProbe] mit addon=ConfigCharaChatLogGen pruefen.
+    In der Kategorieliste (ConfigCharacter) wandert der Fokus sauber - dort
+    kommen Tooltips wie "Steuerung"/"UI"/"Chatlog" an.
+
+    BEFUND 3 - BEKANNTE LUECKE: `TryReadConfigFocusRow` (~2582) kennt nur
+    DragDrop (Reiter), CheckBox und RadioButton. DropDownList und Slider werden
+    NICHT behandelt - und davon hat gerade dieses Panel vier Stueck. Muss
+    ergaenzt werden, sobald Befund 2 geklaert ist.
+
+    WERKZEUG-HINWEIS (fuer Tests durch Dritte): Strg+F5 dumpt die fokussierten
+    Fenster nach `Desktop\FFXIV_UI_Dump.txt` (UTF-8) UND ins Log; die Datei wird
+    bei JEDEM Druck ueberschrieben -> sofort umbenennen. Strg+F2 sagt das aktive
+    Fenster an und listet alle sichtbaren ins Log (so kam der Addon-Name).
+    Nicht Debug-gated, laeuft also auch in der Release-Version.
+
+## VORHERIGER STAND (2026-08-02, BELOHNUNGSFENSTER NUR NOCH BEIM BLAETTERN + OBJEKT-BROWSER LAEUFT ZU NICHT-ZIELBAREN OBJEKTEN, V5.66 RELEASED)
 
 >>> DREI AENDERUNGEN, ALLE NACH V5.65, als V5.66 released. Punkt 1 und 2 sind
     in-game bestaetigt ("funktioniert"), Punkt 3 faehrt ungetestet mit:
