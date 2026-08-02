@@ -1975,18 +1975,30 @@ public sealed class UIReaderService : IDisposable
         if (!string.IsNullOrEmpty(text))
         {
             // The quest-completion reward summary is spoken in full when
-            // JournalResult opens (BuildRewardText). Navigating its currency
-            // cells afterwards yields only bare numbers ("400"/"103") - skip
-            // those while that window is open; buttons ("Abschließen") and item
-            // names are non-numeric and still pass through.
-            if (IsBareNumber(text) && IsAddonVisible("JournalResult")) return;
+            // JournalResult opens (BuildRewardText). Its currency cells carry
+            // only bare numbers ("400"/"103"); buttons ("Abschließen") and item
+            // names are non-numeric and pass through untouched.
+            if (IsBareNumber(text) && IsAddonVisible("JournalResult"))
+            {
+                // Browsing the rewards must reach experience and gil too (user
+                // 2026-08-02), so the cell is labelled from its position instead
+                // of being skipped. Same rule as the item slots right below:
+                // only while a direction key is HELD - without one this is the
+                // game auto-cycling the focus every ~1 s and has to stay silent.
+                if (!navKeyHeld) return;
+                var currency = DescribeFocusedRewardCurrency(node, text);
+                if (currency.Length == 0) return; // a number that is no reward cell
+                text = currency;
+            }
             // JournalResult's OWN reward slots resolve to an item name ("10 mal
             // Universalköder") and the game cycles focus across them every ~1 s
-            // while the window is open (log 2026-07-31 16:46:40+). The dedicated
-            // reward reader already spoke them in full WITH the description, so
-            // re-announcing the bare slot name here only spams and interrupts -
-            // stay silent for those (the Ablehnen/Abschließen buttons carry no
-            // item name and still pass through).
+            // while the window is open, with nobody touching a key (log
+            // 2026-07-31 16:46:40+). Announcing that would make the window talk
+            // by itself and interrupt whatever else is playing, so those slots
+            // stay silent unless the player is actually browsing (see EXCEPTION 2
+            // - that is now the ONLY way the rewards are read at all, the summary
+            // on open was dropped on 2026-08-02). The Ablehnen/Abschließen
+            // buttons carry no item name and still pass through.
             //
             // EXCEPTION 1 - the optional-reward CHOICE grid is a SEPARATE addon
             // (JournalRewardItem) laid over JournalResult (log 2026-07-31 21:05:
@@ -2741,12 +2753,13 @@ public sealed class UIReaderService : IDisposable
     /// Quest rewards (JournalResult and the optional-choice grid JournalRewardItem)
     /// go through here too (user request 2026-08-02: browsing the rewards must read
     /// the description like the bag and the skill list do). They used to be excluded
-    /// because the window's own reward summary already speaks every description when
-    /// it opens - but that summary is a one-off, while walking the slots afterwards
-    /// left the player with bare names. The double-reading that exclusion prevented
-    /// is now handled precisely by the caller: the dwell is only armed when the slot
-    /// name was really announced, so the game's ~1 s focus oscillation - which stays
-    /// silent - produces no descriptions either.
+    /// because the window spoke every description in one summary when it opens -
+    /// that summary has since been dropped entirely (user 2026-08-02: rewards only
+    /// while browsing), so this path is now the only way a reward description is
+    /// heard at all. The double-reading the exclusion once prevented is handled
+    /// precisely by the caller: the dwell is only armed when the slot name was
+    /// really announced, so the game's ~1 s focus oscillation - which stays silent -
+    /// produces no descriptions either.
     /// </summary>
     private void HandleItemDescriptionDwell(bool itemFocusActive)
     {
@@ -6098,24 +6111,33 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
-        // JournalResult is the completion window: read the actual REWARDS
-        // (item names + amounts), not the generic section labels.
-        var text = name == "JournalResult" ? BuildRewardText(addon) : string.Empty;
-        if (string.IsNullOrWhiteSpace(text)) text = BuildQuestText(name);
+        // JournalResult is the completion window. Its rewards are NOT spoken when
+        // it opens any more (user 2026-08-02: "nur beim Durchblaettern") - that
+        // was one long block with every item description, and since v5.65 the
+        // same content is reachable field by field with the numpad. Returning
+        // here also keeps the generic canvas fallback out of this window, which
+        // would otherwise read its section texts instead.
+        //
+        // BuildRewardText still runs for its [Quest] log line: a report that a
+        // reward "was not read" can only be judged against what the window
+        // actually contained. Nothing is announced from it.
+        if (name == "JournalResult")
+        {
+            BuildRewardText(addon);
+            return;
+        }
+
+        var text = BuildQuestText(name);
         if (string.IsNullOrWhiteSpace(text)) return;
         if (_lastQuestText.TryGetValue(name, out var prev) && prev == text) return;
 
         _lastQuestText[name] = text;
         _log.Info($"[Quest] {name}: '{text}'");
         _tolk.SpeakInterrupt(text);
-
-        // JournalResult auto-focuses its "Abschließen" button the instant it
-        // opens; without this guard the generic focus reader speaks that button
-        // ~4 ms later and cuts the reward summary off before its description (log
-        // 2026-07-31 16:46:38.100 reward -> .104 'Abschließen'). Reuse the
-        // dialog-open guard so the focus reader and button probe both stay quiet
-        // for the first second while the reward line plays.
-        if (name == "JournalResult") _dialogOpenedAt = DateTime.UtcNow;
+        // No dialog-open guard here any more: it existed solely to stop the
+        // auto-focused "Abschließen" button from cutting the reward summary off
+        // (log 2026-07-31 16:46:38.100 -> .104). With no summary to protect, that
+        // button announcement is now the wanted feedback that the window opened.
     }
 
     /// <summary>
@@ -6288,6 +6310,94 @@ public sealed class UIReaderService : IDisposable
             _log.Info($"[Quest] JournalResult Belohnung: {rewardLog}");
         }
         return AccessibilityStrings.RewardPrefix + string.Join(". ", parts);
+    }
+
+    /// <summary>
+    /// Labels the reward CURRENCY cell the focus currently sits on, e.g.
+    /// "Erfahrung 400". Returns "" when the focused number is not one of
+    /// JournalResult's currency cells (then the caller stays silent).
+    ///
+    /// The currency TYPE is only a UI image with no resolvable icon id, so it is
+    /// derived from the cell's POSITION among the currency cells - exactly the
+    /// rule <see cref="BuildRewardText"/> already uses for the summary, walking
+    /// the canvas in the same order (Erfahrung first, then Gil). Reusing that
+    /// one assumption keeps browsing and summary from ever disagreeing.
+    ///
+    /// The cell is identified by the ancestor chain of the focused node; the
+    /// amount text is the fallback for the case that a cell's text nodes do not
+    /// link back up through ParentNode, and it is only trusted when exactly one
+    /// cell shows that amount. Which path resolved it is logged, so the in-game
+    /// test shows whether the fallback is needed at all.
+    /// </summary>
+    private unsafe string DescribeFocusedRewardCurrency(AtkResNode* node, string amount)
+    {
+        var ptr = _gameGui.GetAddonByName("JournalResult");
+        if (ptr.IsNull) return string.Empty;
+        var canvas = FindJournalCanvas((AtkUnitBase*)(nint)ptr);
+        if (canvas == null) return string.Empty;
+
+        var index        = 0;   // position among the currency cells
+        var matchIndex   = -1;  // cell whose amount equals the focused text
+        var matchAmount  = string.Empty;
+        var matchCount   = 0;
+
+        for (var i = 0; i < canvas->UldManager.NodeListCount; i++)
+        {
+            var cell = canvas->UldManager.NodeList[i];
+            if (cell == null || !cell->IsVisible() || (int)cell->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)cell)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Multipurpose) continue;
+
+            // Item slots carry a resolvable icon - those are read elsewhere.
+            var icon = FindSlotIcon(comp);
+            if (icon != null && icon->IconId != 0) continue;
+
+            var cellAmount = FindNumericText(comp, 0);
+            if (cellAmount.Length == 0) continue;
+
+            if (IsDescendantOf(node, cell))
+            {
+                _log.Info($"[Quest] Belohnungs-Waehrung {index} (Baum): {cellAmount}");
+                return LabelCurrency(index, cellAmount);
+            }
+
+            if (cellAmount == amount)
+            {
+                matchIndex  = index;
+                matchAmount = cellAmount;
+                matchCount++;
+            }
+            index++;
+        }
+
+        if (matchCount == 1)
+        {
+            _log.Info($"[Quest] Belohnungs-Waehrung {matchIndex} (Betrag): {matchAmount}");
+            return LabelCurrency(matchIndex, matchAmount);
+        }
+
+        _log.Info($"[Quest] Belohnungs-Waehrung nicht zugeordnet: Text='{amount}', " +
+                  $"Zellen={index}, Betrags-Treffer={matchCount}");
+        return string.Empty;
+    }
+
+    /// <summary>Spoken form of a currency cell: its positional label plus the
+    /// amount, falling back to a neutral wording beyond the known positions.</summary>
+    private static string LabelCurrency(int index, string amount)
+    {
+        var labels = AccessibilityStrings.RewardCurrencyLabels;
+        var label  = index >= 0 && index < labels.Length ? labels[index] : AccessibilityStrings.MoreReward;
+        return $"{label} {amount}";
+    }
+
+    /// <summary>Whether <paramref name="node"/> sits in the subtree of
+    /// <paramref name="ancestor"/> (guarded against cyclic/deep chains).</summary>
+    private static unsafe bool IsDescendantOf(AtkResNode* node, AtkResNode* ancestor)
+    {
+        var guard = 0;
+        for (var cur = node; cur != null && guard++ < 64; cur = cur->ParentNode)
+            if (cur == ancestor) return true;
+        return false;
     }
 
     /// <summary>First visible, purely numeric text (digits plus . , space) in a

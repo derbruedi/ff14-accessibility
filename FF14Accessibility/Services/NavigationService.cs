@@ -36,6 +36,14 @@ internal enum NavCategory
     Waypoints,
 }
 
+/// <summary>A world object picked in the object browser, so walking to it does
+/// not depend on the game accepting it as a target.</summary>
+/// <param name="ObjectId">GameObjectId, to refresh the position before walking.</param>
+/// <param name="Name">Spoken name, for the "walking to X" announcement.</param>
+/// <param name="Position">World position at selection time (fallback once the
+/// object has left the object table, e.g. after a zone reload).</param>
+public sealed record ObjectDestination(ulong ObjectId, string Name, Vector3 Position);
+
 public sealed class NavigationService
 {
     private readonly IClientState _clientState;
@@ -140,11 +148,13 @@ public sealed class NavigationService
         {
             _lastSeenHardTargetId = hardTargetId;
             if (hardTargetId != 0 && hardTargetId != _ownSelectionId
-                && (SelectedQuestDestination != null || SelectedPlaceDestination != null))
+                && (SelectedQuestDestination != null || SelectedPlaceDestination != null
+                    || SelectedObjectDestination != null))
             {
                 _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
                 SelectedQuestDestination = null;
                 SelectedPlaceDestination = null;
+                SelectedObjectDestination = null;
             }
         }
 
@@ -249,6 +259,18 @@ public sealed class NavigationService
     /// </summary>
     public PlaceDestination? SelectedPlaceDestination { get; private set; }
 
+    /// <summary>
+    /// The world object selected via the browser (the plain object categories),
+    /// or null. Kept SEPARATELY from the game target because the browser also
+    /// lists objects the game refuses to target - quest props like the silk
+    /// spools of "Eigensinnige Sylphe" are announced fine, but the hard target
+    /// does not stick, and the auto-walk (which reads the game target) then had
+    /// nothing to walk to (user report 2026-08-02: "Kein Ziel ausgewählt").
+    /// Position is the object's own world position, refreshed by Plugin.cs from
+    /// the object table at key-press time.
+    /// </summary>
+    public ObjectDestination? SelectedObjectDestination { get; private set; }
+
     /// <summary>Search radius for the object browser, in yalms/meters.</summary>
     private const float CycleRange = 100f;
 
@@ -277,6 +299,7 @@ public sealed class NavigationService
         _cycleIndex = -1;
         SelectedQuestDestination = null;
         SelectedPlaceDestination = null;
+        SelectedObjectDestination = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -386,6 +409,11 @@ public sealed class NavigationService
         // Suppress the target-change announcer: we announce with position info here.
         _ownSelectionId = obj.GameObjectId;
         _targetManager.Target = obj;
+
+        // Remember the pick independently of the game target. Objects the game
+        // will not target (quest props) are still listed and announced here, and
+        // walking to them must not depend on a target that does not stick.
+        SelectedObjectDestination = new ObjectDestination(obj.GameObjectId, obj.Name.TextValue, obj.Position);
 
         // Audit probe: the game may REFUSE the change (SetHardTarget returns
         // bool, Dalamud discards it; rejections seen in log 2026-07-10 16:39

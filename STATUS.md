@@ -3,7 +3,60 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02, BELOHNUNGS-BESCHREIBUNG BEIM BLAETTERN, IN-GAME BESTAETIGT, V5.65 RELEASED)
+## STAND JETZT (2026-08-02, BELOHNUNGSFENSTER NUR NOCH BEIM BLAETTERN + OBJEKT-BROWSER LAEUFT ZU NICHT-ZIELBAREN OBJEKTEN, V5.66 RELEASED)
+
+>>> DREI AENDERUNGEN, ALLE NACH V5.65, als V5.66 released. Punkt 1 und 2 sind
+    in-game bestaetigt ("funktioniert"), Punkt 3 faehrt ungetestet mit:
+
+    1. ERFAHRUNG + GIL BEIM BLAETTERN (User-Wunsch, IN-GAME BESTAETIGT "funktioniert").
+       Die Waehrungszellen von JournalResult tragen nur nackte Zahlen ("400"),
+       die der Fokus-Leser pauschal unterdrueckte (Zeile ~1982). Jetzt: bei
+       gehaltener Richtungstaste wird die Zelle benannt statt uebersprungen -
+       neue Methode DescribeFocusedRewardCurrency. Der Typ kommt aus der
+       POSITION unter den Waehrungszellen (Erfahrung, dann Gil) - exakt die
+       Annahme, die BuildRewardText fuer die Zusammenfassung schon nutzt und
+       die in-game bestaetigt ist. Zuordnung Fokus->Zelle primaer ueber die
+       ParentNode-Kette (IsDescendantOf), Betrags-Vergleich als Fallback (nur
+       bei genau einem Treffer); welcher Weg griff, steht im Log
+       ([Quest] Belohnungs-Waehrung N (Baum|Betrag)).
+       GEERBTE GRENZE: gibt eine Quest Gil OHNE Erfahrung, waere das Label
+       falsch. Saubere Quelle waeren die Quest-Sheet-Daten - offen.
+
+    2. KEINE ZUSAMMENFASSUNG MEHR BEIM OEFFNEN (User-Entscheid 2026-08-02:
+       "die belohnungen sollen nur beim durchblaettern vorgelesen werden",
+       Auswahl "gar nichts mehr vorlesen"). OnQuestWindowUpdate steigt fuer
+       JournalResult jetzt frueh aus; BuildRewardText laeuft nur noch fuer
+       seine [Quest]-Logzeile (Diagnose), spricht aber nichts. Der frueher
+       noetige _dialogOpenedAt-Guard ist entfernt: er schuetzte nur die
+       Zusammenfassung vor dem auto-fokussierten "Abschliessen"-Knopf - dessen
+       Ansage ist jetzt die gewollte Rueckmeldung, dass das Fenster offen ist.
+       Kommentare an den Unterdrueckungsstellen entsprechend richtiggestellt
+       (sie begruendeten sich mit der nicht mehr existierenden Zusammenfassung).
+       IN-GAME BESTAETIGT ("ok funktioniert"): beim Oeffnen nur noch der Knopf,
+       alles Weitere per Blaettern.
+
+    3. OBJEKT-BROWSER: HINLAUFEN ZU NICHT-ZIELBAREN OBJEKTEN (User-Meldung:
+       Quest-Faeden sichtbar, aber "kann sie nicht anwaehlen so dass ich
+       hinlaufen kann"; NVDA sagte "Kein Ziel ausgewaehlt"). URSACHE im Code
+       belegt: der Browser filtert NICHT nach IsTargetable (GetObjectsOfKinds,
+       NavigationService ~907) und der Auto-Lauf holt sein Ziel ausschliesslich
+       aus dem Spiel-Ziel (AutoWalkService.Toggle ~224) - bei Objekten wurde
+       keine eigene Position gemerkt (anders als Quest/Wegpunkt/Angelplatz/FATE).
+       FIX: neues Record ObjectDestination + SelectedObjectDestination, in
+       CycleObject gesetzt, bei Kategoriewechsel und bei fremdem Hart-Ziel
+       verworfen ("zuletzt gewaehlt gewinnt"). Plugin.TryResolveMarkerDestination
+       loest sie auf, ABER nur wenn das Objekt NICHT das aktuelle Hart-Ziel ist -
+       so bleibt fuer alles Anvisierbare der alte Pfad mit Live-Nachfuehrung
+       beweglicher Ziele. Haltedistanz = AutoWalkService.StopRange (2,5 m,
+       jetzt public). Gilt automatisch auch fuer Gehhilfe und Routen-Vorschau.
+       NEU AUSSERDEM: /acc objprobe (#if DEBUG) - die Objekt-Sonde war auf
+       Strg+F5 praktisch nicht ausloesbar, weil dort der Menue-Dump zuerst
+       greift und in der freien Welt immer Fenster sichtbar sind (Plugin.cs:992).
+       IN-GAME UNGETESTET (User loeste die Quest anders: es war ein NPC).
+       Ursache "warum haelt das Ziel nicht" damit weiterhin UNBELEGT - die
+       Sonde wuerde IsTargetable der Faeden zeigen.
+
+## VORHERIGER STAND (2026-08-02, BELOHNUNGS-BESCHREIBUNG BEIM BLAETTERN, IN-GAME BESTAETIGT, V5.65 RELEASED)
 
 >>> QUEST-BELOHNUNGEN: BESCHREIBUNG BEIM DURCHBLAETTERN (User-Wunsch 2026-08-02:
     "so wie bei den Skills oder den Items im Inventar, auch wenn es mehrere sind").

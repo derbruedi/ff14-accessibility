@@ -19,8 +19,10 @@ namespace FF14Accessibility.Services;
 /// </summary>
 public sealed class AutoWalkService : IDisposable
 {
-    /// <summary>Stop this close to the destination, in yalms/meters (interaction range).</summary>
-    private const float StopRange = 2.5f;
+    /// <summary>Stop this close to the destination, in yalms/meters (interaction range).
+    /// Public so a position-based walk to a browsed object stops as close as the
+    /// walk to a game target would (Plugin.TryResolveMarkerDestination).</summary>
+    public const float StopRange = 2.5f;
 
     private readonly IObjectTable _objectTable;
     private readonly ITargetManager _targetManager;

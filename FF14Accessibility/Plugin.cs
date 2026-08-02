@@ -66,8 +66,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.65";
-    private const string PluginVersionTag = "Quest-Belohnungen: Beschreibung beim Durchblaettern der Belohnungsfelder (Dwell wie im Inventar)";
+    private const string PluginVersion    = "5.66";
+    private const string PluginVersionTag = "Belohnungsfenster nur noch beim Durchblaettern (inkl. Erfahrung + Gil), Objekt-Browser laeuft auch zu nicht anvisierbaren Objekten";
 
     public Plugin()
     {
@@ -310,6 +310,14 @@ public sealed class Plugin : IDalamudPlugin
             case "soundtest":
                 SoundTest();
                 break;
+#if DEBUG
+            // Objekt-Sonde per Befehl: auf Strg+F5 kommt sie nur ans Ruder, wenn
+            // KEIN Fenster offen ist (der Menü-Dump gewinnt dort) - in der freien
+            // Welt mit sichtbaren HUD-Addons war sie praktisch nicht auslösbar.
+            case "objprobe":
+                _navigation.DumpNearbyObjects();
+                break;
+#endif
             case "cooldowns":
             case "cd":
                 ToggleSkillReady();
@@ -1171,6 +1179,30 @@ public sealed class Plugin : IDalamudPlugin
             stopRange = place.IsZoneTransition
                 ? _config.AutoWalkTransitionStopRange
                 : _config.AutoWalkPlaceStopRange;
+            return MarkerResolve.Resolved;
+        }
+
+        var obj = _navigation.SelectedObjectDestination;
+        if (obj != null)
+        {
+            // The game took the pick as its hard target: leave it to the target
+            // path, which re-reads the position every frame - that is what makes
+            // walking to a moving NPC work. Only when the target did NOT stick
+            // (quest props are listed but not targetable) do we steer by
+            // position, which is the whole point of remembering the object.
+            if ((TargetManager.Target?.GameObjectId ?? 0) == obj.ObjectId) return MarkerResolve.None;
+
+            // Fresh position from the object table; the remembered one is the
+            // fallback for an object that has since despawned.
+            var live = ObjectTable.FirstOrDefault(o => o.GameObjectId == obj.ObjectId);
+            var raw  = live?.Position ?? obj.Position;
+            position = _autoWalk.ResolveFloorPoint(raw) ?? raw;
+            name = string.IsNullOrWhiteSpace(obj.Name) ? AccessibilityStrings.Unnamed : obj.Name;
+            // Interaction range, same as the auto-walk to a game target: the
+            // player has to end up close enough to actually use the object.
+            stopRange = AutoWalkService.StopRange;
+            Log.Info($"[Nav] Objekt-Auswahl '{name}' (id={obj.ObjectId:X}) nicht anvisiert - " +
+                     $"laufe zur Position {position} (Objekt {(live != null ? "da" : "weg")}).");
             return MarkerResolve.Resolved;
         }
 
