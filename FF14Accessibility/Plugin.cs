@@ -66,8 +66,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.64";
-    private const string PluginVersionTag = "Quest-Belohnung mit mehreren festen Items: Stufe/Tragbarkeit bei Ruestungsteilen + Blaettern durch Belohnungsfelder bei gehaltener Richtungstaste";
+    private const string PluginVersion    = "5.65";
+    private const string PluginVersionTag = "Quest-Belohnungen: Beschreibung beim Durchblaettern der Belohnungsfelder (Dwell wie im Inventar)";
 
     public Plugin()
     {

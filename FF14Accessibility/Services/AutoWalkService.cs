@@ -675,6 +675,24 @@ public sealed class AutoWalkService : IDisposable
                 var distNext = remaining > 0 ? Vector3.Distance(p, next) : -1f;
                 _log.Info($"[NavDiag] pos=({p.X:F1}|{p.Y:F1}|{p.Z:F1}) distZiel={distance:F1} " +
                           $"restWp={remaining} nextWp=({next.X:F1}|{next.Y:F1}|{next.Z:F1}) distNextWp={distNext:F1}");
+#if DEBUG
+                // Direction probe (2026-08-01, user report "left is right"):
+                // vnavmesh is actively steering the character towards nextWp, so
+                // its own heading must read "straight ahead" there. That makes
+                // this line ground truth for the direction formula - no game
+                // target, no turning, and no judgement about one's own facing
+                // needed. angleZiel is the straight line to the destination and
+                // may legitimately differ around corners.
+                if (remaining > 0)
+                {
+                    var angleWp = NavigationService.RelativeAngle(player, next);
+                    var angleDest = NavigationService.RelativeAngle(player, _destPosition);
+                    _log.Info($"[NavDirProbe] auto-walk: rot={player.Rotation:F3} " +
+                              $"dxWp={next.X - p.X:F2} dzWp={next.Z - p.Z:F2} " +
+                              $"angleWp={angleWp:F1} wortWp='{AccessibilityStrings.RelativeDirection(angleWp)}' " +
+                              $"angleZiel={angleDest:F1} wortZiel='{AccessibilityStrings.RelativeDirection(angleDest)}'");
+                }
+#endif
             }
         }
         catch (Exception ex)

@@ -1738,6 +1738,14 @@ public sealed class UIReaderService : IDisposable
     private long _itemDwellTick;          // Stopwatch timestamp the focus reached it
     private bool _itemDwellDescSpoken;    // description already queued for this dwell?
 
+    // Was the focused item's NAME actually spoken? A description must never
+    // arrive on its own: the quest-reward window suppresses the name while the
+    // game auto-cycles focus across its slots (see UpdateGlobalFocus), and a
+    // description under that silence would be an announcement without a subject.
+    // Latched at the moment the name is spoken - a frame flag would not survive,
+    // because the dwell fires ~0.4 s later, long after a tapped key was released.
+    private bool _itemDwellArmed;
+
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
         FlushPendingRaceDescription();
@@ -1904,12 +1912,18 @@ public sealed class UIReaderService : IDisposable
         // after the name was spoken, add the tooltip text once the focus has
         // dwelled on the item briefly. Only when the item name is what actually
         // got announced - a specialized reader (skill/mount/gathering) winning the
-        // announcement must not trigger an item description underneath it.
-        HandleItemDescriptionDwell(itemBranchActive);
+        // announcement must not trigger an item description underneath it, and
+        // _itemDwellArmed additionally requires that the name was not swallowed by
+        // one of the suppressions further down (quest-reward auto-cycling).
+        HandleItemDescriptionDwell(itemBranchActive && _itemDwellArmed);
 
         if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
         _lastFocusedNodePtr  = (nint)node;
         _lastFocusedNodeText = text;
+        // Real focus change: the new item counts as unannounced until the speak
+        // below is actually reached (every return between here and there is a
+        // suppression, and a suppressed name must not get a description).
+        _itemDwellArmed = false;
         // Addon name on EVERY focus line: the user's report is that the same menu
         // reads out sometimes and stays silent other times. Without the window in
         // the successful lines too, the working and failing cases cannot be
@@ -2007,6 +2021,8 @@ public sealed class UIReaderService : IDisposable
             // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
             // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
+            // The name is going out now, so the description dwell may follow it.
+            _itemDwellArmed = itemBranchActive;
             _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
         }
     }
@@ -2720,13 +2736,22 @@ public sealed class UIReaderService : IDisposable
     /// never reach the dwell threshold and hear names only.
     ///
     /// Keyed by Item id (not node pointer), so sliding between two stacks of the
-    /// same item does not re-read the text. JournalResult is excluded because its
-    /// reward reader already speaks the description in full when the window opens.
+    /// same item does not re-read the text.
+    ///
+    /// Quest rewards (JournalResult and the optional-choice grid JournalRewardItem)
+    /// go through here too (user request 2026-08-02: browsing the rewards must read
+    /// the description like the bag and the skill list do). They used to be excluded
+    /// because the window's own reward summary already speaks every description when
+    /// it opens - but that summary is a one-off, while walking the slots afterwards
+    /// left the player with bare names. The double-reading that exclusion prevented
+    /// is now handled precisely by the caller: the dwell is only armed when the slot
+    /// name was really announced, so the game's ~1 s focus oscillation - which stays
+    /// silent - produces no descriptions either.
     /// </summary>
     private void HandleItemDescriptionDwell(bool itemFocusActive)
     {
         var id = _lastFocusedItemId;
-        if (!itemFocusActive || id == 0 || IsAddonVisible("JournalResult"))
+        if (!itemFocusActive || id == 0)
         {
             _itemDwellId = 0;
             return;

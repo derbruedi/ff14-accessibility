@@ -3,7 +3,77 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-01, QUEST-BELOHNUNG BESTAETIGT, ZWEI PUNKTE NOCH OFFEN)
+## STAND JETZT (2026-08-02, BELOHNUNGS-BESCHREIBUNG BEIM BLAETTERN, IN-GAME BESTAETIGT, V5.65 RELEASED)
+
+>>> QUEST-BELOHNUNGEN: BESCHREIBUNG BEIM DURCHBLAETTERN (User-Wunsch 2026-08-02:
+    "so wie bei den Skills oder den Items im Inventar, auch wenn es mehrere sind").
+    Bisher: beim Blaettern kam nur Name (+Stufe/Tragbarkeit) - die Beschreibung
+    gab es nur einmal in der Zusammenfassung beim Oeffnen (BuildRewardText).
+    URSACHE: HandleItemDescriptionDwell (das Dwell-Muster von Inventar/Skills:
+    Name sofort, Beschreibung nach 0,4 s Verweilen) hatte JournalResult per
+    `IsAddonVisible("JournalResult")` pauschal ausgeschlossen.
+    FIX (UIReaderService):
+    - Ausschluss entfernt -> Belohnungs-Slots (JournalResult) UND das
+      Auswahlgitter (JournalRewardItem) durchlaufen jetzt denselben Dwell wie
+      Inventar/Skills; Item-Id kommt aus ResolveFocusedItemName (setzt
+      _lastFocusedItemId auch fuer Belohnungs-Slots), Text aus
+      InventoryService.ResolveItemDescription.
+    - NEU `_itemDwellArmed`: die Beschreibung kommt nur, wenn der NAME auch
+      wirklich gesprochen wurde. Bei jedem echten Fokuswechsel false, direkt vor
+      dem SpeakInterrupt auf itemBranchActive gesetzt. Damit erzeugt das ~1 s
+      Fokus-Oszillieren des Spiels (bewusst stumm, kein navKeyHeld) auch keine
+      Beschreibungen - genau die Doppelansage, die der alte Pauschal-Ausschluss
+      verhindern sollte, ist praeziser abgefangen. Ein Frame-Flag haette nicht
+      gereicht: der Dwell feuert 0,4 s spaeter, da ist eine getippte Taste laengst
+      losgelassen.
+    - Latch gilt fuer ALLE Item-Slots (auch Beutel/Laden): dort wurde der Name
+      ohnehin immer gesprochen, Verhalten unveraendert.
+    Build 0/0. IM SPIEL BESTAETIGT (User 2026-08-02: "das mit den Belohnungen
+    funktioniert") -> als V5.65 released (Version-Bump an allen 3 Stellen,
+    4 Assets am GitHub-Release, Installer unveraendert wiederverwendet).
+    GRENZE (bekannt, keine Regression): Lumina Item.Description ist bei RUESTUNG
+    meist leer - dort bleibt es bei "Name, Stufe X, tragbar" ohne Zusatztext,
+    genau wie im Inventar.
+
+## VORHERIGER STAND (2026-08-01, RICHTUNGS-SONDE UMGEBAUT, TEST OFFEN)
+
+>>> RICHTUNGS-TEST OHNE GEGNER moeglich gemacht (User-Wunsch: "kann man das
+    anders testen?"). Die alte [NavDirProbe]-Sonde sass NUR in
+    NavigationService.AnnounceDirection (/acc nav) und brauchte damit ein
+    Tab-Ziel + /acc set. Zwei Umbauten, beide #if DEBUG:
+    a) Sonde von AnnounceDirection nach CalculateDirection verschoben (mit
+       [CallerMemberName] caller). Damit protokolliert JEDE Richtungsansage,
+       die dieselbe Formel benutzt: Objekt-Browser (CycleObject), Quest-Ziele
+       (CycleQuestDestination), Zielwechsel-Ansage und /acc nav. Kein Gegner,
+       kein /acc set noetig.
+    b) NEUE Ground-Truth-Sonde im Auto-Lauf (AutoWalkService.Update, im
+       bestehenden 1-Sekunden-[NavDiag]-Block): loggt rot, dx/dz zum NAECHSTEN
+       vnavmesh-Wegpunkt, angleWp+wortWp sowie angleZiel+wortZiel. Logik:
+       vnavmesh steuert die Figur aktiv auf nextWp zu, also MUSS wortWp
+       'geradeaus' lauten. Sagt es 'hinten', ist die Formel um 180 Grad
+       verdreht - beweisbar ohne Drehtaste und ohne dass der User seine eigene
+       Blickrichtung einschaetzen muss. angleZiel darf um Ecken abweichen
+       (Luftlinie), das ist kein Fehler.
+    Build 0/0 (Debug), nach devPlugins deployt. NICHTS committed, NICHTS
+    released - reine Debug-Sonden (kompilieren in Release nicht mit).
+    OFFEN (User testet): Objekt-Browser -> beliebiges Ziel (NPC/Aetheryt/
+    Sammelpunkt) -> Numpad3 Auto-Lauf -> ein paar Sekunden laufen lassen.
+    Danach dalamud.log auf [NavDirProbe] auswerten. Erst NACH diesem Beweis an
+    der Formel selbst etwas aendern (sie war 2026-07-10 per Beacon-Hoertest
+    verifiziert).
+
+## VORHERIGER STAND (2026-08-01, v5.64 OEFFENTLICH RELEASED)
+
+>>> RELEASE v5.64 (2026-08-01): Quest-Belohnung mit mehreren festen Items (User-
+    bestaetigt "geht erstmal"). Versions-Sync 5.64 (csproj/Plugin.cs/repo.json),
+    Commit 10e30ad auf main gepusht, 4 Assets released (latest.zip +
+    versionierte Kopie neu; Installer-exe + installer.json unveraendert aus
+    v5.63 uebernommen, SHA verifiziert MATCH). `gh release list` zeigt v5.64 =
+    Latest, latest.zip-Weiterleitung liefert die neue Datei (603477 Bytes).
+    Enthaelt nebenbei die #if DEBUG [NavDirProbe]-Sonde fuer Punkt 1 (kompiliert
+    in Release NICHT mit rein, kein Verhaltens-Risiko).
+
+## VORHERIGER STAND (2026-08-01, QUEST-BELOHNUNG BESTAETIGT, ZWEI PUNKTE NOCH OFFEN)
 
 >>> Session 2026-08-01, drei Baustellen parallel angefasst. Punkt 3 (Quest-
     Belohnung) vom User als funktionierend bestaetigt ("geht erstmal"), Punkte 1+2

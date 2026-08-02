@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -1662,13 +1663,6 @@ public sealed class NavigationService
         var direction = CalculateDirection(player, targetPos);
         var distanceText = FormatDistance(distance);
 
-#if DEBUG
-        var dx = targetPos.X - playerPos.X;
-        var dz = targetPos.Z - playerPos.Z;
-        _log.Info($"[NavDirProbe] rot={player.Rotation:F3} dx={dx:F2} dz={dz:F2} " +
-                   $"angle={RelativeAngle(player, targetPos):F1} word='{direction}'");
-#endif
-
         // _trackedName is set in lockstep with _trackedObject (checked non-null above).
         _tolk.SpeakInterrupt(AccessibilityStrings.TargetDirection(_trackedName!, distanceText, direction));
     }
@@ -1702,8 +1696,26 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(AccessibilityStrings.NearbyList(string.Join(", ", parts)));
     }
 
-    private string CalculateDirection(IGameObject player, Vector3 targetPos) =>
-        DirectionText(RelativeAngle(player, targetPos));
+    /// <summary>
+    /// Direction word from the player's heading to <paramref name="targetPos"/>.
+    /// <paramref name="caller"/> is filled in by the compiler and only used by
+    /// the debug probe, so every direction announcement (object browser, quest
+    /// goals, target change, /acc nav) can be traced back to its source in the
+    /// log without a game target being required.
+    /// </summary>
+    private string CalculateDirection(IGameObject player, Vector3 targetPos,
+                                      [CallerMemberName] string caller = "")
+    {
+        var angle = RelativeAngle(player, targetPos);
+        var word = DirectionText(angle);
+#if DEBUG
+        var dx = targetPos.X - player.Position.X;
+        var dz = targetPos.Z - player.Position.Z;
+        _log.Info($"[NavDirProbe] {caller}: rot={player.Rotation:F3} dx={dx:F2} dz={dz:F2} " +
+                  $"angle={angle:F1} wort='{word}'");
+#endif
+        return word;
+    }
 
     // Relativer Winkel Spieler-Blickrichtung -> Ziel: 0° = geradeaus,
     // positiv = rechts. Rotations-Konvention VERIFIZIERT aus Live-Log
