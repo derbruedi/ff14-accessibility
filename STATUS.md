@@ -3,7 +3,23 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02 SPAETABENDS, V5.70 GEBAUT, NICHT RELEASED, NICHT GETESTET)
+## STAND JETZT (2026-08-02 SPAETABENDS, V5.70 RELEASED)
+
+>>> RELEASE v5.70 IST DRAUSSEN (Commit dd24a14, Tag v5.70).
+    Versions-Sync war noetig: csproj + repo.json standen noch auf 5.67,
+    Plugin.cs schon auf 5.70 (der uebliche Drift - Plugin.cs wird pro Feature
+    gebumpt, die anderen beiden nur beim Release).
+    VERIFIZIERT, nicht nur behauptet: v5.70 ist "Latest"; alle 4 Assets
+    hochgeladen; der Download ueber releases/latest/download/latest.zip
+    liefert 612.987 Bytes mit Manifest 5.70.0.0 und DLL-Dateiversion
+    5.70.0.0; repo.json auf main traegt 5.70.0.0.
+    Installer unveraendert -> exe + installer.json aus v5.67 uebernommen,
+    SHA256 gegengeprueft (5787445B...CAD49 stimmt) - der Update-Pfad fuer
+    Nutzer mit aelterem Installer bleibt intakt.
+    ACHTUNG: Ausruestungs-Werte und der unbegrenzte Nachlese-Puffer sind
+    UNGETESTET released (User wollte den Release, Hinweis war gegeben).
+
+## VORHERIGE NOTIZ (Bauzustand V5.70)
 
 >>> AUSRUESTUNGS-WERTE HINTER DER BESCHREIBUNG (User-Wunsch: "damit man weiss
     welches Teil evtl. besser ist"). Gebaut, IN-GAME UNGETESTET.
