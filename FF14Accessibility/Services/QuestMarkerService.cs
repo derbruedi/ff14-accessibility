@@ -266,6 +266,55 @@ public sealed class QuestMarkerService
     /// marker is taken by value (144 bytes) so both callers can pass their loop
     /// variable regardless of ref-ness.
     /// </summary>
+    /// <summary>
+    /// DataIds of the objects the CURRENT quest markers point at - both accepted
+    /// quests and acceptable ones. Every marker location carries the data-sheet id
+    /// of its target object (MapMarkerData.DataId @68, ilspycmd-verified
+    /// 2026-08-02), and that is the SAME id the object browser already sees on its
+    /// entries (IGameObject.BaseId). Matching on it gives the browser its
+    /// quest-only categories from the game's own data: no icon table to interpret,
+    /// no "close to a marker" distance guess.
+    ///
+    /// Only markers in the CURRENT zone count - an id from another zone could
+    /// otherwise flag a same-model NPC standing right next to the player. DataId 0
+    /// is skipped: those are pure position markers ("go to this area") with no
+    /// object behind them.
+    /// </summary>
+    public unsafe HashSet<uint> GetQuestObjectDataIds()
+    {
+        var ids = new HashSet<uint>();
+        var map = Map.Instance();
+        if (map == null)
+        {
+            _log.Warning("[Quest] Map.Instance() ist null - keine Quest-Objekt-Ids lesbar.");
+            return ids;
+        }
+
+        var currentTerritory = _clientState.TerritoryType;
+        foreach (ref var marker in map->QuestMarkers)
+            CollectMarkerDataIds(ids, marker, currentTerritory);
+        foreach (var marker in map->UnacceptedQuestMarkers)
+            CollectMarkerDataIds(ids, marker, currentTerritory);
+
+        return ids;
+    }
+
+    /// <summary>Adds one marker's target DataIds to <paramref name="ids"/>.</summary>
+    private unsafe void CollectMarkerDataIds(HashSet<uint> ids, MarkerInfo marker, uint currentTerritory)
+    {
+        if (string.IsNullOrWhiteSpace(marker.Label.ToString())) return; // empty slot
+
+        var locations = marker.MarkerData.Count;
+        if (locations is < 0 or > 100) return; // same corruption guard as above
+
+        for (var i = 0; i < locations; i++)
+        {
+            var data = marker.MarkerData[i];
+            if (data.DataId == 0 || data.TerritoryTypeId != currentTerritory) continue;
+            ids.Add(data.DataId);
+        }
+    }
+
     private unsafe void AddMarkerDestinations(
         List<QuestDestination> result, MarkerInfo marker, uint currentTerritory, string tag,
         QuestMarkerRole role = QuestMarkerRole.Quest)

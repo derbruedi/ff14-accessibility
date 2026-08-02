@@ -26,6 +26,9 @@ internal enum NavCategory
     Enemies,
     Players,
     Objects,
+    QuestNpcs,
+    QuestObjects,
+    QuestEnemies,
     GatheringNodes,
     Fates,
     FishingSpots,
@@ -211,6 +214,12 @@ public sealed class NavigationService
         (NavCategory.Enemies,         new[] { ObjectKind.BattleNpc }),
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
         (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        // Quest-only variants of the three categories above (user request
+        // 2026-08-02). Same object kinds, but restricted to what the current
+        // quest markers point at - see IsQuestOnlyCategory / GetCategoryObjects.
+        (NavCategory.QuestNpcs,       new[] { ObjectKind.EventNpc }),
+        (NavCategory.QuestObjects,    new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        (NavCategory.QuestEnemies,    new[] { ObjectKind.BattleNpc }),
         (NavCategory.GatheringNodes,  new[] { ObjectKind.GatheringPoint }),
         // FATEs kommen aus dem FateManager (FateService), nicht aus der ObjectTable:
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
@@ -946,10 +955,18 @@ public sealed class NavigationService
     /// name, DataId, distance and world position. Used to find out how the game
     /// represents things that are audible but not in the browser list, e.g. the
     /// humming quest-battle circle / duty-entrance portal at Quiverons Pfarrhaus.
-    /// Bound to the UI-dump key (Strg+F5). Announces the count so the blind user
-    /// knows the dump ran; the detail goes to the log ([ObjProbe]).
+    /// Bound to the UI-dump key (Strg+F5) and to /acc objprobe. Announces the
+    /// count so the blind user knows the dump ran; the detail goes to the log
+    /// ([ObjProbe]).
+    ///
+    /// Also logs NamePlateIconId and EventId per object. That is the groundwork
+    /// for the requested "quest targets only" filter (user 2026-08-02): the
+    /// nameplate icon is exactly the marker a SIGHTED player sees floating above
+    /// a quest giver, so filtering by it gives the same information rather than a
+    /// reconstruction. Which icon number means what is undocumented - this probe
+    /// is how it gets measured instead of guessed.
     /// </summary>
-    public void DumpNearbyObjects()
+    public unsafe void DumpNearbyObjects()
     {
         var player = _objectTable.LocalPlayer;
         if (player == null)
@@ -969,9 +986,15 @@ public sealed class NavigationService
         {
             var name = string.IsNullOrWhiteSpace(o.Name.TextValue) ? "<leer>" : o.Name.TextValue;
             var dist = Vector3.Distance(player.Position, o.Position);
+            // Nameplate icon + event id straight from the game struct
+            // (GameObject.NamePlateIconId @272, EventId @244 - ilspycmd 2026-08-02).
+            var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)o.Address;
+            var icon   = native != null ? native->NamePlateIconId : 0;
+            var evt    = native != null ? native->EventId.Id : 0;
             _log.Info(
                 $"[ObjProbe] {dist,6:0.0}m {o.ObjectKind,-14} " +
                 $"DataId={o.BaseId} name='{name}' zielbar={o.IsTargetable} " +
+                $"icon={icon} event={evt} " +
                 $"pos={o.Position} id={o.GameObjectId:X}");
         }
 
@@ -1112,8 +1135,26 @@ public sealed class NavigationService
     private List<IGameObject> GetCategoryObjects()
     {
         var kinds = Categories[_categoryIndex].Kinds;
-        return kinds == null ? new List<IGameObject>() : GetObjectsOfKinds(kinds);
+        if (kinds == null) return new List<IGameObject>();
+
+        var objects = GetObjectsOfKinds(kinds);
+        if (!IsQuestOnlyCategory) return objects;
+
+        // Quest-only category: keep what the current quest markers point at. The
+        // marker's DataId and the object's BaseId are the same data-sheet id, so
+        // this is the game's own link between "there is a quest here" and the
+        // object standing in front of the player - not a guess from icons or
+        // distances.
+        var questIds = _questMarkers.GetQuestObjectDataIds();
+        var filtered = objects.Where(o => questIds.Contains(o.BaseId)).ToList();
+        _log.Info($"[Nav] {CurrentCategoryLabel}: {filtered.Count} von {objects.Count} Objekten " +
+                  $"tragen eine Quest-DataId ({questIds.Count} Ids aus Markern).");
+        return filtered;
     }
+
+    /// <summary>Whether the current category shows only quest-related objects.</summary>
+    private bool IsQuestOnlyCategory => Categories[_categoryIndex].Cat
+        is NavCategory.QuestNpcs or NavCategory.QuestObjects or NavCategory.QuestEnemies;
 
     // ── Gehhilfe: manuell laufen, geführt von Beacon + Ansagen ──
     // Seit V4.63 pfadbasiert: Beacon und Richtungsansagen verfolgen den

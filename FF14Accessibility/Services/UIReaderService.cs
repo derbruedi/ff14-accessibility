@@ -549,6 +549,19 @@ public sealed class UIReaderService : IDisposable
         _noListCache.Add(name);
         ScanAddonTexts(name, addon, isInit: true);
         var text = ReadAllTexts(addon);
+        // Config panels are FORMS, not text pages. Reading every label at once
+        // ("Chatfilter. Textfarbe im Chatlog. Zeitanzeige. 12 ...") gives a blind
+        // player a block they can neither navigate nor act on, and the category
+        // name was just announced by the tab focus in ConfigCharacter. These
+        // panels are meant to be read control by control (TryReadConfigFocusRow),
+        // so the window title further up is all that goes out here. Only the
+        // OPENING readout is skipped - the text cache above is still initialised,
+        // so change detection in PostUpdate keeps working.
+        if (name.StartsWith("Config", StringComparison.Ordinal))
+        {
+            _log.Info($"[Accessibility] {name}: Formular-Fenster, keine Sammel-Ansage beim Oeffnen.");
+            return;
+        }
         if (!string.IsNullOrWhiteSpace(text))
         {
             _tolk.Speak(text);
@@ -2582,7 +2595,27 @@ public sealed class UIReaderService : IDisposable
     private unsafe bool TryReadConfigFocusRow(AtkResNode* node, out string text)
     {
         text = string.Empty;
-        if (!FindAddonNameForNode(node).StartsWith("Config", StringComparison.Ordinal)) return false;
+        var addonName = FindAddonNameForNode(node);
+        if (!addonName.StartsWith("Config", StringComparison.Ordinal)) return false;
+
+        // Sliders and drop-downs have to be recognised from the TOP-LEVEL control,
+        // never from the nearest component: a drop-down's display field is itself
+        // a CheckBox component (dump 2026-08-02: DropDownList id=14 holds a
+        // CheckBox whose text is the current value "12"), so the climb below
+        // announced the font-size list as "12, Schalter, aus" - a switch that is
+        // off, which it is not (user test, log 16:35:57). Both types also carry no
+        // text of their own, so the generic reader could only ever produce the bare
+        // number the slider showed ("40").
+        //
+        // Restricted to the ConfigChara* family on purpose: ConfigSystem reads the
+        // same two types through AnnounceConfigGlobalFocus, and letting both speak
+        // would double every announcement there.
+        if (addonName.StartsWith("ConfigChara", StringComparison.Ordinal)
+            && TryReadConfigPanelControl(addonName, node, out var control))
+        {
+            text = control;
+            return true;
+        }
 
         // Climb to the nearest component and remember its node (for the label).
         AtkComponentBase* comp = null;
@@ -2634,6 +2667,94 @@ public sealed class UIReaderService : IDisposable
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Describes a slider or drop-down of a character-configuration PANEL, found
+    /// via the top-level control that owns the focused node ("Transparenz der
+    /// Chat-Eingabe, 40 %" / "Schriftgröße der Chat-Eingabe, Auswahlliste, 12").
+    /// False for every other control, so the caller's checkbox/tab handling and
+    /// the generic reader keep their cases.
+    ///
+    /// Uses the same helpers as the system-configuration reader
+    /// (<see cref="FindTopLevelOwner"/>, <see cref="ReadConfigControlValue"/>,
+    /// slider value/min/max), so both menus describe identical controls alike.
+    /// </summary>
+    private unsafe bool TryReadConfigPanelControl(string addonName, AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+
+        var ptr = _gameGui.GetAddonByName(addonName);
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+
+        var owner = FindTopLevelOwner(addon, node, out var ownerIdx);
+        if (owner == null || (int)owner->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)owner)->Component;
+        if (comp == null) return false;
+
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.Slider:
+            {
+                // AtkComponentSlider.Value/MinValue/MaxValue (ilspycmd-verified
+                // 2026-07-16, same fields the system config uses).
+                var slider = (AtkComponentSlider*)comp;
+                var value  = slider->Value.ToString();
+                var label  = NearestPanelLabel(addon, ownerIdx);
+                text = slider->MinValue == 0 && slider->MaxValue == 100
+                    ? AccessibilityStrings.SliderPercent(label, value)
+                    : AccessibilityStrings.SliderDesc(label, value, slider->MinValue, slider->MaxValue);
+                return true;
+            }
+
+            case ComponentType.DropDownList:
+            {
+                var value = ReadConfigControlValue(owner);
+                text = AccessibilityStrings.DropdownDesc(NearestPanelLabel(addon, ownerIdx), value);
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Label of a control in a configuration PANEL: the nearest visible text node
+    /// in the addon's node list, searched FORWARD first.
+    ///
+    /// The direction differs per window family, so it cannot be assumed. In
+    /// ConfigSystem the label precedes its control (verified 2026-07-16, see
+    /// <see cref="NearestPrecedingLabel"/>); in the chat-log panel it FOLLOWS it -
+    /// dump 2026-08-02 has the slider at index 34 with "Transparenz der
+    /// Chat-Eingabe" at 35, and all three drop-downs show the same +1 pattern.
+    /// Forward therefore wins here, with the backward pass kept as a fallback so
+    /// a panel built the other way round still gets a name instead of silence.
+    /// </summary>
+    private unsafe string NearestPanelLabel(AtkUnitBase* addon, int topIdx)
+    {
+        var count = addon->UldManager.NodeListCount;
+        for (var i = topIdx + 1; i < count; i++)
+        {
+            var t = ReadPanelLabelText(addon->UldManager.NodeList[i]);
+            if (t.Length > 0) return t;
+        }
+        for (var i = topIdx - 1; i >= 0; i--)
+        {
+            var t = ReadPanelLabelText(addon->UldManager.NodeList[i]);
+            if (t.Length > 0) return t;
+        }
+        return AccessibilityStrings.NoLabel;
+    }
+
+    /// <summary>Text of a node when it can serve as a control label, else "".
+    /// Single characters and volatile texts (live values) are rejected.</summary>
+    private unsafe string ReadPanelLabelText(AtkResNode* n)
+    {
+        if (n == null || !n->IsVisible() || n->Type != NodeType.Text) return string.Empty;
+        var t = AtkText.Read((AtkTextNode*)n).Trim();
+        return t.Length > 1 && !IsVolatileConfigText(t) ? t : string.Empty;
     }
 
     /// <summary>
@@ -3597,7 +3718,7 @@ public sealed class UIReaderService : IDisposable
             var t = AtkText.Read((AtkTextNode*)n).Trim();
             if (t.Length > 1 && !IsVolatileConfigText(t)) return t;
         }
-        return "Ohne Beschriftung";
+        return AccessibilityStrings.NoLabel;
     }
 
     /// <summary>
@@ -5165,7 +5286,7 @@ public sealed class UIReaderService : IDisposable
     /// (AddonChatLog.TextInput-&gt;IsActive). Used to mute the generic focus
     /// reader while the dedicated echo handles the field.
     /// </summary>
-    private unsafe bool IsChatInputActive()
+    public unsafe bool IsChatInputActive()
     {
         var ptr = _gameGui.GetAddonByName("ChatLog");
         if (ptr.IsNull) return false;
@@ -5201,6 +5322,7 @@ public sealed class UIReaderService : IDisposable
 
         var text    = input->AtkComponentInputBase.EvaluatedString.ToString();
         var channel = ReadChatChannel(addon);
+        ProbeChatChannelId(channel);
 
         if (!_chatInputWasActive)
         {
@@ -5232,6 +5354,38 @@ public sealed class UIReaderService : IDisposable
             _lastChatEcho = text;
             _log.Info($"[Chat] Echo: '{TolkService.Sanitize(text)}'");
         }
+    }
+
+#if DEBUG
+    // Last ChatType value the probe logged, so it writes one line per change.
+    // Inside the same #if as its only user - a release build would otherwise
+    // carry a field nothing reads.
+    private int _lastProbedChatType = int.MinValue;
+#endif
+
+    /// <summary>
+    /// Debug probe: pairs RaptureShellModule.ChatType (the numeric send channel)
+    /// with the channel LABEL the game displays. The int-&gt;channel mapping is
+    /// undocumented, and it is the one thing missing before the mod can switch
+    /// channels itself via ChangeChatChannel (user wish 2026-08-02: write into
+    /// the channel whose history you are reading). Guessing it would mean sending
+    /// a player's message to the wrong channel, so it gets measured instead:
+    /// switch channels a few times with /p, /s, /sh, /fc and every pair lands in
+    /// the log. Called while the chat input is open, where the label is filled.
+    /// </summary>
+    private unsafe void ProbeChatChannelId(string label)
+    {
+#if DEBUG
+        var ui = UIModule.Instance();
+        if (ui == null) return;
+        var shell = ui->GetRaptureShellModule();
+        if (shell == null) return;
+
+        if (shell->ChatType == _lastProbedChatType) return;
+        _lastProbedChatType = shell->ChatType;
+        _log.Info($"[ChatTypeProbe] ChatType={shell->ChatType} Label='{label}' " +
+                  $"TellName='{shell->TellName}' TellWorld='{shell->TellWorld}'");
+#endif
     }
 
     /// <summary>
@@ -7031,6 +7185,17 @@ public sealed class UIReaderService : IDisposable
             if (comp == null) continue;
             if (IsListComponent(comp->GetComponentType()))
                 return (AtkComponentList*)comp;
+            // A DropDownList keeps its options in an inner List component. That
+            // is a collapsed SETTING inside a form, never the window's own menu.
+            // Descending into it made the chat-log config panel announce
+            // "24-Stunden-Format, 2 Einträge" on open (log 2026-08-02 15:35:01,
+            // user: "liest Sachen vor die eigentlich nicht in dem Fenster sein
+            // sollten") and, worse, PushMenu then tracked that one dropdown
+            // instead of the panel's real controls. Verified against the dump
+            // docs/dumps/ConfigCharaChatLogGen_2026-08-02.txt: DropDownList(10)
+            // nodes 33/30/14, each holding a List(9). Only the INNER search is
+            // restricted - a List sitting at top level stays the window list.
+            if (comp->GetComponentType() == ComponentType.DropDownList) continue;
             for (var j = 0; j < comp->UldManager.NodeListCount; j++)
             {
                 var inner = comp->UldManager.NodeList[j];

@@ -267,6 +267,9 @@ public static class AccessibilityStrings
         NavCategory.Enemies          => IsGerman ? "Gegner"            : "Enemies",
         NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
         NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
+        NavCategory.QuestNpcs        => IsGerman ? "Quest-NPCs"        : "Quest NPCs",
+        NavCategory.QuestObjects     => IsGerman ? "Quest-Objekte"     : "Quest objects",
+        NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
         NavCategory.Fates            => "FATEs",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
@@ -635,6 +638,30 @@ public static class AccessibilityStrings
         IsGerman ? $"{label}, {value} %" : $"{label}, {value}%";
     public static string DropdownDesc(string label, string value) =>
         IsGerman ? $"{label}, Auswahlliste, {value}." : $"{label}, dropdown, {value}.";
+    /// <summary>Stand-in when no label text can be found next to a control.</summary>
+    public static string NoLabel => IsGerman ? "Ohne Beschriftung" : "Unlabelled";
+
+    /// <summary>The browsed history category is a real chat channel, but its
+    /// internal number has not been measured yet, so the mod will not switch to
+    /// it rather than risk sending into the wrong channel.</summary>
+    public static string ChannelNotAvailable(string channel) =>
+        IsGerman
+            ? $"Kanal {channel} kann noch nicht gesetzt werden."
+            : $"Channel {channel} cannot be set yet.";
+
+    /// <summary>Browsing the tell history, but no message carries a player the
+    /// mod could answer.</summary>
+    public static string NoTellPartner =>
+        IsGerman
+            ? "Kein Flüster-Partner zum Antworten."
+            : "No tell partner to answer.";
+
+    /// <summary>The game refused the tell target - said out loud, because a
+    /// silent failure would look like the message is on its way.</summary>
+    public static string TellTargetFailed(string target) =>
+        IsGerman
+            ? $"Flüstern an {target} nicht möglich."
+            : $"Cannot set tell target {target}.";
     public static string InputFieldValue(string typed) =>
         typed.Length > 0
             ? (IsGerman ? $"Eingabefeld: {typed}" : $"Input field: {typed}")

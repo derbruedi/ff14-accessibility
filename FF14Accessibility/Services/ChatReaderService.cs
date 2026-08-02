@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 
 namespace FF14Accessibility.Services;
@@ -67,7 +68,12 @@ public sealed class ChatReaderService : IDisposable
         var archived = string.IsNullOrWhiteSpace(archiveName)
             ? messageText
             : $"{archiveName}{addressee}: {messageText}";
-        _history.Add(MapCategory(msg.LogKind), archived);
+        // The tell PARTNER travels with the message as a payload, including the
+        // home world. Keeping it is what lets the player answer from the history
+        // later: typing "Name@Welt" by hand needs a world name a blind player has
+        // no way to look up, and a guessed one gets rejected (user 2026-08-02).
+        // Both directions put the other side in Sender, so both are usable.
+        _history.Add(MapCategory(msg.LogKind), archived, ExtractTellPartner(msg));
 
         // Many toast notifications (_TextError etc.) the UIReader already spoke
         // are mirrored into the chat log as SystemMessage/ErrorMessage a few
@@ -150,6 +156,31 @@ public sealed class ChatReaderService : IDisposable
     {
         var baseKind = (int)type & 0x7F;
         return baseKind is >= CombatBaseMin and <= CombatBaseMax;
+    }
+
+    /// <summary>
+    /// The other side of a tell (name + home world) from the message's own
+    /// PlayerPayload, or null for any other channel. The payload is the game's
+    /// own data, so no name parsing and no world guessing is involved.
+    /// </summary>
+    private TellTarget? ExtractTellPartner(IHandleableChatMessage msg)
+    {
+        if (msg.LogKind is not (XivChatType.TellIncoming or XivChatType.TellOutgoing)) return null;
+        if (msg.Sender == null) return null;
+
+        foreach (var payload in msg.Sender.Payloads)
+        {
+            if (payload is not PlayerPayload player) continue;
+            var world = player.World.ValueNullable?.Name.ExtractText() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(player.PlayerName) || world.Length == 0) continue;
+            _log.Info($"[Chat] Fluester-Partner: '{player.PlayerName}@{world}'");
+            return new TellTarget(player.PlayerName, world);
+        }
+
+        // No payload: happens for lines the game did not tag (e.g. some system
+        // relays). Logged so a missing answer target can be told apart from a bug.
+        _log.Info($"[Chat] Fluester ohne Spieler-Payload: sender='{msg.Sender.TextValue}'");
+        return null;
     }
 
     private static MessageHistoryService.Category MapCategory(XivChatType type) => type switch

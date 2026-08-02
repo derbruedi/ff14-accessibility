@@ -53,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
+    private readonly ChatChannelService  _chatChannel;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly AoeWarningService  _aoeWarn;
@@ -66,8 +67,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.66";
-    private const string PluginVersionTag = "Belohnungsfenster nur noch beim Durchblaettern (inkl. Erfahrung + Gil), Objekt-Browser laeuft auch zu nicht anvisierbaren Objekten";
+    private const string PluginVersion    = "5.67";
+    private const string PluginVersionTag = "Chatlog-Einstellungen lesbar, Chat-Kanal aus der Nachlese per Enter, Fluester-Antwort ohne Weltnamen, Quest-Kategorien im Objekt-Browser";
 
     public Plugin()
     {
@@ -214,6 +215,7 @@ public sealed class Plugin : IDalamudPlugin
         _tooltips   = new TooltipService(Interop, Log);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
+        _chatChannel = new ChatChannelService(_history, _tolk, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, _aoeWarn, Log);
@@ -1083,7 +1085,19 @@ public sealed class Plugin : IDalamudPlugin
             if (right) _uiReader.Navigate(+1, true);
         }
 
-        if (IsJustPressed("Return")) _uiReader.HandleConfirmKey();
+        if (IsJustPressed("Return"))
+        {
+            _uiReader.HandleConfirmKey();
+            // Enter also opens the game's chat line. When the player has just
+            // been browsing the message history, the line should send into THAT
+            // channel - so the switch happens here, BEFORE the game opens the
+            // line, and the existing "Chat-Eingabe, <Kanal>" announcement states
+            // the result instead of a second one competing with it.
+            //
+            // Never while the line is already open: there Enter SENDS, and moving
+            // the channel underneath it would misdeliver the message.
+            if (!_uiReader.IsChatInputActive()) _chatChannel.TrySwitchToBrowsedChannel();
+        }
 
         // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein
         if (GamepadState.Pressed(GamepadButtons.DpadLeft)  > 0) _uiReader.NavigateGamepad(-1);

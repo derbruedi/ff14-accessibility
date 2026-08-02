@@ -3,9 +3,140 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02, NAECHSTE BAUSTELLE: CHATLOG-EINSTELLUNGEN NICHT AUSLESBAR)
+## STAND JETZT (2026-08-02 ABENDS, CHAT-KANAELE + CHATLOG-EINSTELLUNGEN, V5.67 RELEASED)
 
->>> OFFENE BAUSTELLE fuer die naechste Sitzung. NICHTS davon ist gebaut.
+>>> ALLES UNTEN als V5.67 released. A und B in-game bestaetigt; die
+    Quest-Kategorien (unten, eigener Block) fahren UNGETESTET mit.
+
+    NACHTRAG ZU B: `SetContextTellTarget` funktioniert NICHT mit accountId/
+    contentId = 0 - das Spiel lehnte jeden Versuch ab (Log 18:01-18:52
+    "gesetzt: False"). Ersetzt durch `ChangeChatChannel(17, 0, "Name@Welt", true)`;
+    ChatType 17 = Fluestern ist gemessen (Probe 17:47, Label "... zufluestern"
+    mit gefuelltem TellName/TellWorld). In-game bestaetigt.
+    GEMESSENE ChatTypes jetzt: 1 = Sagen, 2 = Gruppe, 6 = Freie Gesellschaft,
+    17 = Fluestern. Weiterhin offen: Rufen, Schreien, Allianz.
+
+    NACHTRAG ZU C: Die Icon-Messung wurde NICHT gebraucht - siehe Quest-
+    Kategorien unten. Die Sonde bleibt trotzdem drin (kostenlos, hilft falls
+    der DataId-Filter jemanden uebersieht).
+
+>>> QUEST-KATEGORIEN GEBAUT (User-Entscheid "eigene Kategorien dazu"),
+    IN-GAME UNGETESTET, mit v5.67 released:
+    Drei neue Kategorien hinter "Objekte": Quest-NPCs, Quest-Objekte,
+    Quest-Gegner (NavCategory + Categories-Tabelle + bilinguale Labels).
+    MECHANIK - WICHTIG, ERSPART RATEREI: `MapMarkerData.DataId` (@68,
+    ilspycmd 2026-08-02) traegt die Datensatz-Id des Objekts, auf das ein
+    Quest-Marker zeigt - dieselbe Id wie `IGameObject.BaseId` im Browser.
+    Neue Methode `QuestMarkerService.GetQuestObjectDataIds()` sammelt sie aus
+    QuestMarkers + UnacceptedQuestMarkers; `GetCategoryObjects` filtert danach.
+    KEINE Icon-Tabelle, KEINE Abstands-Heuristik noetig.
+    Grenzen bewusst: nur Marker der AKTUELLEN Zone (sonst markiert eine Id aus
+    einer anderen Zone einen gleich aussehenden NPC nebenan), DataId 0 wird
+    uebersprungen (reine Ortsmarker ohne Objekt).
+    OFFEN in-game: zeigt "Quest-NPCs" wirklich die richtigen? Log-Zeile
+    "[Nav] Quest-NPCs: X von Y Objekten tragen eine Quest-DataId" zeigt sofort,
+    ob der Filter zu streng oder zu locker ist.
+    USER-HINWEIS, DER ZEIT SPARTE: "du solltest eigentlich schon wissen wie das
+    aussehen muss, in den normalen Kategorien ist es ja schon drin" - richtig,
+    QuestMarkerService las die Marker laengst, nur die DataId wurde nie
+    ausgewertet. ERST PRUEFEN WAS DA IST (zweites Mal an einem Tag).
+
+    A) IN NACHLESE-KANAL SCHREIBEN (User-Wunsch, IN-GAME BESTAETIGT "das
+       funktioniert"). Stehst du in der Nachlese auf einer Kategorie und
+       druECKST ENTER, setzt das Plugin vorher den Sende-Kanal. Neue Datei
+       `ChatChannelService.cs`. Bestaetigung ist die vorhandene Ansage
+       "Chat-Eingabe, <Kanal>" - bewusst KEINE zweite Ansage.
+       Drei Sicherungen: (1) nur 30 s nach der letzten Nachlese-Aktion
+       (MessageHistoryService.LastActivity), (2) NIE bei offener Eingabezeile
+       (dort sendet Enter - Kanalwechsel wuerde die Nachricht fehlleiten),
+       (3) nur GEMESSENE Kanaele.
+       KANAL-ZUORDNUNG GEMESSEN (Sonde [ChatTypeProbe], Log 17:22-17:23):
+       ChatType 1 = Sagen, 2 = Gruppe, 6 = Freie Gesellschaft.
+       NOCH NICHT GEMESSEN: Rufen, Schreien, Allianz, Fluestern -> dort sagt
+       das Plugin "Kanal X kann noch nicht gesetzt werden" statt zu raten.
+       Nachtragen NUR aus Sondendaten (User schaltet mit /sh, /y, /t durch).
+
+    B) FLUESTER-ANTWORT AUS DEM PUFFER (gebaut, IN-GAME UNGETESTET).
+       Anlass: /t braucht zwingend "Name@Welt", und der Weltname ist genau das,
+       was ein blinder Spieler nirgends nachschlagen kann (User scheiterte
+       17:40-17:44, "Shiva" war falsch geraten - aus einer Listenspalte).
+       LOESUNG: Der Nachlese-Puffer speichert bei Fluestern jetzt den PARTNER
+       (Record `TellTarget(Name, World)`) aus dem PlayerPayload der Nachricht -
+       Spiel-eigene Daten, kein Namens-Parsing. Gilt fuer beide Richtungen
+       (bei TellOutgoing steht die Gegenseite ebenfalls in Sender).
+       Bedienung: Alt+Bild auf "Fluestern", ggf. mit Umschalt+Bild zur richtigen
+       Nachricht blaettern, Enter -> `SetContextTellTarget(name, world, 0,0,0,0,
+       true)`. accountId/contentId/reason sind 0 (Chat-Payload traegt keine Ids);
+       der Rueckgabewert wird GEPRUEFT und bei false angesagt, damit ein
+       stiller Fehlschlag nicht wie ein gesetztes Ziel wirkt.
+       Buffer-Umbau: `List<string>` -> `List<Entry(Text, Partner)>`,
+       neue Eigenschaft `CurrentTellPartner` (sucht ab Cursor rueckwaerts den
+       naechsten Eintrag MIT Partner).
+       OFFEN in-game: Fluestern empfangen -> Kategorie Fluestern -> Enter ->
+       geht die naechste Zeile an die Person?
+
+    C) OBJEKT-SONDE ERWEITERT (Vorarbeit fuer die naechste Baustelle):
+       `DumpNearbyObjects` loggt jetzt zusaetzlich `NamePlateIconId` (@272) und
+       `EventId` (@244), beide ilspycmd-verifiziert 2026-08-02.
+
+>>> NAECHSTE BAUSTELLE: QUEST-KATEGORIEN IM OBJEKT-BROWSER (User-Wunsch,
+    Bedienform ENTSCHIEDEN: "eigene Kategorien dazu", also drei neue -
+    Quest-NPCs, Quest-Objekte, Quest-Gegner; NICHT als Filter-Umschalter).
+    ANSATZ: `GameObject.NamePlateIconId` ist genau das Symbol, das ein SEHENDER
+    Spieler ueber dem Kopf sieht - Filtern danach gibt dieselbe Information
+    statt einer Rekonstruktion. Welche Icon-Nummer was bedeutet, ist NICHT
+    dokumentiert und wird gemessen, NICHT geraten.
+    FEHLT NOCH: zwei Messungen per `/acc objprobe` - einmal bei einem NPC mit
+    verfuegbarer Quest (Ausrufezeichen), einmal an einem aktiven Quest-Ziel.
+    Danach: Icon-Werte in eine Tabelle, drei Kategorien in `Categories`
+    (NavigationService) ergaenzen, Labels bilingual in AccessibilityStrings.
+
+## VORHERIGER STAND (2026-08-02, CHATLOG-EINSTELLUNGEN GELOEST + IN-GAME BESTAETIGT, NOCH NICHT RELEASED)
+
+>>> CHATLOG-EINSTELLUNGEN SIND FERTIG. Alle drei Befunde unten abgearbeitet,
+    User: "das von vorhin funktioniert". Gebaut 0/0 Debug, deployt, NICHT
+    committed, NICHT released (naechster Release-Kandidat).
+
+    FIX 1 - Dropdown-Fehlfund: `FindListInAddon` (~7018) ueberspringt in der
+    INNEREN Schleife jetzt Komponenten vom Typ DropDownList. Die falsche Ansage
+    "24-Stunden-Format, 2 Eintraege" beim Oeffnen ist weg, und das Panel wird
+    nicht mehr per PushMenu als Listen-Menue registriert. Log-Beleg der Wirkung:
+    "ConfigCharaChatLogGen: Formular-Fenster, keine Sammel-Ansage beim Oeffnen."
+
+    FIX 2 - Config-Panels lesen beim Oeffnen nicht mehr ihren ganzen Text vor
+    (OnPostSetup, `name.StartsWith("Config")` -> return vor der ReadAllTexts-
+    Ansage). Begruendung: Formular, kein Textblock; der Kategoriename kommt
+    ohnehin vom Reiter-Fokus in ConfigCharacter. Fenstertitel bleibt, Text-Cache
+    wird weiter initialisiert (Aenderungserkennung intakt).
+
+    FIX 3 - Slider + DropDownList im Config-Panel-Leser: neue Methoden
+    `TryReadConfigPanelControl` und `NearestPanelLabel` (UIReaderService).
+    Erkennung ueber den TOP-LEVEL-Owner des Fokus-Nodes (FindTopLevelOwner) -
+    noetig, weil das Anzeigefeld eines Dropdowns selbst eine CheckBox-Komponente
+    ist und der alte Nahbereich-Aufstieg daraus "12, Schalter, aus" machte
+    (Log 2026-08-02 16:35:57). Nur fuer ConfigChara*, weil ConfigSystem dieselben
+    Typen ueber AnnounceConfigGlobalFocus liest (sonst doppelte Ansage).
+    WICHTIG - LABEL-RICHTUNG IST NICHT EINHEITLICH: in ConfigSystem steht das
+    Label VOR dem Control (verifiziert 2026-07-16), im Chatlog-Panel DAHINTER
+    (Dump 2026-08-02: Slider Index 34, Label Index 35; alle drei Dropdowns +1).
+    NearestPanelLabel sucht deshalb erst vorwaerts, dann rueckwaerts als Rueckfall.
+    Neuer bilingualer String `AccessibilityStrings.NoLabel`; die hartcodierte
+    Rueckfall-Zeichenkette in NearestPrecedingLabel nutzt ihn jetzt auch.
+    BESTAETIGT in-game: Schriftgroesse/Zeitanzeige/Zeiteinstellungen als
+    "Auswahlliste" mit Wert, Transparenz als Prozent-Regler.
+
+>>> NAECHSTE BAUSTELLE: CHATFENSTER SELBST (User-Frage 2026-08-02: "was kann man
+    da drin noch machen ausser schreiben, sind da Schalter?").
+    Bereits vorhanden und dem User genannt: die Nachlese ueber
+    MessageHistoryService - Alt+BildAuf/BildAb wechselt die Kategorie (Dialoge,
+    Sagen, Rufen, Gruppe, Allianz, Fluestern, Freie Gesellschaft, System, Beute),
+    Umschalt+BildAuf/BildAb blaettert darin (50 Nachrichten je Kategorie).
+    OFFEN: Struktur des NATIVEN Fensters unbekannt. Addons laut [Win]-Liste:
+    `ChatLog` + `ChatLogPanel_0/_1/_2`. Dump angefordert, User tippt:
+    `/acc dump ChatLog ChatLogPanel_0 ChatLogPanel_1 ChatLogPanel_2`.
+    NICHTS dazu ist gebaut, nichts vermutet.
+
+>>> URSPRUENGLICHE BEFUNDE (jetzt alle abgearbeitet, zur Nachvollziehbarkeit):
 
     FENSTER: `ConfigCharaChatLogGen` (Charakterkonfiguration -> Kategorie
     "Chatlog"). Dump gesichert unter `docs/dumps/ConfigCharaChatLogGen_2026-08-02.txt`
