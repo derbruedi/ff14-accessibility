@@ -1140,17 +1140,48 @@ public sealed class NavigationService
         var objects = GetObjectsOfKinds(kinds);
         if (!IsQuestOnlyCategory) return objects;
 
-        // Quest-only category: keep what the current quest markers point at. The
-        // marker's DataId and the object's BaseId are the same data-sheet id, so
-        // this is the game's own link between "there is a quest here" and the
-        // object standing in front of the player - not a guess from icons or
-        // distances.
-        var questIds = _questMarkers.GetQuestObjectDataIds();
-        var filtered = objects.Where(o => questIds.Contains(o.BaseId)).ToList();
+        // Quest-only category: two independent links, both owned by the game.
+        //  (1) MARKER: what the quest markers point at, resolved over the Level
+        //      sheet to the object's data-sheet id (see GetQuestObjectIds).
+        //      Covers active objectives, including enemies without a nameplate.
+        //  (2) NAMEPLATE: the icon the game draws above the object's head - the
+        //      very "!" a sighted player sees. Covers acceptable quests whose
+        //      giver has no marker of its own in this zone.
+        // Neither is a heuristic; an object counts when at least one says yes.
+        var questIds = _questMarkers.GetQuestObjectIds();
+        var byMarker = 0;
+        var byIcon   = 0;
+        var iconTrace = new List<string>();
+
+        var filtered = new List<IGameObject>();
+        foreach (var o in objects)
+        {
+            var fromMarker = questIds.Contains(o.BaseId);
+            var icon       = NamePlateIcon(o);
+            var fromIcon   = !string.IsNullOrEmpty(AccessibilityStrings.QuestMarkerHint(icon));
+
+            if (icon != 0) iconTrace.Add($"{o.Name.TextValue}={icon}");
+            if (fromMarker) byMarker++;
+            if (fromIcon) byIcon++;
+            if (fromMarker || fromIcon) filtered.Add(o);
+        }
+
+        // The icon list is what refines QuestMarkerHint's ranges from real data -
+        // only non-zero icons, so this stays short.
         _log.Info($"[Nav] {CurrentCategoryLabel}: {filtered.Count} von {objects.Count} Objekten " +
-                  $"tragen eine Quest-DataId ({questIds.Count} Ids aus Markern).");
+                  $"(per Marker {byMarker}, per Symbol {byIcon}; {questIds.Count} Ids aus Markern). " +
+                  $"Symbole: {(iconTrace.Count > 0 ? string.Join(", ", iconTrace) : "keine")}");
         return filtered;
     }
+
+    /// <summary>
+    /// The icon the game draws above an object's head, 0 when it draws none.
+    /// This is exactly what a sighted player sees, so it is READ, never derived
+    /// from quest state. GameObject.NamePlateIconId @272 (ilspycmd-verified
+    /// 2026-08-02).
+    /// </summary>
+    private unsafe uint NamePlateIcon(IGameObject obj)
+        => obj.Address == 0 ? 0u : ((CSGameObject*)obj.Address)->NamePlateIconId;
 
     /// <summary>Whether the current category shows only quest-related objects.</summary>
     private bool IsQuestOnlyCategory => Categories[_categoryIndex].Cat
@@ -1643,15 +1674,12 @@ public sealed class NavigationService
             if (!string.IsNullOrWhiteSpace(title)) parts.Add(title);
         }
 
-        if (obj.Address != 0)
+        var iconId = NamePlateIcon(obj);
+        var quest  = DescribeQuestMarker(iconId);
+        if (!string.IsNullOrEmpty(quest))
         {
-            var iconId = ((CSGameObject*)obj.Address)->NamePlateIconId;
-            var quest = DescribeQuestMarker(iconId);
-            if (!string.IsNullOrEmpty(quest))
-            {
-                parts.Add(quest);
-                _log.Info($"[Nav] NPC {obj.Name.TextValue}: NamePlateIconId={iconId} -> '{quest}'");
-            }
+            parts.Add(quest);
+            _log.Info($"[Nav] NPC {obj.Name.TextValue}: NamePlateIconId={iconId} -> '{quest}'");
         }
 
         return parts.Count > 0 ? string.Join(", ", parts) + ", " : string.Empty;

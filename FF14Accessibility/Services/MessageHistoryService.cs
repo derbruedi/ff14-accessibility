@@ -41,7 +41,11 @@ public sealed class MessageHistoryService
     // Spoken category names are bilingual and live in AccessibilityStrings
     // (ChatCategoryName), so "/acc lang" switches them too.
 
-    private const int Max = 50;
+    // No cap: the history keeps every message of the session (user request
+    // 2026-08-02, previously 50 per category). A sighted player can scroll the
+    // whole chat log back, so cutting the history short took away reach that
+    // the game itself grants. Cost is memory only - the entries are short
+    // strings, and a session's worth stays in the low megabytes.
     private readonly Dictionary<Category, List<Entry>> _buffers = new();
     private readonly TolkService _tolk;
 
@@ -62,15 +66,9 @@ public sealed class MessageHistoryService
         if (string.IsNullOrWhiteSpace(text)) return;
         if (!_buffers.TryGetValue(category, out var buf)) return;
 
+        // Nothing is dropped, so the cursor never has to be pulled along: an
+        // entry keeps its index for the whole session.
         buf.Add(new Entry(text, partner));
-        if (buf.Count > Max)
-        {
-            buf.RemoveAt(0);
-            // Cursor der GERADE gewählten Kategorie nachziehen, damit er beim
-            // aktiven Blättern nicht auf eine andere Nachricht rutscht.
-            if (category == Order[_catIndex] && _cursor >= 0)
-                _cursor = Math.Max(-1, _cursor - 1);
-        }
     }
 
     /// <summary>The category currently selected for browsing.</summary>

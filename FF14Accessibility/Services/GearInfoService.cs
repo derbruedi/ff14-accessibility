@@ -31,11 +31,13 @@ public sealed class GearInfoService
     }
 
     /// <summary>
-    /// Spoken gear info for an item: "Stufe 15, tragbar" / "Stufe 26, nicht
-    /// tragbar, ab Stufe 26" / "Stufe 15, nicht tragbar, nur für Gladiator".
+    /// Spoken gear info for an item: "Stufe 15, tragbar, Gegenstandsstufe 20,
+    /// Verteidigung 31, Stärke plus 4" - level, wearability and then the values
+    /// a player compares two pieces by (see <see cref="DescribeStats"/>).
     /// "" when the item is not equipment (no EquipSlotCategory) or unknown.
-    /// With briefWhenWearable only "Stufe 15" is returned for wearable gear,
-    /// so reading all worn pieces (Strg+F6) does not repeat "tragbar" 12 times.
+    /// With briefWhenWearable only "Stufe 15" is returned for wearable gear:
+    /// that mode reads all 12 worn pieces at once (Strg+F6), where neither
+    /// "tragbar" twelve times nor twelve stat blocks would be listenable.
     /// </summary>
     public string DescribeGear(uint baseItemId, bool briefWhenWearable = false)
     {
@@ -45,12 +47,89 @@ public sealed class GearInfoService
 
         var level = AccessibilityStrings.GearLevel(row.LevelEquip);
         var (ok, reason) = Wearability(row);
-        return ok switch
+        var head = ok switch
         {
             true  => briefWhenWearable ? level : AccessibilityStrings.Wearable(level),
             false => AccessibilityStrings.NotWearable(level, reason),
             _     => level, // player state or sheet column unknown: no claim
         };
+
+        if (briefWhenWearable) return head;
+
+        var stats = DescribeStats(row);
+        return stats.Length > 0 ? $"{head}, {stats}" : head;
+    }
+
+    /// <summary>
+    /// The numbers a sighted player compares gear by, in the order the game's
+    /// own tooltip lists them: item level, the defence/damage block, then the
+    /// attribute bonuses and free materia slots. Everything is READ from the
+    /// Item row (ilspycmd-verified 2026-08-02: DamagePhys@40, DamageMag@42,
+    /// Delayms@44, DefensePhys@50, DefenseMag@52, MateriaSlotCount@103,
+    /// LevelItem@138, BaseParam/BaseParamValue as 6-entry collections) -
+    /// no formula of ours. Zero values are dropped, exactly like the tooltip
+    /// which does not print them either.
+    ///
+    /// The item level is the row id of <c>LevelItem</c>: the ItemLevel sheet is
+    /// indexed BY item level (row 45 holds the caps for item level 45), so the
+    /// reference itself carries the number. Cross-check possible from the item
+    /// description text, which spells "Gegenstandsstufe: N" out - both are
+    /// logged together for exactly that reason.
+    ///
+    /// DELIBERATELY NOT INCLUDED: the HQ bonus (BaseParamSpecial /
+    /// BaseParamValueSpecial) and anything materia adds. Those belong to a
+    /// concrete piece in the bag; this sheet row describes the base item, and
+    /// announcing a base value as if it were the finished one would mislead.
+    /// </summary>
+    private string DescribeStats(LuminaItem row)
+    {
+        var parts = new List<string>();
+
+        var itemLevel = row.LevelItem.RowId;
+        if (itemLevel > 0) parts.Add(AccessibilityStrings.ItemLevelValue(itemLevel));
+
+        if (row.DefensePhys > 0) parts.Add(AccessibilityStrings.DefensePhysValue(row.DefensePhys));
+        if (row.DefenseMag  > 0) parts.Add(AccessibilityStrings.DefenseMagValue(row.DefenseMag));
+        if (row.DamagePhys  > 0) parts.Add(AccessibilityStrings.DamagePhysValue(row.DamagePhys));
+        if (row.DamageMag   > 0) parts.Add(AccessibilityStrings.DamageMagValue(row.DamageMag));
+        if (row.Delayms     > 0) parts.Add(AccessibilityStrings.DelayValue(row.Delayms / 1000.0));
+
+        // BaseParam and BaseParamValue are parallel 6-entry collections: slot i
+        // names the attribute, slot i of the values carries its bonus. An empty
+        // slot has BaseParam row 0 - skipped, not reported as "0".
+        for (var i = 0; i < row.BaseParam.Count && i < row.BaseParamValue.Count; i++)
+        {
+            var param = row.BaseParam[i];
+            var value = row.BaseParamValue[i];
+            if (param.RowId == 0 || value == 0) continue;
+
+            var name = param.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            if (name.Length == 0) continue; // unnamed attribute: stay silent rather than say "Attribut 12"
+            parts.Add(AccessibilityStrings.AttributeValue(name, value));
+        }
+
+        if (row.MateriaSlotCount > 0) parts.Add(AccessibilityStrings.MateriaSlots(row.MateriaSlotCount));
+
+        LogStatsOnce(row, itemLevel, parts);
+        return string.Join(", ", parts);
+    }
+
+    private readonly HashSet<uint> _statsLogged = new();
+
+    /// <summary>
+    /// Logs an item's stat line ONCE per item id (browsing a bag would otherwise
+    /// log the same row every frame). The item description is logged next to it
+    /// on purpose: many descriptions spell out "Gegenstandsstufe: N", which is
+    /// the independent check that LevelItem.RowId really is the item level.
+    /// </summary>
+    private void LogStatsOnce(LuminaItem row, uint itemLevel, List<string> parts)
+    {
+        if (!_statsLogged.Add(row.RowId)) return;
+
+        var desc = row.Description.ExtractText().Replace("\n", " ").Trim();
+        if (desc.Length > 120) desc = desc[..120] + "...";
+        _log.Info($"[Gear] '{row.Name.ExtractText()}' (Id {row.RowId}): LevelItem.RowId={itemLevel} " +
+                  $"LevelEquip={row.LevelEquip} -> {string.Join(", ", parts)} | Beschreibung: '{desc}'");
     }
 
     /// <summary>

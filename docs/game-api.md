@@ -512,6 +512,23 @@ Rückverweis — vorher abfangen.
 - OFFEN (Laufzeit): ob RecommendedLevel im Marker überhaupt gefüllt ist.
   QuestMarkerService loggt pro Marker `lvlMarker=` und `lvlSheet=`.
 
+### Symbol über dem Kopf: `GameObject.NamePlateIconId` (ushort/uint @272)
+Genau das Zeichen, das ein SEHENDER Spieler über dem Objekt sieht (Quest-
+Ausrufezeichen usw.), 0 = keins. Wird gelesen, nie aus dem Quest-Zustand
+nachgebaut. GEMESSEN bisher (alle 2026-08-02): **71201** (Buscarron,
+Süd-Schwarzhölzer), **71203** (Baensyng, Limsa Lominsa), **71351**
+(Thubyrgeim, Limsa Lominsa).
+WICHTIG: Alle drei echten Messwerte liegen bei 712xx/713xx — die
+Bedeutungs-Bereiche in `AccessibilityStrings.QuestMarkerHint`
+(71001–71006 „verfügbar", 71021–71046 „aktiv") haben bis heute **null**
+Messwerte und greifen nie; real trifft immer der Sammel-Fall
+71000–71999 „Quest". Der Objekt-Browser loggt jedes Symbol ungleich 0 mit
+Objektnamen, damit die Einteilung aus echten Daten geschärft werden kann.
+Vor einer Aussage „Icon X heißt Y": erst messen.
+Gegenprobe zur Verlässlichkeit (Log 2026-08-02 20:01): in Limsa Lominsa
+lieferten Symbol-Quelle und Marker-Quelle unabhängig voneinander exakt
+dieselben zwei NPCs (`per Marker 2, per Symbol 2`, 2 Treffer gesamt).
+
 ### Quest-Marker mit Welt-Position (ilspycmd-verifiziert 2026-07-10)
 Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,
 `Map.Instance()` via StaticAddressPointers).
@@ -522,9 +539,42 @@ Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,
 - `MarkerInfo` (Size 144): `ObjectiveId`@4 (uint), `Label`@8 (Utf8String,
   Quest-Name), `MarkerData`@112 (StdVector<MapMarkerData> — MEHRERE Orte
   pro Quest möglich!), `RecommendedLevel`@136, `ShouldRender`@139 (bool).
-- `MapMarkerData` (Size 80): `LevelId`@0, `ObjectiveId`@4,
-  `TooltipString`@8 (Utf8String*), `IconId`@16, `Position`@28 (Vector3,
-  WELT-Koordinaten!), `Radius`@40, `MapId`@48, `RecommendedLevel`@64.
+- `MapMarkerData` (Size 80, vollständig ilspycmd 2026-08-02): `LevelId`@0,
+  `ObjectiveId`@4, `TooltipString`@8 (Utf8String*), `IconId`@16,
+  `Position`@28 (Vector3, WELT-Koordinaten!), `Radius`@40, `MapId`@48,
+  `PlaceNameZoneId`@52, `PlaceNameId`@56, `EndTimestamp`@60 (int),
+  `RecommendedLevel`@64 (ushort), `TerritoryTypeId`@66 (ushort),
+  `DataId`@68 (ushort), `MarkerType`@70, `EventState`@71, `Flags`@72.
+
+### FALLE: `MapMarkerData.DataId` ist KEINE Objekt-Id (gemessen 2026-08-02)
+Das Feld sieht aus wie die Datensatz-Id des Ziel-Objekts, ist es aber nicht:
+- Es ist ein **ushort** — eine NPC-`BaseId` liegt bei 1.000.000+ und passt
+  nicht in 16 Bit.
+- `MapMarkerData.SetData(levelId, tooltip, icon, x, y, z, radius,
+  territoryTypeId, mapId, placeNameZoneId, placeNameId, recommendedLevel,
+  eventState)` hat **keinen dataId-Parameter** — der Setzer schreibt das Feld
+  nie. Messung: bei allen Quest-Markern 0 (Log 2026-08-02, „0 Ids aus
+  Markern", Kategorie blieb leer).
+
+### Quest-Marker → Objekt in der Welt (der richtige Weg, 2026-08-02)
+`MapMarkerData.LevelId`@0 (= erster SetData-Parameter) ist die Zeilennummer
+im Lumina-Sheet **`Level`** (ilspycmd Lumina.Excel.Sheets.Level):
+- `X`@0/`Y`@4/`Z`@8, `Yaw`@12, `Radius`@16
+- `Object` (uint @20) — die Datensatz-Id des Objekts an diesem Ort, typisiert
+  über `Type` (byte @32): **8 = ENpcBase, 9 = BNpcBase, 12 = Aetheryte,
+  14 = GatheringPoint, 45 = EObj**
+- `EventId` @24 (RowRef auf TripleTriad/Adventure/Opening/**Quest**),
+  `Map` (ushort @28), `Territory` (ushort @30)
+
+`Level.Object` liegt im selben Id-Raum wie `IGameObject.BaseId` im Objekt-
+Browser (Gegenprobe: die NPC-Titel kommen über `ENpcResident.TryGetRow(
+obj.BaseId)` und stimmen). Damit ist „welches Objekt meint dieser Marker"
+eine reine Sheet-Abfrage — keine Icon-Tabelle, keine Abstands-Heuristik.
+Beim Lesen `Level.Territory` gegen die aktuelle Zone prüfen: sonst markiert
+eine Id aus einer anderen Zone einen gleich aussehenden NPC nebenan.
+Achtung bei `Type=9` (BNpcBase): eine Base-Id gilt für ALLE Gegner derselben
+Art in der Zone — das ist für „töte 3 Käfer" richtig, aber es ist eben eine
+Art, kein Einzelgegner.
 - OFFEN (Laufzeit, vor Nutzung per Debug-Probe klären): (1) Feld für
   TerritoryType/Zone des Markers — Marker können in ANDERER Zone liegen
   (SetData-Signatur hat territoryTypeId-Parameter, Feld-Offset im Struct

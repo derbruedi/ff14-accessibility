@@ -37,8 +37,8 @@ cues — including braille display output and automatic walking.
   read the game's own input field.
 - **Catching up**: a history browser with eight separate categories
   (dialogues, say, shout, party, alliance, tell, free company, system),
-  50 messages each. This lets you review what you missed at your own pace
-  without disturbing the live chat.
+  with no message limit — the whole session is kept. This lets you review
+  what you missed at your own pace without disturbing the live chat.
 
 ### Navigation and walking
 

@@ -67,8 +67,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.67";
-    private const string PluginVersionTag = "Chatlog-Einstellungen lesbar, Chat-Kanal aus der Nachlese per Enter, Fluester-Antwort ohne Weltnamen, Quest-Kategorien im Objekt-Browser";
+    private const string PluginVersion    = "5.70";
+    private const string PluginVersionTag = "Quest-Kategorien gefixt, Nachlese-Puffer unbegrenzt, Ausruestungs-Werte (Gegenstandsstufe, Verteidigung, Attribute) hinter der Beschreibung";
 
     public Plugin()
     {

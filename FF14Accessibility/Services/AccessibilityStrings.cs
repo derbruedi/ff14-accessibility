@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.Text;
 
@@ -816,6 +817,31 @@ public static class AccessibilityStrings
     public static string OnlyForClass(string forWho) => IsGerman ? $"nur für {forWho}" : $"only for {forWho}";
     public static string DifferentClassNeeded => IsGerman ? "andere Klasse nötig" : "different class required";
     public static string NotForYourRace => IsGerman ? "nicht für dein Volk" : "not for your race";
+
+    // ── Werte eines Ausrüstungsteils (zum Vergleichen) ──
+    // Die Attributnamen selbst kommen aus dem BaseParam-Sheet in Spielsprache
+    // und werden NICHT hier übersetzt - sie werden gelesen, nicht erfunden.
+    public static string ItemLevelValue(uint level) =>
+        IsGerman ? $"Gegenstandsstufe {level}" : $"item level {level}";
+    public static string DefensePhysValue(int v) =>
+        IsGerman ? $"Verteidigung {v}" : $"defence {v}";
+    public static string DefenseMagValue(int v) =>
+        IsGerman ? $"Magieabwehr {v}" : $"magic defence {v}";
+    public static string DamagePhysValue(int v) =>
+        IsGerman ? $"Angriff {v}" : $"physical damage {v}";
+    public static string DamageMagValue(int v) =>
+        IsGerman ? $"Magieschaden {v}" : $"magic damage {v}";
+    /// <summary>Weapon delay, given in seconds (the game stores milliseconds).</summary>
+    public static string DelayValue(double seconds) =>
+        IsGerman ? $"Verzögerung {seconds:0.0} Sekunden" : $"delay {seconds:0.0} seconds";
+    /// <summary>One attribute bonus, e.g. "Stärke plus 4" - name from the sheet.</summary>
+    public static string AttributeValue(string name, int v) =>
+        IsGerman
+            ? $"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}"
+            : $"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}";
+    public static string MateriaSlots(int n) => IsGerman
+        ? (n == 1 ? "1 Materia-Slot" : $"{n} Materia-Slots")
+        : (n == 1 ? "1 materia slot" : $"{n} materia slots");
 
     // ════════════════════════════════════════════════════════════════
     //  Plugin.cs - Start, Koordinaten-Lauf, Himmelsrichtung, Hilfe

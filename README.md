@@ -37,8 +37,8 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   denn das Eingabefeld des Spiels liest ein Screenreader nicht.
 - **Nachlesen**: ein Verlaufs-Browser mit acht getrennten Kategorien
   (Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
-  System) — je 50 Nachrichten. So lässt sich Verpasstes in Ruhe
-  nachhören, ohne den laufenden Chat zu stören.
+  System) — ohne Mengenbegrenzung, die ganze Sitzung bleibt erhalten. So
+  lässt sich Verpasstes in Ruhe nachhören, ohne den laufenden Chat zu stören.
 
 ### Navigation und Laufen
 

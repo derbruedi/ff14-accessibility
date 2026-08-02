@@ -4,6 +4,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using LuminaLevel = Lumina.Excel.Sheets.Level;
 using LuminaQuest = Lumina.Excel.Sheets.Quest;
 
 namespace FF14Accessibility.Services;
@@ -267,20 +268,26 @@ public sealed class QuestMarkerService
     /// variable regardless of ref-ness.
     /// </summary>
     /// <summary>
-    /// DataIds of the objects the CURRENT quest markers point at - both accepted
-    /// quests and acceptable ones. Every marker location carries the data-sheet id
-    /// of its target object (MapMarkerData.DataId @68, ilspycmd-verified
-    /// 2026-08-02), and that is the SAME id the object browser already sees on its
-    /// entries (IGameObject.BaseId). Matching on it gives the browser its
-    /// quest-only categories from the game's own data: no icon table to interpret,
-    /// no "close to a marker" distance guess.
+    /// Data-sheet ids of the objects the CURRENT quest markers point at - both
+    /// accepted quests and acceptable ones. The link is the marker's
+    /// <c>LevelId</c> (MapMarkerData @0, first parameter of SetData): it names a
+    /// row of the Level sheet, and that row carries the object standing at that
+    /// spot (<c>Level.Object</c>, uint @20, typed by <c>Level.Type</c> @32:
+    /// 8 = ENpcBase, 9 = BNpcBase, 45 = EObj). Those are the same ids the object
+    /// browser sees as <c>IGameObject.BaseId</c> - the sheet lookup for NPC titles
+    /// in NavigationService already matches ENpcResident on BaseId the same way.
+    /// So this is the game's own link between "a quest points here" and the object
+    /// in front of the player: no icon table to interpret, no distance guess.
     ///
-    /// Only markers in the CURRENT zone count - an id from another zone could
-    /// otherwise flag a same-model NPC standing right next to the player. DataId 0
-    /// is skipped: those are pure position markers ("go to this area") with no
-    /// object behind them.
+    /// NOT usable for this: <c>MapMarkerData.DataId</c> @68. It is a ushort - too
+    /// narrow for an NPC BaseId in the millions - and <c>SetData</c> never writes
+    /// it, so it stayed 0 for every marker (measured 2026-08-02, "0 Ids aus
+    /// Markern"). Both facts ilspycmd-verified on MapMarkerData.
+    ///
+    /// Only rows of the CURRENT zone count - an id from another zone could
+    /// otherwise flag a same-model NPC standing right next to the player.
     /// </summary>
-    public unsafe HashSet<uint> GetQuestObjectDataIds()
+    public unsafe HashSet<uint> GetQuestObjectIds()
     {
         var ids = new HashSet<uint>();
         var map = Map.Instance();
@@ -290,19 +297,31 @@ public sealed class QuestMarkerService
             return ids;
         }
 
+        var trace = new List<string>();
         var currentTerritory = _clientState.TerritoryType;
         foreach (ref var marker in map->QuestMarkers)
-            CollectMarkerDataIds(ids, marker, currentTerritory);
+            CollectMarkerObjectIds(ids, trace, marker, currentTerritory);
         foreach (var marker in map->UnacceptedQuestMarkers)
-            CollectMarkerDataIds(ids, marker, currentTerritory);
+            CollectMarkerObjectIds(ids, trace, marker, currentTerritory);
 
+        // One compact line per call: which marker resolved to which object, and
+        // why a location was dropped. Without it an empty category gives no clue
+        // whether the markers, the sheet or the zone filter is at fault.
+        _log.Info($"[Quest] Objekt-Ids aus Markern ({ids.Count}): " +
+                  (trace.Count > 0 ? string.Join(" | ", trace) : "keine Marker-Orte"));
         return ids;
     }
 
-    /// <summary>Adds one marker's target DataIds to <paramref name="ids"/>.</summary>
-    private unsafe void CollectMarkerDataIds(HashSet<uint> ids, MarkerInfo marker, uint currentTerritory)
+    /// <summary>
+    /// Resolves one marker's locations to object ids via the Level sheet and adds
+    /// them to <paramref name="ids"/>. <paramref name="trace"/> collects one short
+    /// human-readable entry per location for the caller's log line.
+    /// </summary>
+    private unsafe void CollectMarkerObjectIds(
+        HashSet<uint> ids, List<string> trace, MarkerInfo marker, uint currentTerritory)
     {
-        if (string.IsNullOrWhiteSpace(marker.Label.ToString())) return; // empty slot
+        var label = marker.Label.ToString();
+        if (string.IsNullOrWhiteSpace(label)) return; // empty slot
 
         var locations = marker.MarkerData.Count;
         if (locations is < 0 or > 100) return; // same corruption guard as above
@@ -310,8 +329,25 @@ public sealed class QuestMarkerService
         for (var i = 0; i < locations; i++)
         {
             var data = marker.MarkerData[i];
-            if (data.DataId == 0 || data.TerritoryTypeId != currentTerritory) continue;
-            ids.Add(data.DataId);
+            if (data.LevelId == 0)
+            {
+                trace.Add($"'{label}'[{i + 1}] LevelId=0");
+                continue;
+            }
+
+            if (!_data.GetExcelSheet<LuminaLevel>().TryGetRow(data.LevelId, out var level))
+            {
+                trace.Add($"'{label}'[{i + 1}] LevelId={data.LevelId} nicht im Sheet");
+                continue;
+            }
+
+            var objectId = level.Object.RowId;
+            var territory = level.Territory.RowId;
+            trace.Add($"'{label}'[{i + 1}] LevelId={data.LevelId}->Obj={objectId} Typ={level.Type} terr={territory}");
+
+            if (objectId == 0) continue;                                   // pure position marker
+            if (territory != 0 && territory != currentTerritory) continue; // other zone
+            ids.Add(objectId);
         }
     }
 

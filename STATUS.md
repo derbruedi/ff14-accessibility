@@ -3,7 +3,136 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02 ABENDS, CHAT-KANAELE + CHATLOG-EINSTELLUNGEN, V5.67 RELEASED)
+## STAND JETZT (2026-08-02 SPAETABENDS, V5.70 GEBAUT, NICHT RELEASED, NICHT GETESTET)
+
+>>> AUSRUESTUNGS-WERTE HINTER DER BESCHREIBUNG (User-Wunsch: "damit man weiss
+    welches Teil evtl. besser ist"). Gebaut, IN-GAME UNGETESTET.
+    ANSATZPUNKT WAR SCHON DA: `GearInfoService.DescribeGear` ist die EINE
+    Stelle, durch die alle Ausruestungs-Ansagen laufen (Quest-Belohnung
+    UIReaderService:6427, Inventar/Laden-Fokus :2517, Laden-Zeilen ueber
+    DescribeByName, getragene Teile ueber EquipmentService). Werte dort
+    angehaengt = ueberall vorhanden, ohne eine einzige Aufrufstelle zu aendern.
+    NEUE METHODE `DescribeStats(row)` liest (alle ilspycmd-verifiziert
+    2026-08-02 an Lumina.Excel.Sheets.Item): LevelItem@138 (Gegenstandsstufe),
+    DefensePhys@50, DefenseMag@52, DamagePhys@40, DamageMag@42, Delayms@44,
+    BaseParam/BaseParamValue (parallele 6er-Collections), MateriaSlotCount@103.
+    Nullwerte fallen raus - der Spiel-Tooltip zeigt sie auch nicht.
+    Attributnamen kommen aus `BaseParam.Name` in Spielsprache, werden also
+    GELESEN und nicht von uns uebersetzt.
+    BEWUSST NICHT DRIN: HQ-Bonus (BaseParamSpecial/-ValueSpecial) und Materia-
+    Effekte - die gehoeren zum konkreten Stueck im Beutel, die Sheet-Zeile
+    beschreibt das Grundteil. Ein Grundwert als Endwert waere eine Luege.
+    KURZ-MODUS UNVERAENDERT: Strg+F6 (alle 12 getragenen Teile) bleibt bei
+    "Stufe N" ohne Werte - zwoelf Wertebloecke waeren nicht hoerbar.
+    EINE ANNAHME, DIE DER ERSTE TEST BELEGT: Gegenstandsstufe = RowId von
+    `LevelItem` (das ItemLevel-Sheet ist NACH Gegenstandsstufe indiziert).
+    Deshalb loggt `LogStatsOnce` (einmal je Item-Id) die RowId ZUSAMMEN mit
+    der Item-Beschreibung - viele Beschreibungen schreiben "Gegenstandsstufe: N"
+    aus, das ist die unabhaengige Gegenprobe. Beim naechsten Test pruefen.
+
+>>> ZU TESTEN (V5.70): Quest-Belohnung mit Ruestung oeffnen und durchblaettern,
+    dann ein Ruestungsteil im Inventar fokussieren. Kommen Gegenstandsstufe,
+    Verteidigung und Attribute? Und: ist es zu lang zum Navigieren? (Der User
+    entscheidet, ob gekuerzt wird - z.B. nur Gegenstandsstufe + Verteidigung.)
+
+## VORHERIGE STUFE (2026-08-02 SPAETABENDS, V5.69)
+
+>>> NACHLESE-PUFFER OHNE MENGENBEGRENZUNG (User-Wunsch, V5.69).
+    `MessageHistoryService`: die Konstante `Max = 50` je Kategorie ist weg,
+    es wird nichts mehr vorne abgeschnitten. Damit entfaellt auch das
+    Nachziehen des Blaetter-Cursors - ein Eintrag behaelt seinen Index die
+    ganze Sitzung. Die uebrige Logik war schon groessenunabhaengig.
+    Beim Beenden des Spiels ist der Verlauf weg (reiner Arbeitsspeicher,
+    nichts wird auf Platte geschrieben) - das war vorher auch so.
+    READMEs (DE+EN) angepasst: "je 50 Nachrichten" -> ohne Begrenzung.
+
+>>> STUMME STELLE GEMELDET, NOCH NICHT GEKLAERT: Chocobo/Mitstreiter.
+    Log 21:10:29 zeigt: Fenster `Buddy` ("MITSTREITER") und Kommando-Ring
+    `BuddyAction`. Fuer BEIDE gibt es KEINEN Handler im Code - das lief nur
+    ueber den allgemeinen Pfad. Zwei Symptome im Log, User-Klaerung steht aus:
+    (1) Buddy sagt beim Oeffnen nur 'Rang:' - nackte Beschriftung ohne Wert,
+        Chocobo-Name fehlt ganz.
+    (2) Im BuddyAction-Ring ist ein Eintrag stumm (Text='', zwischen
+        'Fortschicken' und 'Heilen'); beim Oeffnen wird u.a. "Auf-/Absteigen"
+        genannt, was zum Aufsteigen passen wuerde.
+    MOEGLICHE URSACHE, NICHT BELEGT: Timing - beim Oeffnen war ein Textfeld
+    leer und 34 ms spaeter mit 'Herbeigerufen' gefuellt (bekannte Falle,
+    siehe game-api.md "LISTEN-TIMING").
+    NAECHSTER SCHRITT: Dump angefordert, User tippt bei offenem Fenster
+    `/acc dump Buddy BuddyAction`. Nichts gebaut, nichts vermutet.
+
+## VORHERIGE STUFE (2026-08-02 SPAETABENDS, QUEST-KATEGORIEN GEFIXT + IN-GAME BESTAETIGT, V5.68)
+
+>>> IN-GAME BESTAETIGT (User: "ok funktioniert", Log 20:01, Limsa Lominsa):
+    "[Nav] Quest-NPCs: 2 von 60 Objekten (per Marker 2, per Symbol 2;
+    7 Ids aus Markern). Symbole: Baensyng=71203, Thubyrgeim=71351"
+    - Beide Quellen liefern UNABHAENGIG dieselben zwei NPCs. Kein Widerspruch,
+      keine falschen Treffer beobachtet.
+    - Die Filter arbeiten sichtbar: von 10 Marker-Orten fielen genau drei weg
+      (1x Obj=0 Typ=51 = reiner Ortsmarker, 2x fremde Zone terr=250/144),
+      7 Ids blieben. Level-Sheet loest sauber auf, z.B.
+      LevelId=4069594->Obj=1003272 Typ=8 terr=129.
+    - NEUE MESSWERTE fuer NamePlateIconId: 71203, 71351 (dazu 71201 von
+      Buscarron). ALLE drei echten Werte liegen bei 712xx/713xx - die
+      Bereiche 71001-71006 ("verfuegbar") und 71021-71046 ("aktiv") in
+      QuestMarkerHint haben weiterhin NULL Messwerte und greifen nie.
+      Wer sie feiner aufteilen will, muss erst messen (z.B. ein NPC mit
+      annehmbarer Quest vs. einer mit abgabebereiter Quest).
+    OFFEN, weil in Limsa nicht pruefbar: Quest-Objekte (0 von 11) und
+    Quest-Gegner - dort gab es schlicht keine. Erst bei passender Quest testen.
+
+## VORHERIGE ZWISCHENSTUFE (2026-08-02 SPAETABENDS, FIX GEBAUT)
+
+>>> BEFUND DES USERS: "in der Kategorie Quest-NPCs steht nichts drin, obwohl
+    die NPCs in der normalen NPC-Liste stehen." Log bestaetigt es eindeutig:
+    "[Nav] Quest-NPCs: 0 von 60 Objekten ... (0 IDS AUS MARKERN)" - es lag
+    nicht am Abgleich, es kamen ueberhaupt keine Ids aus den Markern.
+
+>>> URSACHE (ilspycmd 2026-08-02, KEINE Vermutung): `MapMarkerData.DataId`
+    taugt nicht als Objekt-Id. Zwei unabhaengige Belege:
+    (1) Es ist ein **ushort** - eine NPC-BaseId (1.000.000+) passt nicht in
+        16 Bit, der Abgleich konnte NIE treffen.
+    (2) `SetData(levelId, tooltip, icon, x,y,z, radius, territoryTypeId,
+        mapId, placeNameZoneId, placeNameId, recommendedLevel, eventState)`
+        hat gar keinen dataId-Parameter - das Feld wird nie geschrieben und
+        bleibt 0.
+    LEHRE: Ein Feld, das dem Namen nach passt, ist noch kein Beleg. Der
+    SETZER haette es gestern verraten - die Signatur stand bereits im
+    dekompilierten Struct, direkt ueber dem Feld.
+
+>>> FIX (V5.68): zwei spieleigene Quellen, ODER-verknuepft, keine Heuristik.
+    (1) MARKER ueber das Level-Sheet: `MapMarkerData.LevelId`@0 (= erster
+        SetData-Parameter) ist die Zeile im Lumina-Sheet `Level`, und die
+        traegt `Object` (uint @20) - die Datensatz-Id des Objekts an diesem
+        Ort - typisiert ueber `Type` @32 (8=ENpcBase, 9=BNpcBase, 45=EObj).
+        Dieselbe Id, die der Browser als `IGameObject.BaseId` sieht;
+        Gegenprobe: die NPC-Titel kommen schon laenger ueber
+        `ENpcResident.TryGetRow(obj.BaseId)` und stimmen.
+        `Level.Territory` wird gegen die aktuelle Zone geprueft.
+    (2) NAMENSSCHILD-SYMBOL: `GameObject.NamePlateIconId` - das Zeichen, das
+        ein sehender Spieler ueber dem Kopf sieht. War laengst im Code
+        (NpcPrefix sagt "Quest verfuegbar"), nur nie zum Filtern benutzt.
+        Gemessen bisher genau ein Wert: 71201 bei Buscarron (Log 19:49).
+    Methode heisst jetzt `QuestMarkerService.GetQuestObjectIds()`.
+
+>>> DAS LOG BEANTWORTET BEIM NAECHSTEN TEST ALLES ALLEIN:
+    - "[Quest] Objekt-Ids aus Markern (N): 'Quest'[1] LevelId=x->Obj=y Typ=8
+      terr=129 | ..." - zeigt pro Marker-Ort, ob LevelId 0 ist, ob die Zeile
+      im Sheet steht, welches Objekt und welche Zone herauskommt.
+    - "[Nav] Quest-NPCs: A von B Objekten (per Marker X, per Symbol Y; N Ids
+      aus Markern). Symbole: Name=71201, ..." - trennt die beiden Quellen
+      und listet JEDES Symbol ungleich 0 mit Objektnamen.
+    Damit laesst sich `QuestMarkerHint` (Bereiche 71001-71006 usw. sind bis
+    heute NICHT messbelegt!) aus echten Daten schaerfen.
+
+>>> ZU TESTEN: In einer Zone mit Quest-NPC den Browser auf "Quest-NPCs"
+    stellen. Steht der NPC drin? Und stehen NUR Quest-NPCs drin (Symbol-
+    Bereich koennte zu weit sein)? Danach Log ansehen.
+    Offen bleibt bewusst: bei `Type=9` (BNpcBase) gilt eine Id fuer ALLE
+    Gegner derselben Art in der Zone - fuer "toete 3 Kaefer" richtig, aber
+    es ist eine Art, kein Einzelgegner.
+
+## VORHERIGER STAND (2026-08-02 ABENDS, CHAT-KANAELE + CHATLOG-EINSTELLUNGEN, V5.67 RELEASED)
 
 >>> ALLES UNTEN als V5.67 released. A und B in-game bestaetigt; die
     Quest-Kategorien (unten, eigener Block) fahren UNGETESTET mit.
