@@ -5,8 +5,18 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-08-03, V5.72 HAENDLER-KATEGORIE - RELEASED, TEILGETESTET)
 
+>>> RELEASE v5.72 IST DRAUSSEN (Commit b22c1ac, Tag v5.72).
+    Versions-Sync wie immer noetig (csproj + repo.json standen auf 5.71).
+    VERIFIZIERT: v5.72 ist "Latest"; alle 4 Assets "uploaded"; der Download
+    ueber releases/latest/download/latest.zip liefert 615.366 Bytes mit
+    Manifest 5.72.0.0 und DLL-Dateiversion 5.72.0.0; repo.json auf main
+    traegt 5.72.0.0 (ueber die API gegengelesen).
+    Installer unveraendert (git diff bff9bed..HEAD -- Installer/ leer) ->
+    exe + installer.json aus v5.71 uebernommen, SHA256 stimmt
+    (5787445B...CAD49).
+
 >>> NEUE KATEGORIE "HAENDLER" IM OBJEKT-BROWSER (User-Wunsch: "nur Haendler
-    sehen"). Gebaut, IN-GAME UNGETESTET.
+    sehen"). Released mit v5.72, erster Teil-Test bestanden (siehe unten).
     ERKENNUNG KOMMT VOM SPIEL, NICHT VON UNS: `ENpcBase.ENpcData` haelt bis zu
     32 Verweise je NPC, und Lumina loest jeden gegen die 25 Sheet-Typen auf,
     die das Spiel dort erlaubt (ilspycmd-verifiziert 2026-08-03 an
