@@ -5,6 +5,20 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-08-03, SPRACH-AUDIT V5.71 - RELEASED, IN-GAME UNGETESTET)
 
+>>> RELEASE v5.71 IST DRAUSSEN (Commit bff9bed, Tag v5.71).
+    Versions-Sync war wieder noetig: csproj + repo.json standen auf 5.70,
+    Plugin.cs schon auf 5.71 - der uebliche Drift.
+    VERIFIZIERT, nicht nur behauptet: v5.71 ist "Latest"; alle 4 Assets
+    "uploaded"; der Download ueber releases/latest/download/latest.zip
+    liefert 613.664 Bytes mit Manifest 5.71.0.0 und DLL-Dateiversion
+    5.71.0.0; repo.json auf main traegt 5.71.0.0 (ueber die API gegengelesen).
+    Installer unveraendert (git diff dd24a14..HEAD -- Installer/ ist leer)
+    -> exe + installer.json aus v5.70 uebernommen, SHA256 gegengeprueft
+    (5787445B...CAD49 stimmt), damit der Update-Pfad fuer Nutzer mit
+    aelterem Installer intakt bleibt.
+    ACHTUNG: IN-GAME UNGETESTET released - weder deutsch noch englisch.
+    Der englische Nutzer ist der einzige, der die EN-Seite pruefen kann.
+
 >>> USER-FRAGE: "kommen noch deutsche Sachen, die nicht uebersetzt werden?"
     JA - 24 Stellen gefunden und behoben. Alle liefen ueber harte Literale
     mitten im Service-Code, also GESPROCHEN und an /acc lang vorbei.
