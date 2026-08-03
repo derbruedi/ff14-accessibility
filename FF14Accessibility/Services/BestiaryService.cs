@@ -16,13 +16,13 @@ public sealed class BestiaryService
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
 
-    // Monster name (lowercase) -> spoken habitat text. Built lazily on first
+    // Monster name (lowercase) -> its spawn areas. Built lazily on first
     // bestiary use; sheet data is static per game version.
-    private Dictionary<string, string>? _habitats;
+    private Dictionary<string, string[]>? _habitats;
 
     // Sheet entries whose name carries a declension placeholder, as anchored
     // patterns (see BuildPattern). Searched only after an exact lookup failed.
-    private List<(Regex Pattern, string Habitat, string SheetName)>? _declined;
+    private List<(Regex Pattern, string[] Areas, string SheetName)>? _declined;
 
     /// <summary>Declension placeholder in German sheet names: "gefräßig[a] Yarzon".</summary>
     private static readonly Regex PlaceholderRx = new(@"\[.\]", RegexOptions.Compiled);
@@ -41,8 +41,8 @@ public sealed class BestiaryService
     {
         _habitats ??= BuildHabitats();
         var wanted = monsterName.Trim().ToLowerInvariant();
-        if (_habitats.TryGetValue(wanted, out var habitat))
-            return habitat;
+        if (_habitats.TryGetValue(wanted, out var areas))
+            return string.Join(AccessibilityStrings.HabitatJoin, areas);
 
         // German sheet names store the adjective ending as a placeholder the
         // game fills in per grammatical case, so the UI name never matches
@@ -51,7 +51,7 @@ public sealed class BestiaryService
         // fits. A wrong habitat sends the user to the wrong zone, so ambiguity
         // stays silent rather than guessing.
         var hits = _declined!.Where(d => d.Pattern.IsMatch(wanted)).Take(2).ToList();
-        if (hits.Count == 1) return hits[0].Habitat;
+        if (hits.Count == 1) return string.Join(AccessibilityStrings.HabitatJoin, hits[0].Areas);
         if (hits.Count > 1)
         {
             _log.Info($"[Bestiary] MEHRDEUTIG '{wanted}' - passt auf mehrere Sheet-Namen, keine Ansage.");
@@ -98,10 +98,10 @@ public sealed class BestiaryService
                   + (hits.Count == 0 ? "(keiner)" : string.Join(" | ", hits.Select(h => $"'{h}'"))));
     }
 
-    private Dictionary<string, string> BuildHabitats()
+    private Dictionary<string, string[]> BuildHabitats()
     {
-        var map = new Dictionary<string, string>();
-        _declined = new List<(Regex, string, string)>();
+        var map = new Dictionary<string, string[]>();
+        _declined = new List<(Regex, string[], string)>();
         foreach (var row in _data.GetExcelSheet<MonsterNoteTarget>())
         {
             var name = row.BNpcName.ValueNullable?.Singular.ExtractText().Trim() ?? string.Empty;
@@ -120,11 +120,13 @@ public sealed class BestiaryService
             }
             if (areas.Count == 0) continue;
 
-            var key     = name.ToLowerInvariant();
-            var habitat = string.Join(", oder ", areas);
-            map[key] = habitat;
+            // The AREAS are cached, not the finished sentence: the connector
+            // between them is language-dependent, and /acc lang may switch after
+            // this table was built.
+            var key = name.ToLowerInvariant();
+            map[key] = areas.ToArray();
             if (BuildPattern(key) is { } pattern)
-                _declined.Add((pattern, habitat, key));
+                _declined.Add((pattern, areas.ToArray(), key));
         }
         _log.Info($"[Bestiary] Lebensraum-Tabelle: {map.Count} Monster aus MonsterNoteTarget, "
                   + $"davon {_declined.Count} mit Deklinations-Platzhalter.");

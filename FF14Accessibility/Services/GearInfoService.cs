@@ -72,9 +72,11 @@ public sealed class GearInfoService
     ///
     /// The item level is the row id of <c>LevelItem</c>: the ItemLevel sheet is
     /// indexed BY item level (row 45 holds the caps for item level 45), so the
-    /// reference itself carries the number. Cross-check possible from the item
-    /// description text, which spells "Gegenstandsstufe: N" out - both are
-    /// logged together for exactly that reason.
+    /// reference itself carries the number. NOT independently proven: the planned
+    /// cross-check via the item description came up empty because standard gear
+    /// has no description at all. What 14 logged items did show (2026-08-02) is
+    /// LevelItem.RowId == LevelEquip on every armour piece, with only a quest
+    /// weapon differing (17 vs 15) as expected for quest weapons.
     ///
     /// DELIBERATELY NOT INCLUDED: the HQ bonus (BaseParamSpecial /
     /// BaseParamValueSpecial) and anything materia adds. Those belong to a
@@ -110,26 +112,7 @@ public sealed class GearInfoService
 
         if (row.MateriaSlotCount > 0) parts.Add(AccessibilityStrings.MateriaSlots(row.MateriaSlotCount));
 
-        LogStatsOnce(row, itemLevel, parts);
         return string.Join(", ", parts);
-    }
-
-    private readonly HashSet<uint> _statsLogged = new();
-
-    /// <summary>
-    /// Logs an item's stat line ONCE per item id (browsing a bag would otherwise
-    /// log the same row every frame). The item description is logged next to it
-    /// on purpose: many descriptions spell out "Gegenstandsstufe: N", which is
-    /// the independent check that LevelItem.RowId really is the item level.
-    /// </summary>
-    private void LogStatsOnce(LuminaItem row, uint itemLevel, List<string> parts)
-    {
-        if (!_statsLogged.Add(row.RowId)) return;
-
-        var desc = row.Description.ExtractText().Replace("\n", " ").Trim();
-        if (desc.Length > 120) desc = desc[..120] + "...";
-        _log.Info($"[Gear] '{row.Name.ExtractText()}' (Id {row.RowId}): LevelItem.RowId={itemLevel} " +
-                  $"LevelEquip={row.LevelEquip} -> {string.Join(", ", parts)} | Beschreibung: '{desc}'");
     }
 
     /// <summary>

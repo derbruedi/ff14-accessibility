@@ -1273,15 +1273,15 @@ public sealed class UIReaderService : IDisposable
         if (yield.Length > 0 && yield != "1") parts.Add(AccessibilityStrings.AmountLabel(yield));
 
         var chance = ReadVisibleChildText(comp, 10);
-        if (chance.Length > 0) parts.Add($"Chance {chance} Prozent");
+        if (chance.Length > 0) parts.Add(AccessibilityStrings.GatherChance(chance));
 
         // Bonus chance only when it is a real value (not 0 % / not "-").
         var bonus = ReadVisibleChildText(comp, 16);
         if (bonus.Length > 0 && bonus != "0" && bonus != "-")
-            parts.Add($"Bonus {bonus} Prozent");
+            parts.Add(AccessibilityStrings.GatherBonus(bonus));
 
-        if (IsVisibleFlag(FindChildNode(comp, 7))) parts.Add("rar");
-        if (IsVisibleFlag(FindChildNode(comp, 6))) parts.Add("verborgen");
+        if (IsVisibleFlag(FindChildNode(comp, 7))) parts.Add(AccessibilityStrings.GatherRare);
+        if (IsVisibleFlag(FindChildNode(comp, 6))) parts.Add(AccessibilityStrings.GatherHidden);
 
         return string.Join(", ", parts);
     }
@@ -1301,7 +1301,7 @@ public sealed class UIReaderService : IDisposable
         var current = ReadTopText(addon, 12);
         var max     = ReadTopText(addon, 9);
         if (current.Length > 0 && max.Length > 0)
-            parts.Add($"Belastbarkeit {current} von {max}");
+            parts.Add(AccessibilityStrings.GatherIntegrity(current, max));
 
         return string.Join(". ", parts);
     }
@@ -1651,7 +1651,7 @@ public sealed class UIReaderService : IDisposable
     /// </summary>
     private unsafe (string Confirm, string Cancel) ReadYesNoLabels(AtkUnitBase* addon)
     {
-        string confirm = "Ja", cancel = "Nein";
+        string confirm = AccessibilityStrings.YesWord, cancel = AccessibilityStrings.NoWord;
         for (var i = 0; i < addon->UldManager.NodeListCount; i++)
         {
             var n = addon->UldManager.NodeList[i];
@@ -2505,7 +2505,7 @@ public sealed class UIReaderService : IDisposable
                 var compType = comp->GetComponentType();
                 var isItemSlot = compType is ComponentType.Icon or ComponentType.DragDrop;
                 if (icon->IconId == 0)
-                    return isItemSlot && ((AtkResNode*)cur)->IsVisible() ? "Leer" : string.Empty;
+                    return isItemSlot && ((AtkResNode*)cur)->IsVisible() ? AccessibilityStrings.EmptySlot : string.Empty;
 
                 var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
                 if (string.IsNullOrEmpty(name)) return string.Empty;
@@ -2519,7 +2519,7 @@ public sealed class UIReaderService : IDisposable
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
                 _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' gear='{gear}'");
-                var spoken = qty.Length > 0 ? $"{qty} mal {name}" : name;
+                var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
                 return gear.Length > 0 ? $"{spoken}, {gear}" : spoken;
             }
             cur = cur->ParentNode;
@@ -3620,7 +3620,7 @@ public sealed class UIReaderService : IDisposable
                 // is activated.
                 var idx = _csTabs.FindIndex(t => t.NodeId == top->NodeId);
                 _csFocusValue = string.Empty;
-                desc = $"Reiter {idx + 1} von {_csTabs.Count}.";
+                desc = AccessibilityStrings.TabPositionOnly(idx + 1, _csTabs.Count);
                 break;
             }
             default:
@@ -4157,9 +4157,8 @@ public sealed class UIReaderService : IDisposable
         }
 
         // Initiale Ansage: Liste der verf�gbaren Regionen
-        var sb = new StringBuilder("Datenzentrum w�hlen. Regionen: ");
-        sb.Append(string.Join(", ", _dcTabPanels.Select(p => p.Region)));
-        _tolk.SpeakInterrupt(sb.ToString());
+        var regions = string.Join(", ", _dcTabPanels.Select(p => p.Region));
+        _tolk.SpeakInterrupt(AccessibilityStrings.DataCenterRegions(regions));
         
         // Den ersten Fokus direkt ansagen
         AnnounceDCFocus();
@@ -4758,15 +4757,14 @@ public sealed class UIReaderService : IDisposable
         // First frame after opening: announce the whole picture.
         if (!_bankAnnounced)
         {
-            var sb = new StringBuilder("Gil-Depot");
+            var sb = new StringBuilder(AccessibilityStrings.BankTitle);
             if (mode.Length > 0) sb.Append(", ").Append(mode);
-            sb.Append(". Betrag ").Append(amount).Append('.');
+            sb.Append(". ").Append(AccessibilityStrings.BankAmount(amount));
             if (playerName.Length > 0)
-                sb.Append(' ').Append(playerName).Append(": derzeit ").Append(playerNow)
-                  .Append(", danach ").Append(playerAfter).Append('.');
+                sb.Append(' ').Append(AccessibilityStrings.BankBalance(playerName, playerNow, playerAfter));
             if (chestName.Length > 0)
-                sb.Append(" Truhe ").Append(chestName).Append(": derzeit ").Append(chestNow)
-                  .Append(", danach ").Append(chestAfter).Append('.');
+                sb.Append(' ').Append(AccessibilityStrings.BankBalance(
+                    AccessibilityStrings.BankChestOwner(chestName), chestNow, chestAfter));
 
             var full = sb.ToString();
             _bankAnnounced  = true;
@@ -4791,8 +4789,8 @@ public sealed class UIReaderService : IDisposable
         {
             _lastBankAmount = amount;
             var msg = playerName.Length > 0 && !string.IsNullOrWhiteSpace(playerAfter)
-                ? $"Betrag {amount}, {playerName} danach {playerAfter}."
-                : $"Betrag {amount}.";
+                ? AccessibilityStrings.BankAmountWithBalance(amount, playerName, playerAfter)
+                : AccessibilityStrings.BankAmount(amount);
             _log.Info($"[Bank] Betrag: '{msg}'");
             _tolk.SpeakInterrupt(msg);
         }
@@ -4813,14 +4811,14 @@ public sealed class UIReaderService : IDisposable
         var now   = ParseGil(playerNow);
         var after = ParseGil(playerAfter);
         if (now >= 0 && after >= 0 && now != after)
-            return after < now ? "Hinterlegen" : "Entnehmen";
+            return after < now ? AccessibilityStrings.BankDeposit : AccessibilityStrings.BankWithdraw;
 
         // Amount 0 / values equal: read the checkbox as a tentative fallback.
         var cb = (AtkComponentCheckBox*)FindTopComponent(addon, 28);
         if (cb == null) return string.Empty;
         var isChecked = cb->IsChecked;
         _log.Info($"[Bank] Modus-Checkbox id=28 IsChecked={isChecked} (Annahme: checked=Entnehmen)");
-        return isChecked ? "Entnehmen" : "Hinterlegen";
+        return isChecked ? AccessibilityStrings.BankWithdraw : AccessibilityStrings.BankDeposit;
     }
 
     /// <summary>Parses a German-grouped gil number ("9.824") to a long, or -1.</summary>
@@ -5329,7 +5327,9 @@ public sealed class UIReaderService : IDisposable
             _chatInputWasActive = true;
             _lastChatEcho       = text;
             _lastChatChannel    = channel;
-            var head = channel.Length > 0 ? $"Chat-Eingabe, {channel}" : "Chat-Eingabe";
+            var head = channel.Length > 0
+                ? AccessibilityStrings.ChatInputWithChannel(channel)
+                : AccessibilityStrings.ChatInput;
             _tolk.SpeakInterrupt(text.Length > 0 ? $"{head}, {text}" : head);
             _log.Info($"[Chat] Eingabe offen. Kanal='{channel}' Inhalt='{TolkService.Sanitize(text)}'");
             return;
@@ -5669,7 +5669,7 @@ public sealed class UIReaderService : IDisposable
         list->SelectItem(next, true);
         list->ScrollToItem((short)next);
 
-        var text = $"{next + 1} von {count}";
+        var text = AccessibilityStrings.Counter(next + 1, count);
         // Prime the list tracker's dedup so the Sel change is not re-announced.
         _lastListAnnounce[pickerName] = $"{next}|{text}";
         _tolk.SpeakInterrupt(text);
@@ -6113,7 +6113,7 @@ public sealed class UIReaderService : IDisposable
                         if (!string.IsNullOrWhiteSpace(item))
                             sb.Append($"{i + 1}. {item}. ");
                     }
-                    _tolk.SpeakInterrupt(sb.Length > 0 ? sb.ToString().Trim() : "Leere Liste.");
+                    _tolk.SpeakInterrupt(sb.Length > 0 ? sb.ToString().Trim() : AccessibilityStrings.EmptyList);
                     return;
                 }
             }
@@ -6123,7 +6123,7 @@ public sealed class UIReaderService : IDisposable
         if (!talkPt.IsNull && ((AtkUnitBase*)(nint)talkPt)->IsVisible)
         {
             var text = ReadFirstText((AtkUnitBase*)(nint)talkPt);
-            _tolk.SpeakInterrupt(string.IsNullOrEmpty(text) ? "Dialog." : text);
+            _tolk.SpeakInterrupt(string.IsNullOrEmpty(text) ? AccessibilityStrings.DialogWord : text);
             return;
         }
 
@@ -6377,8 +6377,8 @@ public sealed class UIReaderService : IDisposable
         if (description.Length > 0 || objectives.Count > 0)
         {
             if (level.Length > 0) sb.Append(level).Append(". ");
-            if (objectives.Count > 0) sb.Append($"Ziel: {string.Join(", ", objectives)}. ");
-            if (description.Length > 0) sb.Append($"Beschreibung: {description}");
+            if (objectives.Count > 0) sb.Append(AccessibilityStrings.QuestObjectiveText(string.Join(", ", objectives)));
+            if (description.Length > 0) sb.Append(AccessibilityStrings.ItemDescription(description));
         }
         else if (allTexts.Count > 0)
         {
@@ -6946,7 +6946,7 @@ public sealed class UIReaderService : IDisposable
                 var count = GetListEntryCount(list);
                 var idx   = renderer->ListItemIndex;
                 if (count <= 0 || idx < 0 || idx >= count) return false;
-                text = $"{idx + 1} von {count}";
+                text = AccessibilityStrings.Counter(idx + 1, count);
                 return true;
             }
         }
@@ -7031,7 +7031,7 @@ public sealed class UIReaderService : IDisposable
         // swatches without text (dump 2026-07-17 16:35) - the position is the
         // only speakable content.
         if (string.IsNullOrEmpty(text) && name.StartsWith("CMF", StringComparison.Ordinal))
-            text = $"{idx + 1} von {GetListEntryCount(list)}";
+            text = AccessibilityStrings.Counter(idx + 1, GetListEntryCount(list));
         if (string.IsNullOrEmpty(text)) return;
         var announce = $"{idx}|{text}";
         if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;
@@ -7279,7 +7279,7 @@ public sealed class UIReaderService : IDisposable
         if (habitat != null)
         {
             _selectedBestiaryMonster = monster;
-            announce += $". Lebt in {habitat}";
+            announce += AccessibilityStrings.LivesIn(habitat);
         }
         else
         {
@@ -7308,13 +7308,16 @@ public sealed class UIReaderService : IDisposable
         return true;
     }
 
-    /// <summary>True for a progress token as spoken by FormatBestiaryRow ("0 von 3").</summary>
+    /// <summary>True for a progress token as spoken by FormatBestiaryRow
+    /// ("0 von 3" / "0 of 3"). The connector comes from the same place that
+    /// PRINTS it - hard-coding "von" here made the whole hunting log vanish in
+    /// English, because a row without a recognised progress token is skipped.</summary>
     private static bool IsSpokenProgress(string part)
     {
         var pieces = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return pieces.Length == 3
             && pieces[0].All(char.IsDigit)
-            && pieces[1] == "von"
+            && pieces[1] == AccessibilityStrings.CounterConnector
             && pieces[2].All(char.IsDigit);
     }
 
@@ -7470,7 +7473,7 @@ public sealed class UIReaderService : IDisposable
         var right = part[(slash + 1)..];
         if (left.All(char.IsDigit) && right.All(char.IsDigit))
         {
-            result = $"{left} von {right}";
+            result = AccessibilityStrings.Counter(left, right);
             return true;
         }
         return false;
@@ -7608,8 +7611,8 @@ public sealed class UIReaderService : IDisposable
         // name a player would recognise.
         var name = ReadMainCommandName(button);
         text = name.Length > 0
-            ? $"{name}, {position} von {buttons.Count}"
-            : $"{position} von {buttons.Count}";
+            ? $"{name}, {AccessibilityStrings.Counter(position, buttons.Count)}"
+            : AccessibilityStrings.Counter(position, buttons.Count);
         return true;
     }
 

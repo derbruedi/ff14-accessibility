@@ -3,7 +3,143 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-02 SPAETABENDS, V5.70 RELEASED)
+## STAND JETZT (2026-08-03, SPRACH-AUDIT V5.71 - RELEASED, IN-GAME UNGETESTET)
+
+>>> USER-FRAGE: "kommen noch deutsche Sachen, die nicht uebersetzt werden?"
+    JA - 24 Stellen gefunden und behoben. Alle liefen ueber harte Literale
+    mitten im Service-Code, also GESPROCHEN und an /acc lang vorbei.
+    Warum Teil 1 sie verfehlt hat: der damalige Sweep suchte nach Umlauten
+    und Ansage-Literalen; Woerter ohne Umlaut ("Chance", "Betrag", "rar",
+    "Leer") und zusammengesetzte Formen ("{n} von {m}") blieben unsichtbar.
+    Diesmal gesucht wurde nach Ansage-BAUFORMEN (parts.Add / sb.Append /
+    Speak / desc= / text=) plus deutschen Funktionswoertern.
+    BEHOBEN, nach Fenster sortiert:
+    - Sammel-Fenster: "Chance N Prozent", "Bonus N Prozent", "rar",
+      "verborgen", "Belastbarkeit N von M"
+    - Gil-Depot: "Gil-Depot", "Betrag N", "X: derzeit A, danach B",
+      "Truhe X", "Hinterlegen"/"Entnehmen" (beide Ableitungswege)
+    - Inventar/Gegenstands-Slots: "N mal Name", "Leer"
+    - Chat-Eingabezeile: "Chat-Eingabe" / "Chat-Eingabe, <Kanal>"
+    - Weltenwahl: "Datenzentrum waehlen. Regionen: ..." (hatte zusaetzlich
+      einen kaputten Umlaut U+FFFD, jetzt sauber)
+    - Quest-Detail: "Ziel: ...", "Beschreibung: ..." (letzteres auf den
+      schon vorhandenen Baustein ItemDescription gelegt)
+    - Bestiarium: ". Lebt in X" und der Verbinder ", oder " zwischen den
+      Fundgebieten
+    - Konfig-Reiter ohne Beschriftung: "Reiter N von M."
+    - Listen-/Knopf-Positionen an 6 Stellen: "N von M" -> Counter()
+      (Baustein war da, wurde nur nicht benutzt; neuer String-Overload fuer
+      Fortschrittsanzeigen wie "3/5")
+    - Plugin-Liste: "Unbenanntes Plugin"
+    - Ja/Nein-Dialog: die Fallback-Beschriftungen (greifen nur, wenn die
+      Knopf-Nodes leer sind - normal werden die Labels gelesen)
+    NEBENFUND UND MITGEFIXT: BestiaryService cachte den FERTIGEN Satz
+    inklusive Verbinder. Ein spaeteres /acc lang haette den nicht mehr
+    erreicht. Jetzt werden die Gebiete als Array gecacht und erst beim
+    Sprechen verbunden (CLAUDE.md: "Cache references, never values").
+    NICHT ANGEFASST, mit Absicht:
+    - Match-Strings ("Schliessen", "Ok", Journal-Header, Social-Reiter,
+      "Aetheryt"/"Aethernet", "St."-Ersetzung) - das ist Teil 2, dort macht
+      Uebersetzen die Erkennung KAPUTT.
+    - Debug-Sonden (Objekt-/Marker-Sonde, ConfigSystem-Dump, fishobj) und
+      die /acc keys-Dumpdatei - Diagnose-Export, bleibt deutsch.
+    - Alle _log-Zeilen.
+    TOTER FUND: `KeyNames.Speak()` ("Strg plus Umschalt plus N", "keine
+    Taste") wird von NIEMANDEM aufgerufen. Deshalb nicht uebersetzt, sondern
+    zum Loeschen vorgemerkt - erst pruefen, ob es fuer die Tastenansage
+    gedacht war und vergessen wurde.
+    Build: Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. V5.71.
+    IN-GAME UNGETESTET - was sich fuer den deutschen Spieler aendern soll:
+    NICHTS. Alle deutschen Wortlaute wurden 1:1 uebernommen.
+
+>>> RUECKMELDUNG DES ENGLISCHEN NUTZERS (via User, 2026-08-03), im Wortlaut:
+    "the only german messages left that I'm noticing are just single words,
+    like von and mal, usually to do with quantities or lists. like in the
+    hunting log, the entries say 2 von 10. in inventory, the quantity is
+    potion mal 5, or also when selecting a quest reward"
+    ALLE DREI SIND VOM AUDIT OBEN ERFASST - im Code nachgewiesen, nicht
+    vermutet:
+    (1) Jagdjournal "2 von 10" = `TryFormatProgress` (UIReaderService:7464),
+        wandelt den Client-Text "2/10" in Sprache -> laeuft jetzt ueber
+        Counter().
+    (2) Inventar-Menge = der Item-Slot-Fokus (UIReaderService:2522).
+    (3) Quest-Belohnung = DERSELBE Pfad wie (2). Belegt durch den Kommentar
+        bei :2006, der die Belohnungs-Slots ausdruecklich als "10 mal
+        Universalkoeder" beschreibt - die Belohnungen werden seit 2026-08-02
+        ausschliesslich ueber den Fokus-Pfad gelesen.
+    OFFENE UNSCHAERFE, NICHT WEGERKLAERT: er sagt "potion mal 5" (Name
+    zuerst). Unser Fokus-Pfad baut "5 mal Potion" (Menge zuerst). Die Form
+    "Name mal Menge" gibt es nur in `ItemStack` (Taschen-Liste,
+    InventoryService) - und die ist seit Teil 1 zweisprachig ("Potion times
+    5"). Entweder hat er aus dem Gedaechtnis zitiert, oder er laeuft auf
+    einer aelteren Version. BEIM NAECHSTEN KONTAKT KLAEREN: welche Version
+    zeigt ihm `/acc` beim Start an?
+
+>>> DABEI EINEN ECHTEN FEHLER GEFUNDEN, DEN MEIN EIGENER FIX ERZEUGT HAETTE:
+    `IsSpokenProgress` (UIReaderService:7311) erkennt die Fortschritts-Zahl
+    einer Jagdjournal-Zeile daran, dass das mittlere Wort "von" ist - also
+    an unserer EIGENEN deutschen Ausgabe. Sobald Counter() englisch "2 of 10"
+    spricht, greift der Vergleich nicht mehr, `TryExtractBestiaryMonster`
+    liefert false, und die Zeile wird mit `continue` UEBERSPRUNGEN: die
+    Jagdjournal-Uebersicht waere auf Englisch komplett LEER gewesen.
+    Behoben: neuer Baustein `AccessibilityStrings.CounterConnector`
+    ("von"/"of"), den sowohl Counter() als auch der Vergleich benutzen.
+    Das ist genau die im Lokalisierungs-Memory notierte Falle "manche
+    deutschen Strings sind zugleich Vergleichswerte" - nur diesmal nicht
+    gegen Client-Text, sondern gegen unseren eigenen.
+    Gegengeprueft: ein Grep ueber alle Vergleiche gegen Text-Literale zeigt
+    sonst nur Tastenbelegungen (sprachneutral) und bekannte Teil-2-Match-
+    Strings gegen Client-Text.
+
+>>> DOPPELUNG BESEITIGT: mein neuer `HabitatSuffix` war eine zweite Fassung
+    des schon vorhandenen `LivesIn`. HabitatSuffix ist raus, beide Bestiarium-
+    Stellen sagen jetzt dasselbe.
+
+>>> ZU TESTEN (V5.71): einmal deutsch gegenpruefen, dass keine Ansage
+    verstummt oder anders klingt (Sammel-Fenster, Gil-Depot, Inventar,
+    Chat-Eingabe, Bestiarium/Jagdjournal). Danach `/acc lang en` und
+    dieselben Fenster - dort darf kein deutsches Wort mehr kommen, und das
+    Jagdjournal MUSS weiterhin Zeilen liefern (siehe Fund oben).
+
+## VORHERIGE STUFE (2026-08-03, AUSRUESTUNGS-WERTE IN-GAME BESTAETIGT)
+
+>>> IN-GAME BESTAETIGT (User: "das mit der ruestung funktioniert").
+    Log-Beleg (dalamud.log, 2026-08-02 21:26 bis 23:06), 14 verschiedene
+    Teile geloggt, z.B.:
+    - 'Eisen-Schuppenpanzer' (Id 3057): LevelItem.RowId=23 LevelEquip=23
+      -> Gegenstandsstufe 23, Verteidigung 57, Magieabwehr 57, Staerke +4,
+         Konstitution +4, Direkter Treffer +4, 2 Materia-Slots
+    - 'Gepluenderte Guisarme' (Id 31423): LevelItem.RowId=17 LevelEquip=15
+      -> Gegenstandsstufe 17, Angriff 24, Magieschaden 12,
+         Verzoegerung 2,8 Sekunden, + vier Attribute
+    Waffen-Zweig (Angriff/Magieschaden/Verzoegerung) und Ruestungs-Zweig
+    (Verteidigung/Magieabwehr) greifen beide. Attributnamen kommen sauber
+    in Spielsprache. Keine Fehler, keine leeren Attributnamen im Log.
+
+>>> GEPLANTE GEGENPROBE IST INS LEERE GELAUFEN - ANNAHME BLEIBT OFFEN.
+    `LogStatsOnce` sollte die Item-Beschreibung als unabhaengigen Beleg
+    dafuer liefern, dass Gegenstandsstufe = `LevelItem.RowId` ist. In ALLEN
+    14 Log-Zeilen ist `Beschreibung: ''` - Standard-Ausruestung hat schlicht
+    keine Description im Sheet. Die Gegenprobe existiert also nicht.
+    WAS TATSAECHLICH GESTUETZT IST: bei allen 13 Ruestungsteilen gilt
+    LevelItem.RowId == LevelEquip; nur die Quest-Waffe weicht ab (17 vs 15),
+    was fuer Quest-Waffen erwartbar ist. Das ist ein Plausibilitaets-Indiz,
+    KEIN Beweis. Die relative Ordnung (Teil A hoeher als Teil B) stimmt in
+    jedem Fall - genau darum ging es dem User.
+    OFFEN: harte Gegenprobe gegen eine externe Item-Datenbank oder gegen
+    ein Item MIT Beschreibung, falls die absolute Zahl je strittig wird.
+    Wer den Beschreibungs-Beleg nicht mehr braucht, kann `LogStatsOnce`
+    bei Gelegenheit entfernen (Debug-Sonden-Konvention).
+
+>>> LAENGE IST OK (User 2026-08-03: "das ist ok"). Nicht kuerzen.
+
+>>> `LogStatsOnce` ENTFERNT (2026-08-03): die Sonde konnte ihren Zweck nicht
+    mehr erfuellen, weil die Beschreibungen leer sind. Der XML-Kommentar an
+    `DescribeStats` haelt jetzt fest, was belegt ist und was nicht.
+
+>>> WEITERHIN UNGETESTET AUS V5.69: unbegrenzter Nachlese-Puffer.
+
+## VORHERIGE STUFE (2026-08-02 SPAETABENDS, V5.70 RELEASED)
 
 >>> RELEASE v5.70 IST DRAUSSEN (Commit dd24a14, Tag v5.70).
     Versions-Sync war noetig: csproj + repo.json standen noch auf 5.67,

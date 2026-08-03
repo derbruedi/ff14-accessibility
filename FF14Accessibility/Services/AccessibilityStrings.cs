@@ -207,6 +207,10 @@ public static class AccessibilityStrings
     public static string GenderFemale => IsGerman ? "weiblich" : "female";
 
     // ── SelectYesno ──────────────────────────────────────────────────
+    /// <summary>Fallback button labels, used only when the dialog's own button
+    /// nodes carry no text - normally the labels are READ from the game.</summary>
+    public static string YesWord => IsGerman ? "Ja" : "Yes";
+    public static string NoWord  => IsGerman ? "Nein" : "No";
     public static string DialogButtons(string confirm, string cancel) =>
         IsGerman
             ? $"{confirm} oder {cancel}? Links und rechts wechseln, Enter wählt aus."
@@ -387,8 +391,20 @@ public static class AccessibilityStrings
     public static string Unnamed => IsGerman ? "Unbenannt" : "Unnamed";
 
     /// <summary>Spoken "N of M" position counter for browser cycling (no period).</summary>
+    /// <summary>The word between the two numbers of a counter. Exposed because
+    /// code that RECOGNISES a counter it printed earlier (see UIReaderService,
+    /// IsSpokenProgress) must not hard-code the German "von" - that comparison
+    /// silently stops matching the moment the announcement speaks English.</summary>
+    public static string CounterConnector => IsGerman ? "von" : "of";
+
     public static string Counter(int index, int count) =>
-        IsGerman ? $"{index} von {count}" : $"{index} of {count}";
+        $"{index} {CounterConnector} {count}";
+
+    /// <summary>Same "x of y" form for values that arrive as text (a progress
+    /// display read from the UI, e.g. "3/5"), where parsing them to numbers
+    /// would only risk losing what the game actually printed.</summary>
+    public static string Counter(string index, string count) =>
+        $"{index} {CounterConnector} {count}";
 
     /// <summary>Trailing warning when the game refused to set the target
     /// (leading space, appended to a target announcement).</summary>
@@ -1347,4 +1363,79 @@ public static class AccessibilityStrings
         IsGerman ? $"Benachrichtigung. Mit {key} annehmen." : $"Notification. Press {key} to accept.";
     public static string SecondsToJoin(int seconds) =>
         IsGerman ? $"Noch {seconds} Sekunden zum Beitreten." : $"{seconds} seconds left to join.";
+
+    // ════════════════════════════════════════════════════════════════
+    //  Nachzuegler aus dem Sprach-Audit 2026-08-03
+    //  Alles hier war noch hart deutsch mitten im Service-Code und wurde
+    //  gesprochen. Die englischen Fassungen benennen die Sache, sie sind
+    //  KEINE gelesenen Client-Begriffe - wo der englische Client ein
+    //  anderes Wort fuehrt, gewinnt spaeter das gelesene Wort.
+    // ════════════════════════════════════════════════════════════════
+
+    // ── Sammel-Fenster (Gathering) ──────────────────────────────────
+    public static string GatherChance(string percent) =>
+        IsGerman ? $"Chance {percent} Prozent" : $"Chance {percent} percent";
+    public static string GatherBonus(string percent) =>
+        IsGerman ? $"Bonus {percent} Prozent" : $"Bonus {percent} percent";
+    public static string GatherRare   => IsGerman ? "rar" : "rare";
+    public static string GatherHidden => IsGerman ? "verborgen" : "hidden";
+    /// <summary>Remaining uses of a gathering node ("Belastbarkeit 4 von 4").</summary>
+    public static string GatherIntegrity(string current, string max) =>
+        IsGerman ? $"Belastbarkeit {current} von {max}" : $"Integrity {current} of {max}";
+
+    // ── Inventar / Gegenstands-Slots ────────────────────────────────
+    /// <summary>An item with its stack count. German needs the "mal" connector,
+    /// English just puts the number first.</summary>
+    public static string ItemQuantity(string qty, string name) =>
+        IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
+    /// <summary>A visible but empty inventory/equipment slot.</summary>
+    public static string EmptySlot => IsGerman ? "Leer" : "Empty";
+
+    // ── Listen / Reiter ohne eigene Beschriftung ────────────────────
+    /// <summary>Icon-only tab: position alone, no label to announce.</summary>
+    public static string TabPositionOnly(int index, int count) =>
+        IsGerman ? $"Reiter {index} von {count}." : $"Tab {index} of {count}.";
+    public static string EmptyList => IsGerman ? "Leere Liste." : "Empty list.";
+    public static string DialogWord => IsGerman ? "Dialog." : "Dialog.";
+
+    // ── Weltenwahl (TitleDCWorldMap) ────────────────────────────────
+    public static string DataCenterRegions(string regions) =>
+        IsGerman ? $"Datenzentrum wählen. Regionen: {regions}"
+                 : $"Choose a data center. Regions: {regions}";
+
+    // ── Gil-Depot (Bank / Gehilfen-Truhe) ───────────────────────────
+    public static string BankTitle    => IsGerman ? "Gil-Depot" : "Gil storage";
+    public static string BankDeposit  => IsGerman ? "Hinterlegen" : "Deposit";
+    public static string BankWithdraw => IsGerman ? "Entnehmen" : "Withdraw";
+    public static string BankAmount(string amount) =>
+        IsGerman ? $"Betrag {amount}." : $"Amount {amount}.";
+    /// <summary>One balance line: who, the balance now, the balance afterwards.</summary>
+    public static string BankBalance(string owner, string now, string after) =>
+        IsGerman ? $"{owner}: derzeit {now}, danach {after}."
+                 : $"{owner}: currently {now}, then {after}.";
+    /// <summary>Label of the storage side of the window (the retainer's chest).</summary>
+    public static string BankChestOwner(string name) =>
+        IsGerman ? $"Truhe {name}" : $"Chest {name}";
+    /// <summary>Typing echo: the amount plus the balance it would leave behind.</summary>
+    public static string BankAmountWithBalance(string amount, string owner, string after) =>
+        IsGerman ? $"Betrag {amount}, {owner} danach {after}."
+                 : $"Amount {amount}, {owner} then {after}.";
+
+    // ── Chat-Eingabezeile ───────────────────────────────────────────
+    public static string ChatInput => IsGerman ? "Chat-Eingabe" : "Chat input";
+    public static string ChatInputWithChannel(string channel) =>
+        IsGerman ? $"Chat-Eingabe, {channel}" : $"Chat input, {channel}";
+
+    // ── Quest-Detailfenster ─────────────────────────────────────────
+    public static string QuestObjectiveText(string objectives) =>
+        IsGerman ? $"Ziel: {objectives}. " : $"Objective: {objectives}. ";
+
+    // ── Bestiarium: Lebensraum ──────────────────────────────────────
+    // The habitat clause itself is LivesIn (further up) - one wording for both
+    // the list overview and the single-row announcement.
+    /// <summary>Connector between the spawn areas of one monster.</summary>
+    public static string HabitatJoin => IsGerman ? ", oder " : ", or ";
+
+    // ── Plugin-Liste ────────────────────────────────────────────────
+    public static string UnnamedPlugin => IsGerman ? "Unbenanntes Plugin" : "Unnamed plugin";
 }

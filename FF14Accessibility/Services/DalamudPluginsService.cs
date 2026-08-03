@@ -173,7 +173,7 @@ public sealed class DalamudPluginsService
     {
         if (TryGet(() => plugin.Name, out var name) && !string.IsNullOrWhiteSpace(name)) return name;
         if (TryGet(() => plugin.InternalName, out var internalName) && !string.IsNullOrWhiteSpace(internalName)) return internalName;
-        return "Unbenanntes Plugin";
+        return AccessibilityStrings.UnnamedPlugin;
     }
 
     /// <summary>

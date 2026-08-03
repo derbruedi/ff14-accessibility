@@ -67,8 +67,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.70";
-    private const string PluginVersionTag = "Quest-Kategorien gefixt, Nachlese-Puffer unbegrenzt, Ausruestungs-Werte (Gegenstandsstufe, Verteidigung, Attribute) hinter der Beschreibung";
+    private const string PluginVersion    = "5.71";
+    private const string PluginVersionTag = "Sprach-Audit: 24 deutsche Rest-Ansagen (Sammel-Fenster, Gil-Depot, Inventar, Chat-Eingabe, Bestiarium, Listen-Positionen) jetzt zweisprachig";
 
     public Plugin()
     {
