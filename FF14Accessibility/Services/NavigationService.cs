@@ -23,6 +23,7 @@ internal enum NavCategory
 {
     All,
     Npcs,
+    Merchants,
     Enemies,
     Players,
     Objects,
@@ -60,6 +61,7 @@ public sealed class NavigationService
     private readonly FishingService _fishing;
     private readonly FateService _fates;
     private readonly RouteService _routes;
+    private readonly ShopNpcService _shops;
     private readonly Configuration _config;
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
@@ -80,6 +82,7 @@ public sealed class NavigationService
         FishingService fishing,
         FateService fates,
         RouteService routes,
+        ShopNpcService shops,
         Configuration config,
         IDataManager data,
         IPluginLog log)
@@ -95,6 +98,7 @@ public sealed class NavigationService
         _fishing = fishing;
         _fates = fates;
         _routes = routes;
+        _shops = shops;
         _config = config;
         _data = data;
         _log = log;
@@ -211,6 +215,9 @@ public sealed class NavigationService
     {
         (NavCategory.All,             AllBrowseKinds),
         (NavCategory.Npcs,            new[] { ObjectKind.EventNpc }),
+        // Merchants: the same NPCs, kept to those the game links to a shop sheet
+        // (ShopNpcService) - see GetCategoryObjects.
+        (NavCategory.Merchants,       new[] { ObjectKind.EventNpc }),
         (NavCategory.Enemies,         new[] { ObjectKind.BattleNpc }),
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
         (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
@@ -439,9 +446,14 @@ public sealed class NavigationService
         // Gathering nodes: the type and required level ARE the useful content
         // ("Erzader, Stufe 20"); their object name is usually empty and the
         // kind ("Sammelpunkt") would just repeat the category.
+        // In the merchant category the SHOP KIND replaces the generic "NPC":
+        // the player already knows they are cycling NPCs, what they need is
+        // whether this one sells for gil or trades for tokens.
         var description = obj.ObjectKind == ObjectKind.GatheringPoint
             ? DescribeGatheringPoint(obj)
-            : $"{NpcPrefix(obj)}{obj.Name.TextValue}, {DescribeKind(obj.ObjectKind)}";
+            : IsMerchantCategory
+                ? $"{NpcPrefix(obj)}{obj.Name.TextValue}, {AccessibilityStrings.ShopKindWord(_shops.KindOf(obj.BaseId))}"
+                : $"{NpcPrefix(obj)}{obj.Name.TextValue}, {DescribeKind(obj.ObjectKind)}";
 
         // Position goes LAST: the name is what the user is listening for, the
         // counter only tells them how far they have cycled (user wish
@@ -1138,6 +1150,25 @@ public sealed class NavigationService
         if (kinds == null) return new List<IGameObject>();
 
         var objects = GetObjectsOfKinds(kinds);
+
+        if (IsMerchantCategory)
+        {
+            // The link NPC -> shop belongs to the game (ENpcBase.ENpcData); we
+            // only ask it. Every hit is logged with the id and the sheet name so
+            // a walk through a market district shows whether the list is right.
+            var merchants = new List<IGameObject>();
+            var trace = new List<(string, uint, ShopKind)>();
+            foreach (var o in objects)
+            {
+                var kind = _shops.KindOf(o.BaseId);
+                if (kind == ShopKind.None) continue;
+                merchants.Add(o);
+                trace.Add((o.Name.TextValue, o.BaseId, kind));
+            }
+            _shops.LogMerchants(trace, objects.Count);
+            return merchants;
+        }
+
         if (!IsQuestOnlyCategory) return objects;
 
         // Quest-only category: two independent links, both owned by the game.
@@ -1186,6 +1217,9 @@ public sealed class NavigationService
     /// <summary>Whether the current category shows only quest-related objects.</summary>
     private bool IsQuestOnlyCategory => Categories[_categoryIndex].Cat
         is NavCategory.QuestNpcs or NavCategory.QuestObjects or NavCategory.QuestEnemies;
+
+    /// <summary>Whether the current category shows only shop keepers.</summary>
+    private bool IsMerchantCategory => Categories[_categoryIndex].Cat == NavCategory.Merchants;
 
     // ── Gehhilfe: manuell laufen, geführt von Beacon + Ansagen ──
     // Seit V4.63 pfadbasiert: Beacon und Richtungsansagen verfolgen den

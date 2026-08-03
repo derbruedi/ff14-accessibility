@@ -269,6 +269,7 @@ public static class AccessibilityStrings
     {
         NavCategory.All              => IsGerman ? "Alles"             : "Everything",
         NavCategory.Npcs             => IsGerman ? "NPCs"              : "NPCs",
+        NavCategory.Merchants        => IsGerman ? "Händler"           : "Merchants",
         NavCategory.Enemies          => IsGerman ? "Gegner"            : "Enemies",
         NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
         NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
@@ -284,6 +285,15 @@ public static class AccessibilityStrings
         NavCategory.Levequests       => IsGerman ? "Freibriefe"        : "Levequests",
         NavCategory.Waypoints        => IsGerman ? "Wegpunkte"         : "Waypoints",
         _                            => cat.ToString(),
+    };
+
+    /// <summary>What a merchant deals in, spoken in place of the generic "NPC"
+    /// while browsing the merchant category.</summary>
+    internal static string ShopKindWord(ShopKind kind) => kind switch
+    {
+        ShopKind.GilShop  => IsGerman ? "Laden"   : "shop",
+        ShopKind.Exchange => IsGerman ? "Tausch"  : "exchange",
+        _                 => IsGerman ? "Händler" : "merchant",
     };
 
     public static string CategoryQuestCount(string label, int here, int away) =>

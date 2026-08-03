@@ -3,7 +3,75 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-03, SPRACH-AUDIT V5.71 - RELEASED, IN-GAME UNGETESTET)
+## STAND JETZT (2026-08-03, V5.72 HAENDLER-KATEGORIE - RELEASED, TEILGETESTET)
+
+>>> NEUE KATEGORIE "HAENDLER" IM OBJEKT-BROWSER (User-Wunsch: "nur Haendler
+    sehen"). Gebaut, IN-GAME UNGETESTET.
+    ERKENNUNG KOMMT VOM SPIEL, NICHT VON UNS: `ENpcBase.ENpcData` haelt bis zu
+    32 Verweise je NPC, und Lumina loest jeden gegen die 25 Sheet-Typen auf,
+    die das Spiel dort erlaubt (ilspycmd-verifiziert 2026-08-03 an
+    Lumina.Excel.Sheets.ENpcBase, Methode ENpcDataCtor: ChocoboTaxiStand,
+    CollectablesShop, ContentNpc, CraftLeve, CustomTalk, DefaultTalk,
+    DisposalShop, DpsChallengeOfficer, EventPathMove, FccShop, GCShop,
+    GilShop, GuildOrderGuide, GuildOrderOfficer, GuildleveAssignment,
+    InclusionShop, LotteryExchangeShop, PreHandler, Quest, SpecialShop, Story,
+    SwitchTalk, TopicSelect, TripleTriad, Warp).
+    Ein NPC gilt als Haendler, wenn mindestens ein Verweis ein Shop-Sheet IST -
+    `RowRef.Is<T>()` (ilspycmd-verifiziert an Lumina.Excel.RowRef in Lumina.dll).
+    Nichts wird aus Namen, Titeln oder Symbolen erraten.
+    ZWEI ARTEN, weil der Unterschied fuer den Spieler zaehlt:
+    - GilShop -> "Laden" / "shop"
+    - SpecialShop/CollectablesShop/GCShop/FccShop/InclusionShop/DisposalShop/
+      LotteryExchangeShop -> "Tausch" / "exchange"
+    In der Haendler-Kategorie ersetzt dieses Wort das generische "NPC" -
+    dass es NPCs sind, weiss der Spieler in der Kategorie schon.
+    DIE BASE-ID-ZUORDNUNG IST NICHT NEU ERFUNDEN: `NavigationService.NpcPrefix`
+    liest ENpcResident laengst ueber `obj.BaseId` und spricht damit korrekte
+    NPC-Titel - derselbe Schluessel, nur ein anderes Sheet.
+    OFFEN GESAGTE GRENZE: Lumina nimmt den ERSTEN Sheet-Typ, in dem die RowId
+    existiert (RowRef.GetFirstValidRowOrUntyped). Wo eine Id in mehreren dieser
+    Sheets gueltig ist, kann der gemeldete Typ der falsche sein. Deshalb loggt
+    `ShopNpcService.LogMerchants` JEDEN Treffer mit Id, Sheet-Name und Art -
+    ein Gang durch ein Marktviertel zeigt, ob die Liste stimmt.
+
+>>> ERSTER TEIL-TEST BESTANDEN (User 2026-08-03: "hier sehe ich erstmal
+    Haendler, das muss ich spaeter noch mal testen").
+    Log 17:25 belegt zweierlei ohne Vermutung:
+    "[Shop] Haendler: 2 von 28 NPCs. 'Ruestungshaendlerin'(Id 1003735,
+     Sheet 'Ruestungshaendlerin')=GilShop, 'Haendler'(Id 1003737,
+     Sheet 'Haendler')=GilShop"
+    (1) Der Sheet-Name deckt sich mit dem angezeigten Namen -> die BaseId
+        adressiert wirklich den NPC vor dem Spieler. Das war die offene Frage.
+    (2) Der Filter arbeitet scharf: 26 von 28 NPCs fielen raus.
+    NOCH OFFEN, weil aus dem Log NICHT ableitbar: ob ein Haendler FEHLT (die
+    Gegenrichtung sieht nur der Spieler vor Ort) und ob die "Tausch"-Seite
+    stimmt - bisher kamen ausschliesslich GilShops vor, kein Siegel-/Stein-
+    Haendler (Staatliche Gesellschaft, Rowena).
+
+>>> QUEST-ZIEL-STOPPREICHWEITE: USER HAT ENTSCHIEDEN, NICHTS ZU AENDERN
+    (2026-08-03: "nee wir lassen das da so erstmal ich glaub in dem fall darf
+    ich nicht ganz ran"). Der Vorschlag, bis zum Mittelpunkt zu laufen, ist
+    damit ABGELEHNT - nicht vergessen, sondern verworfen.
+    SEINE BEGRUENDUNG IST PLAUSIBEL und stuetzt die urspruengliche Regel: bei
+    einer Ausspaeh-Quest ist Abstand halten der Sinn der Aufgabe; "ganz ran"
+    waere das Gegenteil. Der 20-m-Kreis kann also genau der richtige Bereich
+    sein.
+    DER BEFUND BLEIBT TROTZDEM GUELTIG UND IST HIER FESTGEHALTEN, falls das
+    Thema wiederkommt: `TryResolveMarkerDestination` (Plugin.cs:1165) setzt
+    stopRange = max(AutoWalkPlaceStopRange, quest.Radius). Bei einem Marker mit
+    r=20 heisst das: wer naeher als 20 m steht, gilt sofort als angekommen und
+    laeuft KEINEN Schritt (Log 13:45:39: "stopRange=20,0, dist=10,8" -> 0,1 s
+    spaeter "Ziel erreicht"). Wer sich also wundert, warum Numpad3 bei einem
+    Quest-Ziel nichts tut: das ist der Grund, kein Fehler.
+    Die Regel stammt aus V4.29 mit der Begruendung "Questkreis betreten reicht"
+    (STATUS.md-Abschnitt weiter unten).
+    NEBENBEFUND, ebenfalls nicht weiterverfolgt: an der Marker-Position lag ein
+    EventObj namens 'Zielort' (DataId 2001957, 10,1 m entfernt, X/Z identisch
+    mit dem Marker). Solche Objekte sind ueber die Kategorie "Objekte"
+    erreichbar - der Weg, falls doch mal jemand exakt auf den Punkt will.
+    Karten-EventMarkers waren dabei 0, die Minimap-Symbole ohne Beschriftung.
+
+## VORHERIGE STUFE (2026-08-03, SPRACH-AUDIT V5.71 - RELEASED, IN-GAME UNGETESTET)
 
 >>> RELEASE v5.71 IST DRAUSSEN (Commit bff9bed, Tag v5.71).
     Versions-Sync war wieder noetig: csproj + repo.json standen auf 5.70,
