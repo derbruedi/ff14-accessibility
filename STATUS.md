@@ -3,7 +3,401 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-03, V5.72 HAENDLER-KATEGORIE - RELEASED, TEILGETESTET)
+## STAND JETZT (2026-08-06, README DE+EN GEGEN DEN CODE ABGEGLICHEN)
+
+>>> USER-AUFTRAG: "aktualisiere mal die readme in deutsch und englisch und
+    schau das die tasten die wirklich funktionieren drin stehen und nicht
+    versehens noch alte."
+
+>>> GEFUNDENE KARTEILEICHEN (beide READMEs, Abschnitt "Skill-Browser"):
+    Umschalt+F7/F8 (Skill vor/zurueck), Umschalt+F11 (Ziel-Leiste),
+    Umschalt+F9 (Ziel-Taste), Umschalt+F10 (ablegen) - FUENF Tasten, die es
+    seit dem Umbau auf das modale Menue (Strg+Numpad0) nicht mehr gibt.
+    Wer danach gegriffen hat, hat ins Leere gedrueckt.
+
+>>> METHODE, damit das nicht wieder passiert: Abgleich per Skript statt per
+    Auge. (a) Alle `public string Key* = "..."` aus Configuration.cs ziehen,
+    (b) gegenpruefen, dass jede in Plugin.cs auch benutzt wird, (c) jede in
+    beiden READMEs suchen (mit Uebersetzungstabelle DE/EN fuer BildAb ->
+    Page Down usw.), (d) die alten Tastennamen explizit als "darf NICHT
+    vorkommen" pruefen.
+    ERGEBNIS: 41 Tasten definiert, 41 benutzt, 0 tote Konfigfelder;
+    41 von 41 in beiden READMEs vorhanden; 0 alte Tasten uebrig.
+
+>>> NEU IN DIE READMEs AUFGENOMMEN (fehlten komplett): + (Ziel folgen),
+    Strg+Umschalt+F3 (AoE-Warnton, MIT dem Hinweis "Standard aus und warum"),
+    Strg+Umschalt+F4/F5 (Triple Triad), Strg+Numpad0 samt der menue-internen
+    Nummernblock-Steuerung inkl. 4/6 fuer Gegenstaende.
+    Bei "+" steht ausdruecklich "die normale Plus-Taste, nicht die des
+    Nummernblocks" und in der EN-Fassung der Layout-Hinweis (dort braucht +
+    oft Umschalt -> umbelegen).
+
+>>> NEUER ABSCHNITT "Ueberschneidungen mit Spiel-Tasten": nennt die drei
+    Konflikte beim Namen (Bild-auf/-ab = Kamera-Zoom, Strg+Ende =
+    Kamera-Preset), erklaert warum sie folgenlos sind, und sagt was zu tun
+    ist, wenn beim Anmelden eine ANDERE Zahl als 3 gemeldet wird. Die drei
+    stammen aus dem Log-Dump, nicht aus dem Gedaechtnis.
+
+>>> Feature-Listen nachgezogen (fehlten): Zauber-Warnung von allen Gegnern,
+    AoE-Warnton, Faehigkeit-bereit, XP/Beute, Folgen, Angeln, Sammeln,
+    Reittiere, Triple Triad, Gegenstaende auf die Leiste, Anmelde-Ruhephase.
+    Chat-Befehle vervollstaendigt (fish/gather/cd/lang/dump/soundtest/help);
+    Debug-Befehle (objprobe, hotbarprobe) bewusst NICHT dokumentiert.
+    Sprach-Abschnitt berichtigt: er behauptete "Ansagen ueberwiegend
+    Deutsch" - seit v5.59 ist die Ansage-Schicht zweisprachig, `/acc lang`
+    steht jetzt drin.
+
+## VORHERIGER STAND (2026-08-06, ANMELDE-RUHEPHASE - GEBAUT, UNGETESTET)
+
+>>> USER-MELDUNG: "wenn man sich einlogt kommen von der mod sehr viele meldungen
+    die sich gegenseitig weg druecken und die frage ist ob die wirklich noetig
+    sind." Antwort nach Log-Auswertung: NEIN, fast nichts davon.
+
+>>> GEMESSEN, NICHT VERMUTET (Log 2026-08-06, [Speak]-Zeilen ab 17:35:28):
+    rund 15 Ansagen in EINER Sekunde, die meisten davon INT (unterbrechend):
+    "FORTSCHRITT, Unterbrochen!", "SEITE AN SEITE", "Nach Mindeststufe
+    sortieren", "Benachrichtigung. Mit Strg+F12 annehmen.", "Jobwechsel.
+    Klassenwechsel", "INVENTAR" (+5x DEBOUNCED), "0/140", "Ziel", "Alte
+    Herausforderungen neu erleben", "Tastenbelegung gespeichert: 183
+    Aktionen...", "Echokraut v0.19.3.0", "Zum Lodestone", "EMPFEHLUNGEN".
+    URSACHE: das sind keine Ansagen des Mods, sondern die HUD-Fenster, die der
+    CLIENT beim Anmelden aufbaut - jedes davon kommt als PostSetup bei
+    `OnAnyAddonOpen` an und wird pflichtschuldig gemeldet. Weil sie
+    unterbrechend sind, schneiden sie sich gegenseitig ab: der Spieler hoert
+    Fetzen. Fremd-Plugin-Fenster (Echokraut) sind mit dabei.
+
+>>> GEBAUT: Anmelde-Ruhephase. `UIReaderService.BeginLoginQuiet(sekunden)` legt
+    die AUTOMATISCHEN Leser still - `OnAnyAddonOpen`, `OnAnyAddonUpdate` und
+    `UpdateGlobalFocus`. Ausgeloest von `ClientState.Login` (Plugin.OnLogin).
+    Dauer `Configuration.LoginQuietSeconds = 6` (gemessene Lawine ~2-4 s,
+    Rest ist Reserve).
+    WICHTIG - WAS NICHT STUMM IST: alles vom Spieler AUSGELOESTE. Tastendruck-
+    Ansagen, gezielt geoeffnete Fenster und die Navigation laufen nicht ueber
+    diese drei Einstiege. Verschluckt wird ausschliesslich der Selbstaufbau.
+    `[Accessibility] Addon: <name>` wird WEITERHIN geloggt - die Ruhephase macht
+    die Diagnose also nicht blind, sie macht nur den Lautsprecher still.
+
+>>> HOT-RELOAD-FALL BEDACHT: laedt das Plugin, waehrend man schon in der Welt
+    ist (devPlugins/Neu laden), steht das HUD laengst - dann greift keine
+    Ruhephase (nur eine Log-Zeile). Beim naechsten echten Login greift sie.
+
+>>> MITGENOMMEN: die Keybind-Meldung beim Login. Sie kam nur, weil 3 Konflikte
+    bestehen (`announce:false`, aber `conflictCount > 0`), war aber ein langer
+    Satz mitten in der Lawine. Jetzt beim Login nur noch "3 Tastenkonflikte."
+    (neu `KeybindConflictsShort`, DE+EN) und nicht mehr unterbrechend; der
+    vollstaendige Satz bleibt fuer den ausdruecklichen `/acc keys`.
+
+>>> BLEIBT HOERBAR (User-Wahl "Ruhe, bis das HUD steht"): die
+    Bereitschaftsmeldung "FF14 Accessibility Version X bereit." - sie ist die
+    einzige, die eine echte Aussage traegt (Plugin laeuft ueberhaupt).
+    Build Debug 0/0, deployt. IN-GAME UNGETESTET - Test ist ein Aus- und
+    wieder Einloggen.
+
+>>> NICHT ANGEFASST, WEIL NICHT VERLANGT: der Zonenwechsel. Der baut ebenfalls
+    Fenster auf (Log 17:35:40 "Wegenetz wird geladen", "Muehlenbruch"), ist aber
+    deutlich harmloser. Wenn es dort auch stoert, ist es dieselbe Mechanik mit
+    `TerritoryChanged` als Ausloeser.
+
+## VORHERIGER STAND (2026-08-06, ZAUBER-WARNUNG VON ALLEN GEGNERN - GEBAUT, UNGETESTET)
+
+>>> USER-WUNSCH: "kann man auch ne warnung einbauen wenn ein gegner auf mich
+    zielt bzw einen zauber auf mich zaubert, so das man evtl ausweichen kann?"
+
+>>> WICHTIG FUER DEN UEBERBLICK: BEIDES GAB ES SCHON ZUR HAELFTE.
+    Der User erinnerte sich richtig ("wir hatten doch schonmal was mit
+    flaechenschaden") - der AoE-Warnton ist seit V5.55 gebaut UND released,
+    steht aber auf OPT-IN/STANDARD AUS (Strg+Umschalt+F3), weil er in-game nie
+    bestaetigt wurde. Und die Ansage "Gegner wirkt X" existierte ebenfalls
+    (AnnounceEnemyCast, Standard AN) - aber NUR fuer das anvisierte Ziel.
+    Die eigentliche Luecke war also: ein Gegner, den man NICHT anvisiert hat,
+    zaubert auf einen -> es blieb still. Genau der Fall, um den es geht.
+
+>>> GEBAUT: die Cast-Ansage haengt jetzt nicht mehr am Ziel, sondern laeuft in
+    DERSELBEN Gegner-Schleife wie der AoE-Ton mit (`UpdateAoeWarning`) - kein
+    zweiter Frame-Durchlauf. Bedingung unveraendert streng:
+    `CastTargetObjectId == playerId`, also nur Zauber AUF MICH; Zauber auf
+    andere bleiben still (User-Entscheid 2026-07-25 gilt weiter).
+    Die Pruefung sitzt VOR dem EffectRange-Filter, damit auch Einzelziel-Zauber
+    ohne Bodenflaeche gemeldet werden - die will man gerade hoeren.
+
+>>> NAME NUR WENN NOETIG (User-Wahl aus drei Varianten): ist der Zaubernde das
+    eigene Ziel, bleibt es beim knappen "Gegner wirkt Verwuesten." - der Spieler
+    weiss ohnehin, wer gemeint ist. Ist es ein ANDERER, faellt der Name:
+    "Amalj'aa-Seher wirkt Feuer." Kurz gehalten, weil die Warnung ankommen muss,
+    solange noch Zeit zum Ausweichen ist. Neu: `NamedEnemyCasts` (DE+EN).
+    NICHT gebaut (bewusst, User-Wahl): Meldung, wenn ein Gegner einen nur ins
+    Visier nimmt, ohne zu zaubern - haette im Kampf deutlich mehr geredet.
+
+>>> ENTPRELLUNG PRO ZAUBERNDEM, nicht global: `_castsAtMe` haelt casterId ->
+    zuletzt angesagte Aktion. Damit warnt jeder Gegner einzeln genau einmal je
+    Zauber, und ein zweiter Gegner wird nicht vom ersten verschluckt. Eintraege
+    fallen weg, sobald der Zauber endet, das Ziel wechselt oder der Gegner aus
+    der Objektliste verschwindet (Aufraeum-Durchlauf mit vorgehaltenen
+    Sammlungen, damit der Frame nichts allokiert).
+    Build Debug 0/0, deployt. IN-GAME UNGETESTET.
+
+>>> ZUM MITTESTEN, WEIL ES DENSELBEN WEG BETRIFFT: der AoE-Warnton ist weiter
+    STANDARD AUS. Er wartet seit V5.55 auf genau eine Bestaetigung (Kegel von
+    vorn/hinten, Linienbreite, Kreismittelpunkt; Testfeld Kampfuebungsplatz).
+    Faellt die positiv aus, sollte der Standard auf AN gedreht werden - dann ist
+    auch Spielervorschlag (5) wirklich erledigt.
+
+## VORHERIGER STAND (2026-08-06, BELEGEN WAR JOB-ABHAENGIG KAPUTT - FIX BESTAETIGT)
+
+>>> DAS BELEGEN WAR SEIT LAENGEREM DEFEKT, UND ZWAR NICHT NUR FUER GEGENSTAENDE.
+    User: "das belegen hat nicht funktioniert, ist mir letztens schon
+    aufgefallen". Das neue Gegenstands-Feature hat es also nicht kaputt
+    gemacht - es hat einen bestehenden Defekt sichtbar gemacht.
+
+>>> ENTSCHEIDENDER HINWEIS KAM VOM USER, NICHT AUS DEM LOG: "das ist job
+    abhaengig, ich bin in den job gegangen wo es funktioniert hat und da gehts".
+    Ohne diesen Hinweis waere die Sonde weiter im falschen Job gelaufen.
+
+>>> GEMESSEN MIT `/acc hotbarprobe` (DEBUG-Sonde, arbeitet nur auf einem Slot
+    der Hauptleiste und stellt ihn danach wieder her - Original type+id gemerkt).
+    Zwei Laeufe, 17:36 Uhr:
+    KLASSE THAUMATURG (CurrentClassJobId=7, ActiveHotbarClassJobId=7):
+      A1 SetAndSaveSlot(Item)   -> live UNVERAENDERT
+      A2 nach LoadSavedHotbar   -> type=Item id=4555  (also: SetAndSaveSlot
+         schreibt NUR den gespeicherten Stand, das Laden zieht ihn auf die Leiste)
+      D1/D2 dasselbe mit Action 142 -> funktioniert ebenfalls
+    JOB SCHWARZMAGIER (CurrentClassJobId=25, ActiveHotbarClassJobId=25):
+      A1 -> unveraendert, A2 nach LoadSavedHotbar -> ALTER Inhalt zurueck
+      D1/D2 mit Action -> genauso wirkungslos
+    -> SetAndSaveSlot ist bei Job 25 fuer BEIDE Typen wirkungslos.
+
+>>> EINE HYPOTHESE WURDE DABEI WIDERLEGT: die Vermutung, Klasse und Job wuerden
+    unter verschiedenen Ids gefuehrt (Klasse/Job teilen sich in FFXIV die
+    Leisten). Gemessen sind CurrentClassJobId und ActiveHotbarClassJobId in
+    BEIDEN Faellen identisch (7/7 und 25/25). Daran liegt es nicht.
+
+>>> WAS TRAEGT (in BEIDEN Jobs gemessen, Sondenschritte F1/F2):
+      F1 HotbarSlot.Set(type,id)                  -> live sofort gesetzt
+         + WriteSavedSlot(job, bar, slot, live,
+                          ignoreSharedHotbars:false, isPvpSlot:false)
+      F2 danach LoadSavedHotbar                   -> Eintrag BLEIBT stehen
+    WriteSavedSlot ist das direkte Gegenstueck zu LoadSavedHotbar. Beides sind
+    Spielfunktionen - hier wird nichts nachgebaut und nichts umgangen.
+
+>>> VERBLEIBENDE, EHRLICH MARKIERTE VERMUTUNG zur Job-Abhaengigkeit:
+    `SetAndSaveSlot` hat den Vorgabewert `allowSaveToPvP: true`, unser
+    WriteSavedSlot-Aufruf sagt dagegen ausdruecklich `isPvpSlot: false`.
+    Jobs haben PvP-Leisten, Klassen nicht - das PASST zum Befund, ist aber
+    NICHT gemessen. Wer es genau wissen will: SetAndSaveSlot mit
+    `allowSaveToPvP: false` in Job 25 probieren. Nicht noetig fuer den Fix.
+
+>>> FIX GEBAUT: neue gemeinsame Methode `HotbarService.PlaceOnSlot` geht den
+    gemessenen Weg (Set -> WriteSavedSlot -> LoadSavedHotbar) und wird von
+    Faehigkeiten- UND Gegenstands-Zuweisung benutzt. `SetAndSaveSlot` kommt im
+    Feature-Code nicht mehr vor.
+    LoadSavedHotbar bleibt am Ende ABSICHTLICH stehen: es zieht den
+    gespeicherten Stand ueber die Live-Leiste, ein misslungenes Speichern faellt
+    dadurch auf die Fuesse und die 2-Frame-Ruecklese meldet ehrlich
+    "hat nicht gewirkt" - statt einer Aenderung, die nur bis zum naechsten
+    Nachladen echt aussieht.
+    Der ueberholte V4.76-Kommentar ueber SetAndSaveSlot wurde ersetzt.
+    Build Debug 0/0, deployt.
+    IN-GAME BESTAETIGT (User 2026-08-06: "ok es geht jetzt in beiden jobs").
+
+>>> DIE SONDE `/acc hotbarprobe` BLEIBT VORERST STEHEN - bewusste Abweichung von
+    der Konvention "Sonde nach Feature-Ende loeschen". Grund: dieser Weg ist
+    erwiesen patch-anfaellig (SetAndSaveSlot trug frueher, heute nicht mehr, und
+    der Ausfall war still). Sie ist [Conditional]-frei, aber in `#if DEBUG`
+    gekapselt, kostet die Release-Version also nichts, und beantwortet nach dem
+    naechsten Spiel-Patch in einem Lauf, welcher Weg noch traegt.
+
+## VORHERIGER STAND (2026-08-06, GEGENSTAENDE AUF DIE LEISTE - GEBAUT)
+
+>>> (2) TRAENKE/ELIXIERE AUF DIE LEISTE LEGEN (Spielerwunsch). Gebaut als
+    ERWEITERUNG des bestehenden Zuweisungs-Menues (Strg+Numpad0), nicht als
+    zweites Menue: die tragende Kette (SetAndSaveSlot -> LoadSavedHotbar ->
+    Ruecklese-Bestaetigung nach 2 Frames) bleibt unveraendert, sie ist erprobt.
+    BEDIENUNG (User-Wahl 2026-08-06): Numpad 4 ODER 6 wechselt zwischen
+    Faehigkeiten- und Gegenstandsliste. Beide Tasten sind im Spiel Drehen und
+    werden - wie 8/2/0/Komma - nur solange das Menue offen ist geschluckt
+    (SkillMenuVks um 0x64/0x66 erweitert). Das Menue oeffnet weiterhin auf der
+    gewohnten Faehigkeitenliste.
+    Ansage je Eintrag: "Heiltrank, 12 Stueck, liegt auf Taste 5, 3 von 8".
+    Die Anzahl ist bewusst dabei - ein Trank mit Bestand 1 ist eine andere
+    Entscheidung als einer mit 20.
+
+>>> WELCHE GEGENSTAENDE IN DER LISTE STEHEN, ENTSCHEIDET DAS SPIEL, NICHT WIR:
+    Rucksackinhalt, dessen Item-Sheet-Zeile eine `ItemAction` hat - die
+    spieleigene Markierung fuer "tut etwas, wenn man es benutzt". OFFLINE
+    GEMESSEN (Sheet-Dump 2026-08-06): 4987 von 50773 benannten Gegenstaenden,
+    angefuehrt von Arznei (Heiltrank/Supertrank/Megatrank), Gericht,
+    Verschiedenes, Notenrolle, Begleiter. Damit braucht der Mod KEINE
+    handgepflegte Kategorienliste, die bei jedem Patch veraltet.
+    Gleiche Stapel ueber mehrere Taschenseiten werden zusammengezaehlt,
+    HQ und NQ bleiben getrennt (verschiedene Ids, der Spieler kann beides haben).
+
+>>> HQ WIRD NICHT SELBST AUSGERECHNET - das war die einzige echte Unsicherheit.
+    Kursierendes Halbwissen ("HQ = Id + 1000000") wurde NICHT eingebaut.
+    Stattdessen ilspycmd-verifiziert an Dalamud.dll, GameInventoryItem:
+    `ItemId` ist die Id MIT HQ-/Collectible-Offset ("Gets the item id"),
+    `BaseItemId` die ohne ("without HQ or Collectible offset applied",
+    ueber ItemUtil.GetBaseId). Die Zuweisung nimmt also schlicht `ItemId` -
+    genau den Wert, den das Spiel selbst fuehrt. `BaseItemId` dient nur dem
+    Sheet-Nachschlagen (Name, ItemAction).
+    NOCH NICHT BELEGT: dass RaptureHotbarModule die HQ-Id auch annimmt. Das
+    beantwortet die vorhandene Ruecklese-Bestaetigung beim ersten Test von
+    selbst - sie meldet Erfolg nur, wenn Typ UND Id im Slot wirklich stehen.
+    Faellt sie negativ aus, hoert der User "Belegen hat nicht gewirkt", statt
+    dass still etwas Falsches auf der Taste landet.
+
+>>> `HotbarSlotType.Item` ilspycmd-verifiziert (FFXIVClientStructs,
+    RaptureHotbarModule). Der Sonderfall `InventoryItem` (Id kodiert
+    InventoryType+Slot, das Spiel loest selbst auf) waere der Drag-und-Drop-Weg,
+    ist aber NICHT benutzt: die Kodierung ist in den Strukturen nicht
+    dokumentiert, und raten kam nicht in Frage. Falls HQ ueber `Item` scheitert,
+    ist das die naechste Spur - dann aber erst messen.
+
+>>> BERUEHRTE DATEIEN: InventoryService (neu: `UsableItem` + `CollectUsableItems`,
+    haelt die Inventar-Logik an EINEM Ort), HotbarService (Quelle umschaltbar,
+    `AssignItemToSlot`, `FindSlotLocationFor` + `VerifyAssignment` um den Typ
+    erweitert), AccessibilityStrings (3 neue Bausteine DE+EN), Plugin.cs
+    (Numpad 4/6 + Konstruktor-Reihenfolge: Inventar vor Hotbar).
+    Die Item-Liste wird bei JEDEM Wechsel neu gebaut, nie zwischengespeichert -
+    ein ausgetrunkener Trank darf nicht mehr angeboten werden.
+    Build Debug 0/0, deployt. IN-GAME UNGETESTET.
+
+## VORHERIGER STAND (2026-08-06, FOLGEN-TASTE REPARIERT + QUEST-ART BESTAETIGT)
+
+>>> SPIELER-VORSCHLAEGE VOM USER WEITERGEREICHT (2026-08-06), fuenf Stueck:
+    (1) Wuerfel-Fenster (Bedarf/Gier) barrierefrei, (2) Traenke/Elixiere auf die
+    Leiste legen koennen, (3) Quest-Art ansagen ("job oder zugang", so wie es
+    Story schon gibt), (4) "folgen geht nicht, habe es mit plus probiert",
+    (5) Warnton, wenn man in einer Schadensflaeche (AoE) steht.
+    Reihenfolge vom User bestimmt: Kampf-Nachlese und Wuerfeln sind gerade NICHT
+    testbar (keine Gruppe, kein Kampf), deshalb zuerst Quest-Art.
+
+>>> (4) FOLGEN WAR NIE AKTIV - SEIT V5.57, FUER JEDEN. KEIN SPIELERFEHLER.
+    URSACHE, hart belegt: `ParseKeySpec` (Plugin.cs ~502) zerlegte die
+    Tastenangabe an '+' (dem Modifier-Trenner). Der Tastenname IST hier aber
+    "+", also blieben nach `Split('+', RemoveEmptyEntries)` NULL Teile uebrig,
+    `valid` wurde false und Vk blieb -1. Damit hat `UpdateKeyEdges` die Taste
+    nie auch nur abgefragt - kein Tastendruck konnte je ankommen.
+    BELEG, nicht Vermutung: dalamud.log 2026-08-06 14:02:55
+    "[WRN] Unbekannte Tastenangabe in der Konfiguration: '+'" - das ist der
+    else-Zweig aus Plugin.cs:517, der genau in diesem Fall greift. Die Warnung
+    stand seit V5.57 in jedem Log, es hat nur nie jemand danach gesucht.
+    NICHT die Ursache waren: vnavmesh (dessen Fehlen meldet sich erst in
+    FollowUpdate mit eigener Ansage) und die Konfiguration des Spielers.
+    FIX: der Tastenname wird jetzt ZUERST abgetrennt ("+" am Ende = Tastenname),
+    erst der Rest wird an '+' in Modifier zerlegt. "Strg++" (Strg plus +) geht
+    damit ebenfalls, "Strg+Numpad3" und "N" unveraendert.
+    Build Debug 0/0, deployt. IN-GAME UNGETESTET (Ziel anvisieren, dann +).
+
+>>> OFFEN GESAGTE GRENZE ZUR TASTE: auf einer ENGLISCHEN Tastatur liegt "+" auf
+    Shift+=. `IsJustPressed` (Plugin.cs ~539) verlangt exakte Modifier-Gleichheit
+    ("kein Shift"), also bleibt die Taste dort vermutlich weiter tot. VERMUTUNG
+    ueber fremde Layouts, nicht gemessen - wenn der Vorschlag von einem
+    englischsprachigen Spieler kam, braucht es eine layout-feste Taste oder eine
+    Umbelegung. Nicht angefasst, weil unbelegt.
+
+>>> (3) QUEST-ART GEBAUT (Ansage "Job: ", "Freundesvolk: ", "Chronik: ",
+    Hauptszenario weiter "Story: "). Quelle ist die JOURNAL-TAXONOMIE DES
+    SPIELS, nichts geraten: Quest -> JournalGenre -> JournalCategory ->
+    JournalSection. Neue `QuestKind`-Enum + `QuestKinds()` in
+    QuestMarkerService; `QuestDestination.IsMainStory` ist zu
+    `QuestDestination.Kind` geworden.
+
+>>> ABSCHNITTE OFFLINE AUS DEN SPIELDATEIEN GELESEN (2026-08-06), nicht aus dem
+    Gedaechtnis: 0 Hauptszenario (ARR-EW), 1 Hauptszenario (Dawntrail),
+    2 Chroniken der neuen Aera, 3 Nebenauftraege, 4/5 Freundesvoelker,
+    6 Klassen und Jobs, 7 Sonstige, 8 Freibriefe, 9 Inhalte.
+    WERKZEUG: kleines Konsolenprogramm gegen Lumina + das installierte sqpack
+    (K:\SteamLibrary\...\game\sqpack), Scratchpad-Ordner JournalDump. Braucht
+    WEDER laufendes Spiel NOCH eine Debug-Sonde - fuer reine Sheet-Fragen ist
+    das der schnellere Weg und sollte wieder so gemacht werden.
+
+>>> DABEI EINEN ECHTEN MANGEL GEFUNDEN UND MITBEHOBEN: die alte Pruefung war
+    `JournalSection.RowId == 0`. Das Hauptszenario von DAWNTRAIL liegt aber in
+    Abschnitt 1 - 139 Quests wurden also nie als Story angesagt. Jetzt 0 ODER 1.
+
+>>> WARUM DER NAMENS-ABGLEICH TRAEGT (MarkerInfo hat keinen Quest-Zeiger, nur
+    ein Label): im Sheet stehen Quest-Namen doppelt, mit widersprechenden
+    Abschnitten. GEMESSEN am Sheet-Dump: 44 von 5276 Namen widersprechen sich;
+    ueberspringt man die Zeilen ohne JournalGenre ("Ungueltige Kategorie",
+    RowId 0), sind es EXAKT 0. Genau das tut `QuestKinds()` jetzt.
+
+>>> ERSTE FASSUNG IM SPIEL BESTAETIGT (Log 2026-08-06 15:29:39):
+    "[Quest] Quest-Arten geladen: 2800 benannte Quests (1038 Hauptszenario,
+     850 Job, 716 Freundesvolk, 196 Chronik)" - exakt die offline
+    vorausberechneten Zahlen. Die Sheet-Auswertung im Plugin stimmt also.
+
+>>> DANN ABER NACHGEBESSERT, WEIL STILLE MEHRDEUTIG IST (User 2026-08-06):
+    In der ersten Fassung blieben Nebenauftraege ohne Wort ("nur wo es etwas
+    sagt"). Der User blaetterte durch 9 Ziele, hoerte kein einziges Mal eine
+    Art und fragte: "ist das mit den quests schon drin, bei mir hat sich nichts
+    veraendert". NACHGEPRUEFT: alle 9 waren tatsaechlich Nebenauftraege aus
+    "Auftraege Finsterwald" (Abschnitt 3) - das Feature lief korrekt.
+    GENAU DAS IST DAS PROBLEM: der Spieler kann "ist ein Nebenauftrag" nicht von
+    "Feature kaputt" unterscheiden, waehrend ein sehender Spieler das Symbol
+    sieht. Stille als Bedeutungstraeger funktioniert hier nicht.
+    JETZT WIRD JEDE BEKANNTE ART GENANNT: "Story: ", "Job: ", "Freundesvolk: ",
+    "Chronik: ", "Nebenauftrag: ", "Sonstiges: ".
+
+>>> `QuestKind.Ordinary` HEISST JETZT `QuestKind.Unknown` UND BEDEUTET ETWAS
+    ANDERES: nicht mehr "unauffaellige Quest", sondern "im Sheet nicht
+    gefunden". Nur dieser Fall bleibt still - dort haetten wir fuer kein Wort
+    einen Beleg. Abschnitte 8/9 (Freibriefe/Inhalte, enthalten gemessen keine
+    Quests) fallen ebenfalls hierhin, statt in ein benachbartes Etikett gefaltet
+    zu werden, das sie falsch benennen wuerde. FATE-Ziele nutzen ebenfalls
+    Unknown (ein FATE ist keine Quest).
+
+>>> NEUE ERWARTUNGSWERTE NACH DER NACHBESSERUNG (offline vorausberechnet).
+    Beim Laden muss im Log stehen:
+    "[Quest] Quest-Arten geladen: 5145 benannte Quests (1038 Hauptszenario,
+     2024 Nebenauftrag, 850 Job, 716 Freundesvolk, 196 Chronik,
+     321 Sonstiges)."
+    Build Debug 0/0, deployt.
+    IN-GAME BESTAETIGT (User 2026-08-06: "ok das mit den quests funktioniert").
+
+>>> (3, ZWEITE HAELFTE) "ZUGANG" IST NICHT GEBAUT - UND ZWAR ABSICHTLICH.
+    Der Spieler wollte "job ODER zugang". Job ist drin, Zugang nicht:
+    das Quest-Sheet markiert Freischaltungen nur lueckenhaft. GEMESSEN:
+    `InstanceContentUnlock` ist bei 43 Quests gesetzt, die Collection
+    `InstanceContent` bei weiteren 17 - zusammen 60, waehrend
+    ContentFinderCondition 857 benannte Instanzen fuehrt. Eine Ansage daraus
+    waere bei der grossen Mehrheit still, und eine Auskunft, die meistens
+    schweigt, ist schlimmer als keine (der Spieler kann den Unterschied nicht
+    sehen). `IconSpecial` ist NICHT der Weg - die Verteilung zeigt reine
+    Saison-Event-Symbole (80101 Feuerfest, 80103 Allerseelen, ...).
+    NAECHSTE SPUR, noch nicht ausgewertet: `ContentFinderCondition.UnlockCriteria`
+    + `UnlockType` (Byte, duerfte das Zielsheet bestimmen). Erst messen.
+
+## VORHERIGER STAND (2026-08-04, V5.73 GEBAUT - KATEGORIE-ANSAGE GEKUERZT)
+
+>>> WORT "KATEGORIE" RAUS AUS DEN OBJEKT-BROWSER-ANSAGEN (User 2026-08-04:
+    "nimm bei den kategorieen das wort kategorie weg so das nur npc haendler
+    questziele usw da steht"). Aus "Kategorie Haendler: 2 in der Naehe." wird
+    "Haendler: 2 in der Naehe."
+    BEGRUENDUNG, die auch fuer spaetere Ansagen gilt: der Spieler hat gerade die
+    Kategorie-Taste gedrueckt, der Zusammenhang ist also schon klar - nur der
+    Name traegt Information. Die Nachlese macht es seit V4.90 genau so
+    ("Beute, 3 Nachrichten"), der Browser zieht jetzt nach.
+    GEAENDERT in AccessibilityStrings.cs, DE UND EN gleichzeitig (7 Methoden):
+    CategoryQuestCount, CategoryWaypointCount, CategoryAetheryteCount,
+    CategoryFateCount, CategoryLevequestCount, CategoryFishingCount,
+    CategoryObjectCount. Die Kategorienamen selbst (CategoryLabel(NavCategory))
+    sind unveraendert - nur das vorangestellte Wort faellt weg.
+    Build Debug 0/0, deployt. V5.73. IN-GAME UNGETESTET.
+
+>>> BEWUSST NICHT MITGEAENDERT, WEIL ANDERER ORT: `CategoryLabel(string name)`
+    (AccessibilityStrings ~40) sagt weiterhin "Kategorie Kopf." - das ist der
+    REITER im Waffenschrank (UIReaderService:1454) und im Staatliche-
+    Gesellschaft-Fenster (:1490), nicht der Objekt-Browser. Dort steht der Name
+    allein ("Kopf.", "Haende.") ohne Kontext. Wenn der User es dort auch kuerzer
+    will, ist es dieselbe Ein-Zeilen-Aenderung - er hat es aber nicht verlangt.
+
+## VORHERIGER STAND (2026-08-04, KAMPF-NACHLESE IN DER MESSPHASE)
+
+>>> Aktive Baustelle ist die Kampf-Nachlese (Abschnitt "NAECHSTE BAUSTELLE"
+    weiter unten) - Messung 2 offen, zwei Log-Werte fehlen, nichts gebaut.
+    Letztes Release ist unveraendert v5.72 (Abschnitt direkt darunter).
+
+## LETZTES RELEASE (2026-08-03, V5.72 HAENDLER-KATEGORIE - RELEASED, TEILGETESTET)
 
 >>> RELEASE v5.72 IST DRAUSSEN (Commit b22c1ac, Tag v5.72).
     Versions-Sync wie immer noetig (csproj + repo.json standen auf 5.71).
@@ -80,6 +474,136 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     mit dem Marker). Solche Objekte sind ueber die Kategorie "Objekte"
     erreichbar - der Weg, falls doch mal jemand exakt auf den Punkt will.
     Karten-EventMarkers waren dabei 0, die Minimap-Symbole ohne Beschriftung.
+
+## NAECHSTE BAUSTELLE (2026-08-04, KAMPF-NACHLESE - SONDE GEBAUT, MESSUNG OFFEN)
+
+>>> SPIELER-VORSCHLAG (vom User weitergereicht): "a combat log for damage
+    announcements, hits, misses etc so people can look back at a fight later to
+    see how their build is doing or why they died."
+
+>>> DAS IST KEIN NEUBAU, SONDERN EIN WIEDERAUFGREIFEN. Die Infrastruktur steht:
+    `MessageHistoryService` hat 9 Kategorien und einen unbegrenzten Puffer,
+    Alt+BildAuf/Ab wechselt die Kategorie, Umschalt+BildAuf/Ab blaettert.
+    Eine Kategorie "Kampf" GAB ES in V4.90 schon und wurde in V4.91 wieder
+    ausgebaut (STATUS-Abschnitt 2026-07-18, Zeile ~4208).
+
+>>> DIE ENTSCHEIDENDE FRAGE IST BIS HEUTE UNBEANTWORTET, NICHT BEANTWORTET-UND-
+    NEGATIV. Wortlaut von damals: "Die V4.90-Fassung kam in-game nie an; statt
+    zu debuggen wurde sie auf Wunsch zurueckgebaut ... die offene Frage war nur,
+    ob Typ-43-Zeilen ueberhaupt ankommen - das klaert ein Log mit aktiver
+    Roh-Probe." Es ist also NICHT belegt, dass der Weg ueber IChatGui nicht
+    traegt; es ist nur nie gemessen worden. Ohne diese Messung wird hier nichts
+    gebaut (Fact Discipline).
+
+>>> SONDE GEBAUT (2026-08-04): `ChatReaderService.ProbeCombatLine`, [Conditional
+    ("DEBUG")], sitzt genau an der Stelle, an der Kampfzeilen bisher still
+    verworfen werden (`if (IsCombatLogLine(...)) { ProbeCombatLine(msg); return; }`).
+    Loggt je Zeile: laufende Nummer, RAW-LogKind hex, maskierte Basis (&0x7F),
+    Sender, Payload-Typen und Text. Die Payload-Typen sind bewusst dabei - dort
+    wuerde ein spaeteres Feature WER-auf-WEN lesen, statt Namen aus einem
+    lokalisierten Satz zu klauben.
+    Build Debug 0/0, nach devPlugins deployt. Release bleibt unberuehrt
+    (Conditional), es ist noch NICHTS am Verhalten geaendert.
+
+>>> MESSUNG 1 AUSGEWERTET (2026-08-04, 104 Zeilen im Log 08:32-08:40).
+    ERGEBNIS 1 - DER WEG TRAEGT. Die Zeilen kommen sehr wohl bei
+    IChatGui.ChatMessage an. Die V4.91-Notiz "kam in-game nie an" war also ein
+    Fehlschluss aus einem anderen Fehler, nicht die Wahrheit ueber den Kanal.
+    Verteilung: 43 Aktion (49x), 41 Schaden (23x), 46 Buff (23x), 48 Buff weg
+    (6x), 42 Fehlschlag (1x), 47 Debuff (1x), 49 Debuff weg (1x).
+    Textbeispiele, wie das Spiel sie fertig liefert:
+    "Der Morbol trifft dich und verursacht 232 Punkte Schaden.",
+    "   Kritischer Treffer! Die Riesenbiene erleidet 40618(+60%) Punkte Schaden.",
+    "Du bleibst unbeeinflusst.", "   Du erleidest den Effekt von  Gift."
+    (fuehrende Leerzeichen und Doppel-Leerzeichen sind echt -> beim Einbauen
+    durch AtkText.ReadClean-artiges Trimmen schicken).
+    ERGEBNIS 2 - DIE ALTE ANNAHME IM CODE-KOMMENTAR IST WIDERLEGT. Dort stand,
+    reale Zeilen kaemen als KOMBINIERTE Werte mit Quell-/Ziel-Bits im hoeheren
+    Byte. In ALLEN 104 Zeilen gilt raw == basis (nur 0x0029-0x0031, kein
+    einziges gesetztes hohes Bit). Ueber den LogKind ist eigen/fremd NICHT
+    trennbar. Die Maskierung `& 0x7F` schadet nicht, aber sie leistet nichts.
+    ERGEBNIS 3 - PAYLOADS REICHEN AUCH NICHT. Fremde Spieler tragen einen
+    Player-Payload ("Horst Brot setzt Blutige Faenge ein."), eigene Zeilen nie
+    (das Spiel schreibt "Du"/"dich" statt eines Links). Aber Gegner-gegen-
+    Gegner-Zeilen ("Die Riesenbiene trifft den Harzbohrer") haben ebenfalls
+    keinen Player-Payload - "kein Player" heisst also NICHT "betrifft mich".
+
+>>> DIE SAUBERE QUELLE IST GEFUNDEN - UND ZWAR IN DALAMUD, NICHT IM SATZTEXT.
+    `IChatMessage` hat neben LogKind zwei weitere Felder: `SourceKind` und
+    `TargetKind`, beide vom Typ `XivChatRelationKind` (ilspycmd-verifiziert
+    2026-08-04 an Dalamud.dll, dev-Hooks). Werte:
+    None, LocalPlayer, PartyMember, AllianceMember, OtherPlayer, EngagedEnemy,
+    UnengagedEnemy, FriendlyNpc, PetOrCompanion, PetOrCompanionParty,
+    PetOrCompanionAlliance, PetOrCompanionOther.
+    Damit waere "betrifft mich" exakt SourceKind==LocalPlayer (ich handle) oder
+    TargetKind==LocalPlayer (mich trifft es) - sprachunabhaengig, ohne ein
+    einziges geparstes Wort. Genau das braucht die vom User gewaehlte
+    Bedienform.
+    NOCH NICHT BELEGT: dass diese Felder bei Kampflog-Zeilen auch GEFUELLT sind
+    (sie koennten None sein). Deshalb Messung 2.
+
+>>> SONDE ERWEITERT + GEBAUT (Debug 0/0, deployt): loggt jetzt zusaetzlich
+    quelle=<SourceKind> ziel=<TargetKind> je Zeile.
+
+>>> MESSUNG 2 ANGEFANGEN, ABER NOCH NICHT VOLLSTAENDIG (Stand 2026-08-04,
+    Sitzungsende). Bisher genau EINE Zeile im Log:
+    08:44:58 "#1 raw=0x002B basis=43 quelle=OtherPlayer ziel=None
+              text='Emo Yumi hat den Gesellschafts-Chocobo bestiegen.'"
+    WAS DAS SCHON BELEGT: die Felder werden GEFUELLT, nicht auf None gelassen -
+    ein fremder Spieler wurde als OtherPlayer erkannt, ohne Namensvergleich.
+    Die Hauptsorge aus Messung 1 ist damit weitgehend erledigt.
+    WAS ES NICHT BELEGT (ein Fall, ein LogKind): dass auch LocalPlayer gesetzt
+    wird. Genau daran haengt alles.
+
+>>> STAND DER MESSUNG 2 AM 2026-08-06 (64 Sonden-Zeilen im Log, statt einer):
+    (a) IST BELEGT. quelle=LocalPlayer kommt bei eigenen Aktionen:
+        #54 "Du setzt Sprint ein." (basis=43), #59 "Du setzt Rueckfuehrung ein.",
+        #58 "Du beginnst, Rueckfuehrung einzusetzen." (quelle UND ziel
+        LocalPlayer). Eigene Handlungen sind damit sprachunabhaengig erkennbar.
+    (a2) ziel=LocalPlayer wird ebenfalls gefuellt, belegt an Buffs auf mich
+        selbst: #55/#56 "Du erhaeltst den Effekt von ...", #57 "Du verlierst ...".
+    (a3) SCHADENSZEILEN FUELLEN BEIDE FELDER SAUBER: #44 "Mortholas Tolkien
+        erleidet 98 Punkte Schaden." kam mit quelle=UnengagedEnemy
+        ziel=OtherPlayer. Im ziel-Feld steht also wirklich der GETROFFENE.
+    (b) FEHLT WEITERHIN - der eine direkte Fall: eine Schadenszeile (basis=41)
+        mit ziel=LocalPlayer, also der Spieler selbst wird getroffen. Alle vier
+        gemessenen Schadenszeilen betrafen fremde Spieler und Gegner.
+        Aus (a) und (a3) folgt es sehr wahrscheinlich - aber NICHT behaupten,
+        bevor es im Log steht. An genau diesem Wert haengt die Live-Ansage
+        "erlittener Schaden".
+        SO ZU HOLEN: irgendeinen Gegner angreifen und ein paar Treffer
+        kassieren, danach grep "quelle=" im Log.
+    Erst danach bauen. PartyMember/AllianceMember sind NICHT blockierend (User
+    2026-08-04: "das mit party membern mache ich spaeter") - sie fallen ohnehin
+    in "Kampf Umgebung"; OtherPlayer ist als Stellvertreter bereits belegt.
+    Auswertungsbefehl: grep "quelle=" in
+    C:\Users\brued\AppData\Roaming\XIVLauncher\dalamud.log
+
+>>> ARBEITSBAUM: `FF14Accessibility/Services/ChatReaderService.cs` ist GEAENDERT
+    und NICHT committed (nur die [Conditional("DEBUG")]-Sonde + der berichtigte
+    Kommentar). Am Verhalten der Release-Version ist NICHTS geaendert - die
+    Kampfzeilen werden weiterhin verworfen. Wer hier weitermacht, faengt also
+    mit einem sauberen Release-Stand plus Sonde an.
+
+>>> ZU BERICHTIGEN, WENN GEBAUT WIRD: der Kommentar ueber `IsCombatLogLine`
+    behauptet noch "Real messages can arrive as combined values with
+    source/target bits set high". Das ist durch Messung 1 widerlegt (104 von
+    104 Zeilen flach). Nicht stehen lassen.
+
+>>> BEDIENFORM VOM USER ENTSCHIEDEN (2026-08-04):
+    - ZWEI getrennte Nachlese-Kategorien: "Kampf" (was mich betrifft: eigene
+      Aktionen, eigener Schaden, Treffer/Fehlschlaege auf mich) und
+      "Kampf Umgebung" (Gruppe, Gegner untereinander). Der Spieler waehlt beim
+      Blaettern, was er hoeren will.
+    - LIVE nur der ERLITTENE Schaden. Alles andere bleibt im Kampf still.
+
+>>> ACHTUNG - BEIDE ENTSCHEIDUNGEN HAENGEN AN DERSELBEN UNGEKLAERTEN FRAGE:
+    sie brauchen WER-auf-WEN. Ohne eine belastbare Trennung "betrifft mich" vs.
+    "betrifft mich nicht" gibt es weder zwei Kategorien noch eine Live-Ansage
+    fuer erlittenen Schaden. Genau das misst die Sonde (hohe Bits des LogKind
+    und/oder Payloads). Faellt die Messung negativ aus, muss die Bedienform
+    neu besprochen werden - dann NICHT heimlich auf Namens-Parsing im
+    lokalisierten Satztext ausweichen (waere Workaround-Discipline-pflichtig).
 
 ## VORHERIGE STUFE (2026-08-03, SPRACH-AUDIT V5.71 - RELEASED, IN-GAME UNGETESTET)
 
@@ -464,11 +988,19 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     Danach: Icon-Werte in eine Tabelle, drei Kategorien in `Categories`
     (NavigationService) ergaenzen, Labels bilingual in AccessibilityStrings.
 
-## VORHERIGER STAND (2026-08-02, CHATLOG-EINSTELLUNGEN GELOEST + IN-GAME BESTAETIGT, NOCH NICHT RELEASED)
+## VORHERIGER STAND (2026-08-02, CHATLOG-EINSTELLUNGEN GELOEST + IN-GAME BESTAETIGT, LAENGST RELEASED)
 
 >>> CHATLOG-EINSTELLUNGEN SIND FERTIG. Alle drei Befunde unten abgearbeitet,
-    User: "das von vorhin funktioniert". Gebaut 0/0 Debug, deployt, NICHT
-    committed, NICHT released (naechster Release-Kandidat).
+    User: "das von vorhin funktioniert".
+
+>>> KORREKTUR 2026-08-04: der Satz "NICHT committed, NICHT released" darunter
+    war nur der Bauzustand von damals und ist seit v5.67 ueberholt.
+    NACHGEPRUEFT, nicht vermutet: `TryReadConfigPanelControl` und
+    `NearestPanelLabel` stehen in UIReaderService.cs (ab Zeile 2683); der
+    einfuehrende Commit ist 70e3a28 "Release v5.67", er traegt die Tags v5.67
+    und v5.70 und ist Vorfahr von HEAD (`git merge-base --is-ancestor` -> ja).
+    Damit steckt der Fix auch im verifizierten v5.72-Paket. Fuer das naechste
+    Release ist hier also NICHTS mehr einzupacken.
 
     FIX 1 - Dropdown-Fehlfund: `FindListInAddon` (~7018) ueberspringt in der
     INNEREN Schleife jetzt Komponenten vom Typ DropDownList. Die falsche Ansage

@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Linq;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
@@ -31,7 +33,7 @@ public sealed class ChatReaderService : IDisposable
     private void OnChatMessage(IHandleableChatMessage msg)
     {
         // Kampflog-Zeilen werden verworfen (siehe IsCombatLogLine).
-        if (IsCombatLogLine(msg.LogKind)) return;
+        if (IsCombatLogLine(msg.LogKind)) { ProbeCombatLine(msg); return; }
 
         var senderText = msg.Sender?.TextValue ?? string.Empty;
         var messageText = msg.Message?.TextValue ?? string.Empty;
@@ -156,6 +158,40 @@ public sealed class ChatReaderService : IDisposable
     {
         var baseKind = (int)type & 0x7F;
         return baseKind is >= CombatBaseMin and <= CombatBaseMax;
+    }
+
+    private int _combatProbeCount;
+
+    /// <summary>
+    /// Debug-only probe for the ONE question V4.91 left open (STATUS 2026-07-18:
+    /// the combat reading was rolled back on request instead of debugged, so
+    /// "kommen Typ-41-49-Zeilen ueberhaupt an?" was never answered). Logs every
+    /// battle-log line that reaches IChatGui.ChatMessage: the RAW LogKind in hex
+    /// kind, sender, text and the message's payload types.
+    ///
+    /// Second pass (2026-08-04): the first measurement answered the "kommen sie
+    /// an?" question with a clear yes (104 lines) but ALSO killed the old
+    /// assumption that the high bits of the LogKind carry source/target - raw
+    /// equalled the base kind in all 104 lines. The replacement comes from
+    /// Dalamud itself: IChatMessage exposes SourceKind/TargetKind of type
+    /// XivChatRelationKind, whose values include LocalPlayer, PartyMember,
+    /// EngagedEnemy ... (ilspycmd on Dalamud.dll, 2026-08-04). Both are logged
+    /// here to check they are actually filled for battle-log lines - that is
+    /// what decides whether "betrifft mich" can be told from "Umgebung" without
+    /// parsing "Du"/"dich" out of a localized sentence.
+    /// Delete once the combat history is verified (Debug-Sonden-Konvention).
+    /// </summary>
+    [Conditional("DEBUG")]
+    private void ProbeCombatLine(IHandleableChatMessage msg)
+    {
+        _combatProbeCount++;
+        var payloads = msg.Message == null
+            ? string.Empty
+            : string.Join("+", msg.Message.Payloads.Select(p => p.Type.ToString()).Distinct());
+        _log.Info($"[CombatProbe] #{_combatProbeCount} raw=0x{(int)msg.LogKind:X4} basis={(int)msg.LogKind & 0x7F} " +
+                  $"quelle={msg.SourceKind} ziel={msg.TargetKind} " +
+                  $"sender='{msg.Sender?.TextValue ?? string.Empty}' payloads='{payloads}' " +
+                  $"text='{msg.Message?.TextValue ?? string.Empty}'");
     }
 
     /// <summary>

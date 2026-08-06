@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
@@ -25,6 +26,42 @@ public enum QuestMarkerRole
     LeveObjective,
 }
 
+/// <summary>
+/// What KIND of quest a destination belongs to, so the announcement can tell a
+/// blind player apart what a sighted player reads off the journal section.
+/// Taken from the game's own journal taxonomy (Quest -> JournalGenre ->
+/// JournalCategory -> JournalSection), never guessed from names.
+/// <para>
+/// EVERY known kind is spoken, side quests included (user decision 2026-08-06,
+/// revised the same day). The first cut left side quests silent to keep
+/// announcements short, but silence is ambiguous for a blind player: the user
+/// heard nothing and could not tell "this is a side quest" from "the feature is
+/// broken" - he asked whether it had shipped at all. A sighted player reads the
+/// quest symbol and never has that doubt.
+/// </para>
+/// <para>
+/// <see cref="Unknown"/> is the exception and stays silent ON PURPOSE: it means
+/// the sheet lookup found nothing, so any word would be a claim we cannot back.
+/// </para>
+/// </summary>
+public enum QuestKind
+{
+    /// <summary>Not found in the quest sheet - nothing is spoken.</summary>
+    Unknown,
+    /// <summary>Main scenario - journal sections 0 (ARR..EW) and 1 (Dawntrail).</summary>
+    MainStory,
+    /// <summary>Raid/alliance storylines - journal section 2.</summary>
+    Chronicle,
+    /// <summary>Side quests - journal section 3, the most common kind.</summary>
+    SideQuest,
+    /// <summary>Beast tribe quests - journal sections 4 and 5.</summary>
+    BeastTribe,
+    /// <summary>Class and job quests - journal section 6.</summary>
+    Job,
+    /// <summary>Grand company, seasonal and the like - journal section 7.</summary>
+    Other,
+}
+
 /// <summary>One quest objective location, read from the game's map markers.</summary>
 /// <param name="QuestName">Quest name from the marker label.</param>
 /// <param name="Detail">Marker tooltip (may repeat the quest name).</param>
@@ -33,7 +70,7 @@ public enum QuestMarkerRole
 /// <param name="TerritoryTypeId">Zone the marker belongs to.</param>
 /// <param name="MapId">Map the marker belongs to (for cross-zone routing).</param>
 /// <param name="InCurrentZone">Whether the marker is in the player's current zone.</param>
-/// <param name="IsMainStory">Whether the quest belongs to the Main Scenario.</param>
+/// <param name="Kind">Which journal section the quest belongs to.</param>
 /// <param name="Level">Required quest level, 0 when unknown.</param>
 /// <param name="Role">Giver NPC vs. objective for levequests; Quest otherwise.</param>
 public sealed record QuestDestination(
@@ -44,7 +81,7 @@ public sealed record QuestDestination(
     ushort TerritoryTypeId,
     uint MapId,
     bool InCurrentZone,
-    bool IsMainStory,
+    QuestKind Kind,
     int Level,
     QuestMarkerRole Role = QuestMarkerRole.Quest);
 
@@ -66,34 +103,72 @@ public sealed class QuestMarkerService
         _log = log;
     }
 
-    private HashSet<string>? _mainStoryNames;
+    private Dictionary<string, QuestKind>? _questKinds;
 
     /// <summary>
-    /// Names of all Main Scenario quests, built once from the Quest sheet.
-    /// A quest is MSQ when its JournalGenre -> JournalCategory -> JournalSection
-    /// is section 0 ("Hauptszenario"). Matched against the marker label to flag
-    /// story quests; the count is logged for verification.
+    /// Quest name -> kind, built once from the Quest sheet by walking the game's
+    /// own journal taxonomy (JournalGenre -> JournalCategory -> JournalSection).
+    /// Matched against the marker label, because MarkerInfo carries no quest
+    /// pointer - only a label and an ObjectiveId.
+    /// <para>
+    /// Rows WITHOUT a journal genre are skipped, and that is what makes the name
+    /// lookup trustworthy: the sheet holds duplicate quest names whose sections
+    /// disagree (e.g. "In flagranti" as both section 0 and "Ungültige
+    /// Kategorie"). Measured on the 2026-08-06 sheet dump: 44 of 5276 names
+    /// conflict, and skipping the genre-less rows brings that to exactly 0.
+    /// </para>
     /// </summary>
-    private HashSet<string> MainStoryNames()
+    private Dictionary<string, QuestKind> QuestKinds()
     {
-        if (_mainStoryNames != null) return _mainStoryNames;
+        if (_questKinds != null) return _questKinds;
 
-        var set = new HashSet<string>();
+        var kinds = new Dictionary<string, QuestKind>();
         foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
         {
             var name = quest.Name.ExtractText();
             if (string.IsNullOrWhiteSpace(name)) continue;
+            if (quest.JournalGenre.RowId == 0) continue;   // "Ungültige Kategorie" row
 
             var genre = quest.JournalGenre.ValueNullable;
             var category = genre?.JournalCategory.ValueNullable;
-            if (category is { JournalSection.RowId: 0 })
-                set.Add(name);
+            if (category == null) continue;
+
+            var kind = KindForSection(category.Value.JournalSection.RowId);
+            if (kind != QuestKind.Unknown)
+                kinds[name] = kind;
         }
 
-        _mainStoryNames = set;
-        _log.Info($"[Quest] Hauptszenario-Namen geladen: {set.Count}");
-        return set;
+        _questKinds = kinds;
+        _log.Info($"[Quest] Quest-Arten geladen: {kinds.Count} benannte Quests " +
+                  $"({kinds.Values.Count(k => k == QuestKind.MainStory)} Hauptszenario, " +
+                  $"{kinds.Values.Count(k => k == QuestKind.SideQuest)} Nebenauftrag, " +
+                  $"{kinds.Values.Count(k => k == QuestKind.Job)} Job, " +
+                  $"{kinds.Values.Count(k => k == QuestKind.BeastTribe)} Freundesvolk, " +
+                  $"{kinds.Values.Count(k => k == QuestKind.Chronicle)} Chronik, " +
+                  $"{kinds.Values.Count(k => k == QuestKind.Other)} Sonstiges).");
+        return kinds;
     }
+
+    /// <summary>
+    /// Maps a JournalSection row to the kind spoken to the player. Section ids
+    /// read from the game's own JournalSection sheet (offline dump 2026-08-06):
+    /// 0 Hauptszenario (ARR-EW), 1 Hauptszenario (Dawntrail), 2 Chroniken der
+    /// neuen Ära, 3 Nebenaufträge, 4/5 Freundesvölker, 6 Klassen und Jobs,
+    /// 7 Sonstige, 8 Freibriefe, 9 Inhalte. Sections 8 and 9 hold no quests at
+    /// all (measured), so they - like anything unexpected - fall through to
+    /// <see cref="QuestKind.Unknown"/> and stay silent rather than being folded
+    /// into a neighbouring label that would misname them.
+    /// </summary>
+    private static QuestKind KindForSection(uint sectionId) => sectionId switch
+    {
+        0 or 1 => QuestKind.MainStory,
+        2      => QuestKind.Chronicle,
+        3      => QuestKind.SideQuest,
+        4 or 5 => QuestKind.BeastTribe,
+        6      => QuestKind.Job,
+        7      => QuestKind.Other,
+        _      => QuestKind.Unknown,
+    };
 
     private Dictionary<string, int>? _questLevels;
 
@@ -358,7 +433,7 @@ public sealed class QuestMarkerService
         var questName = marker.Label.ToString();
         if (string.IsNullOrWhiteSpace(questName)) return; // empty slot
 
-        var isMainStory = MainStoryNames().Contains(questName);
+        var kind = QuestKinds().GetValueOrDefault(questName, QuestKind.Unknown);
         // The marker's own level beats the name lookup; the sheet only fills in
         // when the game leaves RecommendedLevel at 0 (runtime behaviour unknown,
         // hence both values in the log below).
@@ -384,7 +459,7 @@ public sealed class QuestMarkerService
                       $"lvlMarker={data.RecommendedLevel} lvlSheet={sheetLevel}");
             var level = data.RecommendedLevel > 0 ? data.RecommendedLevel : sheetLevel;
             result.Add(new QuestDestination(questName, tooltip, data.Position,
-                data.Radius, data.TerritoryTypeId, data.MapId, inZone, isMainStory, level, role));
+                data.Radius, data.TerritoryTypeId, data.MapId, inZone, kind, level, role));
         }
     }
 }

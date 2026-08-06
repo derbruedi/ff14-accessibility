@@ -30,11 +30,21 @@ public sealed class CombatService
     private long _lastExp = -1;
     private byte _lastExpJobId;
 
-    // Current-target tracking for HP thresholds and cast announcements.
+    // Current-target tracking for HP thresholds.
     private ulong _targetId;
     private int   _lastTargetHpPercent = 100;
-    private bool  _targetWasCastingAtMe;
-    private uint  _lastCastActionId;
+
+    // Enemy casts aimed at the player, tracked per CASTER (not just the current
+    // target): casterId -> the cast action already announced for them. Without
+    // the per-caster key an enemy the player has not targeted would stay silent,
+    // which is exactly the case the warning is for - several enemies around and
+    // one of them picks you. Entries are dropped as soon as a caster stops
+    // casting at the player, so the same spell warns again next time.
+    private readonly Dictionary<ulong, uint> _castsAtMe = new();
+    // Scratch sets for the cleanup pass, kept as fields so the per-frame sweep
+    // allocates nothing.
+    private readonly HashSet<ulong> _castsAtMeAlive = new();
+    private readonly List<ulong>    _castsAtMeStale = new();
 
     private static readonly int[] HpThresholds = [75, 50, 25, 10];
 
@@ -124,8 +134,6 @@ public sealed class CombatService
         {
             _targetId = targetId;
             _lastTargetHpPercent = target != null ? HpPercent(target.CurrentHp, target.MaxHp) : 100;
-            _targetWasCastingAtMe = false;
-            _lastCastActionId = 0;
         }
 
         if (target == null) return;
@@ -146,27 +154,41 @@ public sealed class CombatService
             _lastTargetHpPercent = hp;
         }
 
-        // Cast announcement: only casts aimed AT THE PLAYER (user request
-        // 2026-07-25 - casts on others are noise). CastTargetObjectId is the
-        // object the target is casting at (Dalamud IBattleChara, verified).
-        // Fire once per cast (rising edge, or a new action while still casting);
-        // tracking "casting at me" as the edge state also catches the target
-        // swinging an in-progress cast onto the player.
-        if (_config.AnnounceEnemyCast)
-        {
-            var castingAtMe = target.IsCasting && target.CastTargetObjectId == playerId;
-            var castId = target.CastActionId;
-            var newCast = castingAtMe && (!_targetWasCastingAtMe || castId != _lastCastActionId);
-            if (newCast)
-            {
-                var name = CastActionName(castId);
-                _tolk.SpeakInterrupt(AccessibilityStrings.EnemyCasts(name));
-                _log.Info($"[Combat] Gegner-Cast auf mich: id={castId} name='{name}' " +
-                          $"unterbrechbar={target.IsCastInterruptible}");
-                _lastCastActionId = castId;
-            }
-            _targetWasCastingAtMe = castingAtMe;
-        }
+    }
+
+    /// <summary>
+    /// Announces enemy casts aimed AT THE PLAYER - from ANY nearby enemy, not
+    /// just the current target (user 2026-08-06: "wenn ein gegner auf mich
+    /// zielt bzw einen zauber auf mich zaubert, so dass man ausweichen kann").
+    /// Casts on other people stay silent, as decided 2026-07-25.
+    /// <para>
+    /// The caster's name is only spoken when it is NOT the player's current
+    /// target: for the target the player already knows who is meant, and the
+    /// short form keeps the warning fast - it has to arrive while there is still
+    /// time to move.
+    /// </para>
+    /// Fires once per cast (rising edge per caster, or a new action while still
+    /// casting), which also catches an enemy swinging an in-progress cast onto
+    /// the player. Runs off the same enemy sweep as the AoE tone, so no extra
+    /// per-frame scan is added.
+    /// </summary>
+    private void AnnounceCastAtMe(IBattleChara caster, ulong playerId, ulong targetId)
+    {
+        var castId = caster.CastActionId;
+        var known = _castsAtMe.TryGetValue(caster.GameObjectId, out var announced);
+        if (known && announced == castId) return;      // already warned about this one
+
+        _castsAtMe[caster.GameObjectId] = castId;
+
+        var action = CastActionName(castId);
+        var casterName = caster.Name.TextValue;
+        var text = caster.GameObjectId == targetId || string.IsNullOrWhiteSpace(casterName)
+            ? AccessibilityStrings.EnemyCasts(action)
+            : AccessibilityStrings.NamedEnemyCasts(casterName, action);
+
+        _tolk.SpeakInterrupt(text);
+        _log.Info($"[Combat] Gegner-Cast auf mich: caster='{casterName}' id={castId} name='{action}' " +
+                  $"unterbrechbar={caster.IsCastInterruptible} istZiel={caster.GameObjectId == targetId}");
     }
 
     private string CastActionName(uint actionId)
@@ -361,6 +383,7 @@ public sealed class CombatService
 
         var sheet = _data.GetExcelSheet<LuminaAction>();
         var inDanger = false;
+        var targetId = _targetManager.Target?.GameObjectId ?? 0;
 
         foreach (var obj in _objectTable)
         {
@@ -368,12 +391,40 @@ public sealed class CombatService
             // Only hostile combatants: friendly EventNpcs never threaten the player.
             if (bc.ObjectKind != ObjectKind.BattleNpc) continue;
             if (bc.GameObjectId == playerId) continue;
-            if (!bc.IsCasting) continue;
 
+            if (!bc.IsCasting)
+            {
+                // Cast over: forget it, so the same spell warns again next time.
+                _castsAtMe.Remove(bc.GameObjectId);
+                continue;
+            }
+
+            // Spoken warning for a cast aimed at the player. Checked BEFORE the
+            // EffectRange filter below - a single-target spell has no ground
+            // shape but is exactly what the player wants to hear about.
+            if (_config.AnnounceEnemyCast && bc.CastTargetObjectId == playerId)
+                AnnounceCastAtMe(bc, playerId, targetId);
+            else if (bc.CastTargetObjectId != playerId)
+                _castsAtMe.Remove(bc.GameObjectId);
+
+            if (inDanger) continue;             // tone already decided, keep announcing casts
             if (!sheet.TryGetRow(bc.CastActionId, out var row)) continue;
             if (row.EffectRange == 0) continue; // single-target / self-buff: no ground danger
 
-            if (IsPlayerInAoe(bc, row, playerPos)) { inDanger = true; break; }
+            if (IsPlayerInAoe(bc, row, playerPos)) inDanger = true;
+        }
+
+        // Drop entries of casters that left the object table entirely (pulled out
+        // of range, died), so the dictionary cannot grow without bound.
+        if (_castsAtMe.Count > 0)
+        {
+            _castsAtMeAlive.Clear();
+            foreach (var obj in _objectTable)
+                if (obj is IBattleChara bc && bc.IsCasting) _castsAtMeAlive.Add(bc.GameObjectId);
+            foreach (var id in _castsAtMe.Keys)
+                if (!_castsAtMeAlive.Contains(id)) _castsAtMeStale.Add(id);
+            foreach (var id in _castsAtMeStale) _castsAtMe.Remove(id);
+            _castsAtMeStale.Clear();
         }
 
         _aoeWarn.SetActive(inDanger);

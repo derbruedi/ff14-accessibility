@@ -472,10 +472,42 @@ public sealed class UIReaderService : IDisposable
 
     // -- Universal: Addon ge�ffnet -----------------------------------
 
+    // ── Ruhephase nach dem Anmelden ──────────────────────────────────
+    //
+    // Logging in makes the game build its whole HUD at once, and every one of
+    // those windows arrives here as a PostSetup. Measured 2026-08-06 (log
+    // 17:35:28): about fifteen announcements inside a single second - FORTSCHRITT,
+    // SEITE AN SEITE, INVENTAR, Ziel, Jobwechsel, EMPFEHLUNGEN, plus other
+    // plugins' windows - most of them interrupting, so they cut each other off
+    // and the player hears fragments (user 2026-08-06: "sehr viele meldungen die
+    // sich gegenseitig weg druecken").
+    //
+    // None of it is information the player asked for: these windows open because
+    // the client starts up, not because anyone navigated anywhere. So the
+    // automatic readers stay quiet for a short while after login. Anything the
+    // player TRIGGERS (a key, opening a window) goes through other paths and is
+    // never suppressed - see the callers of this flag.
+    private DateTime _quietUntil = DateTime.MinValue;
+
+    /// <summary>
+    /// Silences the automatic window and focus readers for
+    /// <paramref name="seconds"/>, used while the HUD builds itself after login.
+    /// </summary>
+    public void BeginLoginQuiet(float seconds)
+    {
+        _quietUntil = DateTime.UtcNow.AddSeconds(seconds);
+        _log.Info($"[Accessibility] Anmelde-Ruhephase: automatische Fenster-Ansagen fuer {seconds:F0} s stumm.");
+    }
+
+    /// <summary>True while the post-login quiet period is running.</summary>
+    private bool InLoginQuiet => DateTime.UtcNow < _quietUntil;
+
     private unsafe void OnAnyAddonOpen(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
         _log.Info($"[Accessibility] Addon: {name}");
+        // Still logged above, so the HUD build-up stays diagnosable.
+        if (InLoginQuiet) return;
         if (SpecialSetupAddons.Contains(name)) return;
         if (IsSuppressedAddon(name)) return;
 
@@ -820,6 +852,7 @@ public sealed class UIReaderService : IDisposable
 
     private unsafe void OnAnyAddonUpdate(AddonEvent type, AddonArgs args)
     {
+        if (InLoginQuiet) return;
         var name = args.AddonName;
         // SpecialUpdateAddons �berspringen, au�er ConfigSystem und TitleDCWorldMap (die wir jetzt universell behandeln)
         if (SpecialUpdateAddons.Contains(name) && name != "ConfigSystem" && name != "TitleDCWorldMap") return;
@@ -1761,6 +1794,10 @@ public sealed class UIReaderService : IDisposable
 
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
+        // While the HUD builds after login the game moves focus across freshly
+        // created windows on its own; reading that is noise, not navigation.
+        if (InLoginQuiet) return;
+
         FlushPendingRaceDescription();
 
         var stage = AtkStage.Instance();

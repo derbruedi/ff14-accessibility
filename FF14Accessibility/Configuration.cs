@@ -250,6 +250,13 @@ public sealed class Configuration : IPluginConfiguration
     // ("+Sprint", "700", "(+100 %)"). Beides ist reiner Laerm ohne Mehrwert -
     // Default: unterdrueckt. Flag bleibt fuer den seltenen Fall, dass jemand den
     // rohen Text-Scan dieser HUD-Elemente trotzdem hoeren moechte (z.B. Debugging).
+    // Anmelden: solange das Spiel sein HUD aufbaut, schweigen die AUTOMATISCHEN
+    // Fenster- und Fokus-Leser. Gemessen 2026-08-06 (Log 17:35:28): ~15 Ansagen
+    // in einer Sekunde, die sich gegenseitig abschnitten (User-Meldung). Alles
+    // vom Spieler AUSGELOESTE bleibt hoerbar - nur der Selbstaufbau wird
+    // verschluckt. 6 s deckt die gemessene Lawine (~2-4 s) mit Reserve ab.
+    public float LoginQuietSeconds = 6f;
+
     public bool SuppressStatusBarSpam = true;   // _StatusCustom0-Sprint-Countdown stumm
     public bool SuppressFlyTextSpam   = true;   // _FlyText-Kampfzahlen stumm
 

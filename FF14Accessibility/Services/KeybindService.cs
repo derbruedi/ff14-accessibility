@@ -151,8 +151,12 @@ public sealed class KeybindService
 
         _log.Info($"[Keys] {boundCount} Aktionen mit Taste, {conflictCount} Plugin-Konflikte. Gespeichert: {dumpFile}");
         // Conflicts are always spoken - the user must know a plugin key is dead.
-        if (announce || conflictCount > 0)
+        // At login (announce: false) only the short form: the long sentence
+        // landed in the HUD build-up and was cut off anyway.
+        if (announce)
             _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpSaved(boundCount, conflictCount));
+        else if (conflictCount > 0)
+            _tolk.Speak(AccessibilityStrings.KeybindConflictsShort(conflictCount));
     }
 
     /// <summary>

@@ -68,8 +68,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.72";
-    private const string PluginVersionTag = "Neue Objekt-Browser-Kategorie Haendler: NPCs mit Laden oder Tauschstand, erkannt ueber die Shop-Verknuepfung des Spiels";
+    private const string PluginVersion    = "5.74";
+    private const string PluginVersionTag = "Leisten-Belegen repariert (war job-abhaengig wirkungslos), Gegenstaende auf die Leiste, Quest-Art, ruhiges Anmelden";
 
     public Plugin()
     {
@@ -198,8 +198,9 @@ public sealed class Plugin : IDalamudPlugin
         _cue          = new CueService(_config, Log);
         _gearInfo     = new GearInfoService(DataManager, Log);
         _keybinds     = new KeybindService(_tolk, Log);
-        _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _tolk, Log);
+        // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
+        _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
@@ -230,6 +231,13 @@ public sealed class Plugin : IDalamudPlugin
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
+        ClientState.Login += OnLogin;
+
+        // Already in the world when the plugin loads (hot reload, /xlplugins):
+        // the HUD is long built, so no quiet period is needed - but the flag has
+        // to be primed the same way for a normal login that follows.
+        if (ClientState.IsLoggedIn)
+            Log.Info("[Accessibility] Beim Laden bereits eingeloggt - keine Anmelde-Ruhephase noetig.");
 
         Log.Info($"FF14 Accessibility Plugin V{PluginVersion} [{PluginVersionTag}] geladen.");
         _tolk.Speak(AccessibilityStrings.VersionReady(PluginVersion));
@@ -320,6 +328,11 @@ public sealed class Plugin : IDalamudPlugin
             // Welt mit sichtbaren HUD-Addons war sie praktisch nicht auslösbar.
             case "objprobe":
                 _navigation.DumpNearbyObjects();
+                break;
+            // Misst, warum ein Gegenstand nicht auf der Leiste landet: loggt den
+            // Slot-Zustand nach JEDEM Schritt und probiert die Alternativen durch.
+            case "hotbarprobe":
+                _hotbar.ProbeItemAssignment();
                 break;
 #endif
             case "cooldowns":
@@ -499,9 +512,29 @@ public sealed class Plugin : IDalamudPlugin
         if (_keySpecCache.TryGetValue(keySpec, out var cached)) return cached;
 
         var parsed = (Vk: -1, Ctrl: false, Shift: false, Alt: false);
-        var parts = keySpec.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var valid = parts.Length > 0;
-        for (var i = 0; valid && i < parts.Length - 1; i++)
+
+        // The key name "+" is the same character as the modifier separator, so a
+        // plain Split() swallows it: "+" leaves no parts at all and "Strg++"
+        // leaves only "Strg". That silently disabled the follow key (V5.57 to
+        // V5.73). Peel a trailing "+" off as the key name, split only the rest.
+        var spec = keySpec.Trim();
+        string keyName;
+        string modifierPart;
+        if (spec.EndsWith('+'))
+        {
+            keyName      = "+";
+            modifierPart = spec[..^1];
+        }
+        else
+        {
+            var cut      = spec.LastIndexOf('+');
+            keyName      = cut < 0 ? spec : spec[(cut + 1)..].Trim();
+            modifierPart = cut < 0 ? string.Empty : spec[..cut];
+        }
+
+        var parts = modifierPart.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var valid = keyName.Length > 0;
+        for (var i = 0; valid && i < parts.Length; i++)
         {
             switch (parts[i].ToLowerInvariant())
             {
@@ -511,7 +544,7 @@ public sealed class Plugin : IDalamudPlugin
                 default:                    valid        = false; break;
             }
         }
-        if (valid && KeyNameToVK.TryGetValue(parts[^1], out var vk))
+        if (valid && KeyNameToVK.TryGetValue(keyName, out var vk))
             parsed.Vk = vk;
         else
             Log.Warning($"Unbekannte Tastenangabe in der Konfiguration: '{keySpec}'");
@@ -544,7 +577,9 @@ public sealed class Plugin : IDalamudPlugin
     // Numpad keys that drive the modal skill menu. All are game-bound
     // (8/2=move, 0=OK, comma=cancel), so they are swallowed while the menu is
     // open. VKs: NUMPAD8=0x68, NUMPAD2=0x62, NUMPAD0=0x60, DECIMAL=0x6E.
-    private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E };
+    // NUMPAD4=0x64 / NUMPAD6=0x66 switch between the skill and item list; they
+    // are game-bound too (turn left/right), so they join the swallow list.
+    private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E, 0x64, 0x66 };
 
     /// <summary>
     /// While the modal skill menu is open, the numpad drives it and the game
@@ -561,6 +596,8 @@ public sealed class Plugin : IDalamudPlugin
         // Bare presses only (IsJustPressed already requires no modifiers here).
         if (IsJustPressed("Numpad8"))          _hotbar.SkillMenuBrowse(-1);
         else if (IsJustPressed("Numpad2"))     _hotbar.SkillMenuBrowse(+1);
+        else if (IsJustPressed("Numpad4"))     _hotbar.SkillMenuSwitchSource();
+        else if (IsJustPressed("Numpad6"))     _hotbar.SkillMenuSwitchSource();
         else if (IsJustPressed("Numpad0"))     _hotbar.SkillMenuConfirm();
         else if (IsJustPressed("NumpadKomma")) _hotbar.SkillMenuBack();
 
@@ -1312,9 +1349,22 @@ public sealed class Plugin : IDalamudPlugin
         _tolk.SpeakInterrupt(AccessibilityStrings.HelpFull);
     }
 
+    /// <summary>
+    /// Starts the post-login quiet period: the game builds its entire HUD here
+    /// and every window would otherwise be announced (see
+    /// <see cref="UIReaderService.BeginLoginQuiet"/>). The keybind dump is also
+    /// re-armed, so a character switch re-checks for key conflicts.
+    /// </summary>
+    private void OnLogin()
+    {
+        _uiReader.BeginLoginQuiet(_config.LoginQuietSeconds);
+        _keybindsDumped = false;
+    }
+
     public void Dispose()
     {
         Framework.Update -= OnFrameworkUpdate;
+        ClientState.Login -= OnLogin;
         CommandManager.RemoveHandler("/acc");
         _tooltips.Dispose();
         _toasts.Dispose();

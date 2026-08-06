@@ -54,6 +54,9 @@ cues — including braille display output and automatic walking.
 - **Auto-walk**: walk to the target automatically (requires the
   third-party plugin vnavmesh), with route preview, progress
   announcements and an honest message when no path exists.
+- **Follow**: trail your current target continuously — stops when the
+  target stops, ends on a zone change or when the target disappears
+  (also requires vnavmesh).
 - **Route preview**: hear the route without walking
   ("Path to aetheryte, 62 meters: 25 meters north, then …").
 - **Facing direction**: while you turn, the compass direction you are
@@ -66,10 +69,20 @@ cues — including braille display output and automatic walking.
 ### Combat
 
 - Combat status on demand: your own HP and MP.
-- Target HP in steps, announcement when the target starts casting **at
-  you**, a short tone when you target an enemy.
+- Target HP in steps, a short tone when you target an enemy.
+- **Cast warning**: when an enemy casts a spell **at you** it is announced
+  — from any nearby enemy, not just the one you have targeted. If it is
+  someone other than your target, their name is included. Spells cast at
+  other players stay silent.
+- **Danger tone for area attacks** (AoE): a pulsing tone for as long as you
+  stand inside a telegraphed area; it stops the moment you step out. The
+  shape (circle, cone, line) comes from the spell's own data. Off by
+  default, see the key overview.
+- **Ability ready**: a tone plus the name as soon as an ability comes off
+  cooldown (`/acc cd`).
 - HP and MP also as stereo tones (at every 10-percent step the stereo
   position reflects how full the bar is).
+- Experience gains and loot are announced and archived in the review log.
 - Gathering points (GP) for gatherers on demand.
 
 ### Inventory and gear
@@ -84,15 +97,25 @@ cues — including braille display output and automatic walking.
 
 ### Hotbars
 
-- Read the selected hotbar: which key triggers which skill.
-- **Skill browser**: cycle through all learned skills of your current job
-  and place them on any of the 10 hotbars — entirely without a mouse.
+- Read a hotbar: which key triggers which action.
+- **Assignment menu**: cycle through all learned actions of your current
+  job and place them on any of the 10 hotbars — entirely without a mouse.
   Announcements use the actually bound key (e.g. "bar 2, key Ctrl+3").
+- The same menu also places **items**: potions, elixirs and food from your
+  bag, with the stack size in the announcement ("Potion, 12").
 
 ### Miscellaneous
 
 - Emote browser: cycle through emotes and perform them.
 - Read the hunting log aloud, including each monster's habitat.
+- **Fishing**: find fishing spots in the zone and walk to them.
+- **Gathering**: find mining and botany nodes; the gathering window is
+  read aloud.
+- **Mounts**, **grand company shops** and the **character configuration**
+  are operable.
+- **Triple Triad**: read the board and your own hand.
+- Logging in stays quiet: while the game builds its windows, the automatic
+  announcements hold back so they cannot cut each other off.
 - **Notifications**: accept incoming invitations (free company, party,
   friend list) with a key — the pop-up can otherwise only be clicked with
   the mouse.
@@ -168,10 +191,11 @@ and carries on normally.
 
 ## Default hotkeys
 
-The keys were chosen to be mostly free according to the game's keybind
-table; a few sit on purely visual camera functions (zoom, camera preset)
-that have no effect for blind play. Ctrl+F1 announces the current help at
-any time. Every key can be changed in the settings.
+This list is checked against the actual key bindings in the code — every
+key listed here is live. The keys were chosen to be mostly free according
+to the game's keybind table; three deliberately sit on purely visual camera
+functions (see below). Ctrl+F1 announces the current help at any time.
+Every key can be changed in the settings.
 
 Note: keys are shown with Ctrl/Shift. "Page Up/Down" are the dedicated
 navigation keys above the arrow block.
@@ -180,8 +204,9 @@ navigation keys above the arrow block.
 
 - **Page Down** — announce and target the next nearby object
 - **Page Up** — previous object
-- **Ctrl+Page Down** — next object category (e.g. NPCs, enemies, quest
-  objectives, waypoints)
+- **Ctrl+Page Down** — next object category (NPCs, merchants, enemies,
+  quest objectives, levequests, FATEs, gathering points, aetherytes,
+  waypoints)
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance
@@ -189,10 +214,14 @@ navigation keys above the arrow block.
 - **Numpad 3** — auto-walk to the selected target on/off (needs vnavmesh)
 - **Ctrl+Numpad 3** — walk guide on/off (audio guidance while walking
   manually, follows the navigation mesh around obstacles)
+- **+** — follow your current target continuously, on/off (needs vnavmesh).
+  This is the regular plus key, **not** the one on the numpad. On keyboard
+  layouts where plus requires Shift, rebind it in the settings
 - **Ctrl+Numpad 5** — route preview: hear the path without walking
 - **Ctrl+Shift+F1** — walk to coordinates from the clipboard (e.g. copy
   "24.1 21.0", then press the key)
 - **Ctrl+Shift+F2** — copy your own map coordinates to the clipboard
+- **N** — toggle the facing-direction announcement while turning
 - **F** — face the target (game key), **W** — walk (game key)
 
 ### Reading and information
@@ -202,7 +231,6 @@ navigation keys above the arrow block.
 - **Ctrl+F10** — read the current menu; with the journal open: read the
   quest
 - **Ctrl+F11** — stop speech immediately
-- **N** — toggle the facing-direction announcement while turning
 - **Ctrl+Delete** — combat status: your HP and MP
 - **Ctrl+End** — gathering points (GP) for gatherers
 - **Ctrl+L** — level and missing experience
@@ -211,26 +239,38 @@ navigation keys above the arrow block.
 - **Ctrl+F4** — read the hunting log
 - **Ctrl+F12** — accept an open notification/invitation
 
+### Combat
+
+- **Ctrl+Shift+F3** — danger tone for area attacks on/off. **Off by
+  default**, because the shape detection has not been fully confirmed
+  in-game yet — a wrong warning during combat would be worse than none
+
 ### Gear
 
-- **Ctrl+F6** — read equipped gear (with item level)
+- **Ctrl+F6** — read equipped gear (with item level and stats)
 - **Ctrl+F7** — equip recommended gear (the game's own optimizer)
 - **Ctrl+F8** — random appearance (character creation only)
 
-### Hotbars and skill browser
+### Filling hotbars
 
-- **Ctrl+F9** — read the selected hotbar
-- **Shift+F7** / **Shift+F8** — skill browser: previous / next learned
-  skill
-- **Shift+F11** — cycle the target bar (bar 1 to 10)
-- **Shift+F9** — cycle the target slot on the bar (announces what is on it)
-- **Shift+F10** — place the chosen skill on the target slot
+- **Ctrl+F9** — read the first hotbar (what sits on keys 1 to 0)
+- **Ctrl+Numpad 0** — open or close the assignment menu
+
+While the assignment menu is open the numpad drives it, and those keys are
+kept away from the game so your character does not run off:
+
+- **Numpad 8 / 2** — browse the list
+- **Numpad 4 / 6** — switch between **actions** and **items** (potions,
+  elixirs, food from your bag)
+- **Numpad 0** — select; then choose the target key and press Numpad 0
+  again to place it
+- **Numpad decimal** — one step back, or close the menu
 
 ### Reading back chat
 
 - **Alt+Page Up** / **Alt+Page Down** — previous / next category
-  (dialogues, say, shout, party, alliance, tell, free company, system);
-  announced with the category name and its message count
+  (dialogues, say, shout, party, alliance, tell, free company, system,
+  loot); announced with the category name and its message count
 - **Shift+Page Up** / **Shift+Page Down** — step to the older / newer
   message inside the selected category ("3 of 12: …")
 
@@ -238,6 +278,11 @@ navigation keys above the arrow block.
 
 - **Shift+F4** / **Shift+F5** — previous / next emote
 - **Shift+F6** — perform the chosen emote
+
+### Triple Triad
+
+- **Ctrl+Shift+F4** — read the board
+- **Ctrl+Shift+F5** — read your own hand
 
 ### Plugin list
 
@@ -250,10 +295,24 @@ navigation keys above the arrow block.
 - **Ctrl+F5** — save a UI dump of the current window to the desktop
   (helps with bug reports)
 
+### Overlaps with game keys
+
+Three plugin keys sit on functions the game also binds. This is
+intentional, and it is reported as "3 key conflicts" when you log in:
+
+- **Page Up / Page Down** are also camera zoom
+- **Ctrl+End** is also "save camera preset"
+
+All three are purely visual and therefore have no consequence for blind
+play. If the plugin reports a number **other** than three, check
+`FFXIV_Keybinds.txt` on your desktop: in that case a plugin key overlaps
+with a real game function.
+
 ## Chat commands
 
-Most key functions are also available as commands:
+Many functions are also available as commands:
 
+- `/acc help` — announce the help
 - `/acc nav` — announce direction and distance to the target
 - `/acc set` — track the current target
 - `/acc clear` — clear the tracked target
@@ -263,13 +322,23 @@ Most key functions are also available as commands:
 - `/acc win` — announce the active window
 - `/acc keys` — save the game's keybinds to the desktop
 - `/acc stop` — stop speech
+- `/acc fish` — announce fishing spots in this zone
+- `/acc fishhere` — remember your current spot as a casting position
+- `/acc gather` — announce gathering nodes in this zone
+- `/acc gathergo` — walk to the nearest gathering node
+- `/acc cd` (or `/acc cooldowns`) — toggle the "ability ready" announcement
+- `/acc soundtest` — play the plugin's tones for reference
+- `/acc lang de|en|auto` — switch the language of the plugin's announcements
+- `/acc dump <window name>` — save a window's structure to the desktop
 
 ## Language
 
-The plugin is developed and tested with the **German game client**; the
-plugin's own announcements are currently mostly German (some basic
-announcements follow the Windows display language). Game texts (dialogues,
-menus) are read in whatever language your game client uses.
+The plugin's own announcements are available in **English and German**.
+Without a setting the language follows Windows; `/acc lang en`,
+`/acc lang de` or `/acc lang auto` switches it at any time. Game texts
+(dialogues, menus, item names) are always read in whatever language your
+game client uses. Development and testing happen primarily with the German
+client.
 
 ## Notes
 

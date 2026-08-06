@@ -54,6 +54,9 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 - **Auto-Lauf**: automatisch zum Ziel laufen (benötigt das Fremd-Plugin
   vnavmesh), mit Routen-Vorschau, Fortschrittsansagen und ehrlicher
   Meldung, wenn kein Weg gefunden wird.
+- **Folgen**: dem anvisierten Ziel dauerhaft hinterherlaufen — hält an,
+  wenn das Ziel stehen bleibt, und endet bei Zonenwechsel oder wenn das
+  Ziel verschwindet (benötigt ebenfalls vnavmesh).
 - **Routen-Vorschau**: den Weg ansagen lassen, ohne zu laufen
   („Weg zu Ätheryt, 62 Meter: 25 Meter nach Norden, dann …").
 - **Himmelsrichtung**: beim Drehen wird die Blickrichtung angesagt
@@ -66,10 +69,20 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 ### Kampf
 
 - Kampfstatus auf Tastendruck: eigene HP und MP.
-- Ziel-HP in Stufen, Ansage wenn das Ziel einen Zauber **auf dich**
-  wirkt, kurzer Ton beim Anvisieren eines Gegners.
+- Ziel-HP in Stufen, kurzer Ton beim Anvisieren eines Gegners.
+- **Zauber-Warnung**: wirkt ein Gegner einen Zauber **auf dich**, wird er
+  angesagt — von jedem Gegner in der Nähe, nicht nur vom anvisierten. Ist
+  es ein anderer als dein Ziel, fällt sein Name mit. Zauber auf andere
+  Spieler bleiben still.
+- **Warnton für Schadensflächen** (AoE): pulsierender Ton, solange du in
+  einer angekündigten Fläche stehst; er verstummt, sobald du heraustrittst.
+  Die Form (Kreis, Kegel, Linie) kommt aus den Daten des jeweiligen Zaubers.
+  Standardmäßig ausgeschaltet, siehe Tastenübersicht.
+- **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
+  einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
   die Stereo-Position den Füllstand an).
+- Erfahrungsgewinn und Beute werden angesagt und in der Nachlese archiviert.
 - SP-Stand für Sammler (Sammelpunkte/GP) auf Tastendruck.
 
 ### Inventar und Ausrüstung
@@ -84,16 +97,28 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 ### Aktionsleisten (Hotbars)
 
-- Gewählte Aktionsleiste vorlesen: welche Taste löst welchen Skill aus.
-- **Skill-Browser**: alle gelernten Skills des aktuellen Jobs per Tastatur
-  durchblättern und auf eine beliebige der 10 Leisten legen — komplett
-  ohne Maus. Ansagen nennen die tatsächlich gebundene Taste
+- Aktionsleiste vorlesen: welche Taste löst welche Fähigkeit aus.
+- **Zuweisungs-Menü**: alle gelernten Fähigkeiten des aktuellen Jobs per
+  Tastatur durchblättern und auf eine beliebige der 10 Leisten legen —
+  komplett ohne Maus. Ansagen nennen die tatsächlich gebundene Taste
   (z. B. „Leiste 2, Taste Strg+3").
+- Im selben Menü lassen sich auch **Gegenstände** ablegen: Tränke,
+  Elixiere und Essen aus der Tasche, mit Bestand in der Ansage
+  („Heiltrank, 12 Stück").
 
 ### Sonstiges
 
 - Emote-Browser: Emotes durchblättern und ausführen.
 - Bestiarium (Jagdtagebuch) vorlesen, inklusive Lebensraum der Monster.
+- **Angeln**: Angelplätze im Gebiet finden und ansteuern.
+- **Sammeln**: Erz- und Holzvorkommen finden; das Sammelfenster wird
+  vorgelesen.
+- **Reittiere**, **Läden der Staatlichen Gesellschaft** und die
+  **Charakterkonfiguration** sind bedienbar.
+- **Triple Triad**: Spielbrett und eigene Hand vorlesen.
+- Beim Anmelden bleibt es ruhig: während das Spiel seine Fenster aufbaut,
+  schweigen die automatischen Ansagen, damit sie sich nicht gegenseitig
+  abschneiden.
 - **Benachrichtigungen**: eingehende Einladungen (Freie Gesellschaft,
   Gruppe, Freundesliste) per Taste annehmen — das Popup lässt sich sonst
   nur mit der Maus bedienen.
@@ -170,17 +195,18 @@ sagt er das und macht trotzdem normal weiter.
 
 ## Tastenübersicht (Standard)
 
-Die Tasten sind so gewählt, dass sie laut Spiel-Tastenbelegung überwiegend
-frei sind; einige liegen auf rein visuellen Kamera-Funktionen (Zoom,
-Kamera-Preset), die für blindes Spiel folgenlos sind. Strg+F1 sagt jederzeit
-die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
+Diese Liste ist gegen die tatsächliche Tastenbelegung im Code abgeglichen —
+alle aufgeführten Tasten sind aktiv. Die Tasten sind so gewählt, dass sie
+laut Spiel-Tastenbelegung überwiegend frei sind; drei liegen bewusst auf
+rein visuellen Kamera-Funktionen (siehe unten). Strg+F1 sagt jederzeit die
+aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 
 ### Objekte finden
 
 - **Bild-ab** — nächstes Objekt ansagen und anvisieren
 - **Bild-auf** — vorheriges Objekt
-- **Strg+Bild-ab** — Objekt-Kategorie vorwärts (z. B. NPCs, Gegner,
-  Quest-Ziele, Wegpunkte)
+- **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
+  Quest-Ziele, Freibriefe, FATEs, Sammelpunkte, Ätheryten, Wegpunkte)
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung
@@ -188,11 +214,14 @@ die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Nummernblock 3** — Auto-Lauf zum gewählten Ziel an/aus (braucht vnavmesh)
 - **Strg+Nummernblock 3** — Gehhilfe an/aus (Ton-Führung beim manuellen
   Laufen, folgt dem Wegenetz um Hindernisse)
+- **+** — dem anvisierten Ziel fortlaufend folgen an/aus (braucht vnavmesh).
+  Gemeint ist die normale Plus-Taste, **nicht** die des Nummernblocks
 - **Strg+Nummernblock 5** — Routen-Vorschau: Weg ansagen, ohne zu laufen
 - **Strg+Umschalt+F1** — zu Koordinaten aus der Zwischenablage laufen
   (z. B. „24.1 21.0" kopieren, dann Taste)
 - **Strg+Umschalt+F2** — eigene Karten-Koordinaten in die Zwischenablage
   kopieren
+- **N** — Himmelsrichtungs-Ansage beim Drehen an/aus
 - **F** — zum Ziel hindrehen (Spiel-Taste), **W** — laufen (Spiel-Taste)
 
 ### Vorlesen und Information
@@ -201,7 +230,6 @@ die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+F2** — aktives Fenster ansagen
 - **Strg+F10** — aktuelles Menü vorlesen; bei offenem Journal: Quest vorlesen
 - **Strg+F11** — Sprache sofort stoppen
-- **N** — Himmelsrichtungs-Ansage beim Drehen an/aus
 - **Strg+Entf** — Kampfstatus: eigene HP und MP
 - **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
 - **Strg+L** — Stufe und fehlende Erfahrung
@@ -210,26 +238,39 @@ die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+F4** — Bestiarium (Jagdtagebuch) vorlesen
 - **Strg+F12** — offene Benachrichtigung/Einladung annehmen
 
+### Kampf
+
+- **Strg+Umschalt+F3** — Warnton für Schadensflächen an/aus.
+  **Standardmäßig aus**, weil die Formerkennung im Spiel noch nicht
+  abschließend bestätigt ist — ein falscher Warnton im Kampf wäre
+  schlimmer als keiner
+
 ### Ausrüstung
 
-- **Strg+F6** — angelegte Ausrüstung vorlesen (mit Stufe)
+- **Strg+F6** — angelegte Ausrüstung vorlesen (mit Stufe und Werten)
 - **Strg+F7** — empfohlene Ausrüstung anlegen (Spiel-eigener Optimierer)
 - **Strg+F8** — zufälliges Aussehen (nur in der Charaktererstellung)
 
-### Aktionsleisten und Skill-Browser
+### Aktionsleisten belegen
 
-- **Strg+F9** — gewählte Aktionsleiste vorlesen
-- **Umschalt+F7** / **Umschalt+F8** — Skill-Browser: vorheriger / nächster
-  gelernter Skill
-- **Umschalt+F11** — Ziel-Leiste wechseln (Leiste 1 bis 10)
-- **Umschalt+F9** — Ziel-Taste auf der Leiste wählen (sagt an, was dort liegt)
-- **Umschalt+F10** — gewählten Skill auf die Ziel-Taste legen
+- **Strg+F9** — erste Aktionsleiste vorlesen (was liegt auf Taste 1 bis 0)
+- **Strg+Nummernblock 0** — Zuweisungs-Menü öffnen bzw. schließen
+
+Im geöffneten Zuweisungs-Menü steuert der Nummernblock; die Tasten werden
+so lange vom Spiel ferngehalten, damit die Figur nicht losläuft:
+
+- **Nummernblock 8 / 2** — in der Liste blättern
+- **Nummernblock 4 / 6** — zwischen **Fähigkeiten** und **Gegenständen**
+  wechseln (Tränke, Elixiere, Essen aus der Tasche)
+- **Nummernblock 0** — auswählen; danach die Zieltaste wählen und erneut
+  Nummernblock 0 zum Ablegen
+- **Nummernblock Komma** — einen Schritt zurück bzw. Menü schließen
 
 ### Chat nachlesen
 
 - **Alt+Bild-auf** / **Alt+Bild-ab** — Kategorie zurück / vor (Dialoge,
-  Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft, System);
-  angesagt wird der Name mit der Anzahl der Nachrichten
+  Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft, System,
+  Beute); angesagt wird der Name mit der Anzahl der Nachrichten
 - **Umschalt+Bild-auf** / **Umschalt+Bild-ab** — in der gewählten Kategorie
   zur älteren / neueren Nachricht blättern („3 von 12: …")
 
@@ -237,6 +278,11 @@ die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 
 - **Umschalt+F4** / **Umschalt+F5** — Emote zurück / vor
 - **Umschalt+F6** — gewähltes Emote ausführen
+
+### Triple Triad (Kartenspiel)
+
+- **Strg+Umschalt+F4** — das Spielbrett vorlesen
+- **Strg+Umschalt+F5** — die eigene Hand vorlesen
 
 ### Plugin-Liste
 
@@ -249,10 +295,24 @@ die aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+F5** — UI-Dump des aktuellen Fensters auf den Desktop speichern
   (hilft bei Fehlerberichten)
 
+### Überschneidungen mit Spiel-Tasten
+
+Drei Plugin-Tasten liegen auf Funktionen, die das Spiel ebenfalls belegt.
+Das ist bewusst so und wird beim Anmelden als „3 Tastenkonflikte" gemeldet:
+
+- **Bild-auf / Bild-ab** sind zusätzlich Kamera-Zoom
+- **Strg+Ende** ist zusätzlich „Kamera-Einstellung speichern"
+
+Alle drei sind rein visuelle Funktionen und damit für blindes Spiel
+folgenlos. Meldet das Plugin beim Anmelden eine **andere** Zahl als drei,
+lohnt ein Blick in die Datei `FFXIV_Keybinds.txt` auf dem Desktop: dann
+überschneidet sich eine Plugin-Taste mit einer echten Spielfunktion.
+
 ## Chat-Befehle
 
-Alle Funktionen mit Tasten gibt es teils auch als Befehl:
+Viele Funktionen gibt es auch als Befehl:
 
+- `/acc help` — Hilfe ansagen
 - `/acc nav` — Richtung und Entfernung zum Ziel ansagen
 - `/acc set` — aktuelles Ziel verfolgen
 - `/acc clear` — Ziel aufheben
@@ -262,13 +322,23 @@ Alle Funktionen mit Tasten gibt es teils auch als Befehl:
 - `/acc win` — aktives Fenster ansagen
 - `/acc keys` — Spiel-Tastenbelegung auf den Desktop speichern
 - `/acc stop` — Sprache stoppen
+- `/acc fish` — Angelplätze im Gebiet ansagen
+- `/acc fishhere` — aktuellen Standort als Auswurfstelle merken
+- `/acc gather` — Sammelpunkte im Gebiet ansagen
+- `/acc gathergo` — zum nächsten Sammelpunkt laufen
+- `/acc cd` (auch `/acc cooldowns`) — Ansage „Fähigkeit bereit" an/aus
+- `/acc soundtest` — die Töne des Plugins zur Probe abspielen
+- `/acc lang de|en|auto` — Sprache der Plugin-Ansagen umstellen
+- `/acc dump <Fenstername>` — Fensterstruktur auf den Desktop speichern
 
 ## Sprache
 
-Das Plugin ist für den **deutschen Spiel-Client** entwickelt und getestet;
-die eigenen Ansagen des Plugins sind derzeit überwiegend Deutsch (einige
-Grundansagen folgen der Windows-Sprache). Spieltexte (Dialoge, Menüs)
-werden in der Sprache des Spiel-Clients vorgelesen.
+Die Ansagen des Plugins gibt es auf **Deutsch und Englisch**. Ohne
+Einstellung richtet sich die Sprache nach Windows; mit `/acc lang de`,
+`/acc lang en` oder `/acc lang auto` lässt sie sich jederzeit umstellen.
+Spieltexte (Dialoge, Menüs, Gegenstandsnamen) werden immer in der Sprache
+des Spiel-Clients vorgelesen. Entwickelt und getestet wird vorrangig mit dem
+deutschen Client.
 
 ## Hinweise
 

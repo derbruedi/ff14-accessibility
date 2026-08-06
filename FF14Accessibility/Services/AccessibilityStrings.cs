@@ -86,6 +86,17 @@ public static class AccessibilityStrings
         IsGerman ? "Unbekannter Befehl. Tippe /acc help für Hilfe." : "Unknown command. Type /acc help for help.";
 
     // ── Keybind-Dump (/acc keys) ─────────────────────────────────────
+    /// <summary>
+    /// Short conflict notice for the automatic dump at login. The full sentence
+    /// below is for the explicit "/acc keys" call - at login it arrived in the
+    /// middle of the HUD build-up and was cut off anyway (user 2026-08-06).
+    /// Only the conflict count is actionable there: a plugin key is dead.
+    /// </summary>
+    public static string KeybindConflictsShort(int conflictCount) =>
+        IsGerman
+            ? (conflictCount == 1 ? "1 Tastenkonflikt." : $"{conflictCount} Tastenkonflikte.")
+            : (conflictCount == 1 ? "1 key conflict." : $"{conflictCount} key conflicts.");
+
     public static string KeybindDumpSaved(int boundCount, int conflictCount) =>
         IsGerman
             ? $"Tastenbelegung gespeichert: {boundCount} Aktionen mit Taste, {conflictCount} Konflikte mit Plugin-Tasten. Datei auf dem Desktop, Details im Log."
@@ -296,38 +307,43 @@ public static class AccessibilityStrings
         _                 => IsGerman ? "Händler" : "merchant",
     };
 
+    // The word "Kategorie"/"Category" is deliberately NOT spoken in front of the
+    // name (user 2026-08-04): the player just pressed the category key, so the
+    // context is already clear - only the name carries information. The chat
+    // history has always announced its categories this way; the object browser
+    // now matches it.
     public static string CategoryQuestCount(string label, int here, int away) =>
         away > 0
             ? (IsGerman
-                ? $"Kategorie {label}: {here} im Gebiet, {away} in anderen Gebieten."
-                : $"Category {label}: {here} in this area, {away} in other areas.")
+                ? $"{label}: {here} im Gebiet, {away} in anderen Gebieten."
+                : $"{label}: {here} in this area, {away} in other areas.")
             : (IsGerman
-                ? $"Kategorie {label}: {here} im Gebiet."
-                : $"Category {label}: {here} in this area.");
+                ? $"{label}: {here} im Gebiet."
+                : $"{label}: {here} in this area.");
 
     public static string CategoryWaypointCount(int count, int exits) =>
         exits > 0
             ? (IsGerman
-                ? $"Kategorie Wegpunkte: {count} im Gebiet, davon {exits} Übergänge."
-                : $"Category Waypoints: {count} in this area, {exits} of them exits.")
+                ? $"Wegpunkte: {count} im Gebiet, davon {exits} Übergänge."
+                : $"Waypoints: {count} in this area, {exits} of them exits.")
             : (IsGerman
-                ? $"Kategorie Wegpunkte: {count} im Gebiet."
-                : $"Category Waypoints: {count} in this area.");
+                ? $"Wegpunkte: {count} im Gebiet."
+                : $"Waypoints: {count} in this area.");
 
     public static string CategoryAetheryteCount(int count) =>
         IsGerman
-            ? $"Kategorie Ätheryten: {count} im Gebiet."
-            : $"Category Aetherytes: {count} in this area.";
+            ? $"Ätheryten: {count} im Gebiet."
+            : $"Aetherytes: {count} in this area.";
 
     // ── FATEs: aktive Welt-Ereignisse der Zone ──
     public static string CategoryFateCount(int active, int preparing) =>
         preparing > 0
             ? (IsGerman
-                ? $"Kategorie FATEs: {active} aktiv, {preparing} starten gleich."
-                : $"Category FATEs: {active} active, {preparing} starting soon.")
+                ? $"FATEs: {active} aktiv, {preparing} starten gleich."
+                : $"FATEs: {active} active, {preparing} starting soon.")
             : (IsGerman
-                ? $"Kategorie FATEs: {active} aktiv."
-                : $"Category FATEs: {active} active.");
+                ? $"FATEs: {active} aktiv."
+                : $"FATEs: {active} active.");
 
     /// <summary>One FATE line: name, level, then either the completion percent or,
     /// for a not-yet-started FATE, a "starting soon" note.</summary>
@@ -342,8 +358,8 @@ public static class AccessibilityStrings
     // ── Freibriefe (Levequests): Geber-NPCs + Ziele ──
     public static string CategoryLevequestCount(int givers, int goals) =>
         IsGerman
-            ? $"Kategorie Freibriefe: {givers} Geber, {goals} Ziele."
-            : $"Category Levequests: {givers} givers, {goals} goals.";
+            ? $"Freibriefe: {givers} Geber, {goals} Ziele."
+            : $"Levequests: {givers} givers, {goals} goals.";
 
     /// <summary>Spoken role prefix so the player knows whether a leve destination
     /// is the Levemete (accept/hand in) or the objective (do the task).</summary>
@@ -370,8 +386,8 @@ public static class AccessibilityStrings
 
     public static string CategoryFishingCount(int count) =>
         IsGerman
-            ? $"Kategorie Angelplätze: {count} im Gebiet."
-            : $"Category Fishing spots: {count} in this area.";
+            ? $"Angelplätze: {count} im Gebiet."
+            : $"Fishing spots: {count} in this area.";
 
     public static string NoFishingSpots =>
         IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
@@ -388,8 +404,8 @@ public static class AccessibilityStrings
 
     public static string CategoryObjectCount(string label, int count) =>
         IsGerman
-            ? $"Kategorie {label}: {count} in der Nähe."
-            : $"Category {label}: {count} nearby.";
+            ? $"{label}: {count} in der Nähe."
+            : $"{label}: {count} nearby.";
 
     public static string NoObjectsInRange(string label, float range) =>
         IsGerman
@@ -484,6 +500,25 @@ public static class AccessibilityStrings
     public static string NoAcceptableQuests => IsGerman ? "Keine annehmbaren Quests in der Nähe." : "No available quests nearby.";
     public static string NoQuestGoals       => IsGerman ? "Keine Quest-Ziele. Erst eine Quest annehmen." : "No quest goals. Accept a quest first.";
     public static string StoryPrefix        => IsGerman ? "Story: " : "Story: ";
+
+    /// <summary>
+    /// The kind of quest, spoken in front of the quest name. Every known kind is
+    /// named, side quests included: silence would leave the player unable to tell
+    /// "side quest" from "feature broken" (user 2026-08-06). Only
+    /// <see cref="QuestKind.Unknown"/> stays empty - there we have nothing to
+    /// back a claim with. Main story keeps the wording players already know from
+    /// <see cref="StoryPrefix"/>.
+    /// </summary>
+    public static string QuestKindPrefix(QuestKind kind) => kind switch
+    {
+        QuestKind.MainStory  => StoryPrefix,
+        QuestKind.Job        => IsGerman ? "Job: " : "Job: ",
+        QuestKind.BeastTribe => IsGerman ? "Freundesvolk: " : "Beast tribe: ",
+        QuestKind.Chronicle  => IsGerman ? "Chronik: " : "Chronicle: ",
+        QuestKind.SideQuest  => IsGerman ? "Nebenauftrag: " : "Side quest: ",
+        QuestKind.Other      => IsGerman ? "Sonstiges: " : "Other: ",
+        _                    => string.Empty,
+    };
     public static string LevelPrefix(int level) => IsGerman ? $"Stufe {level}, " : $"Level {level}, ";
     public static string InArea(string zone)    => IsGerman ? $"im Gebiet {zone}." : $"in the area {zone}.";
     public static string InAnotherArea       => IsGerman ? "in einem anderen Gebiet." : "in another area.";
@@ -780,6 +815,12 @@ public static class AccessibilityStrings
     public static string GpValue(uint cur, uint max) => IsGerman ? $"SP {cur} von {max}." : $"GP {cur} of {max}.";
 
     public static string EnemyCasts(string action) => IsGerman ? $"Gegner wirkt {action}." : $"Enemy casts {action}.";
+
+    /// <summary>Cast warning naming the caster - used when the casting enemy is
+    /// NOT the player's current target, so it is clear the danger comes from
+    /// somewhere else.</summary>
+    public static string NamedEnemyCasts(string enemy, string action) =>
+        IsGerman ? $"{enemy} wirkt {action}." : $"{enemy} casts {action}.";
     public static string AnAbility => IsGerman ? "eine Fähigkeit" : "an ability";
 
     // ── Level / Erfahrung ────────────────────────────────────────────
@@ -1162,12 +1203,42 @@ public static class AccessibilityStrings
             ? $"{name}, Stufe {level}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
             : $"{name}, level {level}{(location != null ? $", on {location}" : "")}, {index} of {count}";
 
+    /// <summary>One browsed item: name, stack size, quality, where it currently
+    /// sits (optional) and its position in the list. The count is spoken because
+    /// a stack of one is a different decision than a stack of twenty.</summary>
+    public static string ItemBrowseEntry(string name, int quantity, bool isHq, string? location, int index, int count) =>
+        IsGerman
+            ? $"{name}{(isHq ? HighQuality : "")}, {quantity} Stück{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
+            : $"{name}{(isHq ? HighQuality : "")}, {quantity}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+
     // ── Skill-Zuweisungs-Menü (modal, Nummernblock) ──
     /// <summary>Spoken when the modal skill menu opens, with the browse hint.</summary>
     public static string SkillMenuOpened(int count) =>
         IsGerman
-            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back.";
+            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt zu Gegenständen, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, 4 or 6 switches to items, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>Spoken when the menu switches to the carried-item list.</summary>
+    public static string ItemMenuOpened(int count) =>
+        IsGerman
+            ? $"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 zurück zu Skills, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 back to skills, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>Debug probe: the slot it wants to test is not free.</summary>
+    public static string ProbeSlotOccupied =>
+        IsGerman
+            ? "Sonde braucht Taste 12 der ersten Leiste frei."
+            : "Probe needs key 12 on the first bar to be free.";
+
+    /// <summary>Debug probe: finished, results are in the log.</summary>
+    public static string ProbeDone =>
+        IsGerman ? "Sonde fertig, Ergebnis im Log." : "Probe finished, results in the log.";
+
+    /// <summary>Spoken when the player carries nothing that can go on a bar.</summary>
+    public static string NoUsableItems =>
+        IsGerman
+            ? "Keine benutzbaren Gegenstände in der Tasche."
+            : "No usable items in your bag.";
     /// <summary>Spoken after a skill is chosen: now pick the target key.</summary>
     public static string SkillMenuPickTarget(string skillName, int count) =>
         IsGerman

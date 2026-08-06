@@ -492,9 +492,10 @@ public sealed class NavigationService
             ? $" {dest.Detail}."
             : string.Empty;
 
-        // Main Scenario quests are flagged so a blind player can tell the story
-        // apart from side quests (a sighted player sees a distinct marker).
-        var story = dest.IsMainStory ? AccessibilityStrings.StoryPrefix : string.Empty;
+        // The kind of quest is flagged so a blind player can tell story, job and
+        // beast tribe quests apart from side quests (a sighted player sees a
+        // distinct marker). Side quests stay unprefixed - see QuestKind.
+        var story = AccessibilityStrings.QuestKindPrefix(dest.Kind);
 
         // The list is level-ordered, so the level has to be audible - otherwise
         // the order is a silent rule the player cannot act on. Omitted when the
@@ -575,7 +576,9 @@ public sealed class NavigationService
             TerritoryTypeId: (ushort)_clientState.TerritoryType,
             MapId: 0,
             InCurrentZone: true,
-            IsMainStory: false,
+            // A FATE is not a quest, so no kind is spoken - the FATE announcement
+            // below already says what it is.
+            Kind: QuestKind.Unknown,
             Level: fate.Level);
 
         // Name first, then level, then progress (user choice 2026-07-31), then

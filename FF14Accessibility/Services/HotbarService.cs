@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using Dalamud.Plugin.Services;
@@ -25,17 +25,20 @@ public sealed class HotbarService
     private readonly IFramework _framework;
     private readonly GearInfoService _gearInfo;
     private readonly KeybindService _keybinds;
+    private readonly InventoryService _inventory;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
 
     public HotbarService(IDataManager data, IClientState clientState, IFramework framework,
-                         GearInfoService gearInfo, KeybindService keybinds, TolkService tolk, IPluginLog log)
+                         GearInfoService gearInfo, KeybindService keybinds, InventoryService inventory,
+                         TolkService tolk, IPluginLog log)
     {
         _data = data;
         _clientState = clientState;
         _framework = framework;
         _gearInfo = gearInfo;
         _keybinds = keybinds;
+        _inventory = inventory;
         _tolk = tolk;
         _log = log;
     }
@@ -170,7 +173,7 @@ public sealed class HotbarService
         return result;
     }
 
-    // ── Skill assignment menu: a modal, keyboard-only way to put a learned
+    // â”€â”€ Skill assignment menu: a modal, keyboard-only way to put a learned
     //    action on a hotbar key. Sighted players drag from "Actions & Traits";
     //    there is no keyboard path in the game, so the plugin walks the player
     //    through it: browse learned skills, pick one, browse the assignable
@@ -182,8 +185,19 @@ public sealed class HotbarService
     private enum SkillMenuStep { Closed, PickSkill, PickTarget }
     private SkillMenuStep _menuStep = SkillMenuStep.Closed;
 
+    /// <summary>Which list the menu is browsing. Numpad 4/6 toggles it (user
+    /// choice 2026-08-06); the target-key step works the same for both.</summary>
+    private enum AssignSource { Skills, Items }
+    private AssignSource _menuSource = AssignSource.Skills;
+
     private readonly List<(uint Id, string Name, byte Level)> _skills = new();
     private int _skillIndex = -1;
+
+    // Carried usable items, rebuilt every time the item list is entered - the
+    // inventory changes constantly (potions get drunk), and a cached list would
+    // offer the player something that is no longer there.
+    private readonly List<InventoryService.UsableItem> _items = new();
+    private int _itemIndex = -1;
     // The list is rebuilt when job or level changes (level-ups add skills).
     private byte _skillsJobId;
     private uint _skillsLevel;
@@ -202,11 +216,66 @@ public sealed class HotbarService
     public void ToggleSkillMenu()
     {
         if (_menuStep != SkillMenuStep.Closed) { CloseSkillMenu(); return; }
+        _menuSource = AssignSource.Skills;   // always open on the familiar list
         if (!EnsureSkillList()) return;      // speaks the reason on failure
         if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
         _menuStep = SkillMenuStep.PickSkill;
         _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
         AnnounceSkill();
+    }
+
+    /// <summary>
+    /// Numpad 4 / 6: switches between the skill list and the carried-item list
+    /// while browsing. Only meaningful in the browse step - during target-key
+    /// selection the source is already decided, so the keys are ignored there
+    /// (the announcement would otherwise contradict what is about to be placed).
+    /// </summary>
+    public void SkillMenuSwitchSource()
+    {
+        if (_menuStep != SkillMenuStep.PickSkill) return;
+
+        if (_menuSource == AssignSource.Skills)
+        {
+            if (!EnsureItemList()) return;   // speaks the reason on failure
+            _menuSource = AssignSource.Items;
+            if (_itemIndex < 0 || _itemIndex >= _items.Count) _itemIndex = 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
+            AnnounceItem();
+        }
+        else
+        {
+            if (!EnsureSkillList()) return;
+            _menuSource = AssignSource.Skills;
+            if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
+            AnnounceSkill();
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the carried usable items. Always rebuilt (never cached): the bag
+    /// changes while playing, and offering a potion that was already drunk would
+    /// assign a slot the player cannot use. Announces and returns false when the
+    /// player carries nothing usable.
+    /// </summary>
+    private bool EnsureItemList()
+    {
+        if (!_clientState.IsLoggedIn)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
+            return false;
+        }
+
+        _items.Clear();
+        _items.AddRange(_inventory.CollectUsableItems());
+        _itemIndex = _items.Count > 0 ? 0 : -1;
+
+        if (_items.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoUsableItems);
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Closes the menu and says so.</summary>
@@ -221,6 +290,11 @@ public sealed class HotbarService
     {
         switch (_menuStep)
         {
+            case SkillMenuStep.PickSkill when _menuSource == AssignSource.Items:
+                if (_items.Count == 0) return;
+                _itemIndex = ((_itemIndex + direction) % _items.Count + _items.Count) % _items.Count;
+                AnnounceItem();
+                break;
             case SkillMenuStep.PickSkill:
                 if (_skills.Count == 0) return;
                 _skillIndex = ((_skillIndex + direction) % _skills.Count + _skills.Count) % _skills.Count;
@@ -241,7 +315,11 @@ public sealed class HotbarService
         switch (_menuStep)
         {
             case SkillMenuStep.PickSkill:
-                if (_skillIndex < 0 || _skillIndex >= _skills.Count) return;
+                var chosen = _menuSource == AssignSource.Items
+                    ? (_itemIndex >= 0 && _itemIndex < _items.Count ? _items[_itemIndex].Name : null)
+                    : (_skillIndex >= 0 && _skillIndex < _skills.Count ? _skills[_skillIndex].Name : null);
+                if (chosen == null) return;
+
                 BuildTargetList();
                 if (_targets.Count == 0)
                 {
@@ -250,14 +328,17 @@ public sealed class HotbarService
                 }
                 _targetIndex = 0;
                 _menuStep = SkillMenuStep.PickTarget;
-                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuPickTarget(_skills[_skillIndex].Name, _targets.Count));
+                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuPickTarget(chosen, _targets.Count));
                 AnnounceTarget();
                 break;
             case SkillMenuStep.PickTarget:
                 if (_targetIndex < 0 || _targetIndex >= _targets.Count) return;
                 var (bar, slot) = _targets[_targetIndex];
                 _menuStep = SkillMenuStep.Closed;    // leave the menu; assign speaks the result
-                AssignSkillToSlot(_skillIndex, bar, slot);
+                if (_menuSource == AssignSource.Items)
+                    AssignItemToSlot(_itemIndex, bar, slot);
+                else
+                    AssignSkillToSlot(_skillIndex, bar, slot);
                 break;
         }
     }
@@ -269,8 +350,16 @@ public sealed class HotbarService
         if (_menuStep == SkillMenuStep.PickTarget)
         {
             _menuStep = SkillMenuStep.PickSkill;
-            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-            AnnounceSkill();
+            if (_menuSource == AssignSource.Items)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
+                AnnounceItem();
+            }
+            else
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
+                AnnounceSkill();
+            }
         }
         else
         {
@@ -283,8 +372,19 @@ public sealed class HotbarService
     private void AnnounceSkill()
     {
         var (id, name, level) = _skills[_skillIndex];
-        var location = FindSlotLocationFor(id);
+        var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Action, id);
         _tolk.SpeakInterrupt(AccessibilityStrings.SkillBrowseEntry(name, level, location, _skillIndex + 1, _skills.Count));
+    }
+
+    /// <summary>Announces the current item: name, stack size, where it already
+    /// sits (if anywhere) and its position in the list. The count matters for
+    /// the decision - a potion with one left is a different choice.</summary>
+    private void AnnounceItem()
+    {
+        var item = _items[_itemIndex];
+        var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+        _tolk.SpeakInterrupt(AccessibilityStrings.ItemBrowseEntry(
+            item.Name, item.Quantity, item.IsHq, location, _itemIndex + 1, _items.Count));
     }
 
     /// <summary>Announces the current target key: its label, what is on it now,
@@ -341,45 +441,281 @@ public sealed class HotbarService
         _log.Info($"[Hotbar] Belegen: {SlotLabel(bar, slot)} (Leiste {bar + 1} Slot {slot}) <- action {id} '{name}'. " +
                   $"Vorher: {DescribeSlotRaw(module, bar, slot)}, LeisteGeteilt={module->IsHotbarShared((uint)bar)}");
 
-        // try-catch: external game calls that mutate saved hotbar state.
-        try
-        {
-            // V4.76-Probe bewies: SetAndSaveSlot schreibt nur den GESPEICHERTEN
-            // Zustand - die 9:43-Zuweisung erschien erst nach dem Relog auf der
-            // Leiste (Log 2026-07-17 11:59), live blieb der Slot unveraendert.
-            // LoadSavedHotbar zieht den gespeicherten Stand sofort in die
-            // Live-Leiste ("loads the saved hotbar into the live hotbar",
-            // FFXIVClientStructs-Doku; respektiert PvP automatisch).
-            module->SetAndSaveSlot((uint)bar, (uint)slot,
-                RaptureHotbarModule.HotbarSlotType.Action, id);
-            var ps = PlayerState.Instance();
-            if (ps == null)
-            {
-                _log.Warning("[Hotbar] PlayerState null - LoadSavedHotbar uebersprungen, Aenderung greift erst beim Relog.");
-            }
-            else
-            {
-                module->LoadSavedHotbar(ps->CurrentClassJobId, (uint)bar);
-            }
-        }
-        catch (Exception ex)
-        {
-            _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailed);
-            _log.Error(ex, $"[Hotbar] SetAndSaveSlot/LoadSavedHotbar krachte: bar={bar} slot={slot} action={id} '{name}'");
+        if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.Action, id, name))
             return;
-        }
-
-        _log.Info($"[Hotbar] Direkt nach SetAndSaveSlot+LoadSavedHotbar: {DescribeSlotRaw(module, bar, slot)}");
 
         // Verdict 2 frames later - announce only what the slot then really holds.
         _framework.RunOnTick(() => VerifyAssignment(bar, slot, id, name), delayTicks: 2);
     }
 
-    private unsafe void VerifyAssignment(int bar, int slot, uint actionId, string name)
+    /// <summary>
+    /// Writes one entry to a hotbar slot, live bar AND saved state.
+    /// <para>
+    /// SetAndSaveSlot is NOT used any more. Measured 2026-08-06 (/acc
+    /// hotbarprobe, two jobs): with class Thaumaturge (7) it wrote the saved
+    /// state and LoadSavedHotbar pulled the entry onto the bar, but with job
+    /// Black Mage (25) the very same call left both sides untouched - for
+    /// actions just as much as for items, which is why assigning skills had
+    /// silently stopped working too. Its default lets the game save into the PvP
+    /// set, which jobs have and classes do not; that is the likely reason, but
+    /// it is a HYPOTHESIS, not measured.
+    /// </para>
+    /// <para>
+    /// What IS measured: HotbarSlot.Set puts the entry on the live bar, and
+    /// WriteSavedSlot - the direct counterpart of LoadSavedHotbar, told
+    /// explicitly that this is not a PvP slot - persists it. That pair held in
+    /// BOTH jobs, including across a reload (probe steps F1/F2).
+    /// </para>
+    /// LoadSavedHotbar is still called afterwards on purpose: it pulls the saved
+    /// state back over the live bar, so a failed save shows up as a slot that
+    /// reverts - and the read-back then reports honest failure instead of a
+    /// change that only looks right until the next reload.
+    /// </summary>
+    private unsafe bool PlaceOnSlot(RaptureHotbarModule* module, int bar, int slot,
+        RaptureHotbarModule.HotbarSlotType type, uint id, string name)
+    {
+        var ps = PlayerState.Instance();
+        if (ps == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.PlayerDataNotReady);
+            _log.Warning("[Hotbar] PlayerState null - Belegen abgebrochen.");
+            return false;
+        }
+
+        // try-catch: external game calls that mutate saved hotbar state.
+        try
+        {
+            var live = module->GetSlotById((uint)bar, (uint)slot);
+            if (live == null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailed);
+                _log.Warning($"[Hotbar] GetSlotById lieferte null: bar={bar} slot={slot}");
+                return false;
+            }
+
+            live->Set(type, id);
+            module->WriteSavedSlot(ps->CurrentClassJobId, (uint)bar, (uint)slot, live,
+                ignoreSharedHotbars: false, isPvpSlot: false);
+            module->LoadSavedHotbar(ps->CurrentClassJobId, (uint)bar);
+        }
+        catch (Exception ex)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailed);
+            _log.Error(ex, $"[Hotbar] Set/WriteSavedSlot krachte: bar={bar} slot={slot} type={type} id={id} '{name}'");
+            return false;
+        }
+
+        _log.Info($"[Hotbar] Direkt nach Set+WriteSavedSlot+LoadSavedHotbar: {DescribeSlotRaw(module, bar, slot)}");
+        return true;
+    }
+
+    /// <summary>
+    /// Puts a carried item on the chosen key, through the same measured path as
+    /// <see cref="AssignSkillToSlot"/> (see <see cref="PlaceOnSlot"/>). The id
+    /// used is the one the GAME carries for that stack (HQ offset already
+    /// applied by Dalamud's GameInventoryItem.ItemId), so nothing is recomputed
+    /// here. Success is only announced after the read-back.
+    /// </summary>
+    private unsafe void AssignItemToSlot(int itemIndex, int bar, int slot)
+    {
+        if (itemIndex < 0 || itemIndex >= _items.Count)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
+            return;
+        }
+
+        var module = RaptureHotbarModule.Instance();
+        if (module == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            return;
+        }
+
+        var item = _items[itemIndex];
+        _log.Info($"[Hotbar] Belegen: {SlotLabel(bar, slot)} (Leiste {bar + 1} Slot {slot}) <- item {item.ItemId} " +
+                  $"'{item.Name}' (Basis {item.BaseItemId}, hq={item.IsHq}, Anzahl {item.Quantity}). " +
+                  $"Vorher: {DescribeSlotRaw(module, bar, slot)}");
+
+        if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.Item, item.ItemId, item.Name))
+            return;
+
+        _framework.RunOnTick(
+            () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.Item),
+            delayTicks: 2);
+    }
+
+#if DEBUG
+    /// <summary>
+    /// Measures WHY placing an item on a bar does nothing. The first attempt
+    /// (SetAndSaveSlot + LoadSavedHotbar with HotbarSlotType.Item) left the slot
+    /// Empty already before the read-back, so either SetAndSaveSlot writes
+    /// nothing or LoadSavedHotbar wipes it again - the existing log cannot tell
+    /// the two apart. This probe logs the slot state after EVERY single step and
+    /// tries the alternatives the game itself offers, then restores the slot.
+    /// Runs on the LAST slot of the main bar (key 12) and refuses when that slot
+    /// is occupied, so nothing of the player's setup is at risk.
+    /// </summary>
+    public unsafe void ProbeItemAssignment()
+    {
+        var module = RaptureHotbarModule.Instance();
+        var ps = PlayerState.Instance();
+        if (module == null || ps == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            return;
+        }
+
+        var items = _inventory.CollectUsableItems();
+        if (items.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoUsableItems);
+            return;
+        }
+
+        // Measure on the MAIN bar - that is where assignment has to work. Prefer
+        // an empty slot; if the bar is full, take the last one and put its exact
+        // content back at the end (type + id are all a slot carries).
+        const int bar = MainHotbarIndex;
+        var slot = SlotsToRead - 1;
+        for (var i = 0; i < SlotsToRead; i++)
+        {
+            var candidate = module->GetSlotById(bar, (uint)i);
+            if (candidate != null && candidate->CommandType == RaptureHotbarModule.HotbarSlotType.Empty)
+            {
+                slot = i;
+                break;
+            }
+        }
+
+        var original = module->GetSlotById(bar, (uint)slot);
+        var originalType = original == null ? RaptureHotbarModule.HotbarSlotType.Empty : original->CommandType;
+        var originalId = original == null ? 0u : original->CommandId;
+
+        var item = items[0];
+        var jobId = ps->CurrentClassJobId;
+        // The suspected culprit: the id the module currently keeps its bars
+        // under. Class and job share hotbars in FFXIV (Thaumaturge/Black Mage),
+        // so this can differ from the player's CurrentClassJobId - and then a
+        // save keyed on the wrong id writes into a set nobody reads back.
+        var activeJob = module->ActiveHotbarClassJobId;
+        _log.Info($"[HotbarProbe] Start. Item {item.ItemId} '{item.Name}' (Basis {item.BaseItemId}, hq={item.IsHq}), " +
+                  $"Leiste {bar + 1} Slot {slot + 1}, " +
+                  $"CurrentClassJobId={jobId}, ActiveHotbarClassJobId={activeJob} " +
+                  $"(gleich={(jobId == activeJob)}), " +
+                  $"LeisteGeteilt(1)={module->IsHotbarShared(bar)} LeisteGeteilt(3)={module->IsHotbarShared(2)}, " +
+                  $"Ausgang: {DescribeSlotRaw(module, bar, slot)} " +
+                  $"(wird am Ende auf type={originalType} id={originalId} zurueckgesetzt)");
+
+        // A: exactly what the feature does today, but with a reading BETWEEN the
+        //    two calls - that is the missing measurement.
+        module->SetAndSaveSlot(bar, (uint)slot, RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+        _log.Info($"[HotbarProbe] A1 nach SetAndSaveSlot(Item): {DescribeSlotRaw(module, bar, slot)}");
+        module->LoadSavedHotbar(jobId, bar);
+        _log.Info($"[HotbarProbe] A2 nach LoadSavedHotbar:      {DescribeSlotRaw(module, bar, slot)}");
+
+        // B: same call, but not routed through the shared-hotbar handling.
+        module->SetAndSaveSlot(bar, (uint)slot, RaptureHotbarModule.HotbarSlotType.Item, item.ItemId,
+            ignoreSharedHotbars: true);
+        _log.Info($"[HotbarProbe] B  SetAndSaveSlot(ignoreShared): {DescribeSlotRaw(module, bar, slot)}");
+
+        // C: the slot's own Set - the live bar only, no saving involved.
+        var s = module->GetSlotById(bar, (uint)slot);
+        if (s != null)
+        {
+            s->Set(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+            _log.Info($"[HotbarProbe] C  HotbarSlot.Set(Item):       {DescribeSlotRaw(module, bar, slot)}");
+        }
+
+        // D: control group - the SAME calls with an action, to show whether the
+        //    item type is the problem or the whole assignment path is.
+        if (_skills.Count > 0 || EnsureSkillList())
+        {
+            var actionId = _skills[0].Id;
+            module->SetAndSaveSlot(bar, (uint)slot, RaptureHotbarModule.HotbarSlotType.Action, actionId);
+            _log.Info($"[HotbarProbe] D1 SetAndSaveSlot(Action {actionId} '{_skills[0].Name}'): {DescribeSlotRaw(module, bar, slot)}");
+            module->LoadSavedHotbar(jobId, bar);
+            _log.Info($"[HotbarProbe] D2 nach LoadSavedHotbar:      {DescribeSlotRaw(module, bar, slot)}");
+        }
+
+        // E: does a DIFFERENT SetAndSave* overload work? If yes, only
+        //    SetAndSaveSlot itself is broken, not the whole family.
+        var okFirst = module->SetAndSaveFirstAvailableNormalSlot(
+            bar, RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+        _log.Info($"[HotbarProbe] E  SetAndSaveFirstAvailableNormalSlot -> {okFirst}, " +
+                  $"Sondenslot: {DescribeSlotRaw(module, bar, slot)}");
+        if (okFirst)
+        {
+            // It picks its own slot - find and log where it landed, then clear it.
+            for (var i = 0; i < SlotsToRead; i++)
+            {
+                var f = module->GetSlotById(bar, (uint)i);
+                if (f == null || f->CommandType != RaptureHotbarModule.HotbarSlotType.Item || f->CommandId != item.ItemId)
+                    continue;
+                _log.Info($"[HotbarProbe] E  gelandet auf Slot {i + 1}");
+                if (i != slot)
+                {
+                    f->Set(RaptureHotbarModule.HotbarSlotType.Empty, 0);
+                    module->ClearSavedSlotById(bar, (uint)i);
+                }
+                break;
+            }
+        }
+
+        // F: THE CANDIDATE FIX - set the live slot (proven to work in C) and then
+        //    write that slot into the saved state, the direct counterpart of
+        //    LoadSavedHotbar. Surviving the reload is what makes it a real fix
+        //    rather than a display-only change.
+        var live = module->GetSlotById(bar, (uint)slot);
+        if (live != null)
+        {
+            live->Set(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+            module->WriteSavedSlot(jobId, bar, (uint)slot, live, false, false);
+            _log.Info($"[HotbarProbe] F1 Set + WriteSavedSlot:        {DescribeSlotRaw(module, bar, slot)}");
+            module->LoadSavedHotbar(jobId, bar);
+            _log.Info($"[HotbarProbe] F2 nach LoadSavedHotbar:        {DescribeSlotRaw(module, bar, slot)}" +
+                      "   <- bleibt es hier stehen, ist das der Weg");
+            _log.Info($"[HotbarProbe] F3 SavePending={module->GetIsSavePending()}");
+        }
+
+        // G: same as F, but keyed on the id the MODULE uses rather than the
+        //    player's job id. If F fails and G holds, the id was the whole
+        //    problem - and the fix is to stop passing CurrentClassJobId.
+        var live2 = module->GetSlotById(bar, (uint)slot);
+        if (live2 != null && activeJob != jobId)
+        {
+            live2->Set(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
+            module->WriteSavedSlot(activeJob, bar, (uint)slot, live2, false, false);
+            module->LoadSavedHotbar(activeJob, bar);
+            _log.Info($"[HotbarProbe] G  Set + WriteSavedSlot(activeJob {activeJob}) + LoadSavedHotbar: " +
+                      $"{DescribeSlotRaw(module, bar, slot)}");
+        }
+        else
+        {
+            _log.Info($"[HotbarProbe] G  uebersprungen (CurrentClassJobId und ActiveHotbarClassJobId sind gleich: {jobId})");
+        }
+
+        // Leave the player's bar exactly as it was - live slot AND saved state.
+        var restore = module->GetSlotById(bar, (uint)slot);
+        if (restore != null)
+        {
+            restore->Set(originalType, originalId);
+            // Restore the SAVED state through the same path F uses - SetAndSaveSlot
+            // is proven ineffective above and would leave the old value stored.
+            module->WriteSavedSlot(jobId, bar, (uint)slot, restore, false, false);
+        }
+        module->LoadSavedHotbar(jobId, bar);
+        _log.Info($"[HotbarProbe] Ende, wiederhergestellt (soll type={originalType} id={originalId}): " +
+                  $"{DescribeSlotRaw(module, bar, slot)}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.ProbeDone);
+    }
+#endif
+
+    private unsafe void VerifyAssignment(int bar, int slot, uint actionId, string name,
+        RaptureHotbarModule.HotbarSlotType type = RaptureHotbarModule.HotbarSlotType.Action)
     {
         var module = RaptureHotbarModule.Instance();
         var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
-        if (s != null && s->CommandType == RaptureHotbarModule.HotbarSlotType.Action && s->CommandId == actionId)
+        if (s != null && s->CommandType == type && s->CommandId == actionId)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.SkillAssigned(name, SlotLabel(bar, slot)));
             _log.Info($"[Hotbar] Belegt (nach 2 Frames): Leiste {bar + 1} Slot {slot} = action {actionId} '{name}'");
@@ -402,9 +738,9 @@ public sealed class HotbarService
             : $"type={s->CommandType} id={s->CommandId} apparent={s->ApparentActionId}";
     }
 
-    /// <summary>Spoken location of this action on any standard bar
+    /// <summary>Spoken location of this action or item on any standard bar
     /// ("Taste 7" / "Leiste 2, Taste Strg+3"), or null when not placed.</summary>
-    private unsafe string? FindSlotLocationFor(uint actionId)
+    private unsafe string? FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType type, uint id)
     {
         var module = RaptureHotbarModule.Instance();
         if (module == null) return null;
@@ -412,7 +748,7 @@ public sealed class HotbarService
         for (var slot = 0; slot < SlotsToRead; slot++)
         {
             var s = module->GetSlotById((uint)bar, (uint)slot);
-            if (s != null && s->CommandType == RaptureHotbarModule.HotbarSlotType.Action && s->CommandId == actionId)
+            if (s != null && s->CommandType == type && s->CommandId == id)
                 return SlotLabel(bar, slot);
         }
         return null;

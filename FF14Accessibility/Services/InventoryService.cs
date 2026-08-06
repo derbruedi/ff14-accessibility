@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Game.Inventory;
 using Dalamud.Plugin.Services;
 using LuminaEventItem = Lumina.Excel.Sheets.EventItem;
@@ -113,6 +114,57 @@ public sealed class InventoryService
                 result.Add(item.Quantity > 1 ? AccessibilityStrings.ItemStack(name, item.Quantity, hq) : $"{name}{hq}");
             }
         }
+        return result;
+    }
+
+    /// <summary>
+    /// One carried item that can be placed on a hotbar slot.
+    /// <paramref name="ItemId"/> is the id the GAME uses, HQ offset already
+    /// applied - that is the value a hotbar slot must hold, so nothing is
+    /// recomputed here. <paramref name="BaseItemId"/> only serves sheet lookups.
+    /// </summary>
+    public readonly record struct UsableItem(
+        uint ItemId, uint BaseItemId, string Name, int Quantity, bool IsHq);
+
+    /// <summary>
+    /// The carried items that can actually be put on a hotbar: bag contents
+    /// whose Item sheet row has an ItemAction. That column is the game's own
+    /// mark for "this item does something when used" - it covers medicines,
+    /// food, orchestrion rolls and minion whistles without the plugin keeping a
+    /// hand-written category list (offline sheet dump 2026-08-06: 4987 of 50773
+    /// named items, led by Arznei/Gericht/Verschiedenes).
+    /// Identical stacks across bag pages are merged, HQ kept apart from NQ
+    /// because they are different ids and the player may own both.
+    /// </summary>
+    public List<UsableItem> CollectUsableItems()
+    {
+        var merged = new Dictionary<uint, UsableItem>();
+        foreach (var page in BagPages)
+        {
+            foreach (var item in _inventory.GetInventoryItems(page))
+            {
+                if (item.IsEmpty || item.ItemId == 0) continue;
+                if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(item.BaseItemId, out var row)) continue;
+                if (row.ItemAction.RowId == 0) continue;   // not usable
+
+                var name = row.Name.ExtractText();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                if (merged.TryGetValue(item.ItemId, out var seen))
+                {
+                    merged[item.ItemId] = seen with { Quantity = seen.Quantity + item.Quantity };
+                }
+                else
+                {
+                    merged[item.ItemId] = new UsableItem(
+                        item.ItemId, item.BaseItemId, name, item.Quantity, item.IsHq);
+                }
+            }
+        }
+
+        var result = merged.Values.OrderBy(i => i.Name).ThenBy(i => i.IsHq).ToList();
+        _log.Info($"[Inventory] Belegbare Gegenstaende: {result.Count} " +
+                  $"({string.Join(", ", result.Take(5).Select(i => $"{i.Name}{(i.IsHq ? " HQ" : string.Empty)} x{i.Quantity} id={i.ItemId}"))})");
         return result;
     }
 
