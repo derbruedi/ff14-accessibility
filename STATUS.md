@@ -3,7 +3,38 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-06, README DE+EN GEGEN DEN CODE ABGEGLICHEN)
+## STAND JETZT (2026-08-06, V5.74 OEFFENTLICH RELEASED)
+
+>>> RELEASE v5.74 IST DRAUSSEN (Commit db04160, Tag v5.74,
+    https://github.com/derbruedi/ff14-accessibility/releases/tag/v5.74).
+    Versions-Sync war wie immer noetig: Plugin.cs stand auf 5.73,
+    csproj/repo.json noch auf 5.72 -> alle drei jetzt 5.74(.0.0).
+
+>>> VERIFIZIERT, nicht angenommen:
+    - `gh release list`: v5.74 traegt "Latest".
+    - Alle 4 Assets state=uploaded (latest.zip 620.928,
+      FF14Accessibility-v5.74.0.zip 620.928, Installer-exe 162.517.183,
+      installer.json 165).
+    - Der Weg des SPIELERS geprueft: Download ueber
+      releases/latest/download/latest.zip liefert 620.928 Bytes, und das
+      Manifest IM Paket traegt AssemblyVersion 5.74.0.0.
+    - repo.json auf main ueber raw.githubusercontent gegengelesen:
+      AssemblyVersion 5.74.0.0, DownloadLinkInstall zeigt auf latest.
+    - Installer unveraendert (git diff b22c1ac..HEAD -- Installer/ leer),
+      exe + installer.json aus v5.72 uebernommen; SHA256 der exe stimmt mit
+      der installer.json ueberein (5787445B...CAD49), Version 1.1.0.0.
+
+>>> INHALT: Belegen-Fix (der wichtigste Punkt - betraf ALLE Spieler und
+    beide Zuweisungsarten), Gegenstaende auf die Leiste, Quest-Art,
+    Zauber-Warnung von allen Gegnern, Anmelde-Ruhephase, Folgen-Taste
+    repariert, README DE+EN abgeglichen.
+
+>>> IM RELEASE MITGEGANGEN, ABER IN-GAME UNGETESTET (in den Release-Notes
+    ausdruecklich so benannt): Anmelde-Ruhephase, erweiterte Zauber-Warnung,
+    reparierte Folgen-Taste. Bestaetigt waren: Belegen-Fix, Gegenstaende,
+    Quest-Art.
+
+## VORHERIGER STAND (2026-08-06, README DE+EN GEGEN DEN CODE ABGEGLICHEN)
 
 >>> USER-AUFTRAG: "aktualisiere mal die readme in deutsch und englisch und
     schau das die tasten die wirklich funktionieren drin stehen und nicht
