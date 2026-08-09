@@ -3,7 +3,92 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-09, "KARTENUEBERGAENGE" - GEMESSEN, GEBAUT, ALS v5.76 RELEASED)
+## STAND JETZT (2026-08-09, "WEGENETZ-ANSAGE WAR TOT" - URSACHE BEWIESEN, GEFIXT)
+
+>>> USER-MELDUNG: "ich bin auf einer map wo er angeblich keine wege findet."
+
+>>> BEWIESENE URSACHE - STARTREIHENFOLGE (Log 2026-08-09):
+      21:31:11,472 [WRN] Wegenetz-Fortschritt nicht lesbar - Ueberwachung aus.
+                   IpcNotReadyError: IPC method vnavmesh.Nav.BuildProgress
+                   was not registered yet
+      21:31:12,358 [INF] Finished loading vnavmesh
+    Das Plugin fragt die vnavmesh-IPC 0,9 SEKUNDEN zu frueh ab, faengt den
+    Fehler, setzt `_meshMonitorOff = true` - und schaltet die Ansage damit fuer
+    die GANZE SITZUNG ab. vnavmesh ist eine Sekunde spaeter da, aber es fragt
+    nie wieder nach.
+    FOLGE: der Spieler hoert NIE "Wegenetz wird geladen / 40 % / fertig". Genau
+    diese Ansage unterscheidet "Netz baut noch" von "es gibt wirklich keinen
+    Weg". Der Kommentar ueber der Methode sagt das selbst ("no way to tell
+    'still loading' from 'broken'") - die Funktion war seit dem Bau wirkungslos,
+    sobald das Plugin vor vnavmesh geladen wurde.
+
+>>> GEFIXT: `IpcNotReadyError` schaltet die Ueberwachung NICHT mehr ab, sondern
+    wird alle 5 s neu versucht (einmal geloggt, nicht pro Frame). Nur andere
+    Ausnahmen schalten weiterhin hart ab. Kommt die IPC hoch, steht
+    "Wegenetz-Ueberwachung laeuft wieder" im Log.
+
+>>> NEU `/acc netz` (bzw. `/acc mesh`): sagt auf Zuruf, ob das Netz fertig ist,
+    gerade gebaut wird (mit Prozent) oder ob vnavmesh fehlt. Damit laesst sich
+    die Frage jederzeit selbst klaeren, statt auf eine Ansage zu warten.
+
+>>> ZWEITE URSACHE, DAVON UNABHAENGIG - UND SIE IST DIE EIGENTLICHE (Log
+    21:41-21:42, zweiter Versuch des Spielers):
+      [Netz] ffxiv_sea_s1_fld_s1f3_level_s1f3__11F3E____0.navmesh:
+             Spieler 0,10 m vom Netz.
+      [Netz] Spielerflaeche 9434 Polygone, Zielflaeche 10860 - getrennt.
+      [Netz] Die beiden Flaechen kommen sich nirgends auf 6 m nahe genug.
+    DAS NETZ IST FERTIG - der Cache liess sich lesen, die Polygone zaehlen, und
+    der Spieler steht 0,10 m davon entfernt. Die zunaechst geaeusserte Vermutung
+    "Netz baut noch" ist damit WIDERLEGT.
+    Oestliches La Noscea (s1f3) zerfaellt im gecachten Wegenetz in ZWEI GROSSE,
+    unverbundene Flaechen: die Spielerseite oben (Weinhafen, Y~70) und die
+    Ostkueste unten (Costa del Sol, Y~19). BEIDE Ziele des Spielers
+    ('Infame Informanten' <560,4|20,8|455,9> und Aetheryt Sonnenkueste
+    <490,5|19,0|466,6>) liegen auf der zweiten. Zu Fuss kommt man dort
+    selbstverstaendlich hin - das Netz ist falsch, nicht die Welt.
+    Die Cache-Datei ist vom 02.08.2026.
+
+>>> DAS PLUGIN VERHAELT SICH RICHTIG: es erkennt die Trennung und verweigert
+    einen sinnlosen 692-m-Lauf. vnavmesh selbst lieferte einen "Pfad" mit 21
+    Wegpunkten, dessen LETZTER Sprung 452 m Luftlinie betrug - ohne die
+    Trennungspruefung waere der Lauf angetreten und gescheitert.
+
+>>> DER SPIELER HATTE RECHT - DAS PLUGIN STAND IM WEG (Nachtrag, Code gelesen):
+    Beim Befund "haengt an einer anderen Flaeche" ging Fall 3 SOFORT in die
+    Uebergangs- und Zugangssuche und rief `Stop()`. Der Lauf wurde also gar
+    nicht erst angetreten - obwohl vnavmesh einen Weg mit 21 Wegpunkten und
+    rund 500 m Laenge geliefert hatte, der 238 m naeher ans Ziel fuehrt
+    (690 m -> 452 m). Die Grenze `NearMissGap` = 15 m entscheidet ueber
+    "fahrbare Restluecke", wurde hier aber zur Entscheidung ueber "ueberhaupt
+    losgehen" gemacht. Bei einer Zone, deren Netz in zwei Haelften zerfaellt,
+    heisst das: kein einziger Schritt.
+
+>>> GEBAUT: Fall 3 laeuft den vnavmesh-Weg jetzt, wenn er echten Fortschritt
+    bringt (`MinUsefulProgress` = 20 m, gemessen als Entfernung-zum-Ziel vorher
+    minus nachher). Erst wenn der Weg NICHTS bringt, kommen die Suchen - genau
+    der Fall vom ersten Versuch um 21:32, wo der Pfad 0,7 m neben dem Spieler
+    endete und 466 m vom Ziel. Das eine Kriterium trennt beide Faelle sauber.
+    Dazu: `FinishNearMiss` prueft den Boden nicht mehr bei Resten ueber 15 m -
+    das waere bei 452 m ein IPC-Aufruf pro Meter fuer eine schon bekannte
+    Antwort. Stattdessen direkt die Ansage "noch N Meter nach <Richtung>".
+
+>>> WEITERHIN SINNVOLL FUER DEN SPIELER: `/vnav rebuild` - verifiziert aus
+    vnavmesh.dll (Navmesh.Plugin, Hilfetext: "rebuild current territory's
+    navmesh from scratch"). Baut das Netz der aktuellen Zone neu und ersetzt den
+    alten Cache. Wenn danach immer noch getrennt, ist es eine echte Grenze des
+    Netzbaus, und dann waere die Offline-Analyse des Caches der naechste Schritt
+    (vgl. Astalicia-Untersuchung).
+
+>>> IN-GAME BESTAETIGT (User 2026-08-09): "laufen geht erstmal wieder".
+    Der Auto-Lauf tritt den vnavmesh-Weg wieder an. Als v5.77 released.
+
+>>> NOCH OFFEN AN DIESEM FALL: ob nach `/vnav rebuild` die beiden Flaechen von
+    Oestlichem La Noscea zusammenhaengen. Bleibt die Trennung, laeuft der
+    Spieler kuenftig den grossen Teil der Strecke und bekommt den Rest angesagt -
+    aber die letzten ~450 m muessen von Hand oder per Aetheryt ueberbrueckt
+    werden. Dann waere die Offline-Analyse des Caches der naechste Schritt.
+
+## FRUEHER (2026-08-09, "KARTENUEBERGAENGE" - GEMESSEN, GEBAUT, ALS v5.76 RELEASED)
 
 >>> RELEASE v5.76 RAUS (2026-08-09 18:41 UTC). Versionen an allen drei Stellen
     auf 5.76 / 5.76.0.0 (Plugin.cs, csproj, repo.json). Vier Assets am Release,

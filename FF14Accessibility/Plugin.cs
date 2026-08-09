@@ -73,8 +73,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.76";
-    private const string PluginVersionTag = "Zonenuebergaenge werden durchlaufen, Beute auswuerfeln, Auf- und Absteigen ueber die Leiste, Begleiter-Verzeichnis, tote Sammelpunkte raus";
+    private const string PluginVersion    = "5.77";
+    private const string PluginVersionTag = "Auto-Lauf laeuft wieder los, wenn der Weg naeher heranfuehrt; Wegenetz-Ansage repariert, /acc netz";
 
     public Plugin()
     {
@@ -378,6 +378,12 @@ public sealed class Plugin : IDalamudPlugin
             case "zugang":
             case "approach":
                 _autoWalk.AnnounceApproachToTarget();
+                break;
+            // Sagt, ob das Wegenetz fertig ist. Unterscheidet "kein Weg" von
+            // "noch nicht fertig gebaut" - ohne das sind beide gleich still.
+            case "netz":
+            case "mesh":
+                _autoWalk.AnnounceMeshStatus();
                 break;
             case "cooldowns":
             case "cd":

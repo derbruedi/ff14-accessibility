@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
 
 namespace FF14Accessibility.Services;
@@ -843,6 +844,13 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     private const float NearMissGap = 15f;
 
+    /// <summary>How much closer to the destination a route has to bring us
+    /// before it is worth walking even though it does not reach. Anything above
+    /// the drivable <see cref="NearMissGap"/> means real ground covered - and
+    /// covering most of the way beats standing still, which is what a blind
+    /// player is left with otherwise.</summary>
+    private const float MinUsefulProgress = 20f;
+
     /// <summary>Ring radii (metres) sampled around an unreachable destination
     /// when looking for the closest spot one CAN walk to. Sixteen bearings per
     /// ring: with only eight, a narrow gangway between two levels falls between
@@ -1299,6 +1307,18 @@ public sealed class AutoWalkService : IDisposable
         var rest = Vector3.Distance(here, near.Goal);
         var compass = RouteService.CompassWord(here, near.Goal);
 
+        // A rest this long was never going to be driven blind, and probing it
+        // would cost one IPC call per metre (FinalHopProbeStep = 1 m) for an
+        // answer we already have. Happens since a route that merely gets CLOSER
+        // is walked too - there the rest can be hundreds of metres.
+        if (rest > NearMissGap)
+        {
+            _log.Info($"[Nav] Letztes Stueck nicht gefahren: {rest:F1} m sind mehr als die " +
+                      $"fahrbaren {NearMissGap:F0} m. Noch {rest:F1} m nach {compass} bis '{near.Name}'.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkEndedRemaining(rest));
+            return;
+        }
+
         if (GroundIsContinuous(here, near.Goal))
         {
             // Silent on purpose (user 2026-08-07: "die meldung brauche ich
@@ -1535,7 +1555,19 @@ public sealed class AutoWalkService : IDisposable
 
     private float _lastMeshProgress = -1f;   // -1 = kein Aufbau lÃ¤uft
     private int _lastSpokenMeshStep = -1;    // last announced 20 % step (0..4)
-    private bool _meshMonitorOff;            // IPC unavailable - reported once, then quiet
+    private bool _meshMonitorOff;            // hard IPC failure - reported once, then quiet
+
+    /// <summary>Next attempt after vnavmesh's IPC was not registered YET. See
+    /// <see cref="MonitorMeshBuild"/> - that case must not switch the monitor
+    /// off, it just has to be retried.</summary>
+    private DateTime _meshRetryAt = DateTime.MinValue;
+
+    /// <summary>Whether the "not registered yet" case has been logged. Once per
+    /// session is information, once per retry is noise.</summary>
+    private bool _meshNotReadyLogged;
+
+    /// <summary>Seconds between retries while vnavmesh's IPC is not up.</summary>
+    private const double MeshRetryIntervalS = 5;
 
     /// <summary>
     /// Announces the navmesh build in 20 % steps and reports when it is done
@@ -1553,6 +1585,7 @@ public sealed class AutoWalkService : IDisposable
     private void MonitorMeshBuild()
     {
         if (_meshMonitorOff || !_config.AnnounceMeshProgress) return;
+        if (DateTime.UtcNow < _meshRetryAt) return;
 
         float progress;
         bool ready;
@@ -1562,13 +1595,38 @@ public sealed class AutoWalkService : IDisposable
             progress = _navBuildProgress.InvokeFunc();
             ready    = _navIsReady.InvokeFunc();
         }
+        catch (IpcNotReadyError)
+        {
+            // NOT a failure - vnavmesh has simply not registered its IPC yet.
+            // MEASURED 2026-08-09: this plugin finished loading at 21:31:11,472
+            // and vnavmesh at 21:31:12,358 - 0,9 s later. Switching the monitor
+            // off here (what the code did until now) silenced the build
+            // announcement for the WHOLE session, and with it the only way for
+            // the player to tell "mesh still building" from "no route exists".
+            // The user then hears nothing but "kein Weg gefunden" and cannot
+            // know which of the two it is.
+            _meshRetryAt = DateTime.UtcNow.AddSeconds(MeshRetryIntervalS);
+            if (!_meshNotReadyLogged)
+            {
+                _meshNotReadyLogged = true;
+                _log.Info("[Nav] Wegenetz-Ueberwachung: vnavmesh-IPC noch nicht da, " +
+                          $"versuche es alle {MeshRetryIntervalS:F0} s erneut.");
+            }
+            return;
+        }
         catch (Exception ex)
         {
-            // Never per frame: report once, then stay off. A missing vnavmesh is
-            // already announced properly when a walk is actually attempted.
+            // Anything else IS a failure: report once, then stay off. A missing
+            // vnavmesh is announced properly when a walk is actually attempted.
             _meshMonitorOff = true;
-            _log.Warning(ex, "[Nav] Wegenetz-Fortschritt nicht lesbar - Ãœberwachung aus.");
+            _log.Warning(ex, "[Nav] Wegenetz-Fortschritt nicht lesbar - Ueberwachung aus.");
             return;
+        }
+
+        if (_meshNotReadyLogged)
+        {
+            _meshNotReadyLogged = false;
+            _log.Info("[Nav] Wegenetz-Ueberwachung laeuft wieder.");
         }
 
         var wasBuilding = _lastMeshProgress >= 0f;
@@ -1603,6 +1661,41 @@ public sealed class AutoWalkService : IDisposable
         _tolk.SpeakInterrupt(ready
             ? AccessibilityStrings.MeshReady
             : AccessibilityStrings.MeshAborted);
+    }
+
+    /// <summary>
+    /// Says whether the navigation mesh is ready, still building, or missing.
+    ///
+    /// WHY THIS EXISTS. "Zu X fuehrt kein Weg" has two completely different
+    /// causes - the mesh is not finished yet, or there genuinely is no route -
+    /// and they call for opposite reactions: wait, or give up and travel some
+    /// other way. A sighted player reads vnavmesh's own window; this is the
+    /// same information, asked for on demand rather than waited for.
+    /// </summary>
+    public void AnnounceMeshStatus()
+    {
+        float progress;
+        bool ready;
+        // try-catch: IPC into a foreign plugin (see Toggle).
+        try
+        {
+            progress = _navBuildProgress.InvokeFunc();
+            ready    = _navIsReady.InvokeFunc();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "[Nav] Wegenetz-Status nicht lesbar.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
+            return;
+        }
+
+        _log.Info($"[Nav] Wegenetz-Status: progress={progress:F2} bereit={ready}");
+        // progress >= 0 means a build is running (see MonitorMeshBuild for the
+        // decompiled semantics of LoadTaskProgress).
+        _tolk.SpeakInterrupt(progress >= 0f
+            ? AccessibilityStrings.MeshStillLoading(progress * 100f)
+            : ready ? AccessibilityStrings.MeshReady
+                    : AccessibilityStrings.MeshNotReady);
     }
 
     /// <summary>Queues the vnavmesh path. False (with announcement) when vnavmesh is not ready.</summary>
@@ -2023,18 +2116,43 @@ public sealed class AutoWalkService : IDisposable
                         return;
                     }
 
-                    // Case 3 - too far off to fix from the path alone. Rather
-                    // than refuse (user 2026-08-07: "es sollen alle angelaufen
-                    // werden können die das navmesh hat"), search the rings
-                    // around the destination for the closest spot that IS
-                    // reachable and walk there. Silent: it announces only if it
-                    // finds nothing at all.
+                    // Case 3 - the gap is too big to drive across. But vnavmesh
+                    // HAS a route, and if that route carries us a long way
+                    // towards the destination, WALKING IT IS THE ANSWER.
+                    //
+                    // This used to jump straight to the searches below, and that
+                    // was wrong (user report 2026-08-09, Oestliches La Noscea):
+                    // the zone's mesh falls apart into two large unconnected
+                    // surfaces, so every destination on the far side ended here -
+                    // and the player was left standing although vnavmesh offered
+                    // a 500 m route in exactly the right direction. Refusing to
+                    // move at all is worse than covering most of the distance and
+                    // saying what is left. The searches stay as the fallback for
+                    // the case where the route really goes nowhere.
+                    var toGoalNow = Vector3.Distance(player.Position, _destPosition);
+                    var toGoalEnd = Vector3.Distance(realEnd, _destPosition);
+                    var progressGained = toGoalNow - toGoalEnd;
+                    if (progressGained >= MinUsefulProgress)
+                    {
+                        _log.Info($"[Nav] Auto-Lauf: Ziel haengt zwar an einer anderen Flaeche, aber " +
+                                  $"der Weg bringt {progressGained:F0} m naeher heran ({toGoalNow:F0} m " +
+                                  $"-> {toGoalEnd:F0} m). Laufe ihn bis zum Ende.");
+                        _pendingNearMissWalk = (realEnd, _destPosition, _targetName, SpotIsGoal: false);
+                        Stop(announce: false);
+                        return;
+                    }
+
+                    // The route goes nowhere useful (measured 2026-08-09: path
+                    // ended 0,7 m from the player, 466 m from the goal). Only
+                    // now do the searches earn their keep.
                     // The player's own destination, not this leg's: after a
                     // redirect _destPosition is an intermediate point, and the
                     // way in belongs around the place that was asked for.
                     var unreachableGoal = _walkOrigin?.Goal ?? _destPosition;
                     var unreachableName = _walkOrigin?.Name ?? _targetName;
                     var unreachableHint = _places.BuildNoPathHint(unreachableGoal);
+                    _log.Info($"[Nav] Auto-Lauf: der Weg bringt nur {progressGained:F0} m " +
+                              $"(Grenze {MinUsefulProgress:F0} m) - Laufen lohnt nicht.");
 
                     // Look for a place to step across FIRST. The approach search
                     // below only ever walks to somewhere on OUR surface, and
