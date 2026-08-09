@@ -99,6 +99,8 @@ public sealed class Configuration : IPluginConfiguration
     // Triple Triad (Kartenspiel). Nur im offenen TripleTriad-Fenster nuetzlich, sonst
     // still. Strg+Umschalt+F4/F5 sind frei (F1-F3 dieses Clusters sind Goto/Copy-Coords
     // bzw. AoE-Toggle; Strg+F* ist laut Keybind-Dump spielfrei, Strg+Umschalt+F* erst recht).
+    public string KeyReadLootRolls  = "Umschalt+F7";      // Offene Gruppen-Verlosungen vorlesen (Umschalt+F1..F12 laut Keybind-Dump spielfrei; F7 dort noch frei)
+    public string KeyFocusLootRolls = "Umschalt+F8";      // In das Verlosungs-Fenster springen, um dort per Nummernblock Bedarf/Gier/Passen zu waehlen. BEWUSST eine Taste und nicht automatisch: ein Fenster, das sich mitten im Kampf den Fokus greift, schluckt den Nummernblock, waehrend man noch laufen muss.
     public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
     public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
 
@@ -246,6 +248,11 @@ public sealed class Configuration : IPluginConfiguration
     // ankam - diese Meldung sagt, dass man es benutzen kann und wie man es auf
     // die Leiste bekommt. Siehe InventoryService.Update.
     public bool AnnounceQuestItems = true;
+    // Gruppen-Verlosungen ("Bedarf/Gier/Passen") ansagen, sobald sie aufgehen.
+    // Quelle ist der Spielzustand Client.Game.UI.Loot, NICHT das NeedGreed-
+    // Fenster - dadurch unabhaengig davon, ob das Fenster Fokus hat.
+    // Siehe LootRollService.
+    public bool AnnounceLootRolls = true;
     // Ziel-Ton bei anvisiertem Gegner ENTFERNT (2026-07-18, User): das Spiel
     // spielt selbst einen Ton - ein zweiter obendrauf war nur Lärm.
 

@@ -14,6 +14,7 @@ using LuminaAction = Lumina.Excel.Sheets.Action;
 using LuminaActionTransient = Lumina.Excel.Sheets.ActionTransient;
 using LuminaTrait = Lumina.Excel.Sheets.Trait;
 using LuminaMount = Lumina.Excel.Sheets.Mount;
+using LuminaCompanion = Lumina.Excel.Sheets.Companion;
 
 namespace FF14Accessibility.Services;
 
@@ -44,6 +45,10 @@ public sealed class UIReaderService : IDisposable
     // Debug probe (/acc mountprobe): one-shot scan of the mount guide grid.
     // Icon id -> mount name lookup, built once from the Mount sheet and cached.
     private Dictionary<uint, string>? _mountByIcon;
+    // Icon id -> minion name, built once from the Companion sheet and cached.
+    // The minion guide has no name nodes at all, so this is the only way to say
+    // what a tile holds (see TryReadMinionNoteBookFocusRow).
+    private Dictionary<uint, string>? _companionByIcon;
 
 #if DEBUG
     // Debug-only auto-probe (ConfigProbeTick): logs each focused element in a
@@ -1919,6 +1924,15 @@ public sealed class UIReaderService : IDisposable
             // the "Leer" branch below so cursor moves stay audible.
             text = mountRow;
         }
+        else if (TryReadMinionTileFocusRow(node, out var minionRow))
+        {
+            // Minion tiles (Begleiter-Verzeichnis AND the Lord of Verminion
+            // roster): built exactly like the mount guide - icon-only DragDrop
+            // tiles with no name node. Without this the guide announced "Leer"
+            // and the roster the icon's own counter "-1". Same reasoning for the
+            // ranking as above.
+            text = minionRow;
+        }
         else if (TryReadRecipeNoteSearchField(node, out var recipeSearch))
         {
             // Crafting log search box: the generic reader announced its
@@ -2881,6 +2895,71 @@ public sealed class UIReaderService : IDisposable
                         // Search box: the generic reader would announce the raw
                         // char counter ("0/40"); name the field instead.
                         text = AccessibilityStrings.MountSearchField;
+                        return true;
+
+                    default:
+                        return false; // other controls keep their generic reading
+                }
+            }
+            cur = cur->ParentNode;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the minion name for a focused minion tile, resolved from the
+    /// tile's icon id via the Companion sheet (Icon-&gt;Singular). Covers BOTH
+    /// windows that show minions as bare icons:
+    /// <list type="bullet">
+    /// <item>MinionNoteBook - the minion guide (Begleiter-Verzeichnis)</item>
+    /// <item>LovmPaletteEdit - the Lord of Verminion roster
+    /// (Trabanten-Kommandomenue)</item>
+    /// </list>
+    /// False for empty tiles (icon id 0) and any non-DragDrop focus, so the
+    /// caller keeps the "Leer" signal for empty slots.
+    /// <para>
+    /// WHY the icon and not the UI text: neither window carries a name node on
+    /// the tile. The MinionNoteBook dump of 2026-08-09 (79 nodes) holds exactly
+    /// four readable texts - title, favourites label, its hint and "Gesamt: 2".
+    /// The LovmPaletteEdit dump of the same day (149 nodes) puts the name only
+    /// in its DETAIL panel (id=48), never on the tile; browsing the tiles read
+    /// out the icon's own counter instead ("-1", log 10:04:52). The Companion
+    /// sheet is unambiguous: 589 named rows, 589 distinct icon ids, no
+    /// collisions (offline sheet dump 2026-08-09).
+    /// </para>
+    /// </summary>
+    private unsafe bool TryReadMinionTileFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        var inGuide   = IsAddonVisible("MinionNoteBook");
+        var inRoster  = IsAddonVisible("LovmPaletteEdit");
+        if (!inGuide && !inRoster) return false;
+
+        // Focus sits on a control's collision child - climb to the nearest
+        // component and branch on its type (same shape as the mount guide).
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp == null) return false;
+                switch (comp->GetComponentType())
+                {
+                    case ComponentType.DragDrop:
+                        // Minion tile: resolve the icon id to the minion name.
+                        var icon = FindSlotIcon(comp);
+                        if (icon == null || icon->IconId == 0) return false; // empty -> "Leer"
+                        if (!CompanionByIcon().TryGetValue(icon->IconId, out var name)) return false;
+                        text = name;
+                        _log.Info($"[Minion] node id={node->NodeId} icon={icon->IconId} -> '{name}'");
+                        return true;
+
+                    case ComponentType.TextInput:
+                        // Search box: the generic reader announced its raw char
+                        // counter ("0/40", log 2026-08-09 09:57:23) - a number
+                        // that says nothing about where the cursor landed.
+                        text = AccessibilityStrings.MinionSearchField;
                         return true;
 
                     default:
@@ -8975,6 +9054,23 @@ public sealed class UIReaderService : IDisposable
         }
     }
 #endif
+
+    /// <summary>Icon id -&gt; minion name, built once from the Companion sheet and
+    /// cached. Note the sheet names the column <c>Singular</c>; there is no
+    /// <c>Name</c> column, same as Mount.</summary>
+    private Dictionary<uint, string> CompanionByIcon()
+    {
+        if (_companionByIcon != null) return _companionByIcon;
+        var map = new Dictionary<uint, string>();
+        foreach (var row in _data.GetExcelSheet<LuminaCompanion>())
+        {
+            if (row.RowId == 0 || row.Icon == 0) continue;
+            var name = row.Singular.ExtractText();
+            if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = name;
+        }
+        _log.Info($"[Minion] Icon-Map gebaut: {map.Count} Begleiter.");
+        return _companionByIcon = map;
+    }
 
     /// <summary>Icon id -&gt; mount name, built once from the Mount sheet and cached.</summary>
     private Dictionary<uint, string> MountByIcon()

@@ -752,6 +752,35 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   ResolveFloorPoint nutzt jetzt NearestPoint(10,10) zuerst, PointOnFloor nur
   als Fallback.
 
+### Zonenübergänge: die ECHTEN Grenzen (ilspycmd-verifiziert 2026-08-09)
+- Das Kartensymbol eines Übergangs (MapMarker DataType 1/2, siehe oben) ist
+  Kartengrafik: Karten-Pixel, KEINE Ausdehnung, KEINE Richtung. Es taugt zum
+  Benennen und Auflisten, NICHT als Laufziel — man landet daneben statt
+  hindurch (User-Meldung 2026-08-09 "ich komme nicht rüber, stehe evtl schief").
+- Die echte Grenze führt die Layout-Engine: `ExitRangeLayoutInstance`
+  (`Client.LayoutEngine.Layer`), `InstanceType.ExitRange = 41`.
+  Eigene Felder: `ExitType`@128 (`ExitRangeType`: **ZoneLine = 1**,
+  **Invisible = 2**), `ZoneId`(ushort)@132, `TerritoryType`(ushort)@134
+  = Zielzone, `Index`(int)@136, `DestInstanceId`@140, `ReturnInstanceId`@144,
+  **`PlayerRunningDirection`(float)@148**.
+- Geerbt von `TriggerBoxLayoutInstance`: `Collider*`@48, **`Transform`@64**
+  (`LayoutEngine.Transform`, Size 48: `Translation`@0, `Rotation`(Quaternion)@16,
+  `Scale`@32 — Mitte UND Ausdehnung der Trigger-Box), `Priority`@112,
+  `FlagsType`@116, `FlagsActive`@120.
+- Zugriff: `LayoutWorld.Instance()` → `ActiveLayout`(`LayoutManager*`)@32 →
+  `Layers` (`StdMap<ushort, Pointer<LayerManager>>`@552) → `LayerManager.Instances`
+  (`StdMap<uint, Pointer<ILayoutInstance>>`@40), filtern auf
+  `ILayoutInstance.Id.Type == ExitRange` (`Identifier`@24: `Type`(InstanceType)@1,
+  `LayerKey`@2, `InstanceKey`@4). `ILayoutInstance.IsActive` ist ein Bitfeld
+  in `Flags3`@43.
+- FALLE beim Iterieren: `StdMap` liefert **`StdPair`** (`Item1`/`Item2`), NICHT
+  `KeyValuePair` — und `Item2` ist ein `Pointer<T>`, also `.Item2.Value`.
+- NICHT GEMESSEN, DESHALB NICHT BENUTZT: Bedeutung von
+  `PlayerRunningDirection` (Einheit, Bezugssystem, welche der beiden
+  Richtungen) und ob `Scale` Halb- oder Vollausdehnung ist. Sonde
+  `/acc uebergang` loggt beide Lesarten. Eine falsche Laufrichtung würde die
+  Figur von der Grenze WEG steuern — schlimmer als der heutige Zustand.
+
 ### Talk / TalkSubtitle (Log-verifiziert 2026-07-11)
 - AddonTalk hat nur UNBENANNTE Text-Node-Felder (AtkTextNode220/228/238/
   240/248, ilspycmd) — kein benanntes „Name"-Feld.

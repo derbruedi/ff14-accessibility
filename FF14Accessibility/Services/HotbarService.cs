@@ -6,6 +6,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using LuminaAction = Lumina.Excel.Sheets.Action;
 using LuminaEventItem = Lumina.Excel.Sheets.EventItem;
+using LuminaGeneralAction = Lumina.Excel.Sheets.GeneralAction;
+using LuminaMount = Lumina.Excel.Sheets.Mount;
 
 namespace FF14Accessibility.Services;
 
@@ -151,6 +153,24 @@ public sealed class HotbarService
                 return eventItemName;
         }
 
+        // General actions (Absteigen, Sprint, Teleport ...) and mounts have
+        // their own sheets too - same reasoning as above.
+        if (type == RaptureHotbarModule.HotbarSlotType.GeneralAction &&
+            _data.GetExcelSheet<LuminaGeneralAction>().TryGetRow(id, out var general))
+        {
+            var generalName = general.Name.ExtractText();
+            if (!string.IsNullOrWhiteSpace(generalName))
+                return generalName;
+        }
+
+        if (type == RaptureHotbarModule.HotbarSlotType.Mount &&
+            _data.GetExcelSheet<LuminaMount>().TryGetRow(id, out var mount))
+        {
+            var mountName = mount.Singular.ExtractText();   // Mount has no Name column
+            if (!string.IsNullOrWhiteSpace(mountName))
+                return mountName;
+        }
+
         // PopUpHelp is the game's own display text (name plus keybind hint);
         // use it for items, macros, emotes and anything not in the Action sheet.
         var cleaned = CleanUpHelp(popUpHelp);
@@ -197,9 +217,9 @@ public sealed class HotbarService
     private SkillMenuStep _menuStep = SkillMenuStep.Closed;
 
     /// <summary>Which list the menu is browsing. Numpad 4/6 steps through the
-    /// three sources (user choice 2026-08-06, third one added 2026-08-09); the
-    /// target-key step works the same for all of them.</summary>
-    private enum AssignSource { Skills, Items, QuestItems }
+    /// sources (user choice 2026-08-06; quest items, general actions and mounts
+    /// added 2026-08-09); the target-key step works the same for all of them.</summary>
+    private enum AssignSource { Skills, Items, QuestItems, GeneralActions, Mounts }
     private AssignSource _menuSource = AssignSource.Skills;
 
     private readonly List<(uint Id, string Name, byte Level)> _skills = new();
@@ -215,6 +235,14 @@ public sealed class HotbarService
     // they appear and vanish with quest progress.
     private readonly List<InventoryService.QuestItem> _questItems = new();
     private int _questItemIndex = -1;
+
+    // General actions (Sprint, Teleport, Rueckfuehrung, Reittier-Roulette,
+    // Absteigen ...) and the player's unlocked mounts. Both are plain id+name
+    // lists that differ only in the slot type they are written with.
+    private readonly List<(uint Id, string Name)> _generalActions = new();
+    private int _generalActionIndex = -1;
+    private readonly List<(uint Id, string Name)> _mounts = new();
+    private int _mountIndex = -1;
     // The list is rebuilt when job or level changes (level-ups add skills).
     private byte _skillsJobId;
     private uint _skillsLevel;
@@ -257,7 +285,11 @@ public sealed class HotbarService
     {
         if (_menuStep != SkillMenuStep.PickSkill) return;
 
-        var order = new[] { AssignSource.Skills, AssignSource.Items, AssignSource.QuestItems };
+        var order = new[]
+        {
+            AssignSource.Skills, AssignSource.Items, AssignSource.QuestItems,
+            AssignSource.GeneralActions, AssignSource.Mounts,
+        };
         var at = Array.IndexOf(order, _menuSource);
 
         // Walk at most one full circle, stopping at the first source with entries.
@@ -302,6 +334,22 @@ public sealed class HotbarService
                 _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
                 AnnounceQuestItem();
                 return true;
+
+            case AssignSource.GeneralActions:
+                if (!BuildGeneralActionList()) return false;
+                _menuSource = AssignSource.GeneralActions;
+                if (_generalActionIndex < 0 || _generalActionIndex >= _generalActions.Count) _generalActionIndex = 0;
+                _tolk.SpeakInterrupt(AccessibilityStrings.GeneralActionMenuOpened(_generalActions.Count));
+                AnnounceGeneralAction();
+                return true;
+
+            case AssignSource.Mounts:
+                if (!BuildMountList()) return false;
+                _menuSource = AssignSource.Mounts;
+                if (_mountIndex < 0 || _mountIndex >= _mounts.Count) _mountIndex = 0;
+                _tolk.SpeakInterrupt(AccessibilityStrings.MountMenuOpened(_mounts.Count));
+                AnnounceMount();
+                return true;
         }
         return false;
     }
@@ -343,6 +391,85 @@ public sealed class HotbarService
     /// for the real failure cases (not logged in, player data not ready).</summary>
     private bool BuildSkillList() => EnsureSkillList() && _skills.Count > 0;
 
+    /// <summary>
+    /// Rebuilds the general actions - the things the game itself lists under
+    /// "Allgemein" in the actions window: Sprint, Teleport, Rueckfuehrung,
+    /// Reittier-Roulette and, the reason this list exists, "Absteigen".
+    /// <para>
+    /// There is NO keyboard binding for mounting or dismounting in the game
+    /// (live keybind dump 2026-08-09, 679 entries) - a sighted player drags
+    /// these onto a bar, and this list is the keyboard equivalent of that drag.
+    /// </para>
+    /// <para>
+    /// Filter: a named row whose <c>UnlockLink</c> is either 0 (no gate) or
+    /// already unlocked, asked of the game via
+    /// <c>UIState.IsUnlockLinkUnlockedOrQuestCompleted</c> - the same call the
+    /// skill list uses. Deliberately NOT filtered on <c>UIPriority</c>: exactly
+    /// the entries the player asked for ("Absteigen" #23, "Flugreittier-
+    /// Roulette" #24) carry priority 0, so that column would drop them.
+    /// Sorted by name because a browsed list has to be predictable; the sheet's
+    /// own order is unusable here for the same priority-0 reason.
+    /// </para>
+    /// </summary>
+    private unsafe bool BuildGeneralActionList()
+    {
+        if (!_clientState.IsLoggedIn) return false;
+
+        var ui = UIState.Instance();
+        if (ui == null) return false;
+
+        _generalActions.Clear();
+        foreach (var row in _data.GetExcelSheet<LuminaGeneralAction>())
+        {
+            if (row.RowId == 0) continue;
+            var name = row.Name.ExtractText();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            var unlock = row.UnlockLink;
+            if (unlock != 0 && !ui->IsUnlockLinkUnlockedOrQuestCompleted(unlock)) continue;
+
+            _generalActions.Add((row.RowId, name));
+        }
+
+        _generalActions.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture));
+        _generalActionIndex = _generalActions.Count > 0 ? 0 : -1;
+        _log.Info($"[Hotbar] Allgemeine Aktionen: {_generalActions.Count} " +
+                  $"({string.Join(", ", _generalActions.Take(8).Select(a => $"{a.Name}#{a.Id}"))})");
+        return _generalActions.Count > 0;
+    }
+
+    /// <summary>
+    /// Rebuilds the player's mounts: every named Mount row the game reports as
+    /// unlocked via <c>PlayerState.IsMountUnlocked</c> (ilspycmd-verified
+    /// 2026-08-09). Asking the game keeps the list honest - the Mount sheet has
+    /// 366 named rows, and offering one the player does not own would put a dead
+    /// entry on a bar. Sorted by name, same reasoning as above.
+    /// </summary>
+    private unsafe bool BuildMountList()
+    {
+        if (!_clientState.IsLoggedIn) return false;
+
+        var ps = PlayerState.Instance();
+        if (ps == null) return false;
+
+        _mounts.Clear();
+        foreach (var row in _data.GetExcelSheet<LuminaMount>())
+        {
+            if (row.RowId == 0) continue;
+            var name = row.Singular.ExtractText();   // Mount has no Name column
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            if (!ps->IsMountUnlocked(row.RowId)) continue;
+
+            _mounts.Add((row.RowId, name));
+        }
+
+        _mounts.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture));
+        _mountIndex = _mounts.Count > 0 ? 0 : -1;
+        _log.Info($"[Hotbar] Freigeschaltete Reittiere: {_mounts.Count} " +
+                  $"({string.Join(", ", _mounts.Take(8).Select(m => $"{m.Name}#{m.Id}"))})");
+        return _mounts.Count > 0;
+    }
+
     /// <summary>Closes the menu and says so.</summary>
     public void CloseSkillMenu()
     {
@@ -359,6 +486,16 @@ public sealed class HotbarService
                 if (_questItems.Count == 0) return;
                 _questItemIndex = ((_questItemIndex + direction) % _questItems.Count + _questItems.Count) % _questItems.Count;
                 AnnounceQuestItem();
+                break;
+            case SkillMenuStep.PickSkill when _menuSource == AssignSource.GeneralActions:
+                if (_generalActions.Count == 0) return;
+                _generalActionIndex = ((_generalActionIndex + direction) % _generalActions.Count + _generalActions.Count) % _generalActions.Count;
+                AnnounceGeneralAction();
+                break;
+            case SkillMenuStep.PickSkill when _menuSource == AssignSource.Mounts:
+                if (_mounts.Count == 0) return;
+                _mountIndex = ((_mountIndex + direction) % _mounts.Count + _mounts.Count) % _mounts.Count;
+                AnnounceMount();
                 break;
             case SkillMenuStep.PickSkill when _menuSource == AssignSource.Items:
                 if (_items.Count == 0) return;
@@ -391,6 +528,10 @@ public sealed class HotbarService
                         ? _items[_itemIndex].Name : null,
                     AssignSource.QuestItems => _questItemIndex >= 0 && _questItemIndex < _questItems.Count
                         ? _questItems[_questItemIndex].Name : null,
+                    AssignSource.GeneralActions => _generalActionIndex >= 0 && _generalActionIndex < _generalActions.Count
+                        ? _generalActions[_generalActionIndex].Name : null,
+                    AssignSource.Mounts => _mountIndex >= 0 && _mountIndex < _mounts.Count
+                        ? _mounts[_mountIndex].Name : null,
                     _ => _skillIndex >= 0 && _skillIndex < _skills.Count
                         ? _skills[_skillIndex].Name : null,
                 };
@@ -415,6 +556,14 @@ public sealed class HotbarService
                 {
                     case AssignSource.Items:      AssignItemToSlot(_itemIndex, bar, slot); break;
                     case AssignSource.QuestItems: AssignQuestItemToSlot(_questItemIndex, bar, slot); break;
+                    case AssignSource.GeneralActions:
+                        AssignEntryToSlot(_generalActions, _generalActionIndex, bar, slot,
+                            RaptureHotbarModule.HotbarSlotType.GeneralAction);
+                        break;
+                    case AssignSource.Mounts:
+                        AssignEntryToSlot(_mounts, _mountIndex, bar, slot,
+                            RaptureHotbarModule.HotbarSlotType.Mount);
+                        break;
                     default:                      AssignSkillToSlot(_skillIndex, bar, slot); break;
                 }
                 break;
@@ -437,6 +586,14 @@ public sealed class HotbarService
                 case AssignSource.QuestItems:
                     _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
                     AnnounceQuestItem();
+                    break;
+                case AssignSource.GeneralActions:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.GeneralActionMenuOpened(_generalActions.Count));
+                    AnnounceGeneralAction();
+                    break;
+                case AssignSource.Mounts:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.MountMenuOpened(_mounts.Count));
+                    AnnounceMount();
                     break;
                 default:
                     _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
@@ -480,6 +637,26 @@ public sealed class HotbarService
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.EventItem, item.ItemId);
         _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemBrowseEntry(
             item.Name, item.Quantity, item.CastTime, location, _questItemIndex + 1, _questItems.Count));
+    }
+
+    /// <summary>Announces the current general action: name, where it already
+    /// sits and its position in the list.</summary>
+    private void AnnounceGeneralAction()
+    {
+        var (id, name) = _generalActions[_generalActionIndex];
+        var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.GeneralAction, id);
+        _tolk.SpeakInterrupt(AccessibilityStrings.PlainBrowseEntry(
+            name, location, _generalActionIndex + 1, _generalActions.Count));
+    }
+
+    /// <summary>Announces the current mount: name, where it already sits and its
+    /// position in the list.</summary>
+    private void AnnounceMount()
+    {
+        var (id, name) = _mounts[_mountIndex];
+        var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Mount, id);
+        _tolk.SpeakInterrupt(AccessibilityStrings.PlainBrowseEntry(
+            name, location, _mountIndex + 1, _mounts.Count));
     }
 
     /// <summary>Announces the current target key: its label, what is on it now,
@@ -677,6 +854,37 @@ public sealed class HotbarService
         _framework.RunOnTick(
             () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.EventItem),
             delayTicks: 2);
+    }
+
+    /// <summary>
+    /// Puts a plain id+name entry (general action, mount) on the chosen key,
+    /// through the same measured path as every other source
+    /// (see <see cref="PlaceOnSlot"/>). Only the slot type differs, which is why
+    /// these two share one method instead of copying the skill/item ones.
+    /// </summary>
+    private unsafe void AssignEntryToSlot(List<(uint Id, string Name)> entries, int index,
+        int bar, int slot, RaptureHotbarModule.HotbarSlotType type)
+    {
+        if (index < 0 || index >= entries.Count)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
+            return;
+        }
+
+        var module = RaptureHotbarModule.Instance();
+        if (module == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            return;
+        }
+
+        var (id, name) = entries[index];
+        _log.Info($"[Hotbar] Belegen: {SlotLabel(bar, slot)} (Leiste {bar + 1} Slot {slot}) <- {type} {id} " +
+                  $"'{name}'. Vorher: {DescribeSlotRaw(module, bar, slot)}");
+
+        if (!PlaceOnSlot(module, bar, slot, type, id, name)) return;
+
+        _framework.RunOnTick(() => VerifyAssignment(bar, slot, id, name, type), delayTicks: 2);
     }
 
 #if DEBUG

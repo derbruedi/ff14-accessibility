@@ -3,6 +3,423 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-08-09, "KARTENUEBERGAENGE" - GEMESSEN, UMBAU OFFEN)
+
+>>> MESSUNG GELAUFEN (Log 18:01:57 Territory 130 Nald-Kreuzgang, 18:02:26
+    Territory 131 Thal-Kreuzgang - der Spieler ist zwischen beiden Laeufen
+    durchgegangen). ALLE DREI FRAGEN BEANTWORTET:
+
+>>> 1. DIE URSACHE, SCHWARZ AUF WEISS (Log 18:01:47.805):
+      "Auto-Lauf: Pfad beendet, dist=0,4, angekommen=True.
+       Ich <93,1, 4,0, -109,7> Ziel <93,5, 4,2, -109,5>"
+       -> "Ziel erreicht: Uebergang nach Thal-Kreuzgang."
+    Die ECHTE Grenze (key=2377064) liegt bei (98,89 | 8,21 | -105,41).
+    Der Spieler stand also 6,77 m WAAGERECHT daneben und 4,16 m TIEFER.
+    Er stand nicht schief - er stand woanders. Das Kartensymbol war das Ziel.
+
+>>> 2. PlayerRunningDirection IST RADIANT. Beweis ueber alle 10 gemessenen
+    Werte: als Radiant gelesen ergeben sie glatte 5-Grad-Vielfache
+    (15 / 45 / 45 / 75 / 90 / 165 / 195 / 225 / 230 / 270), als Grad gelesen
+    strukturlose Bruchteile (0,3 / 0,8 / 0,8 / 1,3 / 1,6 / 2,9 / ...).
+    Level-Designer setzen Winkel in 5-Grad-Schritten, nicht in 0,8-Grad.
+
+>>> 3. DIE RICHTUNG ZEIGT IN DIE NEUE ZONE. Zwei Partner-Paare beweisen es
+    geometrisch (Partner erkennbar an ueberkreuzten Dest/Return-Ids):
+      key 2377082 (Ul'dah-Seite, X=-115,58) -> 90 Grad = +X
+      key 2379246 (Kreuzgang-Seite, X=-114,31, also 1,27 m weiter in +X) -> 270 Grad = -X
+    Jede Seite zeigt zur jeweils anderen Zone. Gleiches Bild bei 2377078/2379249.
+    Dazu der eigene Durchgang: Bewegung von (93,13|-109,66) nach
+    (100,28|-99,78) = Richtung 36 Grad, die Box sagt 45 Grad.
+    Konvention = dieselbe wie player.Rotation, atan2(dx, dz).
+
+>>> 4. Scale IST HALB-AUSDEHNUNG (Hinweis, kein Beweis): Box-Mitte Y=8,21 bei
+    Y-Scale 4,29. Als Halb-Ausdehnung reicht die Box von 3,92 bis 12,50 - der
+    begehbare Boden bei Y~4 liegt gerade drin. Als Vollgroesse waere sie
+    6,06-10,36, also KOMPLETT UEBER dem Boden, durch den man laeuft.
+    Der XZ-Achsentest der Sonde taugt hier nicht: die Box ist um 50 Grad gedreht.
+
+>>> 5. NICHT JEDES KARTENSYMBOL HAT EINE ECHTE GRENZE. In Ul'dah 10 Symbole
+    gegen 7 Grenzen. Ohne Entsprechung: 'Die Sanduhr' (37 m zur naechsten Box),
+    'Wachstube der Legion' (91 m), ein 'Thal-Kreuzgang' bei (-30|-41,5) (21 m).
+    Das sind Tueren / Instanz-Eingaenge - die funktionieren NICHT ueber
+    Durchlaufen. Fuer die muss das heutige Verhalten bleiben.
+    Wo es eine echte Grenze gibt, liegt das Symbol 0,27 bis 6,77 m daneben.
+
+>>> GEBAUT (Umbau, in-game UNGETESTET):
+    - `ZoneExitService.FindExitForMap(zielMap, symbolPos)`: ordnet dem
+      Kartensymbol die echte Grenze zu. ZWEI Bedingungen, beide noetig - die
+      Grenze muss zur genannten Karte fuehren UND innerhalb 15 m liegen. Die
+      Schwelle trennt die gemessenen Gruppen sauber (echte Paare 0,27-6,77 m,
+      Symbole ohne Grenze 21 / 37 / 91 m).
+    - `ZoneExitService.PointBeyond(...)`: Punkt jenseits der Grenze,
+      Richtungsvektor (sin, 0, cos) aus RunningDirection.
+    - `Plugin.TryResolveMarkerDestination`: bei Uebergaengen zielt der Lauf
+      jetzt auf die Grenze (X/Z von der Box, HOEHE weiter per Navmesh - die
+      Box-Mitte liegt im Luftraum darueber). stopRange 3 m statt 0,5 m: die
+      Ankunft ist nur die erste Etappe, eine enge Schwelle haette die zweite
+      nie ausgeloest.
+    - `AutoWalkService._zoneExitPush` + `StartZoneExitPush`: nach der Ankunft
+      12 m durch die Grenze, ohne Wegsuche (Path.MoveTo), abgesichert durch
+      `GroundIsContinuous` wie die anderen Blindfahrten. Die vorhandene
+      `FinalHopUpdate` erkennt den Zonenwechsel bereits und meldet ihn.
+    - Ohne passende Grenze (Tueren, Instanz-Eingaenge) bleibt ALLES beim Alten.
+
+>>> BEWUSST GEWAEHLT, NICHT GEMESSEN: die 12 m Durchlaufstrecke. Die Boxen
+    haben Halb-Ausdehnungen von 2,77 bis 15,56 m; 12 m deckt die meisten von
+    der Mitte aus. Ein Zuviel ist harmlos, weil die Fahrt beim Zonenwechsel
+    sofort endet - ein Zuwenig waere der alte Fehler.
+
+>>> BEKANNTE GRENZE: braucht der Lauf zur Grenze eine Umleitung (Pfad endet
+    kurz davor, falsches Stockwerk), setzt `BeginWalk` den Durchlauf zurueck
+    und es bleibt beim alten Verhalten. Kein Rueckschritt, aber auch keine
+    Loesung fuer diesen Fall.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Genau der Uebergang von vorhin (Ul'dah -> Thal-Kreuzgang): im Objekt-
+       Browser waehlen, Numpad 3. Die Figur muss diesmal DURCHLAUFEN und
+       "Neues Gebiet erreicht" kommen - nicht "Ziel erreicht".
+    2. Ein Uebergang, der eine TUER ist ('Die Sanduhr', 'Wachstube der
+       Legion'): muss sich verhalten wie bisher, also bis zum Symbol laufen
+       und dort halten. Log: "keine Grenze innerhalb 15 m vom Symbol".
+    3. Eine Freiluft-Zonengrenze (Ul'dah -> Zentrales Thanalan): dort sind die
+       Boxen groesser (Ausdehnung bis 15,56), also der eigentliche Test fuer
+       die 12-m-Strecke.
+    LOG-BELEG: "[Uebergang] Karte N: echte Grenze key=... Laufrichtung N Grad",
+    dann "[Uebergang] Durchlauf: fahre N m ohne Wegsuche durch die Grenze",
+    dann "Gebiet gewechselt".
+
+## FRUEHER AM TAG (2026-08-09, "KARTENUEBERGAENGE" - SONDE GEBAUT)
+
+>>> USER-FRAGE: "kann man dafuer sorgen das kartenuebergaenge so angelaufen
+    werden das der char gleich in die neue map geht ich bin jetzt wieder an
+    einem uebergang wo ich nicht rueberkomme weil ich evtl schief stehe."
+
+>>> URSACHE, AUS DEM CODE BELEGT: der Auto-Lauf zielt auf das KARTENSYMBOL des
+    Uebergangs - MapMarker-Sheet, Karten-Pixel, umgerechnet in Weltkoordinaten
+    (`PlacesService.cs:260`), Stopp 0,5 m davor
+    (`Configuration.AutoWalkTransitionStopRange`). Ein Kartensymbol ist Grafik:
+    es hat KEINE Ausdehnung und KEINE Richtung. Der Lauf endet also NEBEN der
+    Grenze statt HINDURCH. Der Spieler steht richtig - das Ziel war falsch.
+
+>>> DAS SPIEL FUEHRT DIE ECHTE GRENZE (ilspycmd 2026-08-09, in game-api.md
+    dokumentiert): `ExitRangeLayoutInstance`, `InstanceType.ExitRange = 41`.
+      Transform@64 (geerbt) - Mitte UND Ausdehnung der Trigger-Box
+      PlayerRunningDirection (float @148) - eine Richtung durch den Uebergang
+      TerritoryType (ushort @134) - die Zielzone
+      ExitType - ZoneLine=1 (durchlaufen) / Invisible=2
+    Zugriff: LayoutWorld.Instance()->ActiveLayout->Layers -> LayerManager.Instances,
+    gefiltert auf Id.Type == ExitRange.
+
+>>> GEBAUT: neuer `ZoneExitService`.
+    - `ReadExitRanges()` liest alle Uebergaenge der Zone (spaeter das Laufziel).
+    - `/acc uebergang` (bzw. `/acc exitprobe`, nur Debug): misst drei Dinge -
+      1. Abstand Kartensymbol <-> echte Grenze je Uebergang. DAS ist die Zahl,
+         die den Fehlschlag erklaert.
+      2. Entfernung/Peilung des Spielers zu jeder Grenze, plus ob er nach
+         Scale-halb bzw. Scale-voll INNERHALB der Box steht.
+      3. PlayerRunningDirection roh, als Radiant gelesen und als Grad gelesen,
+         daneben Box-Yaw und Spieler-Rotation.
+    - Ansage (bilingual): Anzahl Uebergaenge + naechster mit Entfernung.
+
+>>> BEWUSST NOCH NICHT GEBAUT: der Umbau des Auto-Laufs. Was
+    `PlayerRunningDirection` bedeutet (Einheit, Bezugssystem, welche der beiden
+    Richtungen) und ob `Scale` Halb- oder Vollausdehnung ist, ist NICHT
+    gemessen. Eine falsch gedeutete Laufrichtung wuerde die Figur von der
+    Grenze WEG steuern - schlimmer als der heutige Zustand.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN (am besten direkt an dem Uebergang, an dem es klemmt):
+    1. Direkt an der Stelle stehen, wo der Auto-Lauf "Ziel erreicht" gemeldet
+       hat, dann `/acc uebergang`. Die Ansage nennt Anzahl + naechsten.
+    2. Ein paar Schritte machen, bis der Zonenwechsel kommt - VOR dem Wechsel
+       nochmal `/acc uebergang`. Aus den zwei Messungen ergibt sich, wo die
+       Linie wirklich liegt und aus welcher Richtung man sie nimmt.
+    3. Log auf "[ExitProbe]" ansehen, besonders die Zeile "ABSTAND=... m"
+       (Kartensymbol gegen echte Grenze) und "RunningDirection roh=...".
+
+## STAND JETZT (2026-08-09, "UEBERQUERUNG ZU ABGETRENNTEN FLAECHEN" - IN-GAME BESTAETIGT)
+
+>>> USER-MELDUNG: "ich muss fuer eine quest zu einem objekt aber er bleibt 23
+    meter vorher stehen und laeuft nicht direkt hin."
+
+>>> URSACHE, GEMESSEN (Log 16:03:45 + Offline-Analyse des vnavmesh-Caches):
+    Das Ziel (Quest-Sammelpunkt "Natuerlicher Magnet", Westliches Thanalan) liegt
+    auf einer im Wegenetz ABGETRENNTEN Flaeche - 29 Polygone gegen 17.570 der
+    Spielerflaeche, Ueberschneidung NULL. Am Ziel liegt sehr wohl Netz (0,37 m
+    neben der Objektposition), es fehlt nur die Verknuepfung. Die Zugangssuche
+    lieferte daraufhin einen Punkt 2 m vom Spieler, 23,8 m vom Ziel - und meldete
+    "Ziel erreicht".
+
+>>> GEBAUT UND IN-GAME BESTAETIGT (beide Magnete angelaufen):
+    - NEU `NavmeshCacheService`: liest die gecachte .navmesh-Datei per Reflection
+      und beantwortet per Flood-Fill ueber Polygon-Links, ob zwei Stellen zur
+      selben Flaeche gehoeren. Datei ueber `TerritoryType.Bg` gefunden.
+    - Uebergang in drei Etappen im `AutoWalkService`: normaler Lauf zur Stelle,
+      `Path.MoveTo` ueber die Luecke, dann normale Wegsuche weiter.
+    - `FindWayOff`: Ausweg von einer kleinen Flaeche, auf der man sonst FESTSITZT
+      (genau das passierte um 16:57 - "0 von 57 Kandidaten erreichbar").
+    - `MidPointIsSafe` sichert die blind gefahrene Strecke gegen Loecher.
+    - Zugangspunkt meldet keine falsche Ankunft mehr.
+
+>>> GRENZEN, BEWUSST: HINUNTER bis 5 m geht (Fallen), HINAUF nur 1 m - die Figur
+    klettert nicht und verkeilt sich an einer Stufe. Luecke bis 6 m, gemessen
+    zwischen Polygon-MITTELPUNKTEN (die echte Luecke ist kleiner).
+
+>>> OFFEN: Nur in Westliches Thanalan erprobt. Ohne Cache-Datei fuer eine Zone
+    faellt alles still auf das alte Verhalten zurueck.
+
+## FRUEHER (2026-08-09, "TOTE SAMMELPUNKTE IM BROWSER" - GEMESSEN + GEBAUT)
+
+>>> USER-MELDUNG: "Gaertner (Abholzen), Stufe 5 1, 21 Meter, hinter links, 1 von
+    21. und da kann ich nicht abbauen aber warum? es gibt welche wo ich abbauen
+    kann und wo nicht."
+
+>>> URSACHE, GEMESSEN (Sonde [GatherProbe], Log 12:56-12:58): der Browser bot
+    Baeume an, an denen NICHTS steht. Von 16 gelisteten Sammelpunkten an einer
+    Stelle war GENAU EINER nutzbar:
+      nutzbar : id=4000018B, 9 m, Anvisierbar=True, TargetableStatus=123
+                (Bit ObjectTargetableFlags.IsTargetable=2 gesetzt),
+                RenderFlags=None -> danach "Laufe zu Nutzbaum", "Ziel erreicht"
+      tot     : alle uebrigen, Anvisierbar=False, TargetableStatus=248 bzw. 120
+                (Bit fehlt), RenderFlags=128 -> weder gezeichnet noch ansprechbar
+    ENTFERNUNG IST AUSGESCHLOSSEN: zwei der toten wurden aus 2,2 m bzw. 2,3 m
+    gemessen und blieben tot. Der Spieler stand direkt davor.
+    Das Spiel fuehrt also jede moegliche Platzierung einer Gegend als Objekt mit
+    und hebt immer nur eine Handvoll davon an.
+
+>>> WARUM ES DURCHRUTSCHTE: `IsWorthBrowsing` liess ObjectKind.GatheringPoint als
+    EINZIGE Objektart bedingungslos durch - fuer alles andere galt "hat einen
+    Namen ODER ist anvisierbar". Sammelpunkte haben keinen eigenen Namen, deshalb
+    war die Ausnahme urspruenglich noetig; sie hat aber gleich die Anvisierbarkeit
+    mit abgeschaltet.
+
+>>> GEBAUT: Sammelpunkte muessen jetzt dieselbe Frage bestehen wie jedes andere
+    Objekt - das Spiel muss sie anvisierbar melden. USER-ENTSCHEIDUNG war
+    ausdruecklich "das was der spieler auch sieht ... nicht dass es als cheaten
+    gezaehlt wird": der Filter NIMMT Information weg, er fuegt keine hinzu.
+
+>>> NOCH NICHT GEMESSEN, UND DESHALB UEBERWACHT: ob ein LEBENDER Punkt auch aus
+    60-80 m schon als anvisierbar gemeldet wird. Tut er das nicht, versteckt der
+    Filter brauchbare Punkte vor der Suche. Die Sonde
+    `TrackGatheringAvailability` loggt jeden Zustandswechsel mit Entfernung
+    ("[GatherProbe] Wechsel: ... nutzbar=True ... Entfernung=..."), also faellt
+    im normalen Spielen auf, ab welcher Entfernung ein Punkt umspringt.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Objekt-Browser, Kategorie Sammelpunkte: die Zahl muss deutlich kleiner
+       sein als vorher (statt "16 in der Naehe" nur noch die echten).
+    2. Zu einem gelisteten Punkt laufen: da MUSS abbaubar sein.
+    3. Log auf "[GatherProbe] Wechsel: ... nutzbar=True" ansehen - steht dort
+       eine grosse Entfernung, ist die Fernsuche in Ordnung. Kommt der Wechsel
+       erst bei wenigen Metern, muss der Filter umgebaut werden.
+    4. Meldet die Kategorie oft "keine in Reichweite", obwohl Baeume da sind ->
+       sofort melden, dann ist der Filter zu scharf.
+
+## STAND JETZT (2026-08-09, "BEUTE AUSWUERFELN" - TEIL 1 GEBAUT, UNGETESTET)
+
+>>> USER-MELDUNG: "in dungeons muss man wenn man in der gruppe loot bekommt das
+    auswuerfeln, da popt ein fenster auf und das muss fuer uns fokussiert werden
+    so dass wir das dann auslesen koennen."
+
+>>> ENTSCHEIDENDER BEFUND: DAS FENSTER MUSS GAR NICHT GELESEN WERDEN. Der ganze
+    Zustand liegt im Spiel selbst - `Client.Game.UI.Loot` (ilspycmd-verifiziert
+    2026-08-09), erreichbar ueber `Loot.Instance()`:
+      Items = 16x LootItem, SelectedIndex
+      LootItem: ItemId, ItemCount, RollState, RollResult, RollValue,
+                Time, MaxTime, LootMode
+      RollState  (byte): UpToNeed=0, UpToGreed=1, UpToPass=2, Rolled=17,
+                         Unavailable=21  -> kumulativ: was DU noch tun darfst
+      RollResult:        UnAwarded=0, Needed=1, Greeded=2, Passed=5,
+                         Awarded=6     -> was du schon getan hast
+      LootMode:          Normal, GreedOnly, Unavailable, LootMasterGreedOnly
+    `AddonNeedGreed` selbst traegt KEINE eigenen Datenfelder (nur AtkUnitBase +
+    VirtualTable) - UI-Scraping haette hier also nur Umwege gebracht.
+    ⇒ Die Ansage ist unabhaengig davon, ob das Fenster Fokus hat, gescrollt ist
+    oder ueberhaupt offen ist. Das Fokus-Problem entfaellt damit fuer das LESEN.
+
+>>> GEBAUT (Teil 1, Lesen): neuer `LootRollService`.
+    - Automatische Ansage, sobald eine Verlosung aufgeht: "Verlosung: <Name>
+      mal N. Bedarf, Gier oder Passen moeglich." Nur fuer Eintraege, bei denen
+      der Spieler ueberhaupt noch handeln darf (RollState UpToNeed/Greed/Pass) -
+      eine schon abgehandelte Zeile ist keine Neuigkeit.
+    - Neue Taste **Umschalt+F7**: liest alle offenen Verlosungen vor, mit Name,
+      Anzahl, was noch moeglich ist und was man selbst schon gewuerfelt hat
+      ("du hast Bedarf gewuerfelt, 87"). Sagt auch, wenn gerade nichts laeuft.
+    - Dubletten-Schutz ueber (Slot-Index + ItemId): das Spiel verwendet Slots
+      wieder, die Id allein oder der Index allein wuerde die zweite Verlosung
+      im selben Slot verschlucken.
+    - Schalter Configuration.AnnounceLootRolls, Taste KeyReadLootRolls.
+
+>>> BEWUSST NOCH NICHT ANGESAGT: die Restzeit. `Time` und `MaxTime` sind
+    verifizierte Felder, aber WELCHES davon herunterzaehlt, ist nicht gemessen -
+    und bei einem Timer waere eine falsche Ansage schlimmer als keine. Beide
+    Werte stehen in JEDER Log-Zeile ("time=... maxTime=..."), der erste Dungeon
+    klaert es also sofort, dann kommt die Ansage nach.
+
+>>> TEIL 2 (Bedienen) - USER-KORREKTUR, UND SIE FUEHRT ZUM BESSEREN WEG:
+    "das sollte funktionieren, da geht dann ein menue auf, deswegen soll ja das
+    fenster mit dem menue fokussiert werden damit man da rein kommt."
+    Das Plugin soll die Knoepfe also NICHT selbst druecken - der Spieler will
+    mit der spieleigenen Cursor-Navigation (Nummernblock) ins Fenster und dort
+    auswaehlen. Das ist genau die Playability-Regel: mit der Spielmechanik
+    arbeiten, nicht daneben.
+    GEFUNDEN (ilspycmd 2026-08-09, AtkUnitBase): `Focus()` als eigene Methode
+    des Fensters, dazu `SetFocusNode(node, setCursorFocusNode, focusParam)` und
+    die Felder `FocusNode`, `CursorTarget`, `ComponentFocusNode`.
+    GEBAUT: neue Taste **Umschalt+F8** holt das NeedGreed-Fenster in den Fokus
+    (`AtkUnitBase.Focus()`), danach navigiert der Spieler wie in jedem anderen
+    Menue. BEWUSST NICHT automatisch beim Aufgehen: ein Fenster, das sich mitten
+    im Kampf den Fokus greift, schluckt den Nummernblock, waehrend man noch
+    laufen muss.
+    NOCH NICHT BELEGT: ob `Focus()` ALLEIN reicht, damit die Tastatur im Fenster
+    landet, oder ob zusaetzlich ein Startknoten gesetzt werden muss
+    (`SetFocusNode`). Deshalb loggt die Taste die drei Fokus-Felder VOR und NACH
+    dem Aufruf ("[Loot] Vor Focus(): ... / Nach Focus(): ..."). Bleiben sie
+    unveraendert bzw. reagiert die Navigation nicht, ist SetFocusNode mit dem
+    ersten Knopf der naechste Schritt - dann steht im Log schon, was fehlt.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Dungeon, Gruppe, Beute faellt: die Ansage muss von selbst kommen.
+    2. Umschalt+F7 waehrenddessen: die Liste muss stimmen.
+    3. **Umschalt+F8**: Fenster in den Fokus holen, dann mit Nummernblock
+       navigieren und Bedarf/Gier/Passen waehlen. DAS ist der eigentliche Test.
+    4. Nach dem eigenen Wurf erneut Umschalt+F7: der eigene Wurf muss genannt
+       werden.
+    5. Log auf "time=/maxTime=" ansehen - daraus ergibt sich die Restzeit-Ansage.
+    6. Log auf "[Loot] Vor/Nach Focus()" ansehen - zeigt, ob Focus() reicht.
+
+## STAND JETZT (2026-08-09, "AUF- UND ABSTEIGEN" - GEBAUT, UNGETESTET)
+
+>>> USER-FRAGE: "wir brauchen noch eine taste um auf reittiere auf und absteigen
+    zu koennen oder gibts das schon?"
+
+>>> BEFUND: DAS SPIEL HAT DAFUER KEINE TASTE. Im Live-Tastenbelegungs-Dump
+    (679 Eintraege, 2026-08-09 07:44) gibt es keine Mount-Aktion; das
+    naechstliegende `MOVE_DESCENT` (Strg+SPACE) ist Sinkflug, nicht Absteigen.
+
+>>> ABER DAS SPIEL FUEHRT BEIDES ALS AKTION (GeneralAction-Sheet, offline
+    ausgelesen 2026-08-09):
+      #9  'Reittier-Roulette'   #23 'Absteigen'
+      #24 'Flugreittier-Roulette'   #10 'Begleiter-Roulette'
+    Dieselbe Sorte wie #4 Sprint, #7 Teleport, #8 Rueckfuehrung. Ein sehender
+    Spieler zieht sie aus dem Aktionsfenster auf die Leiste - einen anderen Weg
+    gibt es im Spiel nicht. Dazu kommen 366 einzeln belegbare Reittiere.
+
+>>> ENTSCHEIDUNG (User zugestimmt): KEINE eigene Mod-Taste, sondern zwei weitere
+    Listen im Zuweisungs-Menue (Strg+Numpad0). Grund: eine Mod-Taste muesste den
+    Ruf selbst ausloesen und alles nachbauen, was das Spiel drumherum prueft
+    (Zone, Kampf, Flugfreigabe). Ueber die Leiste macht das Spiel das selbst.
+    Das Menue hat damit FUENF Listen: Skills, Gegenstaende, Quest-Gegenstaende,
+    Allgemeine Aktionen, Reittiere. Numpad 6 vor, Numpad 4 zurueck.
+
+>>> FILTER, BEIDE VOM SPIEL BEANTWORTET, NICHT GERATEN:
+    - Allgemeine Aktionen: `UnlockLink` == 0 oder
+      `UIState.IsUnlockLinkUnlockedOrQuestCompleted` == true - derselbe Aufruf,
+      den die Skill-Liste schon benutzt.
+      BEWUSST NICHT nach `UIPriority` gefiltert: genau die gewuenschten
+      Eintraege ('Absteigen' #23, 'Flugreittier-Roulette' #24) haben Prioritaet
+      0, diese Spalte haette sie also weggeworfen.
+    - Reittiere: `PlayerState.IsMountUnlocked(rowId)` (ilspycmd-verifiziert
+      2026-08-09). Ohne diese Frage haette die Liste 366 Eintraege, von denen
+      dem Spieler die meisten nicht gehoeren.
+    Sortierung jeweils alphabetisch - eine durchblaetterte Liste muss
+    vorhersagbar sein, und die Sheet-Reihenfolge ist wegen Prioritaet 0
+    unbrauchbar.
+
+>>> Belegt wird ueber HotbarSlotType.GeneralAction bzw. .Mount, durch denselben
+    gemessenen Pfad wie alles andere (PlaceOnSlot: Set + WriteSavedSlot +
+    LoadSavedHotbar, Read-back nach 2 Frames). Leiste vorlesen benennt beide
+    Typen jetzt ueber ihr eigenes Sheet.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Strg+Numpad0, dann mit Numpad 6 durchsteppen bis "Allgemeine Aktionen":
+       'Absteigen' und 'Reittier-Roulette' muessen in der Liste stehen.
+    2. Beide auf zwei freie Leistentasten legen, Leiste vorlesen: die Namen
+       muessen stimmen.
+    3. Im Spiel: Reittier-Roulette-Taste = aufsteigen, Absteigen-Taste = runter.
+    4. Liste "Reittiere": nur die eigenen, nicht alle 366.
+    LOG-BELEG: "[Hotbar] Allgemeine Aktionen: N (...)" und
+    "[Hotbar] Freigeschaltete Reittiere: N (...)".
+
+## STAND JETZT (2026-08-09, "BEGLEITER-VERZEICHNIS" - GEBAUT, UNGETESTET)
+
+>>> USER-MELDUNG: "schau dir mal den dump an das ist das begleiter verzeichnis
+    eigentlich sollte da einer drin stehen."
+
+>>> DER DUMP BEWEIST, DASS DIE BEGLEITER DA SIND (FFXIV_UI_Dump.txt,
+    2026-08-09 09:57:27, MinionNoteBook, 79 Nodes):
+      [23] id=58 Text V "Gesamt: 2"
+    Das Fenster zaehlt also selbst zwei Begleiter. Das Plugin hat sie nur nie
+    genannt.
+
+>>> URSACHE: das Fenster fuehrt UEBERHAUPT KEINEN Namen als Text. Im ganzen
+    Dump gibt es genau vier lesbare Texte: der Titel "BEGLEITER" (id=3/id=65),
+    das Favoriten-Kaestchen (id=2), sein Hinweis (id=72) und "Gesamt: 2"
+    (id=58). Jeder Begleiter ist eine reine Icon-Kachel
+    (Comp(1017) CT=DragDrop -> Kind id=2 Comp(1019) CT=Icon). Deshalb kam beim
+    Blaettern nur "Leer" bzw. der Zeichenzaehler "0/40" des Suchfelds
+    (id=17/id=21) heraus.
+    Die [ListProbe]-Zeile "Len=0" ist kein Fehler: dieses Fenster hat gar keine
+    AtkComponentList, genau wie das Reittier-Verzeichnis.
+
+>>> LOESUNG: dasselbe Muster wie beim Reittier-Verzeichnis (V5.53, in-game
+    bestaetigt). Neu `TryReadMinionNoteBookFocusRow`: Icon-Id der fokussierten
+    Kachel -> Name aus dem Companion-Sheet (Spalte `Singular`, es gibt KEINE
+    Spalte `Name`). Suchfeld wird benannt statt "0/40" vorzulesen.
+    EINDEUTIGKEIT GEMESSEN (offline Sheet-Dump 2026-08-09): 589 benannte
+    Companion-Zeilen, 589 verschiedene Icon-Ids, NULL Kollisionen - die
+    Zuordnung Icon -> Begleiter ist also unmissverstaendlich.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Begleiter-Verzeichnis oeffnen, ueber die Kacheln blaettern: die beiden
+       Begleiter muessen mit Namen angesagt werden, leere Plaetze weiter "Leer".
+    2. Ins Suchfeld: "Begleiter suchen, Eingabefeld." statt "0/40".
+    LOG-BELEG: "[Minion] Icon-Map gebaut: N Begleiter." einmal, danach je
+    Kachel "[Minion] node id=... icon=... -> 'Name'".
+
+>>> NACHTRAG (zweiter Dump 10:04:59): der User schickte einen weiteren Dump -
+    das war aber ein ANDERES Fenster, `LovmPaletteEdit`
+    ("TRABANTEN-KOMMANDOMENUE", die Aufstellung fuer Herr der Trabanten), nicht
+    das Verzeichnis. Gleiches Grundproblem, andere Auspraegung:
+    - Kacheln sind wieder Icon-only (Comp(1015) CT=DragDrop -> Comp(1005)
+      CT=Icon). Vorgelesen wurde der interne Zaehler-Text "-1" bzw. "Leer"
+      (Log 10:04:52).
+    - Die Namen stehen NUR im Detail-Panel rechts: id=48 Name
+      ('Aufzieh-Luftschiff'), id=50 Typ ('Apparat'), id=53/54 Kosten,
+      id=55/56 LP, id=57/58 ATT, id=59/60 ABW, id=61/62 GSW, id=63/64/65
+      Auto-Attacke, id=80/81 Technik, id=83 Beschreibung, id=84/85
+      Technikpunkte, id=86/87 Techniktyp.
+    - Der generische Scanner las dieses Panel als Salve von fuenf Ansagen vor,
+      Name zuletzt (Log 10:04:56).
+    GEBAUT: die Icon-Aufloesung deckt jetzt BEIDE Fenster ab
+    (TryReadMinionTileFocusRow prueft MinionNoteBook und LovmPaletteEdit).
+    NICHT GEBAUT: das Detail-Panel geordnet vorlesen. Grund: die Zuordnung
+    Beschriftung -> Wert ist bisher nur aus der Node-Reihenfolge abgeleitet
+    (id=53 'Kosten' -> id=54 '25'), nicht gemessen. Bei Kampfwerten waere eine
+    vertauschte Zuordnung schlimmer als keine Ansage. Auf Zuruf des Users
+    nachziehen.
+
+>>> OFFEN, EHRLICH: im Dump-Moment hatte nur EINE Kachel (id=77, die einzelne
+    oben neben dem Favoriten-Kaestchen) ein sichtbares Icon-Kind; alle
+    Gitter-Kacheln id=57 abwaerts hatten es unsichtbar. Warum, ist NICHT
+    geklaert - moeglich ist ein aktiver Filter/Reiter oder ein noch nicht
+    gefuelltes Gitter zum Aufnahme-Zeitpunkt. Falls beim Test Kacheln stumm
+    bleiben, obwohl dort ein Begleiter steht, ist das die Spur: dann klaeren,
+    welcher Reiter aktiv war (das Reittier-Fenster hat dafuer
+    OnMountNoteBookUpdate mit AgentMountNoteBook - ein Pendant fuer Begleiter
+    ist noch nicht gebaut).
+
 ## V5.75 OEFFENTLICH RELEASED (2026-08-09)
 
 >>> Tag v5.75, Titel "v5.75 - Quest-Gegenstaende im Kampf".

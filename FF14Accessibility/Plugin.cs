@@ -39,6 +39,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CooldownService    _cooldown;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
+    private readonly LootRollService    _lootRolls;
     private readonly EquipmentService   _equipment;
     private readonly GearInfoService    _gearInfo;
     private readonly QuestMarkerService _questMarkers;
@@ -52,6 +53,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ObjectNameService  _objectNames;
     private readonly ObjectMemoryService _objectMemory;
     private readonly NavigationService  _navigation;
+    private readonly NavmeshCacheService _meshCache;
+    private readonly ZoneExitService    _zoneExits;
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
@@ -203,6 +206,7 @@ public sealed class Plugin : IDalamudPlugin
         // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
+        _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
@@ -219,7 +223,13 @@ public sealed class Plugin : IDalamudPlugin
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _objectNames, Log);
+        // Reads the cached navigation mesh directly - the only way to tell
+        // whether a destination hangs on a surface of its own (see the class).
+        _meshCache  = new NavmeshCacheService(DataManager, Log);
+        // Holds the REAL zone borders (layout engine) instead of their map
+        // symbols - see the class for why the symbols are not enough.
+        _zoneExits  = new ZoneExitService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _objectNames, _meshCache, Log);
         _history    = new MessageHistoryService(_tolk);
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
@@ -354,6 +364,13 @@ public sealed class Plugin : IDalamudPlugin
             case "boden":
             case "ground":
                 _autoWalk.ProbeGround();
+                break;
+            // Stellt die echten Zonengrenzen (Layout-Engine) den Kartensymbolen
+            // gegenueber, auf die der Auto-Lauf heute zielt - und misst, was
+            // PlayerRunningDirection bedeutet.
+            case "uebergang":
+            case "exitprobe":
+                _zoneExits.ProbeExitRanges();
                 break;
 #endif
             // Prueft, ob zum anvisierten Ziel ueberhaupt ein Weg fuehrt, und
@@ -974,7 +991,9 @@ public sealed class Plugin : IDalamudPlugin
             {
                 _navigation.ToggleWalkGuide(); // second press: off
             }
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _))
+            // No through-point here: the walk guide steers the PLAYER, who walks
+            // through the line themselves once they are told they are there.
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _, out _))
             {
                 // Marker destinations (quest objectives, map waypoints) work in
                 // the walk guide too since V4.63 - manual walking was
@@ -994,9 +1013,9 @@ public sealed class Plugin : IDalamudPlugin
                 // the nearest live one, or tell the user where it lives.
                 TrackBestiaryMonster(bestiaryMonster);
             }
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out var guessedY))
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out var guessedY, out var through))
             {
-                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop, guessedY); break;
+                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop, guessedY, through); break;
                 case MarkerResolve.None:     _autoWalk.Toggle();                          break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
@@ -1013,7 +1032,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             // Speak the route (compass segments) without walking - to the
             // selected marker destination, or to the current game target.
-            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _))
+            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _, out _))
             {
                 case MarkerResolve.Resolved: _navigation.PreviewRoute(pos, name); break;
                 case MarkerResolve.None:     _navigation.PreviewRouteToTarget();  break;
@@ -1049,6 +1068,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();
+        if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
+        if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
         HandleSkillMenuKeys();
         if (IsJustPressed(_config.KeyChatCatPrev))   _history.SwitchCategory(-1);
         if (IsJustPressed(_config.KeyChatCatNext))   _history.SwitchCategory(+1);
@@ -1085,6 +1106,9 @@ public sealed class Plugin : IDalamudPlugin
         // action) - the loot channel only says they arrived, not that they do
         // something. Throttles itself to once a second.
         _inventoryReader.Update();
+        // Announces party loot rolls the moment they open. Reads the game's own
+        // Loot state, so it works no matter what the NeedGreed window is doing.
+        _lootRolls.Update();
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk
         // target announcements are muted (soft-target churn while passing NPCs).
@@ -1191,11 +1215,26 @@ public sealed class Plugin : IDalamudPlugin
     /// (fresh zone check at press time - the flag from selection time is stale
     /// after teleports); 2D map markers get their height from the navmesh.
     /// </summary>
+    /// <summary>How close the walk has to get to a zone border to count as
+    /// arrived. Deliberately loose: reaching the border is only the first leg,
+    /// and a tight range would leave the crossing leg unstarted.</summary>
+    private const float ZoneBorderStopRange = 3f;
+
+    /// <summary>How far past a zone border to drive. The borders measured
+    /// 2026-08-09 had half-extents of 2,77 to 15,56 m, so this clears most of
+    /// them from the centre outwards; the drive ends the moment the zone
+    /// changes anyway, which is what makes an overshoot harmless.</summary>
+    private const float ZoneBorderPushMetres = 12f;
+
+    /// <param name="throughPoint">Set only for a zone border with a known
+    /// crossing direction: the point past it the walk has to carry on to. Null
+    /// everywhere else, including transitions that turn out to be doors.</param>
     private MarkerResolve TryResolveMarkerDestination(out Vector3 position, out string name, out float stopRange,
-                                                      out bool heightIsGuess)
+                                                      out bool heightIsGuess, out Vector3? throughPoint)
     {
         position = default;
         name = string.Empty;
+        throughPoint = null;
         stopRange = _config.AutoWalkPlaceStopRange;
         // Map data is 2D. Everything resolved from it has a GUESSED height, and
         // the guess uses the player's own - which picks the wrong storey when
@@ -1252,6 +1291,36 @@ public sealed class Plugin : IDalamudPlugin
             // Map markers are 2D - resolve the walkable height via the
             // navmesh first (player height as search origin).
             var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+
+            // A zone transition: aim at the REAL border, not at its map symbol.
+            // The symbol is artwork - measured 2026-08-09 it sat 0,27 to 6,77 m
+            // beside the border it belongs to, and at 6,77 m the walk reported
+            // "arrived" without anything happening. The layout engine holds the
+            // border itself, including the direction one crosses it in.
+            if (place.IsZoneTransition
+                && _zoneExits.FindExitForMap(place.TargetMapId, place.Position) is { } border)
+            {
+                // The box CENTRE height is the middle of a volume that reaches
+                // well above the floor (measured: centre Y 8,21 where the ground
+                // is at 4,05), so the height comes from the mesh as everywhere
+                // else - only X/Z are taken from the border.
+                var onFloor = _autoWalk.ResolveFloorPoint(border.Position with { Y = playerY });
+                if (onFloor != null)
+                {
+                    position = onFloor.Value;
+                    name = place.Name;
+                    heightIsGuess = true;
+                    // Wide on purpose: the point is to get INTO the border, and
+                    // the second leg does the crossing. A tight range would make
+                    // the walk count as "not arrived" a metre out and never hand
+                    // over.
+                    stopRange = ZoneBorderStopRange;
+                    throughPoint = ZoneExitService.PointBeyond(border, position.Y, ZoneBorderPushMetres);
+                    return MarkerResolve.Resolved;
+                }
+                Log.Info($"[Uebergang] Kein begehbarer Punkt an der Grenze '{place.Name}' - " +
+                         "falle auf das Kartensymbol zurueck.");
+            }
             // Fishing spots are water CENTRES: snap to the nearest bank (wide
             // search) so the player lands at the water, not on a floor the
             // generic 10 m snap happens to find. Fall back to the generic
@@ -1417,6 +1486,7 @@ public sealed class Plugin : IDalamudPlugin
         _chatReader.Dispose();
         _uiReader.Dispose();
         _autoWalk.Dispose();
+        _meshCache.Dispose();
         _beacon.Dispose();
         _aoeWarn.Dispose();
         _cue.Dispose();

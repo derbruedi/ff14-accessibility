@@ -32,6 +32,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly PlacesService _places;
     private readonly RouteService _routes;
     private readonly ObjectNameService _objectNames;
+    private readonly NavmeshCacheService _meshCache;
     private readonly IPluginLog _log;
 
     private readonly ICallGateSubscriber<bool> _navIsReady;
@@ -97,6 +98,7 @@ public sealed class AutoWalkService : IDisposable
         PlacesService places,
         RouteService routes,
         ObjectNameService objectNames,
+        NavmeshCacheService meshCache,
         IPluginLog log)
     {
         _objectTable = objectTable;
@@ -107,6 +109,7 @@ public sealed class AutoWalkService : IDisposable
         _places = places;
         _routes = routes;
         _objectNames = objectNames;
+        _meshCache = meshCache;
         _log = log;
 
         // Subscribing is always safe - the gates only fail on INVOKE while
@@ -280,8 +283,11 @@ public sealed class AutoWalkService : IDisposable
     /// <param name="heightIsGuess">True when the height of <paramref name="position"/>
     /// was guessed rather than known - everything that comes from the 2D map is.
     /// See <see cref="_destHeightIsGuess"/>.</param>
+    /// <param name="throughPoint">For a zone border: a point just beyond it, to
+    /// be driven to once the path ends so the line actually triggers. See
+    /// <see cref="_zoneExitPush"/>.</param>
     public void ToggleToPosition(Vector3 position, string name, float stopRange,
-                                 bool heightIsGuess = false)
+                                 bool heightIsGuess = false, Vector3? throughPoint = null)
     {
         if (StopFinalHopIfRunning()) return;
 
@@ -300,7 +306,9 @@ public sealed class AutoWalkService : IDisposable
         _destPosition = position;
         _destHeightIsGuess = heightIsGuess;
         _stopRange = stopRange;
+        // After BeginWalk: that one resets the per-walk state, including this.
         BeginWalk();
+        if (throughPoint is { } through) _zoneExitPush = (through, name);
     }
 
     // â”€â”€ Ziel folgen (kontinuierlich) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -733,10 +741,58 @@ public sealed class AutoWalkService : IDisposable
     /// one attempt per destination is the hard stop against that loop.</summary>
     private bool _approachTried;
 
+    /// <summary>Crossing the search found, waiting for the framework tick.
+    /// Written from the search's worker thread, read and cleared in
+    /// <see cref="Update"/> - starting a walk off-thread is not allowed.</summary>
+    private (Vector3 Approach, Vector3 Landing, Vector3 Goal, string Name)? _pendingCrossing;
+
+    /// <summary>Set by the crossing search when it comes up empty, so
+    /// <see cref="Update"/> can hand over to the approach search. The search
+    /// itself cannot: that call ends in a walk.</summary>
+    private bool _crossingFailed;
+
+    /// <summary>What the approach search needs if the crossing search fails -
+    /// kept from the moment the crossing search starts, because by the time it
+    /// answers the walk state has moved on.</summary>
+    private (Vector3 Goal, string Name, string Hint)? _crossingFallback;
+
+    /// <summary>Far side of a crossing whose first leg is being walked. Read on
+    /// arrival exactly like <see cref="_nearMissGoal"/>, and for the same
+    /// reason: the spot we arrive at is a means, not the destination, so the
+    /// normal "reached" announcement must not fire there.</summary>
+    private (Vector3 Landing, Vector3 Goal, string Name)? _crossingGoal;
+
+    /// <summary>Whether the crossing search already ran for this walk. Same
+    /// hard stop as <see cref="_approachTried"/>: the search ends in a walk,
+    /// and that walk must not start it again.</summary>
+    private bool _crossingTried;
+
+    /// <summary>Zone border this walk is aimed at: the point to keep going to
+    /// once the path ends, so the character walks THROUGH the line instead of
+    /// stopping on it. Set by <see cref="ToggleToPosition"/>, read on arrival,
+    /// cleared by <see cref="Stop"/> like every other per-walk state.
+    ///
+    /// WHY A SECOND LEG AT ALL. A zone line triggers by being crossed. Pathing
+    /// to the border and stopping there leaves the player standing on it -
+    /// measured 2026-08-09: the walk reported "Ziel erreicht" 6,77 m beside and
+    /// 4,16 m below the real border and nothing happened. vnavmesh has no
+    /// "overshoot", so the last few metres are driven the same way the crossing
+    /// hop drives its gap.</summary>
+    private (Vector3 Through, string Name)? _zoneExitPush;
+
+    /// <summary>Walk to resume on the next tick once a crossing has been made.
+    /// Parked rather than started inside <see cref="FinalHopUpdate"/>, which
+    /// runs in the middle of the previous leg's bookkeeping.</summary>
+    private (Vector3 Goal, string Name)? _pendingResumeWalk;
+
     /// <summary>A final hop in progress: the character is being steered the last
     /// few metres without pathfinding. Watched in <see cref="Update"/> because
-    /// <c>Path.MoveTo</c> is fire-and-forget - it reports nothing back.</summary>
-    private (Vector3 Goal, string Name, DateTime StartedAt)? _finalHop;
+    /// <c>Path.MoveTo</c> is fire-and-forget - it reports nothing back.
+    /// <paramref name="ThenGoal"/> turns the hop into the middle leg of a
+    /// crossing: on arrival the walk carries on to that point by the ordinary
+    /// route instead of announcing arrival, because landing on the far side is
+    /// not what the player asked for.</summary>
+    private (Vector3 Goal, string Name, DateTime StartedAt, Vector3? ThenGoal)? _finalHop;
 
     /// <summary>Spacing of the ground samples along the final hop. One metre is
     /// well under the width of anything the character could fall off.</summary>
@@ -809,6 +865,56 @@ public sealed class AutoWalkService : IDisposable
     /// with it is the way in. Plain 3D distance rates those the wrong way round,
     /// so height weighs several times heavier than ground.</summary>
     private const float ApproachHeightWeight = 5f;
+
+    // ── Uebergang ueber eine Luecke im Wegenetz ──────────────────────────
+    //
+    // Ein Ziel kann auf Boden liegen, den das Wegenetz KENNT, der aber keine
+    // einzige Verbindung zu unserer Flaeche hat. Dann fuehrt keine Wegsuche
+    // hin - weder vnavmesh noch die Zugangssuche oben, beide fragen dieselbe
+    // Karte. Die Zugangssuche liefert dann das naechstbeste, und das kann
+    // beliebig wertlos sein: gemessen 2026-08-09 (Log 16:03:45) schickte sie
+    // den Spieler 2 m weit und meldete Ankunft, waehrend das Ziel 23,8 m
+    // entfernt blieb.
+    //
+    // Offline am gecachten Wegenetz nachgemessen (2026-08-09, Westliches
+    // Thanalan w1f1, Quest-Sammelpunkt "Natuerlicher Magnet"): das Ziel liegt
+    // auf einem Plateau aus 29 Polygonen, die Spielerflaeche hat 17.570,
+    // Ueberschneidung NULL. Am Ziel selbst liegt sehr wohl Netz (0,37 m neben
+    // der Objektposition) - es fehlt nur die Verknuepfung. Ringsum ist das
+    // Plateau 2-3 m abgesetzt; an der guenstigsten Stelle sind es 2,5 m
+    // waagerecht und 2 m HINUNTER, und ab dort sind es 17 m fast eben bis zum
+    // Ziel.
+    //
+    // Der Ausweg ist derselbe wie bei der Astalicia-Planke: die Luecke per
+    // Path.MoveTo ohne Wegsuche fahren. Neu ist, dass die Stelle zur Laufzeit
+    // GESUCHT statt hartkodiert wird - von NavmeshCacheService, der die beiden
+    // Flaechen im gecachten Wegenetz direkt ausmisst. Warum nicht ueber die
+    // IPC geprobt wird, steht dort.
+
+    /// <summary>How far apart the two sides of a crossing may be horizontally.
+    ///
+    /// Measured against POLYGON CENTRES, which overstates the real gap - a
+    /// polygon is metres across, so its rim lies well inside its centre. That
+    /// is why 4 m was too strict: the second magnet (2026-08-09 17:03) had its
+    /// nearest step down at 4,2 m between centres and was refused, while the
+    /// first magnet's crossing measured 3,1 m between centres and drove 4,4 m
+    /// in practice - and worked. The blind stretch is bounded by
+    /// <see cref="CrossingMaxDrop"/> and by the mid-point check in
+    /// <c>NavmeshCacheService</c>, not by this number alone.</summary>
+    private const float CrossingMaxGap = 6f;
+
+    /// <summary>How far the far side may lie BELOW the near side - stepping off
+    /// an edge. Deliberately conservative: the exact height at which FF14
+    /// starts dealing fall damage is NOT established here, so this stays near
+    /// the measured case (2 m) rather than at some assumed threshold.</summary>
+    private const float CrossingMaxDrop = 5f;
+
+    /// <summary>How far the far side may lie ABOVE the near side. Barely more
+    /// than a kerb: the character cannot climb, and driving into a wall wedges
+    /// it. Falling is the reliable direction, so climbs are near enough
+    /// excluded.</summary>
+    private const float CrossingMaxClimb = 1f;
+
 
     /// <summary>
     /// Whether a vnavmesh route actually arrives at <paramref name="goal"/>.
@@ -1056,6 +1162,129 @@ public sealed class AutoWalkService : IDisposable
     }
 
     /// <summary>
+    /// Looks for a place where the player's surface and the destination's come
+    /// close enough to step across, and starts the walk there if it finds one.
+    /// Returns false when there is nothing to cross to - the caller then falls
+    /// back on the approach search.
+    ///
+    /// The surfaces themselves are read from the cached navigation mesh
+    /// (<see cref="NavmeshCacheService"/>), not probed through the IPC. Probing
+    /// was tried first and measured to fail: a ring grid around the destination
+    /// misses the edge between its spokes (the crossing found offline sat 2,2 m
+    /// from the nearest probe), and its ranking cannot tell a pair spanning two
+    /// surfaces from two points on the same one without a pathfind each.
+    ///
+    /// The whole search runs off the game thread - it walks tens of thousands
+    /// of polygons. Nothing is announced: from the player's side this is still
+    /// the walk they started (user 2026-08-07, see
+    /// <see cref="AccessibilityStrings.CrossingSpotName"/>).
+    /// </summary>
+    private bool SearchCrossing(Vector3 goal, string name)
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return false;
+        if (!_meshCache.Ready) return false;
+        var me = player.Position;
+        var territory = (ushort)_clientState.TerritoryType;
+
+        Task.Run(() =>
+        {
+            // try-catch: reflection into a foreign plugin's assemblies, on a
+            // worker where an escaping exception would take the process down.
+            try
+            {
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var crossing = _meshCache.FindCrossing(territory, me, goal,
+                                                       CrossingMaxGap, CrossingMaxDrop, CrossingMaxClimb);
+                clock.Stop();
+                if (crossing is not { } c)
+                {
+                    _log.Info($"[Uebergang] Keine ueberquerbare Stelle zu '{name}' " +
+                              $"({clock.ElapsedMilliseconds} ms) - weiter mit der Zugangssuche.");
+                    _crossingFailed = true;
+                    return;
+                }
+
+                _log.Info($"[Uebergang] Stelle gefunden ({clock.ElapsedMilliseconds} ms): " +
+                          $"von <{c.From.X:F1}, {c.From.Y:F1}, {c.From.Z:F1}> nach " +
+                          $"<{c.To.X:F1}, {c.To.Y:F1}, {c.To.Z:F1}> - {c.Gap:F1} m waagerecht, " +
+                          $"{MathF.Abs(c.Rise):F1} m {(c.Rise < 0 ? "hinunter" : "hinauf")}.");
+                // No confirming pathfind here: leg 1 IS an ordinary walk, so if
+                // the spot turns out unreachable the walk ends the usual way
+                // with the usual "N metres left" line, and one IPC call less
+                // happens on a thread that must not touch it anyway.
+                _pendingCrossing = (c.From, c.To, goal, name);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "[Uebergang] Flaechenanalyse fehlgeschlagen");
+                _crossingFailed = true;
+            }
+        });
+        return true;
+    }
+
+    /// <summary>
+    /// Leg 2 of a crossing: drives the few metres over the gap without
+    /// pathfinding, then hands back to the ordinary walk on the far side.
+    ///
+    /// Unlike <see cref="FinishNearMiss"/> this does NOT check the ground on
+    /// the way - it cannot. A crossing exists precisely because the mesh has no
+    /// link there, and <see cref="GroundIsContinuous"/> would refuse every one
+    /// of them. What makes it safe instead is that BOTH ends are measured mesh
+    /// points and the gap between them was capped when it was chosen
+    /// (<see cref="CrossingMaxGap"/>, <see cref="CrossingMaxDrop"/>,
+    /// <see cref="CrossingMaxClimb"/>): the character steps off a known floor
+    /// onto another known floor a few metres away.
+    /// </summary>
+    private void StartCrossingHop(Vector3 here, (Vector3 Landing, Vector3 Goal, string Name) cross)
+    {
+        var gap = Vector3.Distance(here, cross.Landing);
+        var rise = cross.Landing.Y - here.Y;
+        _log.Info($"[Uebergang] Etappe 2: an der Uebergangsstelle. Fahre {gap:F1} m ohne Wegsuche " +
+                  $"nach <{cross.Landing.X:F1}, {cross.Landing.Y:F1}, {cross.Landing.Z:F1}> " +
+                  $"({rise:F1} m {(rise < 0 ? "hinunter" : "hinauf")}), danach noch " +
+                  $"{Vector3.Distance(cross.Landing, cross.Goal):F1} m bis '{cross.Name}'.");
+        _finalHop = (cross.Landing, cross.Name, DateTime.UtcNow, cross.Goal);
+        MoveWithoutPathfinding(new List<Vector3> { cross.Landing });
+    }
+
+    /// <summary>
+    /// Walks the last stretch THROUGH a zone border, so the line triggers and
+    /// the player ends up in the next zone instead of standing on the edge of
+    /// this one.
+    ///
+    /// Driven without pathfinding on purpose: vnavmesh routes TO a point and
+    /// stops there, and the mesh often ends at the border anyway. The same
+    /// safeguard the other blind drives use applies - <see cref="GroundIsContinuous"/>
+    /// first, so this never steers over a ledge. When the ground does not carry,
+    /// the walk simply ends as before rather than inventing a route.
+    ///
+    /// <see cref="FinalHopUpdate"/> then watches it, and the zone change it is
+    /// waiting for IS the arrival. Returns false when nothing was started, so
+    /// the caller can fall back on its normal announcement.
+    /// </summary>
+    private bool StartZoneExitPush(Vector3 here, (Vector3 Through, string Name) push)
+    {
+        var dist = Vector3.Distance(here, push.Through);
+
+        if (!GroundIsContinuous(here, push.Through))
+        {
+            _log.Info($"[Uebergang] Durchlauf NICHT gefahren - auf den {dist:F1} m durch die " +
+                      $"Grenze fehlt Boden. Bleibe bei '{push.Name}' stehen.");
+            return false;
+        }
+
+        // Silent, like the other final legs: what the player hears is the
+        // arrival in the new zone, not a commentary on the mechanics.
+        _log.Info($"[Uebergang] Durchlauf: fahre {dist:F1} m ohne Wegsuche durch die Grenze " +
+                  $"nach <{push.Through.X:F1}, {push.Through.Y:F1}, {push.Through.Z:F1}>.");
+        _finalHop = (push.Through, push.Name, DateTime.UtcNow, null);
+        MoveWithoutPathfinding(new List<Vector3> { push.Through });
+        return true;
+    }
+
+    /// <summary>
     /// Ends a redirected walk at the spot where the mesh runs out: drives the
     /// last few metres without pathfinding when the ground carries, and says
     /// what is left when it does not.
@@ -1077,7 +1306,7 @@ public sealed class AutoWalkService : IDisposable
             // hears is the arrival, not a running commentary on the mechanics.
             _log.Info($"[Nav] Letztes Stueck: fahre die restlichen {rest:F1} m nach {compass} " +
                       $"ohne Wegsuche zu '{near.Name}' <{near.Goal.X:F1}, {near.Goal.Y:F1}, {near.Goal.Z:F1}>.");
-            _finalHop = (near.Goal, near.Name, DateTime.UtcNow);
+            _finalHop = (near.Goal, near.Name, DateTime.UtcNow, null);
             MoveWithoutPathfinding(new List<Vector3> { near.Goal });
             return;
         }
@@ -1160,6 +1389,17 @@ public sealed class AutoWalkService : IDisposable
         {
             _finalHop = null;
             StopPathQuiet();
+            // Middle leg of a crossing: we are across, and from here the mesh
+            // carries a route again. Saying "reached" would be wrong - the
+            // player asked for the destination, not for this ledge.
+            if (hop.ThenGoal is { } resume)
+            {
+                _log.Info($"[Uebergang] Drueben angekommen ({rest:F1} m vom Landepunkt). " +
+                          $"Noch {Vector3.Distance(player.Position, resume):F1} m bis '{hop.Name}' - " +
+                          $"laufe von hier normal weiter.");
+                _pendingResumeWalk = (resume, hop.Name);
+                return;
+            }
             _log.Info($"[Nav] Letztes Stueck: angekommen, {rest:F1} m von '{hop.Name}'.");
             _tolk.SpeakInterrupt(AccessibilityStrings.TargetReached(hop.Name));
             return;
@@ -1169,10 +1409,14 @@ public sealed class AutoWalkService : IDisposable
         {
             _finalHop = null;
             StopPathQuiet();
-            var compass = RouteService.CompassWord(player.Position, hop.Goal);
+            // What is left to the place the PLAYER named, not to this leg's
+            // landing spot - that number is the one they can act on.
+            var reportGoal = hop.ThenGoal ?? hop.Goal;
+            var remaining = Vector3.Distance(player.Position, reportGoal);
+            var compass = RouteService.CompassWord(player.Position, reportGoal);
             _log.Info($"[Nav] Letztes Stueck: nach {FinalHopTimeoutS:F0} s aufgegeben, " +
-                      $"noch {rest:F1} m nach {compass} bis '{hop.Name}'.");
-            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkEndedRemaining(rest));
+                      $"noch {remaining:F1} m nach {compass} bis '{hop.Name}'.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkEndedRemaining(remaining));
         }
     }
 
@@ -1401,10 +1645,13 @@ public sealed class AutoWalkService : IDisposable
         // restarts keeps pointing at the place that was actually asked for.
         _walkOrigin = (_destPosition, _targetName);
         _approachTried = false;
+        _crossingTried = false;
         // Belongs to the walk that is ending, not to this one. The redirect sets
         // it again right after starting its walk - a walk that ends short of its
         // spot would otherwise leave it behind for the next, unrelated one.
         _nearMissGoal = null;
+        _crossingGoal = null;
+        _zoneExitPush = null;
         _finalHop = null;
         _sawRunning = false;
         _startedAt = DateTime.UtcNow;
@@ -1434,6 +1681,8 @@ public sealed class AutoWalkService : IDisposable
         // the remaining distance read _nearMissGoal before they call this, and
         // the final hop is started afterwards, never before.
         _nearMissGoal = null;
+        _crossingGoal = null;
+        _zoneExitPush = null;
         _finalHop = null;
 
         // try-catch: IPC into a foreign plugin (see Toggle)
@@ -1473,12 +1722,70 @@ public sealed class AutoWalkService : IDisposable
             if (_active)
             {
                 if (approachOrigin != null) _walkOrigin = approachOrigin;
+                // The approach spot is NOT the destination, and often nowhere
+                // near it - measured 2026-08-09 twice: 1 m walked, 23,8 m and
+                // 8,4 m left, both announced as "Ziel erreicht". Carrying the
+                // real destination here routes arrival through FinishNearMiss,
+                // which drives the rest when the ground carries and otherwise
+                // says how far is left. Silence at the wrong spot is the one
+                // thing a blind player cannot tell apart from success.
+                if (approachOrigin is { } realGoal) _nearMissGoal = realGoal;
                 // This walk IS the search's answer. Should it fail too, there is
                 // nothing left to search for - starting the search again would
                 // only walk to the next-best spot around the same destination,
                 // over and over.
                 _approachTried = true;
             }
+        }
+
+        // The crossing search found a place to step across and parked it here
+        // (same reason as the approach walk above: it answers on a worker).
+        if (_pendingCrossing is { } cross)
+        {
+            _pendingCrossing = null;
+            _crossingFallback = null;
+            var crossOrigin = _walkOrigin;
+            if (_active) Stop(announce: false);
+            _finalHop = null;
+            _log.Info($"[Uebergang] Etappe 1: laufe zur Uebergangsstelle " +
+                      $"<{cross.Approach.X:F1}, {cross.Approach.Y:F1}, {cross.Approach.Z:F1}>.");
+            ToggleToPosition(cross.Approach, AccessibilityStrings.CrossingSpotName(cross.Name),
+                             ApproachStopRange);
+            if (_active)
+            {
+                _crossingGoal = (cross.Landing, cross.Goal, cross.Name);
+                if (crossOrigin != null) _walkOrigin = crossOrigin;
+                // BeginWalk cleared the flag; set it again right away. Every leg
+                // of a crossing is itself a walk that can fail, and letting a
+                // failed leg start the search anew would loop between the two
+                // sides of the same gap.
+                _crossingTried = true;
+            }
+        }
+
+        // The crossing search came up empty - hand over to the approach search,
+        // which at least walks as close as the mesh allows.
+        if (_crossingFailed && _crossingFallback is { } fallback)
+        {
+            _crossingFailed = false;
+            _crossingFallback = null;
+            _approachTried = true;
+            AnnounceApproach(fallback.Goal, fallback.Name, quiet: true, noPathHint: fallback.Hint);
+        }
+
+        // Across the gap: resume the ordinary walk to the destination, which is
+        // reachable from this side of the mesh.
+        if (_pendingResumeWalk is { } resume)
+        {
+            _pendingResumeWalk = null;
+            if (_active) Stop(announce: false);
+            _finalHop = null;
+            _log.Info($"[Uebergang] Etappe 3: normaler Lauf zu '{resume.Name}' " +
+                      $"<{resume.Goal.X:F1}, {resume.Goal.Y:F1}, {resume.Goal.Z:F1}>.");
+            ToggleToPosition(resume.Goal, resume.Name, StopRange);
+            // Same reason as leg 1: we already crossed, and a second search
+            // would only find the gap we just came over.
+            if (_active) _crossingTried = true;
         }
 
         // The route check found a path that ends just short of the destination
@@ -1722,14 +2029,32 @@ public sealed class AutoWalkService : IDisposable
                     // around the destination for the closest spot that IS
                     // reachable and walk there. Silent: it announces only if it
                     // finds nothing at all.
-                    _log.Info($"[Nav] Auto-Lauf: kein Pfadende in Reichweite - suche automatisch den " +
-                              $"naechsten erreichbaren Punkt um '{_targetName}'.");
                     // The player's own destination, not this leg's: after a
                     // redirect _destPosition is an intermediate point, and the
                     // way in belongs around the place that was asked for.
                     var unreachableGoal = _walkOrigin?.Goal ?? _destPosition;
                     var unreachableName = _walkOrigin?.Name ?? _targetName;
                     var unreachableHint = _places.BuildNoPathHint(unreachableGoal);
+
+                    // Look for a place to step across FIRST. The approach search
+                    // below only ever walks to somewhere on OUR surface, and
+                    // when the destination sits on a detached one that answer
+                    // can be worthless - measured 2026-08-09: it walked 2 m and
+                    // called it arrival while the destination stayed 23,8 m off.
+                    // A crossing actually gets there.
+                    if (!_crossingTried)
+                    {
+                        _crossingTried = true;
+                        _crossingFallback = (unreachableGoal, unreachableName, unreachableHint);
+                        _log.Info($"[Nav] Auto-Lauf: kein Pfadende in Reichweite - suche eine Stelle, " +
+                                  $"an der man zu '{unreachableName}' hinuebersteigen kann.");
+                        Stop(announce: false);
+                        if (SearchCrossing(unreachableGoal, unreachableName)) return;
+                        _crossingFallback = null;
+                    }
+
+                    _log.Info($"[Nav] Auto-Lauf: kein Uebergang - suche den naechsten erreichbaren " +
+                              $"Punkt um '{unreachableName}'.");
                     _approachTried = true;
                     Stop(announce: false);
                     AnnounceApproach(unreachableGoal, unreachableName, quiet: true,
@@ -1814,6 +2139,16 @@ public sealed class AutoWalkService : IDisposable
             // Redirected walk: we are standing where the mesh ends, not at the
             // destination. Saying "reached" here would be a lie the player cannot
             // check - name the remaining distance and direction instead.
+            // Standing on the near side of a crossing: step across before
+            // anything is announced. Checked before the near-miss case because
+            // both hand over to a drive without pathfinding and only one of
+            // them can be set.
+            if (arrived && _crossingGoal is { } crossHere)
+            {
+                _crossingGoal = null;
+                StartCrossingHop(me, crossHere);
+                return;
+            }
             if (arrived && _nearMissGoal is { } near)
             {
                 _nearMissGoal = null;
@@ -1821,6 +2156,12 @@ public sealed class AutoWalkService : IDisposable
                           $"{Vector3.Distance(me, near.Goal):F1} m bis '{near.Name}'.");
                 FinishNearMiss(me, near);
                 return;
+            }
+            // Standing AT a zone border: keep going through it.
+            if (arrived && _zoneExitPush is { } push)
+            {
+                _zoneExitPush = null;
+                if (StartZoneExitPush(me, push)) return;
             }
             _tolk.SpeakInterrupt(arrived
                 ? AccessibilityStrings.TargetReached(_targetName)
@@ -1839,8 +2180,15 @@ public sealed class AutoWalkService : IDisposable
             // Same case as on a clean finish, only the character came to rest a
             // moment earlier: read the redirect BEFORE Stop clears it.
             var stalledNear = arrived ? _nearMissGoal : null;
+            var stalledCross = arrived ? _crossingGoal : null;
+            var stalledPush = arrived ? _zoneExitPush : null;
             var here = player.Position;
             Stop(announce: false);
+            if (stalledCross is { } cross2)
+            {
+                StartCrossingHop(here, cross2);
+                return;
+            }
             if (stalledNear is { } near2)
             {
                 _log.Info($"[Nav] Auto-Lauf: am Pfadende zum Stehen gekommen, " +
@@ -1848,6 +2196,11 @@ public sealed class AutoWalkService : IDisposable
                 FinishNearMiss(here, near2);
                 return;
             }
+            // Same as the clean finish: a border reached is a border to cross.
+            // A stall right at a zone line is the NORMAL case, not an error -
+            // vnavmesh pushes against the last waypoint while the character has
+            // already stopped moving.
+            if (stalledPush is { } push2 && StartZoneExitPush(here, push2)) return;
             _tolk.SpeakInterrupt(arrived
                 ? AccessibilityStrings.TargetReached(_targetName)
                 : AccessibilityStrings.StuckRemaining(distance));

@@ -460,6 +460,8 @@ public sealed class NavigationService
 
         var distance = Vector3.Distance(player.Position, obj.Position);
 
+        LogGatheringNodeState(obj, distance);
+
         // Gathering nodes: the type and required level ARE the useful content
         // ("Erzader, Stufe 20"); their object name is usually empty and the
         // kind ("Sammelpunkt") would just repeat the category.
@@ -1026,14 +1028,18 @@ public sealed class NavigationService
             .OrderBy(o => Vector3.Distance(player.Position, o.Position))
             .ToList();
 
+        TrackGatheringAvailability(inRange, player);
+
         var listed = inRange.Where(IsWorthBrowsing).ToList();
 
         // One line per key press, and only when something was actually dropped:
-        // it shows in the log how much the nameless-extras filter takes off the
-        // list - and would show at once if it ever took too much.
+        // it shows in the log how much the filter takes off the list - and would
+        // show at once if it ever took too much. Two rules drop things here:
+        // nameless-and-untargetable extras, and gathering nodes the game does not
+        // currently raise (see IsWorthBrowsing).
         if (listed.Count != inRange.Count)
             _log.Info($"[Nav] Browser: {listed.Count} von {inRange.Count} Objekten " +
-                      $"({inRange.Count - listed.Count} namenlos und nicht anvisierbar ausgeblendet).");
+                      $"({inRange.Count - listed.Count} nicht nutzbar ausgeblendet).");
 
         return listed;
     }
@@ -1050,12 +1056,29 @@ public sealed class NavigationService
     /// extras were padding the list with entries the player cannot identify.
     ///
     /// What stays:
-    ///  - gathering nodes always (their type and level ARE the description, see
-    ///    DescribeGatheringPoint),
+    ///  - gathering nodes the game lets you TARGET (their type and level ARE the
+    ///    description, see DescribeGatheringPoint),
     ///  - anything with a speakable name, the object's own or the sheets' one,
     ///  - nameless things the game lets you TARGET: the game marks those as
     ///    interactive, so hiding them could hide something usable. They are
     ///    announced as "Objekt ohne Namen" rather than as a blank.
+    ///
+    /// GATHERING NODES ARE NO LONGER EXEMPT FROM THE TARGETABLE TEST (user report
+    /// 2026-08-09: "es gibt welche wo ich abbauen kann und wo nicht"). They used
+    /// to pass unconditionally, and the browser therefore offered places where
+    /// nothing stands. MEASURED that day with [GatherProbe]: of 16 nodes listed
+    /// in one spot exactly ONE was targetable (TargetableStatus=123, the
+    /// ObjectTargetableFlags.IsTargetable bit set, RenderFlags=None) - and that
+    /// was the one the player could work. The other fifteen all read
+    /// TargetableStatus=248/120 without that bit and RenderFlags=128, i.e. the
+    /// game neither draws nor offers them. DISTANCE IS NOT THE CAUSE: two of the
+    /// dead ones were measured from 2 m.
+    ///
+    /// This is parity, not a filter that removes game information: the game holds
+    /// every possible placement of an area as an object but only ever raises a
+    /// few. A sighted player sees the ones that are drawn; the browser now lists
+    /// the same set. STILL UNMEASURED is whether a LIVE node reads as targetable
+    /// from far away - see TrackGatheringAvailability, which logs exactly that.
     ///
     /// What goes: nameless AND untargetable - background extras, scenery, and
     /// invisible trigger spots. In the measured sample (log 2026-08-06, 38
@@ -1075,8 +1098,8 @@ public sealed class NavigationService
     private bool IsWorthBrowsing(IGameObject o)
         => !IsEmptiedTreasure(o)
            && (o.ObjectKind == ObjectKind.GatheringPoint
-               || _objectNames.Resolve(o) != null
-               || o.IsTargetable);
+               ? o.IsTargetable
+               : _objectNames.Resolve(o) != null || o.IsTargetable);
 
     /// <summary>
     /// True once a treasure chest has been dealt with, so the browser can drop
@@ -1304,6 +1327,80 @@ public sealed class NavigationService
             return ObjectNameService.IsSpeakable(name) ? name : AccessibilityStrings.GatheringNodeFallback;
 
         return AccessibilityStrings.GatheringNodeDesc(info.Value.Type, info.Value.Level);
+    }
+
+    // Per node, the last availability the game reported. Only CHANGES are logged,
+    // so the probe below stays quiet while the answer stays the same.
+    private readonly Dictionary<ulong, bool> _gatherAvailability = [];
+
+    /// <summary>
+    /// Logs a line whenever the game changes its mind about whether a gathering
+    /// node can be worked - and stays silent while the answer holds.
+    ///
+    /// This watches the ONE thing the filter in <see cref="IsWorthBrowsing"/> rests
+    /// on but that is not yet measured. Measured on 2026-08-09: a live node at 9 m
+    /// was targetable while fifteen dead placements were not, two of them read
+    /// from 2 m - so distance is not what makes a node untargetable. NOT measured
+    /// is the other direction: whether a LIVE node already reads as targetable
+    /// from 60-80 m. If it does not, the filter hides usable nodes from the search
+    /// instead of only hiding empty ground, and this probe is how that shows: a
+    /// node flipping to targetable as the player walks up leaves BOTH distances in
+    /// the log, and the flip distance is the answer.
+    /// </summary>
+    private unsafe void TrackGatheringAvailability(List<IGameObject> inRange, IGameObject player)
+    {
+#if DEBUG
+        foreach (var o in inRange)
+        {
+            if (o.ObjectKind != ObjectKind.GatheringPoint || o.Address == nint.Zero) continue;
+
+            var usable = o.IsTargetable;
+            if (_gatherAvailability.TryGetValue(o.GameObjectId, out var previous) && previous == usable)
+                continue;
+            _gatherAvailability[o.GameObjectId] = usable;
+
+            var go = (CSGameObject*)o.Address;
+            _log.Info($"[GatherProbe] Wechsel: id={o.GameObjectId:X} BaseId={o.BaseId} " +
+                      $"nutzbar={usable} TargetableStatus={go->TargetableStatus} " +
+                      $"RenderFlags={go->RenderFlags} " +
+                      $"Entfernung={Vector3.Distance(player.Position, o.Position):F1}");
+        }
+#endif
+    }
+
+    /// <summary>
+    /// Debug probe for the user report of 2026-08-09: "es gibt welche wo ich
+    /// abbauen kann und wo nicht" - the browser offers gathering nodes the game
+    /// will not let the player work.
+    ///
+    /// The browser lists EVERY node in range on purpose: <see cref="IsWorthBrowsing"/>
+    /// passes ObjectKind.GatheringPoint through unconditionally, without ever
+    /// asking whether this placement is currently usable. Which state separates a
+    /// workable node from a dead one is NOT answerable from the sheets - it is
+    /// runtime state - so every per-object field the game keeps is logged and one
+    /// real walk settles it:
+    ///  - IsTargetable / TargetableStatus (ObjectTargetableFlags, ilspycmd-verified
+    ///    2026-08-09: bit IsTargetable = 2) - the game's own "can you address this".
+    ///  - RenderFlags (VisibilityFlags: Model = 2) and Visibility - whether the
+    ///    node is drawn at all.
+    ///  - EventState - the byte the game sets via GameObject.SetEventState.
+    ///  - The raw object name: a live node was called 'Nutzbaum' in the log of
+    ///    12:40, while the browser entries carried no name of their own.
+    /// No announcement is derived from any of this yet - guessing which field
+    /// means "unusable" and hiding nodes on that guess could hide workable ones.
+    /// </summary>
+    private unsafe void LogGatheringNodeState(IGameObject obj, float distance)
+    {
+#if DEBUG
+        if (obj.ObjectKind != ObjectKind.GatheringPoint || obj.Address == nint.Zero) return;
+
+        var go = (CSGameObject*)obj.Address;
+        _log.Info($"[GatherProbe] id={obj.GameObjectId:X} BaseId={obj.BaseId} " +
+                  $"Name='{obj.Name.TextValue}' Anvisierbar={obj.IsTargetable} " +
+                  $"TargetableStatus={go->TargetableStatus} RenderFlags={go->RenderFlags} " +
+                  $"Visibility={go->Visibility} EventState={go->EventState} " +
+                  $"Entfernung={distance:F1}");
+#endif
     }
 
     /// <summary>

@@ -52,6 +52,9 @@ public static class AccessibilityStrings
     /// <summary>Spoken when the focus lands on the mount guide's search box.</summary>
     public static string MountSearchField => IsGerman ? "Reittier suchen, Eingabefeld." : "Mount search, text field.";
 
+    /// <summary>Spoken when the focus lands on the minion guide's search box.</summary>
+    public static string MinionSearchField => IsGerman ? "Begleiter suchen, Eingabefeld." : "Minion search, text field.";
+
     // ── Umschalt-Zustaende (Checkbox / Radiobutton) ──────────────────
     /// <summary>Checkbox is ticked / unticked.</summary>
     public static string StateOn  => IsGerman ? "an" : "on";
@@ -1202,6 +1205,16 @@ public static class AccessibilityStrings
     /// <summary>Fallback spoken name for an unnamed aetheryte.</summary>
     public static string AetheryteFallbackName => IsGerman ? "Ätheryt" : "Aetheryte";
 
+    // ── Übergangs-Sonde (ZoneExitService, nur Debug-Builds) ──
+    /// <summary>Spoken when the layout holds no exit range at all.</summary>
+    public static string ExitProbeNone =>
+        IsGerman ? "Kein Übergang in dieser Zone gefunden." : "No transition found in this zone.";
+    /// <summary>Spoken summary of the exit probe: count and nearest transition.</summary>
+    public static string ExitProbeResult(int count, string nearestName, float distance) =>
+        IsGerman
+            ? $"{count} Übergänge. Nächster: {(string.IsNullOrWhiteSpace(nearestName) ? "unbenannt" : nearestName)}, {distance:F0} Meter."
+            : $"{count} transitions. Nearest: {(string.IsNullOrWhiteSpace(nearestName) ? "unnamed" : nearestName)}, {distance:F0} metres.";
+
     // ════════════════════════════════════════════════════════════════
     //  NavigationService - Gehhilfe (walk guide)
     // ════════════════════════════════════════════════════════════════
@@ -1274,14 +1287,35 @@ public static class AccessibilityStrings
     /// <summary>Spoken when the modal skill menu opens, with the browse hint.</summary>
     public static string SkillMenuOpened(int count) =>
         IsGerman
-            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt zu Gegenständen, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, 4 or 6 switches to items, Numpad 0 selects, Numpad decimal to go back.";
+            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
 
     /// <summary>Spoken when the menu switches to the carried-item list.</summary>
     public static string ItemMenuOpened(int count) =>
         IsGerman
             ? $"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
             : $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>Spoken when the menu switches to the general-action list
+    /// (Absteigen, Reittier-Roulette, Sprint, Teleport ...).</summary>
+    public static string GeneralActionMenuOpened(int count) =>
+        IsGerman
+            ? $"Allgemeine Aktionen, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"General actions, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>Spoken when the menu switches to the mount list.</summary>
+    public static string MountMenuOpened(int count) =>
+        IsGerman
+            ? $"Reittiere, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Mounts, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>One browsed entry that has nothing but a name: general actions
+    /// and mounts. Same shape as the other browse entries so the menu sounds
+    /// consistent no matter which list is open.</summary>
+    public static string PlainBrowseEntry(string name, string? location, int index, int count) =>
+        IsGerman
+            ? $"{name}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
+            : $"{name}{(location != null ? $", on {location}" : "")}, {index} of {count}";
 
     /// <summary>Spoken when the menu switches to the quest-item list.</summary>
     public static string QuestItemMenuOpened(int count) =>
@@ -1403,6 +1437,13 @@ public static class AccessibilityStrings
     /// must not claim we are heading for the destination itself.</summary>
     public static string ApproachSpotName(string target) =>
         IsGerman ? $"Zugang zu {target}" : $"way in to {target}";
+
+    /// <summary>Name for the walk to the near side of a crossing. Like
+    /// <see cref="ApproachSpotName"/> this only ever surfaces in a failure
+    /// announcement - a crossing that works stays silent, the same way the
+    /// near-miss redirect does.</summary>
+    public static string CrossingSpotName(string target) =>
+        IsGerman ? $"Übergang zu {target}" : $"crossing to {target}";
 
     /// <summary>Auto-walk refused to start: the destination hangs on a separate
     /// patch of the navigation mesh, so walking there is impossible.</summary>
@@ -1547,6 +1588,61 @@ public static class AccessibilityStrings
         IsGerman ? $"{name} mal {quantity}{hqSuffix}" : $"{name} times {quantity}{hqSuffix}";
     public static string KeyItemFallback(uint id) =>
         IsGerman ? $"Schlüsselgegenstand {id}" : $"Key item {id}";
+
+    // ════════════════════════════════════════════════════════════════
+    //  LootRollService - Beute auswuerfeln (Bedarf / Gier / Passen)
+    // ════════════════════════════════════════════════════════════════
+    /// <summary>Announced the moment a roll opens.</summary>
+    public static string LootRollStarted(string name, int count, string options) =>
+        IsGerman
+            ? $"Verlosung: {name}{(count > 1 ? $" mal {count}" : "")}. {options}"
+            : $"Loot roll: {name}{(count > 1 ? $" times {count}" : "")}. {options}";
+
+    /// <summary>Spoken after the roll window was handed the keyboard focus.</summary>
+    public static string LootRollFocused =>
+        IsGerman
+            ? "Verlosungs-Fenster im Fokus. Mit dem Nummernblock auswählen."
+            : "Loot roll window focused. Use the numpad to choose.";
+
+    /// <summary>Spoken when the focus key is pressed without a roll window up.</summary>
+    public static string LootRollNoWindow =>
+        IsGerman ? "Kein Verlosungs-Fenster offen." : "No loot roll window open.";
+
+    /// <summary>Spoken when the player asks and nothing is being rolled for.</summary>
+    public static string LootRollNone =>
+        IsGerman ? "Zurzeit wird nichts verlost." : "Nothing is being rolled for.";
+
+    /// <summary>Header of the on-demand readout.</summary>
+    public static string LootRollList(int count, string joined) =>
+        IsGerman ? $"{count} Verlosungen. {joined}" : $"{count} loot rolls. {joined}";
+
+    /// <summary>One entry of the on-demand readout.</summary>
+    public static string LootRollEntry(string name, int count, string options, string ownRoll) =>
+        IsGerman
+            ? $"{name}{(count > 1 ? $" mal {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}"
+            : $"{name}{(count > 1 ? $" times {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}";
+
+    /// <summary>What the player may still do - the game's RollState in words.</summary>
+    public static string LootOptionsNeedGreedPass =>
+        IsGerman ? "Bedarf, Gier oder Passen möglich" : "need, greed or pass";
+    public static string LootOptionsGreedPass =>
+        IsGerman ? "nur Gier oder Passen möglich" : "greed or pass only";
+    public static string LootOptionsPassOnly =>
+        IsGerman ? "nur Passen möglich" : "pass only";
+    public static string LootOptionsDone =>
+        IsGerman ? "schon gewürfelt" : "already rolled";
+    public static string LootOptionsUnavailable =>
+        IsGerman ? "nicht verfügbar" : "unavailable";
+
+    /// <summary>What the player already did, with the rolled number.</summary>
+    public static string LootRolledNeed(byte value) =>
+        IsGerman ? $"du hast Bedarf gewürfelt, {value}" : $"you rolled need, {value}";
+    public static string LootRolledGreed(byte value) =>
+        IsGerman ? $"du hast Gier gewürfelt, {value}" : $"you rolled greed, {value}";
+    public static string LootRolledPass =>
+        IsGerman ? "du hast gepasst" : "you passed";
+    public static string LootRolledWon =>
+        IsGerman ? "du hast den Gegenstand erhalten" : "you were awarded the item";
 
     // ════════════════════════════════════════════════════════════════
     //  MessageHistoryService - Nachlese-Kanäle
