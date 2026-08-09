@@ -73,8 +73,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.75";
-    private const string PluginVersionTag = "Quest-Gegenstaende auf die Leiste, unbenannte und gleichnamige Objekte, geleerte Truhen raus, Systemmeldung nur einmal, Handwerker-Notizbuch";
+    private const string PluginVersion    = "5.76";
+    private const string PluginVersionTag = "Zonenuebergaenge werden durchlaufen, Beute auswuerfeln, Auf- und Absteigen ueber die Leiste, Begleiter-Verzeichnis, tote Sammelpunkte raus";
 
     public Plugin()
     {
