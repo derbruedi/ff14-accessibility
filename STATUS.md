@@ -3,7 +3,21 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-09, "KARTENUEBERGAENGE" - GEMESSEN, UMBAU OFFEN)
+## STAND JETZT (2026-08-09, "KARTENUEBERGAENGE" - GEMESSEN, GEBAUT, ALS v5.76 RELEASED)
+
+>>> RELEASE v5.76 RAUS (2026-08-09 18:41 UTC). Versionen an allen drei Stellen
+    auf 5.76 / 5.76.0.0 (Plugin.cs, csproj, repo.json). Vier Assets am Release,
+    Installer-exe unveraendert wiederverwendet (SHA
+    5787445B...CAD49 stimmt mit installer.json ueberein).
+    VERIFIZIERT: `gh release list` zeigt v5.76 als "Latest", und
+    releases/latest/download/latest.zip liefert HTTP 200 mit 667.834 Bytes -
+    exakt die neu gebaute Datei. Spieler ziehen also wirklich die neue Version.
+
+>>> ACHTUNG: v5.76 enthaelt FUENF in-game ungetestete Neuerungen (Uebergaenge,
+    Beute auswuerfeln, Auf-/Absteigen, Begleiter-Verzeichnis, tote
+    Sammelpunkte). Der User hat das Release bewusst vor dem Test gewollt. Die
+    Testpunkte unten gelten unveraendert weiter - kommt eine Rueckmeldung aus
+    der Spielerschaft, zuerst dort nachsehen.
 
 >>> MESSUNG GELAUFEN (Log 18:01:57 Territory 130 Nald-Kreuzgang, 18:02:26
     Territory 131 Thal-Kreuzgang - der Spieler ist zwischen beiden Laeufen
