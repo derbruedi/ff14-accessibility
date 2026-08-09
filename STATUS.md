@@ -3,6 +3,34 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## V5.75 OEFFENTLICH RELEASED (2026-08-09)
+
+>>> Tag v5.75, Titel "v5.75 - Quest-Gegenstaende im Kampf".
+    https://github.com/derbruedi/ff14-accessibility/releases/tag/v5.75
+
+>>> VERSIONS-SYNC (alle drei Stellen auf 5.75, vor dem Release geprueft):
+    csproj 5.75.0 / 5.75.0.0, Plugin.cs PluginVersion "5.75",
+    repo.json AssemblyVersion "5.75.0.0".
+
+>>> VERIFIKATION, dass Spieler die neue Version wirklich ziehen:
+    - `gh release list`: v5.75 traegt "Latest".
+    - 4 Assets dran: latest.zip (644.978 B), FF14Accessibility-v5.75.0.zip
+      (644.978 B), FF14AccessibilityInstaller.exe (162.517.183 B),
+      installer.json (165 B).
+    - Weiterleitung releases/latest/download/latest.zip -> HTTP 200 mit
+      644.978 B (v5.74 hatte 620.928 B, also wirklich die neue Datei).
+    - raw.githubusercontent .../main/repo.json meldet 5.75.0.0.
+    - Installer unveraendert (1.1.0.0): exe + installer.json vom v5.74-Release
+      uebernommen, SHA256 gegengeprueft (5787445B...D57CAD49 stimmt ueberein).
+
+>>> INHALT: alles seit v5.74 - Quest-Gegenstaende (unten), unbenannte und
+    gleichnamige Objekte, geleerte Truhen, Systemmeldung-Dublette,
+    AoeCastProbe-Absturz, zwei vnavmesh-Endpunkte, Weg endet kurz vorm Ziel,
+    Handwerker-Notizbuch, HP/MP/SP in Prozent.
+    ACHTUNG: 14 der 15 Bloecke sind GEBAUT, ABER IN-GAME UNGETESTET. Der
+    Release ging auf ausdruecklichen Wunsch des Users trotzdem raus (er testet
+    die Release-Version selbst).
+
 ## STAND JETZT (2026-08-09, "QUEST-GEGENSTAENDE IM KAMPF" - GEBAUT, UNGETESTET)
 
 >>> USER-FRAGE: "es gibt quests wo man mit gegenstaenden im kampf sachen
