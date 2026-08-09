@@ -48,15 +48,6 @@ public sealed class CombatService
 
     private static readonly int[] HpThresholds = [75, 50, 25, 10];
 
-#if DEBUG
-    // Debug-only AoE-cast probe (AoeCastProbe): maps each nearby enemy cast to its
-    // Lumina Action shape data (CastType/EffectRange/XAxisModifier/Omen) plus caster
-    // geometry, so the CastType->shape numbers can be verified empirically instead of
-    // guessed. Deduped per caster: casterId -> last logged cast action id. Compiled
-    // out of release builds.
-    private readonly Dictionary<ulong, uint> _probedCasts = new();
-#endif
-
     public CombatService(
         IObjectTable objectTable,
         ITargetManager targetManager,
@@ -372,10 +363,12 @@ public sealed class CombatService
     /// is to read the real telegraph shape and origin from the cast's Omen/VFX object
     /// (a circle may be ground-placed, and cones/lines need the caster's facing) - but
     /// that data is not yet decoded (hard research path, see game-api.md "AoE-Form").
-    /// This V1 is verified in-game against the Hall of the Novice circle; the parallel
-    /// AoeCastProbe logs the true Omen shape so cones/lines/off-centre AoEs can be
-    /// modelled next. Distance is horizontal (XZ) only - AoE telegraphs are ground
-    /// planes, so a height difference must not hide or fake danger.
+    /// This V1 is verified in-game against the Hall of the Novice circle. The debug
+    /// probe that logged the true Omen shape was removed on 2026-08-09 (its unfiltered
+    /// object-table pass threw inside OnFrameworkUpdate); if cones/lines are modelled
+    /// next, it has to come back with the BattleNpc filter in place from the start.
+    /// Distance is horizontal (XZ) only - AoE telegraphs are ground planes, so a
+    /// height difference must not hide or fake danger.
     /// </summary>
     private void UpdateAoeWarning(ulong playerId, Vector3 playerPos)
     {
@@ -545,112 +538,5 @@ public sealed class CombatService
 
     private static int HpPercent(uint current, uint max) =>
         max == 0 ? 0 : (int)(current * 100u / max);
-
-    /// <summary>
-    /// DEBUG-only measuring probe for the AoE-dodge feature. Logs one line per
-    /// nearby enemy cast (rising edge, deduped per caster) that pairs the live cast
-    /// with its Lumina Action shape data - CastType (shape), EffectRange (radius),
-    /// XAxisModifier (width for lines), Omen (telegraph graphic id) - plus the
-    /// caster/player geometry. Its sole purpose is to verify EMPIRICALLY what each
-    /// CastType byte means (circle / cone / line / donut ...) before any "you are
-    /// standing in it" logic is built on those numbers, so the mapping is proven
-    /// against what the player actually sees rather than guessed. Iterates the whole
-    /// object table on purpose: in the Hall of the Novice the AoE often comes from an
-    /// enemy the player is not currently targeting. Compiled out of release builds.
-    /// </summary>
-    public void AoeCastProbe()
-    {
-#if DEBUG
-        var player = _objectTable.LocalPlayer;
-        if (player == null) { _probedCasts.Clear(); return; }
-
-        var playerId  = player.GameObjectId;
-        var playerPos = player.Position;
-        var sheet     = _data.GetExcelSheet<LuminaAction>();
-
-        // Track which casters are still casting this frame, so a caster that has
-        // finished can be dropped from the dedup map and its NEXT cast logs fresh.
-        var seen = new HashSet<ulong>();
-
-        foreach (var obj in _objectTable)
-        {
-            if (obj is not IBattleChara bc) continue;
-            // Kind filter BEFORE any cast property. Dalamud implements them as
-            // Struct->GetCastInfo()->IsCasting (decompiled 2026-08-08) with no
-            // null check, so an IBattleChara whose GetCastInfo() returns null
-            // throws right here - and the throw escapes into OnFrameworkUpdate,
-            // killing every service that runs after this one for that frame.
-            // That happened continuously in the dungeon run of 2026-08-08 23:43.
-            // The production loop above never hit it because it filters on
-            // BattleNpc first; this probe did not. Which kind exactly hands out
-            // the null pointer is NOT established - the filter is copied from
-            // the loop that demonstrably survives, not from a diagnosis.
-            if (bc.ObjectKind != ObjectKind.BattleNpc) continue;
-            if (!bc.IsCasting) continue;
-            if (bc.GameObjectId == playerId) continue; // never the player's own casts
-
-            seen.Add(bc.GameObjectId);
-
-            var castId = bc.CastActionId;
-            // Already logged this exact cast for this caster? Skip until it changes.
-            if (_probedCasts.TryGetValue(bc.GameObjectId, out var last) && last == castId)
-                continue;
-            _probedCasts[bc.GameObjectId] = castId;
-
-            string name = "?", omenPath = "";
-            byte castType = 0, range = 0, xmod = 0;
-            uint omen = 0, omenAlt = 0;
-            if (sheet.TryGetRow(castId, out var row))
-            {
-                name     = row.Name.ExtractText();
-                castType = row.CastType;
-                range    = row.EffectRange;
-                xmod     = row.XAxisModifier;
-                omen     = row.Omen.RowId;
-                omenAlt  = row.OmenAlt.RowId;
-                // Omen.Path is the telegraph graphic file; its name encodes the real
-                // shape (gl_fan* = cone, gl_circle* = circle, gl_line*/rect* = line),
-                // so this pins the shape from game data instead of guessing CastType.
-                if (row.Omen.ValueNullable is { } om)
-                    omenPath = om.Path.ExtractText();
-            }
-
-            var casterPos = bc.Position;
-            var rot       = bc.Rotation;
-            var atMe      = bc.CastTargetObjectId == playerId;
-            var dist      = Vector3.Distance(casterPos, playerPos);
-
-            // Relative bearing caster -> player using the project's verified rotation
-            // convention (facing = (sin rot, cos rot); relAngle = atan2(dx,dz) - rot).
-            // ~0 deg means the player stands directly in front of the caster - key for
-            // telling cones/lines from circles once we read the logs.
-            var dx     = playerPos.X - casterPos.X;
-            var dz     = playerPos.Z - casterPos.Z;
-            var relDeg = NormalizeDeg((MathF.Atan2(dx, dz) - rot) * 180f / MathF.PI);
-
-            // Format floats with invariant culture up front so decimals are '.' and
-            // never collide with the ',' field separators (German locale would print
-            // "-10,1" for -10.1). Everything else in the line is int/byte/string.
-            var inv       = System.Globalization.CultureInfo.InvariantCulture;
-            var casterStr = $"({casterPos.X.ToString("F1", inv)};{casterPos.Y.ToString("F1", inv)};{casterPos.Z.ToString("F1", inv)})";
-            var playerStr = $"({playerPos.X.ToString("F1", inv)};{playerPos.Y.ToString("F1", inv)};{playerPos.Z.ToString("F1", inv)})";
-
-            _log.Info(
-                $"[AoeProbe] caster='{bc.Name.TextValue}' id={bc.GameObjectId:X} " +
-                $"cast='{name}' castId={castId} CastType={castType} EffectRange={range} " +
-                $"XAxisModifier={xmod} Omen={omen}/{omenAlt} OmenPath='{omenPath}' atMe={atMe} " +
-                $"dist={dist.ToString("F1", inv)} relBearing={relDeg.ToString("F0", inv)} " +
-                $"rot={rot.ToString("F2", inv)} casterPos={casterStr} playerPos={playerStr} " +
-                $"castTime={bc.CurrentCastTime.ToString("F1", inv)}/{bc.TotalCastTime.ToString("F1", inv)}");
-        }
-
-        // Forget casters that stopped casting, so re-casting the same action re-logs.
-        if (_probedCasts.Count > 0)
-        {
-            foreach (var key in _probedCasts.Keys.Where(k => !seen.Contains(k)).ToList())
-                _probedCasts.Remove(key);
-        }
-#endif
-    }
 
 }

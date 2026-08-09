@@ -1120,11 +1120,6 @@ public sealed class Plugin : IDalamudPlugin
         // Debug-only auto-probe: logs focused config-menu elements while a
         // Config* window is open. Compiled out of release builds.
         _uiReader.ConfigProbeTick();
-        // Debug-only auto-probe: logs each nearby enemy cast paired with its Lumina
-        // Action shape data (CastType/EffectRange/XAxisModifier/Omen) so the
-        // CastType->shape mapping can be verified before the AoE-warning feature is
-        // built on it. Compiled out of release builds.
-        _combat.AoeCastProbe();
 #endif
 
         // DC-Auswahl: Nummernblock-Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
