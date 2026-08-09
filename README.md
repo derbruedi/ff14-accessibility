@@ -53,7 +53,8 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Blickrichtung und Ankunftston.
 - **Auto-Lauf**: automatisch zum Ziel laufen (benötigt das Fremd-Plugin
   vnavmesh), mit Routen-Vorschau, Fortschrittsansagen und ehrlicher
-  Meldung, wenn kein Weg gefunden wird.
+  Meldung, wenn kein Weg gefunden wird. Endet der Weg kurz vor dem Ziel,
+  werden die letzten Meter mitgefahren, sofern dort durchgehend Boden ist.
 - **Folgen**: dem anvisierten Ziel dauerhaft hinterherlaufen — hält an,
   wenn das Ziel stehen bleibt, und endet bei Zonenwechsel oder wenn das
   Ziel verschwindet (benötigt ebenfalls vnavmesh).
@@ -68,7 +69,8 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 ### Kampf
 
-- Kampfstatus auf Tastendruck: eigene HP und MP.
+- Kampfstatus auf Tastendruck: eigene HP und MP in Prozent — genau das, was
+  ein sehender Spieler am Balken abliest.
 - Ziel-HP in Stufen, kurzer Ton beim Anvisieren eines Gegners.
 - **Zauber-Warnung**: wirkt ein Gegner einen Zauber **auf dich**, wird er
   angesagt — von jedem Gegner in der Nähe, nicht nur vom anvisierten. Ist

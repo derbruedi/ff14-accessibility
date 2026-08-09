@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Inventory;
@@ -21,6 +22,8 @@ public sealed class InventoryService
 {
     private readonly IGameInventory _inventory;
     private readonly IDataManager _data;
+    private readonly IClientState _clientState;
+    private readonly Configuration _config;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
 
@@ -31,10 +34,13 @@ public sealed class InventoryService
         GameInventoryType.Inventory3, GameInventoryType.Inventory4,
     };
 
-    public InventoryService(IGameInventory inventory, IDataManager data, TolkService tolk, IPluginLog log)
+    public InventoryService(IGameInventory inventory, IDataManager data, IClientState clientState,
+                            Configuration config, TolkService tolk, IPluginLog log)
     {
         _inventory = inventory;
         _data = data;
+        _clientState = clientState;
+        _config = config;
         _tolk = tolk;
         _log = log;
     }
@@ -166,6 +172,139 @@ public sealed class InventoryService
         _log.Info($"[Inventory] Belegbare Gegenstaende: {result.Count} " +
                   $"({string.Join(", ", result.Take(5).Select(i => $"{i.Name}{(i.IsHq ? " HQ" : string.Empty)} x{i.Quantity} id={i.ItemId}"))})");
         return result;
+    }
+
+    /// <summary>
+    /// One key item that does something when used - the quest items a fight can
+    /// hinge on. <paramref name="CastTime"/> is the sheet's own cast time in
+    /// seconds; it is announced because standing still for three seconds in a
+    /// fight is a decision, and a sighted player reads it off the tooltip.
+    /// </summary>
+    public readonly record struct QuestItem(uint ItemId, string Name, int Quantity, byte CastTime);
+
+    /// <summary>
+    /// The carried key items that can go on a hotbar. The filter is the game's
+    /// own mark: EventItem.Action != 0 means "using this triggers an action" -
+    /// exactly the counterpart of Item.ItemAction used for bag items. Offline
+    /// sheet dump 2026-08-09: of 3534 named EventItem rows, 1708 carry an
+    /// Action (1570 of them Action#1 "Schluesselgegenstand", the rest throwables
+    /// and potions); the 1826 without one are pure proof-of-errand pieces like
+    /// "Diebesgut" that the game itself offers no way to use.
+    /// Rebuilt per call - quest items appear and vanish with quest progress.
+    /// </summary>
+    public List<QuestItem> CollectQuestItems()
+    {
+        var merged = new Dictionary<uint, QuestItem>();
+        foreach (var item in _inventory.GetInventoryItems(GameInventoryType.KeyItems))
+        {
+            if (item.IsEmpty || item.ItemId == 0) continue;
+            if (!_data.GetExcelSheet<LuminaEventItem>().TryGetRow(item.ItemId, out var row)) continue;
+            if (row.Action.RowId == 0) continue;   // nothing happens when used
+
+            var name = row.Name.ExtractText();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            if (merged.TryGetValue(item.ItemId, out var seen))
+                merged[item.ItemId] = seen with { Quantity = seen.Quantity + item.Quantity };
+            else
+                merged[item.ItemId] = new QuestItem(item.ItemId, name, item.Quantity, row.CastTime);
+        }
+
+        var result = merged.Values.OrderBy(i => i.Name).ToList();
+        _log.Info($"[Inventory] Belegbare Quest-Gegenstaende: {result.Count} " +
+                  $"({string.Join(", ", result.Select(i => $"{i.Name} x{i.Quantity} id={i.ItemId} cast={i.CastTime}s"))})");
+        return result;
+    }
+
+    // ── Neue Quest-Gegenstaende melden ───────────────────────────────
+    // A quest hands the player an item that a fight depends on, and nothing
+    // tells a blind player that it is usable. The loot channel already says
+    // "Du hast X erhalten"; this announcement carries the part the chat does
+    // not: that the thing DOES something and how to reach it.
+    //
+    // Baseline instead of a timer: Dalamud's IGameInventory events cannot be
+    // trusted right after login - its comparison cache starts out empty
+    // (Dalamud.Game.Inventory.GameInventory, decompiled 2026-08-09: the
+    // per-container array is allocated on first sight, so every carried item
+    // shows up as "Added"). So the FIRST observation after login only records
+    // what is there and stays silent; only later arrivals are announced.
+    private HashSet<uint>? _questItemBaseline;
+    private long _lastQuestItemCheck;
+
+    /// <summary>
+    /// Watches the key-item container for newly arrived USABLE quest items and
+    /// announces them once. Called every frame, does its work once a second -
+    /// the container is tiny, and a quest item is not a millisecond matter.
+    /// </summary>
+    public void Update()
+    {
+        if (!_clientState.IsLoggedIn)
+        {
+            // Logged out: drop the baseline so the next login starts silent
+            // again instead of announcing the whole key-item bag.
+            _questItemBaseline = null;
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (now - _lastQuestItemCheck < 1000) return;
+        _lastQuestItemCheck = now;
+
+        var current = CollectUsableQuestItemIds();
+
+        if (_questItemBaseline == null)
+        {
+            _questItemBaseline = current;
+            _log.Info($"[QuestItem] Grundlinie gesetzt: {current.Count} benutzbare Quest-Gegenstaende (stumm).");
+            return;
+        }
+
+        var arrived = new List<string>();
+        foreach (var id in current)
+        {
+            if (_questItemBaseline.Contains(id)) continue;
+            if (IsUsableQuestItem(id, out var name, out var castTime))
+            {
+                arrived.Add(name);
+                _log.Info($"[QuestItem] Neu: '{name}' id={id} cast={castTime}s");
+            }
+        }
+
+        _questItemBaseline = current;
+
+        if (arrived.Count == 0 || !_config.AnnounceQuestItems) return;
+        _tolk.Speak(AccessibilityStrings.QuestItemReceived(string.Join(", ", arrived)));
+    }
+
+    /// <summary>The ids of all carried usable key items. Silent counterpart of
+    /// <see cref="CollectQuestItems"/> - that one logs, and this runs every
+    /// second.</summary>
+    private HashSet<uint> CollectUsableQuestItemIds()
+    {
+        var ids = new HashSet<uint>();
+        foreach (var item in _inventory.GetInventoryItems(GameInventoryType.KeyItems))
+        {
+            if (item.IsEmpty || item.ItemId == 0) continue;
+            if (!_data.GetExcelSheet<LuminaEventItem>().TryGetRow(item.ItemId, out var row)) continue;
+            if (row.Action.RowId == 0) continue;
+            ids.Add(item.ItemId);
+        }
+        return ids;
+    }
+
+    /// <summary>True when the id is a usable key item (EventItem row with an
+    /// Action). Used by the arrival announcement to tell a quest item that can
+    /// be put on a bar apart from a mere proof-of-errand piece.</summary>
+    public bool IsUsableQuestItem(uint itemId, out string name, out byte castTime)
+    {
+        name = string.Empty;
+        castTime = 0;
+        if (!_data.GetExcelSheet<LuminaEventItem>().TryGetRow(itemId, out var row)) return false;
+        if (row.Action.RowId == 0) return false;
+
+        name = row.Name.ExtractText();
+        castTime = row.CastTime;
+        return !string.IsNullOrWhiteSpace(name);
     }
 
     /// <summary>Non-empty key items, resolved via the EventItem sheet.</summary>

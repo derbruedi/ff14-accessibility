@@ -240,6 +240,12 @@ public sealed class Configuration : IPluginConfiguration
     // deckt Gegner-Drops und alles ins Inventar Wandernde ab. Siehe
     // ChatReaderService.ShouldRead.
     public bool AnnounceLoot = true;
+    // Neu erhaltene BENUTZBARE Quest-Gegenstaende melden (Schluesselgegenstaende
+    // mit EventItem.Action != 0, z. B. die "Gleissende Lampe" aus Quest 66333).
+    // NICHT dasselbe wie AnnounceLoot: der Beute-Kanal sagt nur, DASS etwas
+    // ankam - diese Meldung sagt, dass man es benutzen kann und wie man es auf
+    // die Leiste bekommt. Siehe InventoryService.Update.
+    public bool AnnounceQuestItems = true;
     // Ziel-Ton bei anvisiertem Gegner ENTFERNT (2026-07-18, User): das Spiel
     // spielt selbst einen Ton - ein zweiter obendrauf war nur Lärm.
 

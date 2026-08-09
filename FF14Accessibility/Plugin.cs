@@ -49,6 +49,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly BestiaryService    _bestiary;
     private readonly RouteService       _routes;
     private readonly ShopNpcService     _shops;
+    private readonly ObjectNameService  _objectNames;
+    private readonly ObjectMemoryService _objectMemory;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
     private readonly UIReaderService    _uiReader;
@@ -68,8 +70,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.74";
-    private const string PluginVersionTag = "Leisten-Belegen repariert (war job-abhaengig wirkungslos), Gegenstaende auf die Leiste, Quest-Art, ruhiges Anmelden";
+    private const string PluginVersion    = "5.75";
+    private const string PluginVersionTag = "Quest-Gegenstaende auf die Leiste, unbenannte und gleichnamige Objekte, geleerte Truhen raus, Systemmeldung nur einmal, Handwerker-Notizbuch";
 
     public Plugin()
     {
@@ -199,7 +201,7 @@ public sealed class Plugin : IDalamudPlugin
         _gearInfo     = new GearInfoService(DataManager, Log);
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
-        _inventoryReader = new InventoryService(GameInventory, DataManager, _tolk, Log);
+        _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
@@ -210,8 +212,14 @@ public sealed class Plugin : IDalamudPlugin
         _bestiary     = new BestiaryService(DataManager, Log);
         _routes       = new RouteService(PluginInterface, Log);
         _shops        = new ShopNpcService(DataManager, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _config, DataManager, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
+        // Shared by browser, target announcement, auto-walk and follow so all
+        // four call the same object by the same name (user report 2026-08-08).
+        _objectNames  = new ObjectNameService(DataManager);
+        // Tells apart several objects sharing one name and remembers where the
+        // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
+        _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _objectNames, Log);
         _history    = new MessageHistoryService(_tolk);
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
@@ -334,7 +342,26 @@ public sealed class Plugin : IDalamudPlugin
             case "hotbarprobe":
                 _hotbar.ProbeItemAssignment();
                 break;
+            // Versuch Astalicia: zur vermessenen Uebergangsstelle laufen und
+            // die Luecke ohne Wegsuche ueberqueren (Path.MoveTo).
+            case "planke":
+            case "plank":
+                _autoWalk.CrossPlank();
+                break;
+            // Stellt den Kollisionsboden des Spiels dem Wegenetz gegenueber:
+            // zeigt, ob an einer Stelle Boden FEHLT oder nur vom Netzbau
+            // verworfen wird. Entscheidet, ob eine Zonen-Anpassung helfen kann.
+            case "boden":
+            case "ground":
+                _autoWalk.ProbeGround();
+                break;
 #endif
+            // Prueft, ob zum anvisierten Ziel ueberhaupt ein Weg fuehrt, und
+            // nennt sonst den naechsten Punkt, an den man herankommt.
+            case "zugang":
+            case "approach":
+                _autoWalk.AnnounceApproachToTarget();
+                break;
             case "cooldowns":
             case "cd":
                 ToggleSkillReady();
@@ -596,8 +623,8 @@ public sealed class Plugin : IDalamudPlugin
         // Bare presses only (IsJustPressed already requires no modifiers here).
         if (IsJustPressed("Numpad8"))          _hotbar.SkillMenuBrowse(-1);
         else if (IsJustPressed("Numpad2"))     _hotbar.SkillMenuBrowse(+1);
-        else if (IsJustPressed("Numpad4"))     _hotbar.SkillMenuSwitchSource();
-        else if (IsJustPressed("Numpad6"))     _hotbar.SkillMenuSwitchSource();
+        else if (IsJustPressed("Numpad4"))     _hotbar.SkillMenuSwitchSource(-1);
+        else if (IsJustPressed("Numpad6"))     _hotbar.SkillMenuSwitchSource(+1);
         else if (IsJustPressed("Numpad0"))     _hotbar.SkillMenuConfirm();
         else if (IsJustPressed("NumpadKomma")) _hotbar.SkillMenuBack();
 
@@ -947,7 +974,7 @@ public sealed class Plugin : IDalamudPlugin
             {
                 _navigation.ToggleWalkGuide(); // second press: off
             }
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop))
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _))
             {
                 // Marker destinations (quest objectives, map waypoints) work in
                 // the walk guide too since V4.63 - manual walking was
@@ -967,9 +994,9 @@ public sealed class Plugin : IDalamudPlugin
                 // the nearest live one, or tell the user where it lives.
                 TrackBestiaryMonster(bestiaryMonster);
             }
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop))
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out var guessedY))
             {
-                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop); break;
+                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop, guessedY); break;
                 case MarkerResolve.None:     _autoWalk.Toggle();                          break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
@@ -986,7 +1013,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             // Speak the route (compass segments) without walking - to the
             // selected marker destination, or to the current game target.
-            switch (TryResolveMarkerDestination(out var pos, out var name, out _))
+            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _))
             {
                 case MarkerResolve.Resolved: _navigation.PreviewRoute(pos, name); break;
                 case MarkerResolve.None:     _navigation.PreviewRouteToTarget();  break;
@@ -1054,9 +1081,17 @@ public sealed class Plugin : IDalamudPlugin
         // sector changes only). Toggled by KeyToggleHeading.
         _heading.Update();
         _equipment.Update();
+        // Announces newly arrived USABLE quest items (key items that trigger an
+        // action) - the loot channel only says they arrived, not that they do
+        // something. Throttles itself to once a second.
+        _inventoryReader.Update();
         // Always runs: drives the walk guide too, which must not die when
         // target-change announcements are switched off. During an auto-walk
         // target announcements are muted (soft-target churn while passing NPCs).
+        // Before the navigation update: it records what the player is standing
+        // next to RIGHT NOW, and the target announcement that follows should be
+        // able to say "schon besucht" for the very object just walked up to.
+        _objectMemory.Update();
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
@@ -1161,11 +1196,19 @@ public sealed class Plugin : IDalamudPlugin
     /// (fresh zone check at press time - the flag from selection time is stale
     /// after teleports); 2D map markers get their height from the navmesh.
     /// </summary>
-    private MarkerResolve TryResolveMarkerDestination(out Vector3 position, out string name, out float stopRange)
+    private MarkerResolve TryResolveMarkerDestination(out Vector3 position, out string name, out float stopRange,
+                                                      out bool heightIsGuess)
     {
         position = default;
         name = string.Empty;
         stopRange = _config.AutoWalkPlaceStopRange;
+        // Map data is 2D. Everything resolved from it has a GUESSED height, and
+        // the guess uses the player's own - which picks the wrong storey when
+        // they stand far away and lower (measured 2026-08-07: aetheryte
+        // Herbstkürbis-See, mesh at Y -49 and Y -39 above the same spot, the
+        // guess took -49 and only -39 was reachable). The auto-walk needs to
+        // know this to tell a wrong storey from a genuinely unreachable target.
+        heightIsGuess = false;
 
         var quest = _navigation.SelectedQuestDestination;
         var place = _navigation.SelectedPlaceDestination;
@@ -1193,6 +1236,7 @@ public sealed class Plugin : IDalamudPlugin
                 name = hop.Name;
                 // Transition: stop almost on the marker so the zone line triggers.
                 stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
                 return MarkerResolve.Resolved;
             }
 
@@ -1201,6 +1245,7 @@ public sealed class Plugin : IDalamudPlugin
             // the raw position if no floor is found.
             position = _autoWalk.ResolveFloorPoint(quest.Position) ?? quest.Position;
             name = quest.QuestName;
+            heightIsGuess = true;
             stopRange = quest.Radius > 0f
                 ? MathF.Max(_config.AutoWalkPlaceStopRange, quest.Radius)
                 : _config.AutoWalkPlaceStopRange;
@@ -1227,6 +1272,7 @@ public sealed class Plugin : IDalamudPlugin
             }
             position = floor.Value;
             name = place.Name;
+            heightIsGuess = true;
             // Transitions get an extra-tight range so the player walks right
             // into the zone line; other places stop on the spot.
             stopRange = place.IsZoneTransition
@@ -1250,7 +1296,12 @@ public sealed class Plugin : IDalamudPlugin
             var live = ObjectTable.FirstOrDefault(o => o.GameObjectId == obj.ObjectId);
             var raw  = live?.Position ?? obj.Position;
             position = _autoWalk.ResolveFloorPoint(raw) ?? raw;
-            name = string.IsNullOrWhiteSpace(obj.Name) ? AccessibilityStrings.Unnamed : obj.Name;
+            // The browser already stored a RESOLVED name (gathering node type,
+            // sheet name, or the honest "Objekt ohne Namen"), so this only has
+            // to guard against a pick made before that resolution existed.
+            name = ObjectNameService.IsSpeakable(obj.Name)
+                ? obj.Name
+                : AccessibilityStrings.UnnamedOfKind(live?.ObjectKind ?? ObjectKind.EventObj);
             // Interaction range, same as the auto-walk to a game target: the
             // player has to end up close enough to actually use the object.
             stopRange = AutoWalkService.StopRange;

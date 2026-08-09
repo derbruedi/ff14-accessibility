@@ -10,6 +10,9 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LuminaENpcResident = Lumina.Excel.Sheets.ENpcResident;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+// Aliased, not imported wholesale: that namespace carries its own ObjectKind,
+// which would collide with the Dalamud one used throughout this file.
+using Treasure = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure;
 
 namespace FF14Accessibility.Services;
 
@@ -62,6 +65,8 @@ public sealed class NavigationService
     private readonly FateService _fates;
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
+    private readonly ObjectNameService _objectNames;
+    private readonly ObjectMemoryService _memory;
     private readonly Configuration _config;
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
@@ -83,6 +88,8 @@ public sealed class NavigationService
         FateService fates,
         RouteService routes,
         ShopNpcService shops,
+        ObjectNameService objectNames,
+        ObjectMemoryService memory,
         Configuration config,
         IDataManager data,
         IPluginLog log)
@@ -99,6 +106,8 @@ public sealed class NavigationService
         _fates = fates;
         _routes = routes;
         _shops = shops;
+        _objectNames = objectNames;
+        _memory = memory;
         _config = config;
         _data = data;
         _log = log;
@@ -182,10 +191,8 @@ public sealed class NavigationService
             // not information. The spoken announcement below stays.
             if (target != null && announceTargetChanges && !isOwnSelection)
             {
-                var name = target.Name.TextValue;
-                if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.Unnamed;
                 var distance = Vector3.Distance(player.Position, target.Position);
-                var text = $"{AccessibilityStrings.TargetPrefix}{NpcPrefix(target)}{name}, {DescribeKind(target.ObjectKind)}, " +
+                var text = $"{AccessibilityStrings.TargetPrefix}{DescribeObject(target)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
                            $"{DescribeTargetHp(target)}.";
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
@@ -429,7 +436,17 @@ public sealed class NavigationService
         // Remember the pick independently of the game target. Objects the game
         // will not target (quest props) are still listed and announced here, and
         // walking to them must not depend on a target that does not stick.
-        SelectedObjectDestination = new ObjectDestination(obj.GameObjectId, obj.Name.TextValue, obj.Position);
+        //
+        // The RESOLVED name is stored, not the raw one: the auto-walk announces
+        // this string later, and for a gathering node the raw name is empty -
+        // which is why Numpad 3 used to say "Laufe zu Unbenannt" right after the
+        // browser had correctly said "Erzader, Stufe 20" (user 2026-08-08).
+        SelectedObjectDestination = new ObjectDestination(
+            obj.GameObjectId,
+            obj.ObjectKind == ObjectKind.GatheringPoint
+                ? DescribeGatheringPoint(obj)
+                : _objectNames.Describe(obj),
+            obj.Position);
 
         // Audit probe: the game may REFUSE the change (SetHardTarget returns
         // bool, Dalamud discards it; rejections seen in log 2026-07-10 16:39
@@ -449,11 +466,20 @@ public sealed class NavigationService
         // In the merchant category the SHOP KIND replaces the generic "NPC":
         // the player already knows they are cycling NPCs, what they need is
         // whether this one sells for gil or trades for tokens.
-        var description = obj.ObjectKind == ObjectKind.GatheringPoint
-            ? DescribeGatheringPoint(obj)
-            : IsMerchantCategory
-                ? $"{NpcPrefix(obj)}{obj.Name.TextValue}, {AccessibilityStrings.ShopKindWord(_shops.KindOf(obj.BaseId))}"
-                : $"{NpcPrefix(obj)}{obj.Name.TextValue}, {DescribeKind(obj.ObjectKind)}";
+        string description;
+        if (IsMerchantCategory)
+        {
+            // Same shape as DescribeObject: ordinal on the name, visited mark
+            // last - a market row holds several NPCs with one name too.
+            var label = $"{NpcPrefix(obj)}{_objectNames.Describe(obj)}";
+            description = label + _memory.NumberSuffix(obj, label)
+                        + $", {AccessibilityStrings.ShopKindWord(_shops.KindOf(obj.BaseId))}"
+                        + _memory.VisitedSuffix(obj);
+        }
+        else
+        {
+            description = DescribeObject(obj);
+        }
 
         // Position goes LAST: the name is what the user is listening for, the
         // counter only tells them how far they have cycled (user wish
@@ -760,10 +786,14 @@ public sealed class NavigationService
         // Direction uses X/Z only - the placeholder Y does not affect it.
         // NOTE: place.TypeLabel is still German here - it is coupled to PlacesService
         // comparison logic (IsAetherytePlace) and gets translated with that group.
+        // Standing at it? Then take it as the game target too, so it can be used.
+        var targeted = TryTargetMarkerObject(place);
+
         var text = $"{place.Name}, {place.TypeLabel}, " +
                    $"{FormatDistance(Distance2D(player.Position, place.Position))}, " +
                    $"{CalculateDirection(player, place.Position)}, " +
-                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
+                   (targeted ? " " + AccessibilityStrings.MarkerTargeted : string.Empty);
         _log.Info($"[Orte] Auswahl: {text} pos=({place.Position.X:F1}|{place.Position.Z:F1})");
         _tolk.SpeakInterrupt(text);
     }
@@ -865,6 +895,48 @@ public sealed class NavigationService
     private static bool IsAetherytePlace(PlaceDestination p) =>
         p.TypeLabel is "Ätheryt" or "Aethernet";
 
+    /// <summary>How far the real object may sit from its map marker and still
+    /// count as the same thing. Map marker coordinates come from map PIXELS, so
+    /// they are a few metres coarse; 15 m absorbs that without reaching the next
+    /// aethernet shard, which never stands that close to its aetheryte.</summary>
+    private const float MarkerObjectMatchRange = 15f;
+
+    /// <summary>
+    /// Targets the actual game object behind a map marker, when the game has it
+    /// loaded. The marker categories browse map DATA - there is no object in
+    /// them - so standing at an aetheryte left the player unable to use it
+    /// (user report 2026-08-07: "konnte auch hinlaufen aber er wird nicht
+    /// markiert so das ich in nutzen kann"). Interacting needs a target, and the
+    /// object is in the table once we are close enough for it to be streamed in.
+    ///
+    /// Silent when nothing is found: browsing a list of aetherytes across the
+    /// whole zone would otherwise comment on every distant one. Returns true
+    /// only when the game accepted the target - it can refuse (see CycleObject).
+    /// </summary>
+    private bool TryTargetMarkerObject(PlaceDestination place)
+    {
+        if (!IsAetherytePlace(place)) return false;
+
+        var match = _objectTable
+            .Where(o => o.ObjectKind == ObjectKind.Aetheryte)
+            .Select(o => (Obj: o, Gap: Distance2D(o.Position, place.Position)))
+            .Where(x => x.Gap <= MarkerObjectMatchRange)
+            .OrderBy(x => x.Gap)
+            .FirstOrDefault();
+        if (match.Obj == null) return false;
+
+        // Flags the change as ours: without this the target watcher would treat
+        // it as the player targeting something else and drop the very marker
+        // selection we are standing on.
+        _ownSelectionId = match.Obj.GameObjectId;
+        _targetManager.Target = match.Obj;
+
+        var accepted = (_targetManager.Target?.GameObjectId ?? 0) == match.Obj.GameObjectId;
+        _log.Info($"[Orte] Objekt zum Marker '{place.Name}': id={match.Obj.GameObjectId:X}, " +
+                  $"{match.Gap:F1} m vom Marker, anvisiert={accepted}");
+        return accepted;
+    }
+
     /// <summary>
     /// Whether a category is worth offering right now. Only the gathering
     /// category is conditional: as a fighting class it is dead weight in the
@@ -947,22 +1019,109 @@ public sealed class NavigationService
         var player = _objectTable.LocalPlayer;
         if (player == null) return new List<IGameObject>();
 
-        var isGathering = kinds.Contains(ObjectKind.GatheringPoint);
-        return _objectTable
-            // The name filter checks the SANITIZED name, not the raw one: some
-            // world objects (e.g. housing-district EventObj 4000BA0E/BA0F) carry
-            // a name made only of icon glyphs / SeString payload bytes. The raw
-            // string is non-empty (IsNullOrWhiteSpace = false), so it slips past
-            // a raw check, but Sanitize (the same pass the announcement uses)
-            // reduces it to nothing -> the browser would announce "<blank>,
-            // Objekt, 20 Meter". Gathering nodes keep their own fallback name.
+        var inRange = _objectTable
             .Where(o => o.GameObjectId != player.GameObjectId
-                        && (isGathering || !string.IsNullOrWhiteSpace(TolkService.Sanitize(o.Name.TextValue)))
                         && kinds.Contains(o.ObjectKind)
                         && Vector3.Distance(player.Position, o.Position) <= CycleRange)
             .OrderBy(o => Vector3.Distance(player.Position, o.Position))
             .ToList();
+
+        var listed = inRange.Where(IsWorthBrowsing).ToList();
+
+        // One line per key press, and only when something was actually dropped:
+        // it shows in the log how much the nameless-extras filter takes off the
+        // list - and would show at once if it ever took too much.
+        if (listed.Count != inRange.Count)
+            _log.Info($"[Nav] Browser: {listed.Count} von {inRange.Count} Objekten " +
+                      $"({inRange.Count - listed.Count} namenlos und nicht anvisierbar ausgeblendet).");
+
+        return listed;
     }
+
+    /// <summary>
+    /// Whether an object belongs in the browser list at all.
+    ///
+    /// The rule is about NAMES, and it has to be asked per OBJECT. It used to be
+    /// asked per CATEGORY: gathering nodes have no name of their own, so the
+    /// check was skipped whenever the category contained them - and the "Alles"
+    /// category contains them, which switched the filter off for everything in
+    /// it. That is why the log showed bare announcements like ", Objekt, 24
+    /// Meter, 7 von 68" (user report + log 2026-08-08 00:40): dozens of scenery
+    /// extras were padding the list with entries the player cannot identify.
+    ///
+    /// What stays:
+    ///  - gathering nodes always (their type and level ARE the description, see
+    ///    DescribeGatheringPoint),
+    ///  - anything with a speakable name, the object's own or the sheets' one,
+    ///  - nameless things the game lets you TARGET: the game marks those as
+    ///    interactive, so hiding them could hide something usable. They are
+    ///    announced as "Objekt ohne Namen" rather than as a blank.
+    ///
+    /// What goes: nameless AND untargetable - background extras, scenery, and
+    /// invisible trigger spots. In the measured sample (log 2026-08-06, 38
+    /// objects nearby) all 25 nameless ones were untargetable, and none of them
+    /// had a name in the game's sheets either. A sighted player has no name for
+    /// them and cannot interact with them; announcing them is noise, not parity.
+    ///
+    /// QUEST STATE IS DELIBERATELY NOT A CRITERION (tried and reverted the same
+    /// day, 2026-08-08). Hiding props of unaccepted quests emptied whole
+    /// categories - "0 von 4 (ausgeblendet: 4 fremde Quest)" where the player
+    /// had been using one of them minutes earlier. The user named the reason:
+    /// an object does not only exist for its quest, you can act on it
+    /// independently. EObj.Data records that an object ALSO appears in a quest,
+    /// nothing more. Showing one object too many costs a key press; hiding one
+    /// costs the player their objective.
+    /// </summary>
+    private bool IsWorthBrowsing(IGameObject o)
+        => !IsEmptiedTreasure(o)
+           && (o.ObjectKind == ObjectKind.GatheringPoint
+               || _objectNames.Resolve(o) != null
+               || o.IsTargetable);
+
+    /// <summary>
+    /// True once a treasure chest has been dealt with, so the browser can drop
+    /// it (user wish 2026-08-09: "objekte die man aufhebt in dungeons sollten
+    /// aus der liste verschwinden"). Measured case in the log of 2026-08-09
+    /// 00:19:35 - "Schatztruhe 2, Schatz, schon besucht, 2 Meter, 1 von 26",
+    /// still occupying a list slot after the player had been there.
+    ///
+    /// THE GAME KEEPS THIS STATE ITSELF, so nothing is reconstructed here:
+    /// <c>Treasure.State</c> (FFXIVClientStructs, field offset 416) runs
+    /// Unopened -> Opening -> Opened -> Unk3 -> FadingOut -> FadedOut. Anything
+    /// past Unopened means the chest is done with; the object lingers in the
+    /// table for a while afterwards purely to play its fade-out.
+    ///
+    /// State rather than the parallel <c>Flags.Opened</c>: the struct's own
+    /// remarks call the two overlapping, and Flags is documented as being set
+    /// inconsistently ("sometimes when fading starts, sometimes when fading is
+    /// complete"), while the state sequence is ordered and covers Opening as
+    /// well - by then the outcome is already decided.
+    ///
+    /// ONLY the browser list is filtered. Targeting the chest with the game's
+    /// own keys still announces it: the game lets you target it, so staying
+    /// silent there would hide something the player deliberately selected.
+    /// </summary>
+    private unsafe bool IsEmptiedTreasure(IGameObject o)
+    {
+        if (o.ObjectKind != ObjectKind.Treasure || o.Address == nint.Zero) return false;
+
+        var treasure = (Treasure*)o.Address;
+        if (treasure->State == Treasure.TreasureState.Unopened) return false;
+
+        // One line per chest that drops out, not one per key press: the state is
+        // read on every browse and would otherwise flood the log.
+        if (_reportedEmptyTreasures.Add(o.GameObjectId))
+            _log.Info($"[Nav] Schatztruhe {o.GameObjectId:X} ist '{treasure->State}' - " +
+                      "faellt aus der Browser-Liste.");
+        return true;
+    }
+
+    // Chests already reported as emptied, so the log line above stays a one-off.
+    // Never cleared - this service has no zone-change hook, and adding one for a
+    // log-deduplication set would be the wrong trade. It holds one 8-byte id per
+    // chest the player empties in a session; the browse behaviour does not read
+    // it at all.
+    private readonly HashSet<ulong> _reportedEmptyTreasures = new();
 
     /// <summary>
     /// Debug probe: logs EVERY nearby ObjectTable entry within 60 m - including
@@ -1142,9 +1301,51 @@ public sealed class NavigationService
         var name = obj.Name.TextValue;
 
         if (info == null)
-            return string.IsNullOrWhiteSpace(name) ? AccessibilityStrings.GatheringNodeFallback : name;
+            return ObjectNameService.IsSpeakable(name) ? name : AccessibilityStrings.GatheringNodeFallback;
 
         return AccessibilityStrings.GatheringNodeDesc(info.Value.Type, info.Value.Level);
+    }
+
+    /// <summary>
+    /// "&lt;role&gt;, &lt;name&gt;, &lt;kind&gt;" for an object - the identifying part of
+    /// every announcement, without distance or direction.
+    ///
+    /// ONE method for browser and target-change announcement on purpose: the two
+    /// used to build this text separately and disagreed about the same object -
+    /// the browser said "Erzader, Stufe 20" where the target announcement said
+    /// "Unbenannt" (user report 2026-08-08).
+    ///
+    /// Two cases drop the kind word instead of appending it:
+    ///  - gathering nodes, where the type IS the description and ", Sammelpunkt"
+    ///    would only repeat it,
+    ///  - nameless objects, where the stand-in already names the kind and the
+    ///    result would read "Objekt ohne Namen, Objekt".
+    /// </summary>
+    /// <remarks>
+    /// The ordinal goes on the NAME ("Truhe 2, Schatz"), the visited mark at the
+    /// very end ("..., Schatz, schon besucht"). Both are asked for the label the
+    /// player actually hears, so numbering separates exactly what sounds alike -
+    /// two props called "Zielort für Narben im Wald" are one group, while the
+    /// same "Zielort" serving another quest is not.
+    /// </remarks>
+    private string DescribeObject(IGameObject obj)
+    {
+        if (obj.ObjectKind == ObjectKind.GatheringPoint)
+        {
+            var node = DescribeGatheringPoint(obj);
+            return node + _memory.NumberSuffix(obj, node) + _memory.VisitedSuffix(obj);
+        }
+
+        var name = _objectNames.Resolve(obj);
+        var label = name == null
+            ? $"{NpcPrefix(obj)}{AccessibilityStrings.UnnamedOfKind(obj.ObjectKind)}"
+            : $"{NpcPrefix(obj)}{name}{_objectNames.Qualifier(obj)}";
+
+        // The kind word stays omitted for nameless objects - the stand-in names
+        // the kind already, and "Objekt ohne Namen 2, Objekt" reads twice.
+        var kindWord = name == null ? string.Empty : $", {DescribeKind(obj.ObjectKind)}";
+
+        return label + _memory.NumberSuffix(obj, label) + kindWord + _memory.VisitedSuffix(obj);
     }
 
     private List<IGameObject> GetCategoryObjects()
@@ -1367,7 +1568,12 @@ public sealed class NavigationService
     {
         if (_routeTask != null) return; // one pending query at a time
 
-        var task = _routes.RequestPath(from, _walkDestPosition);
+        // Tolerance = the range the guide itself calls "arrived". Guide targets
+        // are map markers and object positions, which routinely sit a little off
+        // the walkable surface; without this the query insists on the exact
+        // point and returns nothing, and the guide drops to straight-line mode
+        // for a destination it could perfectly well have routed to.
+        var task = _routes.RequestPath(from, _walkDestPosition, _walkArrivalRange);
         if (task == null)
         {
             if (!isReroute)
@@ -1637,7 +1843,10 @@ public sealed class NavigationService
         var player = _objectTable.LocalPlayer;
         if (player == null) return;
 
-        var task = _routes.RequestPath(player.Position, position);
+        // Same tolerance as the walk guide, for the same reason: the preview
+        // should describe the way there even when the marker itself is a metre
+        // off the mesh. It only ever speaks a route - nothing walks on this.
+        var task = _routes.RequestPath(player.Position, position, ArrivalDistance);
         if (task == null)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.NoNavmeshPlugin);
@@ -1683,7 +1892,7 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(_routes.DescribeRoute(_previewName, waypoints));
     }
 
-    /// <summary>", HP X von Y" for targets that have hit points, else empty.</summary>
+    /// <summary>", HP X Prozent" for targets that have hit points, else empty.</summary>
     private static string DescribeTargetHp(IGameObject target)
     {
         if (target is IBattleChara bc && bc.MaxHp > 0)

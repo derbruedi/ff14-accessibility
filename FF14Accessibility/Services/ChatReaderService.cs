@@ -109,6 +109,16 @@ public sealed class ChatReaderService : IDisposable
             _tolk.SpeakInterrupt(fullText);
         else
             _tolk.Speak(fullText);
+
+        // What went into the dedup history is the PREFIXED line ("System: ..."),
+        // but a toast arriving right afterwards carries the bare sentence and
+        // asks for exactly that. Without this the same system message was read
+        // twice - once from the chat log, once as a toast a millisecond later
+        // (user report + log 2026-08-08 23:43:53.396/.397). File the bare
+        // wording too, and only when a prefix was actually added: with none,
+        // Speak already stored this very string.
+        if (!string.Equals(fullText, messageText, StringComparison.Ordinal))
+            _tolk.RememberSpokenVariant(messageText);
     }
 
     private bool ShouldRead(XivChatType type) => type switch

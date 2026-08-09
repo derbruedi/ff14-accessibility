@@ -420,7 +420,12 @@ public sealed class CombatService
         {
             _castsAtMeAlive.Clear();
             foreach (var obj in _objectTable)
-                if (obj is IBattleChara bc && bc.IsCasting) _castsAtMeAlive.Add(bc.GameObjectId);
+                // Same kind filter as the loop above, and for the same reason:
+                // IsCasting dereferences GetCastInfo() unchecked. This pass only
+                // runs while _castsAtMe holds something, which is why it had not
+                // thrown yet - the exposure is identical.
+                if (obj is IBattleChara bc && bc.ObjectKind == ObjectKind.BattleNpc && bc.IsCasting)
+                    _castsAtMeAlive.Add(bc.GameObjectId);
             foreach (var id in _castsAtMe.Keys)
                 if (!_castsAtMeAlive.Contains(id)) _castsAtMeStale.Add(id);
             foreach (var id in _castsAtMeStale) _castsAtMe.Remove(id);
@@ -570,6 +575,17 @@ public sealed class CombatService
         foreach (var obj in _objectTable)
         {
             if (obj is not IBattleChara bc) continue;
+            // Kind filter BEFORE any cast property. Dalamud implements them as
+            // Struct->GetCastInfo()->IsCasting (decompiled 2026-08-08) with no
+            // null check, so an IBattleChara whose GetCastInfo() returns null
+            // throws right here - and the throw escapes into OnFrameworkUpdate,
+            // killing every service that runs after this one for that frame.
+            // That happened continuously in the dungeon run of 2026-08-08 23:43.
+            // The production loop above never hit it because it filters on
+            // BattleNpc first; this probe did not. Which kind exactly hands out
+            // the null pointer is NOT established - the filter is copied from
+            // the loop that demonstrably survives, not from a diagnosis.
+            if (bc.ObjectKind != ObjectKind.BattleNpc) continue;
             if (!bc.IsCasting) continue;
             if (bc.GameObjectId == playerId) continue; // never the player's own casts
 

@@ -412,6 +412,59 @@ Zeichen selbst (V4.90). Quelle:
 - QueryPath wirft eine Exception, wenn kein Mesh geladen ist — vor dem
   Invoke `Nav.IsReady` prüfen (RouteService macht das).
 
+### Schatztruhen: Zustand liest man, man rechnet ihn nicht nach
+`FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure` (ilspycmd 2026-08-09,
+erbt von GameObject, Size 528). Das Spiel fuehrt den Zustand selbst:
+- `State` (FieldOffset **416**, enum `TreasureState`):
+  `Unopened=0, Opening=1, Opened=2, Unk3=3, FadingOut=4, FadedOut=5`.
+  Alles ausser `Unopened` heisst: erledigt. Das Objekt bleibt danach noch eine
+  Weile in der ObjectTable, nur um sein Ausblenden zu spielen.
+- `Flags` (FieldOffset **508**, enum `TreasureFlags`): `Opened=1, FadedOut=2`.
+  ACHTUNG, die Struct-Doku nennt State und Flags ueberlappend und sagt zu
+  FadedOut ausdruecklich „sometimes set when fading starts, sometimes when
+  fading is complete" — deshalb ist `State` die verlaesslichere Quelle.
+- `CofferKind` (FieldOffset 512, enum `TreasureKind`): `Levequest`,
+  `DungeonRaid`, `TreasureHunt`, `PersonalLoot`.
+- `ItemCount` (496) + `LootableItemIds` (432, 16 × uint) = Item-Sheet-Zeilen des
+  Inhalts, sobald er im Beutefenster steht.
+- `CountdownTime`/`ClaimTime` (420/428): die Sekunden, die das Beutefenster
+  anzeigt.
+→ V5.75 blendet Truhen mit `State != Unopened` aus der Objekt-Browser-Liste aus
+(NavigationService.IsEmptiedTreasure). NUR die Liste — anvisiert man die Truhe
+mit den Spieltasten, wird sie weiterhin angesagt.
+
+#### Höher gelegene Ziele: was `fly` wirklich tut (ilspycmd 2026-08-08)
+Vollständige IPC-Liste aus `Navmesh.IPCProvider` der installierten DLL
+dekompiliert. Zum Thema „Objekt liegt über mir":
+- **Der `fly`-Parameter wählt ZWEI VERSCHIEDENE SUCHRÄUME**, er ist kein
+  Komfort-Schalter (`NavmeshManager.QueryPath`, Zeile 189):
+  `flying ? Query.PathfindVolume(...) : Query.PathfindMesh(...)`.
+  - `false` (was wir überall übergeben) = **Gehfläche**. Kennt Höhe sehr wohl —
+    Treppen, Rampen, Brücken sind Teil des Netzes. Was sie NICHT kennt, ist
+    eine Verbindung, die es begehbar nicht gibt.
+  - `true` = **Voxel-Volumen** (Luftraum, `NavVolume`/`VoxelPathfind`).
+- **Das Volumen gibt es nicht immer.** `NavmeshQuery` legt `VolumeQuery` nur an,
+  wenn `navmesh.Volume != null` (Zeile 92-94); sonst antwortet `PathfindVolume`
+  mit dem Log-Fehler „Nav volume was not built" und einer leeren Liste.
+  Ob es für Innenräume/Instanzen gebaut wird: NICHT GEPRÜFT.
+- **`fly=true` lässt die Figur SPRINGEN.** `FollowPath` Zeile 153: liegt der
+  nächste Wegpunkt höher als der Spieler und ist er weder `InFlight` (Condition
+  77) noch `Diving` (81), ruft es `ExecuteJump()` — aber nur, wenn
+  `IgnoreDeltaY` false ist. Und `Path.MoveTo(waypoints, fly)` setzt
+  `IgnoreDeltaY = !fly` (IPCProvider Zeile 78-81). Mit unserem `fly=false`
+  springt die Figur also NIE. (Condition-Namen aus Dalamud.dll verifiziert.)
+
+#### Ungenutzte IPC-Gates, die unser „kein Weg gefunden" direkt betreffen
+- `Nav.PathfindWithTolerance(from, to, fly, float range)` → Wegfindung mit
+  Zieltoleranz. Genau der Haukke-Fall (Ziel liegt neben dem Netz).
+- `Query.Mesh.NearestPointReachable(p, halfExtentXZ, halfExtentY)` → nächster
+  **erreichbarer** Netzpunkt (`FindNearestPointOnMesh(..., allowUnreachable:
+  false)`). Unsere selbstgebaute Ringsuche in AutoWalkService macht das zu Fuß
+  nach — hier bietet vnavmesh es fertig an.
+- `Query.Mesh.IsPointOnMesh(p, halfExtentY, allowUnreachable)` → Prüfung, ob ein
+  Punkt überhaupt auf dem Netz liegt.
+- `Nav.PathfindCancelable(from, to, fly, CancellationToken)`.
+
 ### Spieler „folgen" — KEIN natives API (verifiziert per ilspycmd, 2026-07-26)
 Das Kontextmenü „Folgen" existiert im Spiel, ist aber in FFXIVClientStructs
 **nicht** als aufrufbare Funktion freigelegt. Vollständige Assembly dekompiliert
@@ -1176,3 +1229,55 @@ Verifiziert per ilspycmd gegen FFXIVClientStructs.dll (2026-07-26).
 - Offene Frage fuer den Test: Ob der Spielcursor in der Hand gespielte Slots
   ueberspringt oder die Karten kompaktiert — davon haengt ab, ob die feste
   Slot-Nummer (aktuell) oder eine laufende Nummer die richtige Referenz ist.
+
+## Quest-Gegenstaende im Kampf (ilspycmd + Sheet-Dump, 2026-08-09)
+
+Ausloeser: Spielerfrage „Quests, wo man mit Gegenstaenden im Kampf etwas
+ausloesen muss". Es sind ZWEI getrennte Mechaniken — nicht vermischen.
+
+### A) Schluesselgegenstand der Quest (EventItem) — der haeufige Fall
+- Lumina-Sheet `EventItem` (Zeilen ab 2000000). Felder: `Name`/`Singular`/`Plural`,
+  `Quest` (RowRef auf die Quest, die den Gegenstand ausgibt), `Action` (RowRef;
+  bei Quest-Gegenstaenden i. d. R. `Action#1 „Schluesselgegenstand"`), `Icon`,
+  `StackSize`, `Category` (EventItemCategory), `CastTime` (byte, Wirkzeit in s),
+  `CastTimeline`, `Timeline`.
+- Zuordnung Quest → Gegenstand geht in BEIDE Richtungen:
+  - vom Gegenstand aus: `EventItem.Quest.RowId`
+  - von der Quest aus: `Quest.QuestParams[]` mit `ScriptInstruction` = `ITEM0`,
+    `ITEM1`, … und `ScriptArg` = EventItem-RowId. Analog `ENEMY0` (Gegner),
+    `ACTOR0` (NPC), `HOWTO_EITEM` (Anleitungs-Id).
+- BELEGTES BEISPIEL (offline Sheet-Dump gegen sqpack, DE): Quest **66333
+  „Ein Licht fuer die Nacht"** (Stufe 28, JournalGenre 113 „Nebenauftraege
+  Finsterwald", Nordwald):
+  - `ITEM0` = EventItem **2000627 „Bergmannslampe"** (StackSize 1, CastTime 1)
+  - `ITEM1` = EventItem **2000628 „Gleissende Lampe"** (StackSize 2, CastTime 3)
+  - `ENEMY0` = 2266
+- Inventar: Schluesselgegenstaende liegen im Container
+  `GameInventoryType.KeyItems`; die `ItemId` dort indiziert das EventItem-Sheet
+  (nutzt `InventoryService.CollectKeyItems` bereits).
+- Auf die Leiste legbar: `RaptureHotbarModule.HotbarSlotType.**EventItem**`
+  (Id = EventItem-RowId). Es gibt zusaetzlich `HotbarSlotType.KeyItem` — das ist
+  laut Struct-Doku NUR der DragDrop-Sonderfall (Id = Slot-Index im
+  KeyItems-Container, wird beim Setzen in `EventItem` aufgeloest). Fuer eine
+  programmatische Zuweisung ist also `EventItem` + RowId der richtige Weg.
+- Ausfuehren als Aktion: `ActionType.EventItem` (=3); daneben existiert
+  `ActionType.EventAction` (=4).
+
+### B) Sonderaktionen im Auftrag („Duty Actions") — die kleine Extra-Leiste
+- `FFXIVClientStructs.FFXIV.Client.Game.DutyActionManager` (Size 160):
+  - `GetInstanceIfReady()` (statisch) — null, solange es keine gibt
+  - `ActionsPresent` @25 (bool), `NumValidSlots` @24 (byte)
+  - `ActionId[5]` @32 (uint, Action-Sheet), `ActionActive[5]` @26 (bool)
+  - `Recast[5]` @52 (RecastDetail), `MaxCharges[2]` @152, `CurCharges[2]` @154
+  - `GetDutyActionId(ushort slot)` (statisch, Slot 0 oder 1)
+- Ausfuehren: `RaptureHotbarModule.ExecuteDutyActionSlot(uint index)` → bool;
+  dazu `GetDutyActionSlot(index)` → `DutyActionSlot` (erbt `HotbarSlot`,
+  zusaetzlich `PrimaryCostType`@224, `IsActive`@225).
+- WICHTIG fuer Barrierefreiheit: Im Live-Tastenbelegungs-Dump (679 Eintraege,
+  2026-08-09) gibt es KEINE Belegung fuer diese Leiste — das Spiel erwartet dort
+  einen Mausklick. Ohne Mod ist sie per Tastatur nicht erreichbar.
+
+### Was KEINE Quelle hat
+Wann im Kampf der Gegenstand einzusetzen ist, steht in keiner der o. g.
+Strukturen — das ist Kampf-/Questlogik. Vorhandene Kanaele dafuer: Systemmeldung
+(ChatReaderService), Gegner-Zauber (CombatService), ToDo-Liste der Quest.

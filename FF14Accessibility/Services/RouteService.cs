@@ -25,7 +25,13 @@ public sealed class RouteService
 {
     private readonly ICallGateSubscriber<bool> _navIsReady;
     private readonly ICallGateSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>> _navPathfind;
+    private readonly ICallGateSubscriber<Vector3, Vector3, bool, float, Task<List<Vector3>>> _navPathfindTolerance;
     private readonly IPluginLog _log;
+
+    // Set once the tolerance gate has thrown - an older vnavmesh does not
+    // register it, and retrying every single query would spam the log with the
+    // same failure. One warning, then the plain gate for the rest of the session.
+    private bool _toleranceGateMissing;
 
     public RouteService(IDalamudPluginInterface pluginInterface, IPluginLog log)
     {
@@ -34,6 +40,10 @@ public sealed class RouteService
         // vnavmesh is not loaded (IpcNotReadyError).
         _navIsReady  = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
         _navPathfind = pluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>("vnavmesh.Nav.Pathfind");
+        // Same call with a goal radius. vnavmesh wraps the identical
+        // QueryPathBasic, so the return type is the same Task (IPCProvider,
+        // decompiled 2026-08-08).
+        _navPathfindTolerance = pluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, float, Task<List<Vector3>>>("vnavmesh.Nav.PathfindWithTolerance");
     }
 
     /// <summary>
@@ -42,13 +52,44 @@ public sealed class RouteService
     /// (the mesh unloads mid-query on zone changes) - callers must check
     /// IsCompletedSuccessfully, not just IsCompleted.
     /// </summary>
-    public Task<List<Vector3>>? RequestPath(Vector3 from, Vector3 to)
+    /// <param name="tolerance">
+    /// Goal radius in metres, 0 for "exactly this point".
+    ///
+    /// WHAT IT DOES, decompiled 2026-08-08 rather than assumed: a value above 0
+    /// swaps the A* heuristic for <c>GoalRadiusHeuristic</c>, which returns a
+    /// cost of -1 once a node is within the radius - so the search accepts that
+    /// node as the goal. Useful because our destinations are map markers and
+    /// object positions, which routinely sit a little off the walkable surface.
+    ///
+    /// WHAT IT DOES NOT DO: the goal polygon is still looked up first, with
+    /// vnavmesh's own default extent of 5 m (<c>PathfindMesh</c> calls
+    /// <c>FindNearestMeshPoly(to)</c> with no arguments). A destination further
+    /// than that from any mesh yields no polygon and therefore no route, no
+    /// matter how large a tolerance is passed. Tolerance rescues "just off the
+    /// surface", not "nowhere near it".
+    /// </param>
+    public Task<List<Vector3>>? RequestPath(Vector3 from, Vector3 to, float tolerance = 0f)
     {
         // try-catch: IPC into a foreign plugin (vnavmesh may be missing/loading)
         try
         {
             if (!_navIsReady.InvokeFunc()) return null;
-            return _navPathfind.InvokeFunc(from, to, false);
+            if (tolerance <= 0f || _toleranceGateMissing)
+                return _navPathfind.InvokeFunc(from, to, false);
+
+            try
+            {
+                return _navPathfindTolerance.InvokeFunc(from, to, false, tolerance);
+            }
+            catch (Exception ex)
+            {
+                // Gate absent (older vnavmesh): fall back rather than lose the
+                // route entirely. Deliberately not silent, and said once.
+                _toleranceGateMissing = true;
+                _log.Warning($"[Route] Nav.PathfindWithTolerance nicht verfuegbar ({ex.Message}) - " +
+                             "ab jetzt Wegsuche ohne Zieltoleranz.");
+                return _navPathfind.InvokeFunc(from, to, false);
+            }
         }
         catch (Exception ex)
         {

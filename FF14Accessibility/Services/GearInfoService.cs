@@ -116,6 +116,49 @@ public sealed class GearInfoService
     }
 
     /// <summary>
+    /// Category and item level of ANY item - the two lines the game's own
+    /// tooltip prints under the name, for a potion and a stack of ore just as
+    /// much as for a sword. <see cref="DescribeGear"/> stays silent on
+    /// everything that is not equipment, so without this a blind player heard
+    /// only "10 mal Kupfererz" while a sighted one also saw "Baustein,
+    /// Gegenstandsstufe 1" (user request 2026-08-06).
+    ///
+    /// Both facts are READ, never derived: the category name comes from
+    /// <c>Item.ItemUICategory -&gt; ItemUICategory.Name</c> in game language
+    /// (sheet-verified 2026-08-06: 21781 non-equipment items, categories like
+    /// "Arznei", "Baustein", "Angelköder", "Kristall"), the item level from
+    /// <c>Item.LevelItem</c> exactly as in <see cref="DescribeStats"/>.
+    /// Like the attribute names it is NOT translated by us - the game already
+    /// wrote it in the player's language.
+    ///
+    /// The item level is omitted for equipment: there
+    /// <see cref="DescribeStats"/> already announces it, and saying
+    /// "Gegenstandsstufe 20" twice in one breath is noise.
+    /// "" for an unknown row, an item without a category and no item level.
+    /// </summary>
+    public string DescribeItemBasics(uint baseItemId)
+    {
+        if (baseItemId == 0) return string.Empty;
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return string.Empty;
+
+        var parts = new List<string>();
+
+        var category = row.ItemUICategory.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+        // Some items ARE their category ("Leder" in category "Leder") - saying
+        // the same word twice in a row sounds like a stutter, so it is dropped.
+        var itemName = row.Name.ExtractText().Trim();
+        if (category.Length > 0 && !category.Equals(itemName, StringComparison.OrdinalIgnoreCase))
+            parts.Add(category);
+
+        // Sheet-verified 2026-08-06: 21733 of 21781 non-equipment items carry an
+        // item level, so the number is real data, not a leftover zero column.
+        if (row.EquipSlotCategory.RowId == 0 && row.LevelItem.RowId > 0)
+            parts.Add(AccessibilityStrings.ItemLevelValue(row.LevelItem.RowId));
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
     /// Gear info for a UI text that IS an equipment name (a shop row lists
     /// only name and price). "" when the text is no known equipment name.
     /// </summary>

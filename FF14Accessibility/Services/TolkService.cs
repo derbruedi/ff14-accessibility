@@ -101,6 +101,37 @@ public sealed class TolkService : IDisposable
         _history.RemoveAll(e => e.tick < cutoff);
     }
 
+    /// <summary>
+    /// Files <paramref name="text"/> in the "already said this" history WITHOUT
+    /// speaking it, so another source announcing the same wording can recognise
+    /// it as an echo.
+    ///
+    /// WHY THIS IS NEEDED: <see cref="WasRecentlySpoken"/> compares whole
+    /// strings, and an announcement that carries a channel prefix is not the
+    /// string the other source will ask about. Measured case (log 2026-08-08
+    /// 23:43:53.396/.397, user report "Systemmeldungen werden zweimal
+    /// vorgelesen"): the chat reader said "System: Sind alle Gruppenmitglieder
+    /// kampfunfähig, ..." and one millisecond later the toast handler asked
+    /// about the same sentence WITHOUT the prefix, found no match, and read the
+    /// whole thing out a second time. The guard only ever worked in the other
+    /// direction (toast first, chat second), because there the chat reader
+    /// checks the bare text against a bare entry.
+    ///
+    /// A prefix-tolerant comparison was the alternative and was rejected: "ends
+    /// with" would silently swallow short genuine repeats. Letting the source
+    /// that ADDED the prefix say what its plain wording was keeps the match
+    /// exact.
+    /// </summary>
+    public void RememberSpokenVariant(string text)
+    {
+        // Mirrors Speak: with no screen reader attached nothing was spoken, so
+        // there is no echo to suppress either.
+        if (!IsAvailable || string.IsNullOrEmpty(text)) return;
+        text = Sanitize(text);
+        if (text.Length == 0) return;
+        Remember(text);
+    }
+
     /// <summary>True if <paramref name="text"/> (after sanitizing) was spoken
     /// within the last <paramref name="seconds"/> seconds.</summary>
     public bool WasRecentlySpoken(string text, double seconds)

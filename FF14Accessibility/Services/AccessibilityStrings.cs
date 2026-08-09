@@ -413,8 +413,8 @@ public static class AccessibilityStrings
             : $"No {label} within {range:F0} meters.";
 
     // ── Objekt-/Ziel-Ansagen (NavigationService) ─────────────────────
-    /// <summary>Fallback name for an object the game left unnamed.</summary>
-    public static string Unnamed => IsGerman ? "Unbenannt" : "Unnamed";
+    // "Unbenannt" removed 2026-08-08: it said nothing about what the thing was,
+    // and every caller now uses UnnamedOfKind (or a resolved name) instead.
 
     /// <summary>Spoken "N of M" position counter for browser cycling (no period).</summary>
     /// <summary>The word between the two numbers of a counter. Exposed because
@@ -478,6 +478,43 @@ public static class AccessibilityStrings
         _                         => kind.ToString(),
     };
 
+    /// <summary>
+    /// Stand-in for an object the GAME itself leaves nameless - "Objekt ohne
+    /// Namen", "NPC ohne Namen". Says which kind of thing it is and makes clear
+    /// that the missing name is the game's, not a failure of the mod (user
+    /// decision 2026-08-08). Verified offline the same day: for every nameless
+    /// object in the log, the game's own name sheets are empty too.
+    /// </summary>
+    public static string UnnamedOfKind(ObjectKind kind) => IsGerman
+        ? $"{ObjectKindName(kind)} ohne Namen"
+        : $"{ObjectKindName(kind)} with no name";
+
+    /// <summary>
+    /// Appended to an object's name to say which quest it serves: "Zielort für
+    /// Narben im Wald". The game calls 1667 different props "Zielort", so the
+    /// name alone identifies nothing (user report 2026-08-08).
+    /// </summary>
+    public static string ForQuest(string quest) => IsGerman
+        ? $" für {quest}"
+        : $" for {quest}";
+
+    /// <summary>
+    /// Appended to a zone transition to say where it leads: "Ausgang nach
+    /// Neu-Gridania".
+    /// </summary>
+    public static string LeadsToArea(string area) => IsGerman
+        ? $" nach {area}"
+        : $" to {area}";
+
+    /// <summary>
+    /// Appended to an object the player has already stood next to: "Truhe 2,
+    /// Schatz, schon besucht". In a dungeon several things carry one name, and
+    /// which of them one has already dealt with is the thing a sighted player
+    /// reads off the room they remember walking through (user wish 2026-08-08).
+    /// Leading comma and space, so it slots into the description like the kind.
+    /// </summary>
+    public static string AlreadyVisited => IsGerman ? ", schon besucht" : ", already visited";
+
     /// <summary>Quest hint from a nameplate icon id, or empty for none.</summary>
     public static string QuestMarkerHint(uint iconId) => iconId switch
     {
@@ -534,6 +571,11 @@ public static class AccessibilityStrings
               (extraHops > 0 ? $", then {extraHops} more transitions." : ".");
 
     // ── Wegpunkte / Gehhilfe / Routen-Ansagen ────────────────────────
+    /// <summary>Appended to a marker selection when the real object behind it
+    /// was taken as the game target - that is what makes it usable, and the
+    /// player has no other way to tell.</summary>
+    public static string MarkerTargeted => IsGerman ? "Angezielt." : "Targeted.";
+
     public static string NoAetherytesFound => IsGerman ? "Keine Ätheryten in diesem Gebiet gefunden." : "No aetherytes found in this area.";
     public static string NoWaypointsFound  => IsGerman ? "Keine Wegpunkte in diesem Gebiet gefunden." : "No waypoints found in this area.";
     public static string NoNavmeshStraightLine => IsGerman ? "Kein Wegenetz, führe in Luftlinie." : "No navmesh, guiding in a straight line.";
@@ -787,32 +829,49 @@ public static class AccessibilityStrings
     public static string AoeWarningOn  => IsGerman ? "Flächenwarnung an." : "Area warning on.";
     public static string AoeWarningOff => IsGerman ? "Flächenwarnung aus." : "Area warning off.";
 
-    // "X of Y" building blocks for HP/MP/GP (no trailing punctuation).
-    public static string HpValue(uint cur, uint max) => IsGerman ? $"HP {cur} von {max}" : $"HP {cur} of {max}";
-    public static string MpValue(uint cur, uint max) => IsGerman ? $"MP {cur} von {max}" : $"MP {cur} of {max}";
+    /// <summary>
+    /// Bar fill as a whole percent - the same reading a sighted player takes off
+    /// the bar, which is why HP/MP/GP are announced this way and not as raw
+    /// numbers (user decision 2026-08-07).
+    /// <para>
+    /// Floored, so "50 Prozent" never means "a hair under half". The one
+    /// exception is the bottom: 5 of 5000 HP floors to 0, and "HP 0 Prozent"
+    /// would sound like death - anything above zero therefore reports at
+    /// least 1 percent. Zero is reserved for an empty bar.
+    /// </para></summary>
+    private static int Percent(uint cur, uint max)
+    {
+        if (max == 0) return 0;
+        var percent = (int)(cur * 100u / max);
+        return percent == 0 && cur > 0 ? 1 : percent;
+    }
 
-    public static string HpSentence(uint cur, uint max) => IsGerman ? $"HP: {cur} von {max}." : $"HP: {cur} of {max}.";
-    public static string TargetHpSentence(uint cur, uint max) => IsGerman ? $"Ziel HP: {cur} von {max}." : $"Target HP: {cur} of {max}.";
+    public static string HpSentence(uint cur, uint max) =>
+        IsGerman ? $"HP: {Percent(cur, max)} Prozent." : $"HP: {Percent(cur, max)} percent.";
+    public static string TargetHpSentence(uint cur, uint max) =>
+        IsGerman ? $"Ziel HP: {Percent(cur, max)} Prozent." : $"Target HP: {Percent(cur, max)} percent.";
 
-    /// <summary>", HP X of Y" fragment appended to a target announcement.</summary>
+    /// <summary>", HP X percent" fragment appended to a target announcement.</summary>
     public static string TargetHpFragment(uint cur, uint max) =>
-        IsGerman ? $", HP {cur} von {max}" : $", HP {cur} of {max}";
+        IsGerman ? $", HP {Percent(cur, max)} Prozent" : $", HP {Percent(cur, max)} percent";
 
     /// <summary>Full HP/MP status: HP always, MP only when the job has mana.</summary>
     public static string VitalStatus(uint hp, uint hpMax, uint mp, uint mpMax, bool hasMp) =>
         hasMp
-            ? (IsGerman ? $"HP {hp} von {hpMax}, MP {mp} von {mpMax}." : $"HP {hp} of {hpMax}, MP {mp} of {mpMax}.")
-            : (IsGerman ? $"HP {hp} von {hpMax}." : $"HP {hp} of {hpMax}.");
+            ? (IsGerman ? $"HP {Percent(hp, hpMax)} Prozent, MP {Percent(mp, mpMax)} Prozent."
+                        : $"HP {Percent(hp, hpMax)} percent, MP {Percent(mp, mpMax)} percent.")
+            : (IsGerman ? $"HP {Percent(hp, hpMax)} Prozent." : $"HP {Percent(hp, hpMax)} percent.");
 
-    /// <summary>" &lt;name&gt;, HP X of Y." target clause appended to the status readout.</summary>
+    /// <summary>" &lt;name&gt;, HP X percent." target clause appended to the status readout.</summary>
     public static string TargetStatusClause(string name, uint cur, uint max) =>
-        IsGerman ? $" {name}, HP {cur} von {max}." : $" {name}, HP {cur} of {max}.";
+        IsGerman ? $" {name}, HP {Percent(cur, max)} Prozent." : $" {name}, HP {Percent(cur, max)} percent.";
 
     public static string TargetFallbackName => IsGerman ? "Ziel" : "Target";
 
     // GP (Sammelpunkte) - the DE client says "SP", the EN client "GP".
     public static string NoGatheringPoints => IsGerman ? "Keine Sammelpunkte. SP gibt es nur als Sammler." : "No gathering points. GP only exists for gatherers.";
-    public static string GpValue(uint cur, uint max) => IsGerman ? $"SP {cur} von {max}." : $"GP {cur} of {max}.";
+    public static string GpValue(uint cur, uint max) =>
+        IsGerman ? $"SP {Percent(cur, max)} Prozent." : $"GP {Percent(cur, max)} percent.";
 
     public static string EnemyCasts(string action) => IsGerman ? $"Gegner wirkt {action}." : $"Enemy casts {action}.";
 
@@ -1221,8 +1280,142 @@ public static class AccessibilityStrings
     /// <summary>Spoken when the menu switches to the carried-item list.</summary>
     public static string ItemMenuOpened(int count) =>
         IsGerman
-            ? $"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 zurück zu Skills, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 back to skills, Numpad 0 selects, Numpad decimal to go back.";
+            ? $"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>Spoken when the menu switches to the quest-item list.</summary>
+    public static string QuestItemMenuOpened(int count) =>
+        IsGerman
+            ? $"Quest-Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
+            : $"Quest items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+
+    /// <summary>One browsed quest item: name, how many are left, its cast time
+    /// and where it already sits. The cast time matters in a fight - three
+    /// seconds of standing still is a decision.</summary>
+    public static string QuestItemBrowseEntry(string name, int quantity, byte castTime, string? location, int index, int count) =>
+        IsGerman
+            ? $"{name}, {quantity} Stück{(castTime > 0 ? $", Wirkzeit {castTime} Sekunden" : "")}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
+            : $"{name}, {quantity}{(castTime > 0 ? $", cast time {castTime} seconds" : "")}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+
+    /// <summary>Spoken when stepping the source list finds nothing else with
+    /// entries - the player stays where they are.</summary>
+    public static string SkillMenuNoOtherSource =>
+        IsGerman
+            ? "Keine andere Liste verfügbar."
+            : "No other list available.";
+
+    /// <summary>Announced when usable quest items arrive. Says what the loot
+    /// channel does not: that they DO something, and how to reach them.</summary>
+    public static string QuestItemReceived(string joined) =>
+        IsGerman
+            ? $"Quest-Gegenstand zum Benutzen: {joined}. Mit Strg und Nummernblock 0 auf die Leiste legen."
+            : $"Usable quest item: {joined}. Put it on a bar with Ctrl and Numpad 0.";
+
+    // ── Zugang zum Ziel (Aufgangs-Erkennung) ─────────────────────────
+    // Wenn das Ziel auf einer Fläche liegt, die im Wegenetz nicht an unserer
+    // hängt (Schiffsdeck, Balkon, Empore), läuft der Auto-Lauf sonst stumm
+    // gegen nichts. Diese Meldungen sagen stattdessen, WIE NAH man herankommt.
+
+    /// <summary>Approach search: nothing selected to check.</summary>
+    public static string ApproachNoTarget =>
+        IsGerman
+            ? "Kein Ziel gewählt. Erst ein Ziel anvisieren oder im Objekt-Browser auswählen."
+            : "No destination selected. Target something first, or pick it in the object browser.";
+
+    /// <summary>Approach search: started (it takes a moment, so say so).</summary>
+    public static string ApproachChecking(string target) =>
+        IsGerman ? $"Prüfe den Weg zu {target}." : $"Checking the route to {target}.";
+
+    /// <summary>Approach search: a continuous route exists.</summary>
+    public static string ApproachReachable(string target, float distance) =>
+        IsGerman
+            ? $"Zu {target} führt ein durchgehender Weg, {distance:F0} Meter."
+            : $"There is a continuous route to {target}, {distance:F0} meters.";
+
+    /// <summary>Approach search: no route, and no reachable spot nearby either.</summary>
+    public static string ApproachNone(string target) =>
+        IsGerman
+            ? $"Zu {target} führt kein Weg, und in der Nähe gibt es keinen erreichbaren Punkt. Der Zugang liegt weiter weg."
+            : $"No route to {target}, and no reachable spot nearby either. The way in is further off.";
+
+    /// <summary>Approach search: names the closest reachable spot, how to get
+    /// there and how the destination sits relative to it.</summary>
+    public static string ApproachFound(string target, float walkDistance, string compass,
+                                       float gapDistance, float heightDiff)
+    {
+        var hoehe = heightDiff switch
+        {
+            >= 1f => IsGerman ? $", {heightDiff:F0} Meter über dir" : $", {heightDiff:F0} meters above you",
+            <= -1f => IsGerman ? $", {-heightDiff:F0} Meter unter dir" : $", {-heightDiff:F0} meters below you",
+            _ => string.Empty,
+        };
+        return IsGerman
+            ? $"Kein durchgehender Weg zu {target}. Ich laufe zum nächstmöglichen Punkt, " +
+              $"{walkDistance:F0} Meter nach {compass}. Von dort ist das Ziel noch " +
+              $"{gapDistance:F0} Meter entfernt{hoehe}."
+            : $"No continuous route to {target}. Walking to the closest spot instead, " +
+              $"{walkDistance:F0} meters {compass}. From there the destination is " +
+              $"{gapDistance:F0} meters away{hoehe}.";
+    }
+
+    /// <summary>Destination name for the walk to the near side of a gap.</summary>
+    public static string GapCrossSpotName =>
+        IsGerman ? "Übergangsstelle" : "crossing point";
+
+    /// <summary>Now crossing a gap the navigation mesh does not cover.</summary>
+    public static string GapCrossing =>
+        IsGerman
+            ? "Übergangsstelle erreicht. Überquere die Lücke."
+            : "Crossing point reached. Crossing the gap now.";
+
+    /// <summary>The game's collision module could not be reached.</summary>
+    public static string GroundProbeUnavailable =>
+        IsGerman
+            ? "Die Kollisionsabfrage des Spiels ist nicht erreichbar."
+            : "The game's collision query is unavailable.";
+
+    /// <summary>Result of the ground probe: how much floor was found and how
+    /// much of it the navigation mesh does not cover.</summary>
+    public static string GroundProbeResult(int hits, int withoutMesh) =>
+        IsGerman
+            ? $"Bodenmessung fertig. {hits} Treffer, davon {withoutMesh} ohne Wegenetz."
+            : $"Ground probe done. {hits} hits, {withoutMesh} of them without navigation mesh.";
+
+    /// <summary>The crossing was surveyed for one zone only and we are elsewhere.</summary>
+    public static string GapCrossWrongZone =>
+        IsGerman
+            ? "Diesen Übergang gibt es nur auf den Unteren Decks."
+            : "This crossing only exists on the Lower Decks.";
+
+    /// <summary>Neither side of the gap can be walked to from where we stand.</summary>
+    public static string GapCrossNoSide =>
+        IsGerman
+            ? "Von hier aus führt kein Weg zur Übergangsstelle."
+            : "No route to the crossing point from here.";
+
+    /// <summary>The walk to the crossing point did not arrive, so no crossing.</summary>
+    public static string GapCrossTooFar =>
+        IsGerman
+            ? "Übergang abgebrochen - die Übergangsstelle wurde nicht erreicht."
+            : "Crossing cancelled - the crossing point was not reached.";
+
+    /// <summary>Name for the walk to an approach spot - the walk announcements
+    /// must not claim we are heading for the destination itself.</summary>
+    public static string ApproachSpotName(string target) =>
+        IsGerman ? $"Zugang zu {target}" : $"way in to {target}";
+
+    /// <summary>Auto-walk refused to start: the destination hangs on a separate
+    /// patch of the navigation mesh, so walking there is impossible.</summary>
+    public static string TargetUnreachable(string target) =>
+        IsGerman
+            ? $"{target} ist nicht erreichbar - dorthin führt kein Weg."
+            : $"{target} cannot be reached - no route leads there.";
+
+    // Es gab hier drei Ansagen rund um den Fall "Weg endet kurz vorm Ziel"
+    // (Umleitung, Restfahrt, Restweg). Der User hat sie am 2026-08-07 direkt
+    // nach dem Bau abgelehnt: "das ist evtl zu viel info, ich werd ja sehen wie
+    // weit er vom ziel weg ist". Der Ablauf laeuft jetzt still durch; endet er
+    // ohne Ankunft, greift AutoWalkEndedRemaining wie bei jedem anderen Lauf.
 
     /// <summary>Debug probe: the slot it wants to test is not free.</summary>
     public static string ProbeSlotOccupied =>
@@ -1463,6 +1656,50 @@ public static class AccessibilityStrings
     /// <summary>Remaining uses of a gathering node ("Belastbarkeit 4 von 4").</summary>
     public static string GatherIntegrity(string current, string max) =>
         IsGerman ? $"Belastbarkeit {current} von {max}" : $"Integrity {current} of {max}";
+
+    // ── Handwerker-Notizbuch (RecipeNote) ───────────────────────────
+    //  Die Werte selbst (Klasse, "Stufe 5", Zahlen) sind GELESENER Client-Text
+    //  und werden unveraendert durchgereicht - hier stehen nur die Bindewoerter.
+    /// <summary>Spoken once when the crafting log opens: window plus the class
+    /// whose recipes are shown ("Handwerker-Notizbuch, Alchemist, Stufe 5").</summary>
+    public static string RecipeNoteOpened(string jobAndLevel) =>
+        IsGerman ? $"Handwerker-Notizbuch, {jobAndLevel}"
+                 : $"Crafting log, {jobAndLevel}";
+    /// <summary>A list row with its position ("Destilliertes Wasser, Stufe 1, 3 von 12").</summary>
+    public static string RowWithPosition(string row, int index, int total) =>
+        IsGerman ? $"{row}, {index} von {total}" : $"{row}, {index} of {total}";
+    /// <summary>Progress needed to finish the craft (client label "Fertig mit").</summary>
+    public static string RecipeDifficulty(string value) =>
+        IsGerman ? $"Fertig mit {value}" : $"Progress needed {value}";
+    /// <summary>Durability the craft starts with (client label "Belastbar bis").</summary>
+    public static string RecipeDurability(string value) =>
+        IsGerman ? $"Belastbar bis {value}" : $"Durability {value}";
+    public static string RecipeMaxQuality(string value) =>
+        IsGerman ? $"Qualität maximal {value}" : $"Maximum quality {value}";
+    /// <summary>Starting quality granted by HQ materials - only said when it is not zero.</summary>
+    public static string RecipeStartQuality(string value) =>
+        IsGerman ? $"Startqualität {value}" : $"Starting quality {value}";
+    /// <summary>How many can be made from what the player carries.</summary>
+    public static string RecipeCraftable(string value) =>
+        IsGerman ? $"Herstellbar {value}" : $"Craftable {value}";
+    /// <summary>How many of the RESULT item the player already owns.</summary>
+    public static string RecipeInBag(string value) =>
+        IsGerman ? $"Im Beutel {value}" : $"In bag {value}";
+    /// <summary>One material line. NQ and HQ are always both named (user decision
+    /// 2026-08-08): HQ material raises starting quality, so a silent zero would
+    /// hide a real choice.</summary>
+    public static string RecipeMaterial(string name, string needed, string nq, string hq) =>
+        IsGerman ? $"{name}, {needed} benötigt, {nq} NQ, {hq} HQ"
+                 : $"{name}, {needed} needed, {nq} NQ, {hq} HQ";
+    /// <summary>A crystal row. The window shows crystals as icons only - it
+    /// carries no name node (ilspycmd 2026-08-08: CrystalNodes has Image but no
+    /// Name), so the element stays unnamed rather than guessed.</summary>
+    public static string RecipeCrystal(string needed, string owned) =>
+        IsGerman ? $"Kristall, {needed} benötigt, {owned} im Beutel"
+                 : $"Crystal, {needed} needed, {owned} in bag";
+    /// <summary>Said instead of the values when no recipe is selected yet.</summary>
+    public static string RecipeNoSelection =>
+        IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
 
     // ── Inventar / Gegenstands-Slots ────────────────────────────────
     /// <summary>An item with its stack count. German needs the "mal" connector,

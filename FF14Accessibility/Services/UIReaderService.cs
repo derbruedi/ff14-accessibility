@@ -133,6 +133,7 @@ public sealed class UIReaderService : IDisposable
         "Gathering",          // Sammel-Fenster: eigener Handler (OnGatheringUpdate)
         "BeginnersMansionProblem", // Anfänger-Arena: eigener Handler (OnBeginnersArenaUpdate)
         "Bank",               // Gil-Depot beim Gehilfen: eigener Handler (OnBankUpdate)
+        "RecipeNote",         // Handwerker-Notizbuch: eigener Handler (OnRecipeNoteUpdate)
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -179,6 +180,12 @@ public sealed class UIReaderService : IDisposable
         // (UpdateGlobalFocus, laeuft unabhaengig) sagt weiter die Knoepfe
         // (Ausfuehren/Abbrechen) beim Durchtabben an.
         "Bank",
+        // Handwerker-Notizbuch: der generische Pfad sprach beim Oeffnen und
+        // Blaettern ausschliesslich Rauschen (Log 2026-08-08 09:52: "NEU" aus
+        // einem unsichtbaren Marker-Node, "Menue, 1 Eintraege" von der falschen
+        // Liste, "0/40" vom Suchfeld) und nie Klasse, Rezept oder Werte. Der
+        // eigene Leser (OnRecipeNoteUpdate) uebernimmt beides.
+        "RecipeNote",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -386,6 +393,20 @@ public sealed class UIReaderService : IDisposable
         // agent's own ViewType + CurrentSelection->Page (verified 2026-07-26 to
         // track navigation), not the icon-only radio buttons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
+
+        // RecipeNote (Handwerker-Notizbuch): announce the crafting class the log
+        // is showing plus the row under the cursor. Read on PostUpdate because
+        // the class/detail nodes are filled a few frames after PostSetup and
+        // change on every class switch. Muted in the generic path via
+        // SpecialSetup/UpdateAddons - that path spoke only the invisible "NEU"
+        // marker, the search field's "0/40" and a row count off the wrong list.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "RecipeNote", OnRecipeNoteUpdate);
+
+#if DEBUG
+        // Debug audit probe: pin which state follows keyboard navigation in the
+        // crafting log (focused node vs. the agent's own indices).
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "RecipeNote", OnRecipeNoteProbe);
+#endif
 
 #if DEBUG
         // Debug audit probe: the pre-match Triple Triad confirmation window
@@ -1827,6 +1848,21 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Handwerker-Notizbuch: die Listenzeilen sagt der eigene Leser an
+        // (OnRecipeNoteUpdate, mit sauberem Namen und Position). Der generische
+        // Fokus-Leser fand dort nur den UNSICHTBAREN "NEU"-Marker der Zeile
+        // (Log 2026-08-08 09:52:04.894) - er schweigt jetzt fuer Zeilen. Knoepfe
+        // ("Synthese", "Eilsynthese"), Reiter und das Kategorie-Auswahlfeld
+        // liegen NICHT in einer Listenzeile und bleiben generisch ansagbar,
+        // sonst waeren sie nicht mehr ansteuerbar.
+        if (IsFocusInRecipeNoteRow(node))
+        {
+            _lastFocusedNodePtr  = (nint)node;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
         // Namenseingabe (_CharaMakeCharaName): der dedizierte Handler
         // OnCharaMakeNameUpdate sagt Feld-Label (Vorname/Nachname) + Tipp-Echo
         // an. Der generische Leser wuerde den Zeichenzaehler ("0/15") unter dem
@@ -1882,6 +1918,14 @@ public sealed class UIReaderService : IDisposable
             // never runs for a filled mount tile. Empty tiles fall through to
             // the "Leer" branch below so cursor moves stay audible.
             text = mountRow;
+        }
+        else if (TryReadRecipeNoteSearchField(node, out var recipeSearch))
+        {
+            // Crafting log search box: the generic reader announced its
+            // character counter ("0/40", log 2026-08-08 09:38:18) - a number
+            // that tells the user nothing about where the cursor landed. The
+            // window carries its own label node for exactly this field.
+            text = recipeSearch;
         }
         else if (TryReadGatheringFocusRow(node, out var gatherRow))
         {
@@ -2548,6 +2592,11 @@ public sealed class UIReaderService : IDisposable
                 if (string.IsNullOrEmpty(name)) return string.Empty;
                 _lastFocusedItemId = itemId; // remembered for the description dwell
 
+                // Category and item level for EVERY item ("Baustein,
+                // Gegenstandsstufe 1") - the tooltip lines a sighted player
+                // reads while the cursor sits on the slot.
+                var basics = _gearInfo.DescribeItemBasics(itemId);
+
                 // Equipment gets level + wearability appended ("Bronzegladius,
                 // Stufe 5, tragbar") - the info a blind player needs when
                 // browsing gear slots or shop wares. "" for non-equipment.
@@ -2555,8 +2604,9 @@ public sealed class UIReaderService : IDisposable
 
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
-                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' gear='{gear}'");
+                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}'");
                 var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
+                if (basics.Length > 0) spoken = $"{spoken}, {basics}";
                 return gear.Length > 0 ? $"{spoken}, {gear}" : spoken;
             }
             cur = cur->ParentNode;
@@ -6127,6 +6177,12 @@ public sealed class UIReaderService : IDisposable
         // Quest-Journal offen? Dann will der User die QUEST lesen, nicht die Liste.
         if (TryReadQuestDetail()) return;
 
+        // Handwerker-Notizbuch offen? Dann will der User das REZEPT samt
+        // Materialien hoeren. Vor dem Tooltip-Leser, weil im Notizbuch beim
+        // Zeigen auf ein Material ein ItemDetail-Tooltip offen stehen kann - der
+        // wuerde sonst das Rezept verdecken, das der User gerade liest.
+        if (TryReadRecipeDetail()) return;
+
         // Gegenstands-Tooltip offen? Dann will der User den GEGENSTAND lesen -
         // dieselbe Logik wie beim Journal eine Zeile darueber.
         if (TryReadItemDetail()) return;
@@ -7515,6 +7571,461 @@ public sealed class UIReaderService : IDisposable
         }
         return false;
     }
+
+    // -- Handwerker-Notizbuch (RecipeNote) --------------------------
+    //
+    // Vorher lief das Fenster komplett ueber den generischen Pfad und war damit
+    // unbenutzbar. Gemessen (Log 2026-08-08 09:52:04, Oeffnen bis erste
+    // Navigation) kamen genau vier Ansagen: "HANDWERKER-NOTIZBUCH", "NEU",
+    // "Menue, 1 Eintraege", "Favoriten, NEU" - und beim Weiterblaettern "0/40"
+    // und "Zuletzt gesucht". Klasse, Stufe, Rezeptname und saemtliche
+    // Rezeptwerte kamen NIE vor. Die drei Ursachen, alle im Dump desselben
+    // Tages belegt:
+    //   - "NEU" ist ein UNSICHTBARER Marker-Text in jeder Listenzeile
+    //     (id=3 bzw. id=10, Flag 0x0023); der Fokus-Leser griff ihn ab statt
+    //     der Zeilenbeschriftung.
+    //   - "Menue, 1 Eintraege" zaehlte die Favoriten-Liste (id=30, ListLen=1);
+    //     die echte Rezeptliste ist eine TreeList (id=45) und wurde nie erreicht.
+    //   - "0/40" ist der Zeichenzaehler des Suchfelds (id=26 -> id=17).
+    //
+    // Datenquelle ist deshalb NICHT der Node-Baum per id, sondern die benannten
+    // Felder von AddonRecipeNote (ilspycmd 2026-08-08). Der Dump bestaetigt
+    // ihre Bedeutung Feld fuer Feld: CurrentJobName id=10 "Alchemist",
+    // CurrentJobLevel id=7 "Stufe 5", SelectedRecipeName id=63,
+    // SelectedRecipeDifficulty id=66 zu Label id=65 "Fertig mit",
+    // SelectedRecipeDurability id=69 zu id=68 "Belastbar bis",
+    // SelectedRecipeMaximumQuality id=74 zu id=71 "Qualitaet",
+    // ...QuantityCraftable... id=78 zu id=77 "Herstellbar",
+    // Ingredients id=94..89 (Name id=18 als Item-Link), Crystals id=83/82,
+    // CharacteristicsTexts id=54..50 ("Empfohlen: Kunstfertigkeit min. 22").
+    //
+    // Die Zeile unter dem Cursor kommt ueber denselben Fokus-Weg wie das
+    // Bestiarium (ClimbToItemRenderer): in TreeLists bleiben die Listen-Indizes
+    // bei Tastaturnavigation nachweislich stehen (Log 2026-07-12), der globale
+    // FocusedNode wandert dagegen mit.
+
+    private string _lastRecipeJob = string.Empty;
+    private string _lastRecipeRow = string.Empty;
+    private nint   _lastRecipeRendererPtr;
+
+    /// <summary>
+    /// True when the keyboard focus sits inside one of the crafting log's three
+    /// lists (recipes, level ranges, favourites) - either on a row or on the
+    /// list container itself. Used to keep the generic focus reader out of them:
+    /// <see cref="OnRecipeNoteUpdate"/> speaks the rows properly, and on the
+    /// CONTAINER the generic reader had nothing but the invisible "NEU" marker
+    /// to offer (log 2026-08-08 10:20:10.907, focus on the TreeList id=39 - not
+    /// on a row, which is why checking for a row renderer alone let it through).
+    /// Membership is checked against the addon's own node tree, not just "is the
+    /// window open", so a list in a window ON TOP of the log keeps its generic
+    /// announcement.
+    /// </summary>
+    private unsafe bool IsFocusInRecipeNoteRow(AtkResNode* focused)
+    {
+        var ptr = _gameGui.GetAddonByName("RecipeNote");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return false;
+        if (!IsNodeInAddon(focused, addon)) return false;
+        return ClimbToItemRenderer(focused) != null || IsInsideListComponent(focused);
+    }
+
+    /// <summary>True when the node sits in (or is) a List/TreeList component.</summary>
+    private static unsafe bool IsInsideListComponent(AtkResNode* node)
+    {
+        for (var up = 0; up < 8 && node != null; up++)
+        {
+            if ((int)node->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)node)->Component;
+                if (comp != null && IsListComponent(comp->GetComponentType())) return true;
+            }
+            node = node->ParentNode;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Names the crafting log's recipe search box when the focus enters it,
+    /// using the window's own label node (SearchHintText, "Rezeptsuche") instead
+    /// of the character counter the generic reader picked up.
+    /// </summary>
+    private unsafe bool TryReadRecipeNoteSearchField(AtkResNode* focused, out string text)
+    {
+        text = string.Empty;
+        var ptr = _gameGui.GetAddonByName("RecipeNote");
+        if (ptr.IsNull) return false;
+        var addon = (AddonRecipeNote*)(nint)ptr;
+        if (!addon->AtkUnitBase.IsVisible) return false;
+
+        var input = addon->SearchTextInput;
+        if (input == null || input->OwnerNode == null) return false;
+        if (!IsNodeInAddon(focused, &addon->AtkUnitBase)) return false;
+        if (!IsNodeUnder(focused, &input->OwnerNode->AtkResNode)) return false;
+
+        // SearchHintText is the placeholder INSIDE the box and reads empty in
+        // practice (log 2026-08-08 10:21:38: the generic reader still got the
+        // counter, i.e. this returned nothing). The window's visible label sits
+        // beside the box as a top-level node (dump: id=25 "Rezeptsuche"), so it
+        // serves as the fallback.
+        text = AtkText.ReadClean(addon->SearchHintText).Trim();
+        if (text.Length == 0) text = ReadTopText(&addon->AtkUnitBase, 25);
+        return text.Length > 0;
+    }
+
+    /// <summary>True when <paramref name="node"/> sits anywhere in the addon's node tree.</summary>
+    private static unsafe bool IsNodeInAddon(AtkResNode* node, AtkUnitBase* addon)
+        => addon != null && IsNodeUnder(node, addon->RootNode);
+
+    /// <summary>True when <paramref name="node"/> is <paramref name="ancestor"/>
+    /// or one of its descendants. Depth-capped like ClimbToItemRenderer so a
+    /// damaged parent chain can never loop.</summary>
+    private static unsafe bool IsNodeUnder(AtkResNode* node, AtkResNode* ancestor)
+    {
+        if (ancestor == null) return false;
+        for (var up = 0; up < 32 && node != null; up++)
+        {
+            if (node == ancestor) return true;
+            node = node->ParentNode;
+        }
+        return false;
+    }
+
+    private unsafe void OnRecipeNoteUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AddonRecipeNote*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->AtkUnitBase.IsVisible)
+        {
+            // Next open starts fresh, so class and first row are spoken again.
+            _lastRecipeJob = string.Empty;
+            _lastRecipeRow = string.Empty;
+            _lastRecipeRendererPtr = 0;
+            return;
+        }
+
+        AnnounceRecipeJobIfChanged(addon);
+        AnnounceRecipeRowIfChanged(addon);
+    }
+
+    /// <summary>
+    /// Speaks the class the log is showing - once when it opens, and again on
+    /// every class switch. This is the piece the user asked for first: the whole
+    /// window content depends on the active crafting class, and nothing named it.
+    /// </summary>
+    private unsafe void AnnounceRecipeJobIfChanged(AddonRecipeNote* addon)
+    {
+        var job = AtkText.ReadClean(addon->CurrentJobName).Trim();
+        if (job.Length == 0) return; // nodes not filled yet - retry next frame
+
+        // "Stufe 5" / "Level 5" is the client's own label, passed through as read.
+        var level   = AtkText.ReadClean(addon->CurrentJobLevel).Trim();
+        var current = level.Length > 0 ? $"{job}, {level}" : job;
+        if (current == _lastRecipeJob) return;
+
+        var isOpen = _lastRecipeJob.Length == 0;
+        _lastRecipeJob = current;
+
+        var spoken = isOpen ? AccessibilityStrings.RecipeNoteOpened(current) : current;
+        _log.Info($"[Recipe] Klasse: {current} ({(isOpen ? "geoeffnet" : "gewechselt")})");
+        _tolk.SpeakInterrupt(spoken);
+        _history.Add(MessageHistoryService.Category.System, spoken);
+    }
+
+    /// <summary>
+    /// Speaks the row under the cursor whenever it changes. Short by design
+    /// (user decision 2026-08-08): name, level, position - the full recipe with
+    /// materials is on the read-menu key via <see cref="TryReadRecipeDetail"/>,
+    /// so paging through the list stays fast.
+    /// </summary>
+    private unsafe void AnnounceRecipeRowIfChanged(AddonRecipeNote* addon)
+    {
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return;
+
+        var renderer = ClimbToItemRenderer(focus);
+        if (renderer == null) return;
+
+        var row = DescribeRecipeRow(addon, renderer);
+        if ((nint)renderer == _lastRecipeRendererPtr && row == _lastRecipeRow) return;
+        _lastRecipeRendererPtr = (nint)renderer;
+        _lastRecipeRow = row;
+        if (row.Length == 0) return;
+
+        _tolk.SpeakInterrupt(row);
+    }
+
+    /// <summary>
+    /// The focused row formatted for speech. Rows of the recipe list get their
+    /// position appended ("3 von 12"); the level-range list and the favourites
+    /// list beside it are read as they stand ("1-5", "Favoriten"), because their
+    /// row count is not what the user is counting through.
+    /// </summary>
+    private static unsafe string DescribeRecipeRow(AddonRecipeNote* addon, AtkComponentListItemRenderer* renderer)
+    {
+        var text = ExpandLevelAbbreviation(ReadRendererTextsClean(renderer));
+        if (text.Length == 0) return string.Empty;
+
+        var tree = addon->RecipeList;
+        if (tree == null) return text;
+
+        var total = (int)tree->Items.LongCount;
+        for (var i = 0; i < total; i++)
+        {
+            var item = tree->Items[i].Value;
+            if (item != null && item->Renderer == renderer)
+                return AccessibilityStrings.RowWithPosition(text, i + 1, total);
+        }
+        return text; // a row of one of the other two lists
+    }
+
+    /// <summary>
+    /// Expands the client's level abbreviation for speech: the recipe rows carry
+    /// "St. 1", which a screen reader renders as an abbreviation rather than the
+    /// word (log 2026-08-08 10:20:14 spoke "St. 1"). Same treatment the gathering
+    /// window already gets. Only the abbreviation is replaced - the number stays
+    /// verbatim, so a wrong label can never hide the real value.
+    /// NOTE: "St." is the DE client's abbreviation; matching it is
+    /// client-language-specific (Teil 2). The target word follows /acc lang.
+    /// </summary>
+    private static string ExpandLevelAbbreviation(string row) =>
+        row.Replace("St.", AccessibilityStrings.LevelWord);
+
+    /// <summary>
+    /// Like <see cref="ReadRendererTexts"/>, but decodes item-link payloads:
+    /// recipe rows carry the item name as a SeString link, which otherwise reads
+    /// as raw marker bytes (dump 2026-08-08: "H%I&amp;Destilliertes WasserIH").
+    /// Skipping invisible nodes is what drops the "NEU" marker.
+    /// <para>Parts carrying a digit are moved to the back so the NAME leads:
+    /// the game lists the level chip ("St. 1", id=7) before the name (id=6) in
+    /// node order. Sorting on digits rather than on the "St." abbreviation keeps
+    /// this working in the English client, where the chip reads "Lv. 1".</para>
+    /// </summary>
+    private static unsafe string ReadRendererTextsClean(AtkComponentListItemRenderer* renderer)
+    {
+        var comp   = (AtkComponentBase*)renderer;
+        var names  = new List<string>();
+        var values = new List<string>();
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+            var t = AtkText.ReadClean((AtkTextNode*)n).Trim();
+            if (t.Length == 0) continue;
+            (t.Any(char.IsDigit) ? values : names).Add(t);
+        }
+        return string.Join(", ", names.Concat(values));
+    }
+
+    /// <summary>
+    /// The complete recipe under the cursor, spoken on the read-menu key: name,
+    /// class and level, the craft values, how many are craftable and already
+    /// owned, every material with required amount and NQ/HQ stock, and the
+    /// requirement lines. All values come from AddonRecipeNote's named nodes, so
+    /// the numbers are exactly the ones the window displays.
+    /// Returns false when the crafting log is not open, so the read-menu key
+    /// falls through to its other readers.
+    /// </summary>
+    private unsafe bool TryReadRecipeDetail()
+    {
+        var ptr = _gameGui.GetAddonByName("RecipeNote");
+        if (ptr.IsNull) return false;
+        var addon = (AddonRecipeNote*)(nint)ptr;
+        if (!addon->AtkUnitBase.IsVisible) return false;
+
+        var name = AtkText.ReadClean(addon->SelectedRecipeName).Trim();
+        if (name.Length == 0)
+        {
+            // Log open but no recipe picked yet - say so instead of staying mute.
+            _tolk.SpeakInterrupt(AccessibilityStrings.RecipeNoSelection);
+            return true;
+        }
+
+        var parts = new List<string> { name };
+
+        var job   = AtkText.ReadClean(addon->CurrentJobName).Trim();
+        var level = AtkText.ReadClean(addon->CurrentJobLevel).Trim();
+        if (job.Length > 0) parts.Add(level.Length > 0 ? $"{job} {level}" : job);
+
+        AddRecipeValue(parts, addon->SelectedRecipeDifficulty,     AccessibilityStrings.RecipeDifficulty);
+        AddRecipeValue(parts, addon->SelectedRecipeDurability,     AccessibilityStrings.RecipeDurability);
+        AddRecipeValue(parts, addon->SelectedRecipeMaximumQuality, AccessibilityStrings.RecipeMaxQuality);
+        // Starting quality is 0 unless HQ material is selected - saying "0" on
+        // every recipe would be noise, so it only speaks when it is a real value.
+        AddRecipeValue(parts, addon->SelectedRecipeStartingQuality, AccessibilityStrings.RecipeStartQuality, skipZero: true);
+        AddRecipeValue(parts, addon->SelectedRecipeQuantityCraftableFromMaterialsInInventory, AccessibilityStrings.RecipeCraftable);
+        AddRecipeValue(parts, addon->SelectedRecipeResultQuantityInInventoryNqAndHq, AccessibilityStrings.RecipeInBag);
+
+#if DEBUG
+        LogRecipeMaterialSources(addon);
+#endif
+
+        parts.AddRange(ReadRecipeMaterials(addon));
+        parts.AddRange(ReadRecipeRequirements(addon));
+
+        var msg = string.Join(". ", parts) + ".";
+        _log.Info($"[Recipe] Details: {msg}");
+        _tolk.SpeakInterrupt(msg);
+        _history.Add(MessageHistoryService.Category.System, msg);
+        return true;
+    }
+
+    /// <summary>Appends one labelled value, skipping nodes the window left empty.</summary>
+    private static unsafe void AddRecipeValue(
+        List<string> parts, AtkTextNode* node, Func<string, string> label, bool skipZero = false)
+    {
+        var value = AtkText.Read(node).Trim();
+        if (value.Length == 0) return;
+        if (skipZero && value.All(c => c == '0')) return;
+        parts.Add(label(value));
+    }
+
+    /// <summary>
+    /// One line per filled material slot plus the crystals. A slot counts as
+    /// filled when its name node carries text - the window keeps all six slots
+    /// alive and blanks the unused ones (dump 2026-08-08: id=94..90 empty,
+    /// id=89 "Dreckiges Wasser").
+    /// </summary>
+    private static unsafe List<string> ReadRecipeMaterials(AddonRecipeNote* addon)
+    {
+        var lines = new List<string>();
+
+        foreach (var ing in addon->Ingredients)
+        {
+            var matName = AtkText.ReadClean(ing.Name).Trim();
+            if (matName.Length == 0) continue;
+            lines.Add(AccessibilityStrings.RecipeMaterial(
+                matName,
+                AtkText.Read(ing.QuantityRequiredForCraft).Trim(),
+                AtkText.Read(ing.QuantityInInventoryNq).Trim(),
+                AtkText.Read(ing.QuantityInInventoryHq).Trim()));
+        }
+
+        // Crystals are icon-only in this window - CrystalNodes carries Image but
+        // no name node, so the element is announced unnamed rather than guessed.
+        foreach (var crystal in addon->Crystals)
+        {
+            var needed = AtkText.Read(crystal.QuantityRequiredForCraft).Trim();
+            if (needed.Length == 0 || needed == "0") continue;
+            lines.Add(AccessibilityStrings.RecipeCrystal(
+                needed, AtkText.Read(crystal.QuantityInInventory).Trim()));
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// The requirement lines ("Empfohlen: Kunstfertigkeit min. 22"). The window
+    /// keeps five slots and blanks the ones that do not apply (dump 2026-08-08:
+    /// id=54..51 empty, id=50 filled), so an empty text is the reliable marker -
+    /// no need to walk up to the wrapper component for its visibility flag.
+    /// </summary>
+    private static unsafe List<string> ReadRecipeRequirements(AddonRecipeNote* addon)
+    {
+        var lines = new List<string>();
+        foreach (var text in addon->CharacteristicsTexts)
+        {
+            var line = AtkText.ReadClean(text.Value).Trim();
+            if (line.Length > 0) lines.Add(line);
+        }
+        return lines;
+    }
+
+#if DEBUG
+    /// <summary>
+    /// Debug audit probe for the missing materials. The detail readout came out
+    /// without a single material line (log 2026-08-08 10:21:44 "... Herstellbar 0.
+    /// Im Beutel 5" and nothing after it), although the window clearly HAS them -
+    /// the user's cursor walked material slots moments earlier. The struct
+    /// offsets are sound (CrystalNodes 32 B + IngredientNodes 144 B tile the
+    /// range from 1280 gapless), so the reason has to be runtime state.
+    /// Logs BOTH candidate sources side by side:
+    ///   - the addon's own ingredient nodes (what the reader currently uses), and
+    ///   - the game's RecipeNote data (RecipeEntry.Ingredients: name, required
+    ///     amount, NQ/HQ count), which needs no UI nodes at all.
+    /// Whichever carries real values decides where the reader gets rebased.
+    /// Remove once pinned.
+    /// </summary>
+    private unsafe void LogRecipeMaterialSources(AddonRecipeNote* addon)
+    {
+        var slot = 0;
+        foreach (var ing in addon->Ingredients)
+        {
+            _log.Info($"[RecipeMat] Node[{slot}] comp={(nint)ing.Component:X} namePtr={(nint)ing.Name:X} "
+                    + $"raw='{AtkText.Read(ing.Name)}' clean='{AtkText.ReadClean(ing.Name)}' "
+                    + $"need='{AtkText.Read(ing.QuantityRequiredForCraft)}' "
+                    + $"nq='{AtkText.Read(ing.QuantityInInventoryNq)}' hq='{AtkText.Read(ing.QuantityInInventoryHq)}'");
+            slot++;
+        }
+
+        var game = FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote.Instance();
+        var recipe = game != null && game->RecipeList != null ? game->RecipeList->SelectedRecipe : null;
+        if (recipe == null) { _log.Info("[RecipeMat] Spieldaten: SelectedRecipe ist null."); return; }
+
+        _log.Info($"[RecipeMat] Spieldaten: recipe='{recipe->ItemName}' id={recipe->RecipeId} "
+                + $"stufe={recipe->ClassJobLevel} ergebnis={recipe->AmountResult}");
+        for (var i = 0; i < recipe->Ingredients.Length; i++)
+        {
+            var ing = recipe->Ingredients[i];
+            if (ing.ItemId == 0) continue;
+            _log.Info($"[RecipeMat] Spiel[{i}] itemId={ing.ItemId} name='{ing.Name}' "
+                    + $"amount={ing.Amount} nq={ing.NQCount} hq={ing.HQCount}");
+        }
+        for (var i = 0; i < recipe->Crystals.Length; i++)
+        {
+            var c = recipe->Crystals[i];
+            if (c.Amount == 0) continue;
+            _log.Info($"[RecipeMat] SpielKristall[{i}] id={c.Id} amount={c.Amount}");
+        }
+    }
+
+    // Debug audit probe. Two runtime questions the source cannot answer:
+    //   1. does the focus really walk the recipe rows under numpad navigation
+    //      (it does in the bestiary - not automatically true here), and
+    //   2. which of the agent's own indices tracks that movement?
+    // Both are logged on every change so the reader can be re-based on the
+    // agent later if the focus path turns out to be the weaker signal.
+    // Compiled out of release; remove once pinned.
+    private string _lastRecipeProbe = string.Empty;
+
+    private unsafe void OnRecipeNoteProbe(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AddonRecipeNote*)(nint)args.Addon;
+        if (addon == null || !addon->AtkUnitBase.IsVisible) return;
+
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentRecipeNote.Instance();
+        var game  = FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote.Instance();
+
+        var focusId = 0u;
+        var stage = AtkStage.Instance();
+        if (stage != null && stage->AtkInputManager != null && stage->AtkInputManager->FocusedNode != null)
+            focusId = stage->AtkInputManager->FocusedNode->NodeId;
+
+        var listSel   = game != null && game->RecipeList != null ? game->RecipeList->SelectedIndex : (ushort)0;
+        var listCount = game != null && game->RecipeList != null ? game->RecipeList->RecipeCount : 0;
+
+        // Which TreeList does RecipeList point at? The window has TWO (dump
+        // 2026-08-08: id=45 = recipe rows "St. 1 + name", id=39 = level ranges
+        // "1-5"/"6-10"). Only the recipe one may contribute the "x von y"
+        // position, so the node id is logged rather than assumed.
+        var treeId    = addon->RecipeList != null && addon->RecipeList->OwnerNode != null
+            ? addon->RecipeList->OwnerNode->AtkResNode.NodeId : 0u;
+        var treeRows  = addon->RecipeList != null ? (int)addon->RecipeList->Items.LongCount : -1;
+
+        var line = $"focus={focusId} tree=id{treeId}/{treeRows}Zeilen "
+                 + $"detail='{AtkText.ReadClean(addon->SelectedRecipeName).Trim()}' "
+                 + $"agent[craftType={(agent != null ? agent->SelectedCraftType : -1)} "
+                 + $"cat={(agent != null ? agent->SelectedRecipeCategory : -1)} "
+                 + $"page={(agent != null ? agent->SelectedRecipeCategoryPage : -1)} "
+                 + $"recipeIdx={(agent != null ? agent->SelectedRecipeIndex : -1)}] "
+                 + $"gameList[sel={listSel} count={listCount}]";
+        if (line == _lastRecipeProbe) return;
+        _lastRecipeProbe = line;
+        _log.Info($"[RecipeProbe] {line}");
+    }
+#endif
 
     /// <summary>
     /// Findet den Node mit dem Fokus-Flag (HasFocusBit) oder relevanten Hover-Effekten.

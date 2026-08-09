@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using LuminaAction = Lumina.Excel.Sheets.Action;
+using LuminaEventItem = Lumina.Excel.Sheets.EventItem;
 
 namespace FF14Accessibility.Services;
 
@@ -140,6 +141,16 @@ public sealed class HotbarService
                 return actionName;
         }
 
+        // Quest items index the EventItem sheet, not Action - resolve them the
+        // same deterministic way instead of relying on the display string.
+        if (type == RaptureHotbarModule.HotbarSlotType.EventItem &&
+            _data.GetExcelSheet<LuminaEventItem>().TryGetRow(id, out var eventItem))
+        {
+            var eventItemName = eventItem.Name.ExtractText();
+            if (!string.IsNullOrWhiteSpace(eventItemName))
+                return eventItemName;
+        }
+
         // PopUpHelp is the game's own display text (name plus keybind hint);
         // use it for items, macros, emotes and anything not in the Action sheet.
         var cleaned = CleanUpHelp(popUpHelp);
@@ -185,9 +196,10 @@ public sealed class HotbarService
     private enum SkillMenuStep { Closed, PickSkill, PickTarget }
     private SkillMenuStep _menuStep = SkillMenuStep.Closed;
 
-    /// <summary>Which list the menu is browsing. Numpad 4/6 toggles it (user
-    /// choice 2026-08-06); the target-key step works the same for both.</summary>
-    private enum AssignSource { Skills, Items }
+    /// <summary>Which list the menu is browsing. Numpad 4/6 steps through the
+    /// three sources (user choice 2026-08-06, third one added 2026-08-09); the
+    /// target-key step works the same for all of them.</summary>
+    private enum AssignSource { Skills, Items, QuestItems }
     private AssignSource _menuSource = AssignSource.Skills;
 
     private readonly List<(uint Id, string Name, byte Level)> _skills = new();
@@ -198,6 +210,11 @@ public sealed class HotbarService
     // offer the player something that is no longer there.
     private readonly List<InventoryService.UsableItem> _items = new();
     private int _itemIndex = -1;
+
+    // Usable key items (quest items). Same reasoning as _items, only more so:
+    // they appear and vanish with quest progress.
+    private readonly List<InventoryService.QuestItem> _questItems = new();
+    private int _questItemIndex = -1;
     // The list is rebuilt when job or level changes (level-ups add skills).
     private byte _skillsJobId;
     private uint _skillsLevel;
@@ -225,58 +242,106 @@ public sealed class HotbarService
     }
 
     /// <summary>
-    /// Numpad 4 / 6: switches between the skill list and the carried-item list
-    /// while browsing. Only meaningful in the browse step - during target-key
-    /// selection the source is already decided, so the keys are ignored there
-    /// (the announcement would otherwise contradict what is about to be placed).
+    /// Numpad 4 / 6: steps through the three source lists while browsing -
+    /// skills, carried items, quest items - 6 forwards, 4 backwards. Only
+    /// meaningful in the browse step; during target-key selection the source is
+    /// already decided, so the keys are ignored there (the announcement would
+    /// otherwise contradict what is about to be placed).
+    /// <para>
+    /// A source the player cannot use right now (empty bag, no quest items) is
+    /// SKIPPED rather than announced as an error: stepping should always land
+    /// somewhere usable. If nothing else has entries, the current list stays.
+    /// </para>
     /// </summary>
-    public void SkillMenuSwitchSource()
+    public void SkillMenuSwitchSource(int direction)
     {
         if (_menuStep != SkillMenuStep.PickSkill) return;
 
-        if (_menuSource == AssignSource.Skills)
+        var order = new[] { AssignSource.Skills, AssignSource.Items, AssignSource.QuestItems };
+        var at = Array.IndexOf(order, _menuSource);
+
+        // Walk at most one full circle, stopping at the first source with entries.
+        for (var step = 1; step < order.Length; step++)
         {
-            if (!EnsureItemList()) return;   // speaks the reason on failure
-            _menuSource = AssignSource.Items;
-            if (_itemIndex < 0 || _itemIndex >= _items.Count) _itemIndex = 0;
-            _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
-            AnnounceItem();
+            var next = order[((at + direction * step) % order.Length + order.Length) % order.Length];
+            if (!TryEnterSource(next)) continue;
+            return;
         }
-        else
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuNoOtherSource);
+    }
+
+    /// <summary>Switches to a source if it has anything to offer, and announces
+    /// it. False when the list is empty (or cannot be built) - the caller then
+    /// tries the next one. Silent on failure by design: a skipped source is not
+    /// an error the player needs to hear about.</summary>
+    private bool TryEnterSource(AssignSource source)
+    {
+        switch (source)
         {
-            if (!EnsureSkillList()) return;
-            _menuSource = AssignSource.Skills;
-            if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
-            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-            AnnounceSkill();
+            case AssignSource.Skills:
+                if (!BuildSkillList()) return false;
+                _menuSource = AssignSource.Skills;
+                if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
+                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
+                AnnounceSkill();
+                return true;
+
+            case AssignSource.Items:
+                if (!BuildItemList()) return false;
+                _menuSource = AssignSource.Items;
+                if (_itemIndex < 0 || _itemIndex >= _items.Count) _itemIndex = 0;
+                _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
+                AnnounceItem();
+                return true;
+
+            case AssignSource.QuestItems:
+                if (!BuildQuestItemList()) return false;
+                _menuSource = AssignSource.QuestItems;
+                if (_questItemIndex < 0 || _questItemIndex >= _questItems.Count) _questItemIndex = 0;
+                _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
+                AnnounceQuestItem();
+                return true;
         }
+        return false;
     }
 
     /// <summary>
     /// Rebuilds the carried usable items. Always rebuilt (never cached): the bag
     /// changes while playing, and offering a potion that was already drunk would
-    /// assign a slot the player cannot use. Announces and returns false when the
-    /// player carries nothing usable.
+    /// assign a slot the player cannot use. False when the player carries
+    /// nothing usable - silent, the caller decides what that means.
     /// </summary>
-    private bool EnsureItemList()
+    private bool BuildItemList()
     {
-        if (!_clientState.IsLoggedIn)
-        {
-            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
-            return false;
-        }
+        if (!_clientState.IsLoggedIn) return false;
 
         _items.Clear();
         _items.AddRange(_inventory.CollectUsableItems());
         _itemIndex = _items.Count > 0 ? 0 : -1;
-
-        if (_items.Count == 0)
-        {
-            _tolk.SpeakInterrupt(AccessibilityStrings.NoUsableItems);
-            return false;
-        }
-        return true;
+        return _items.Count > 0;
     }
+
+    /// <summary>
+    /// Rebuilds the carried usable quest items (key items that do something -
+    /// see <see cref="InventoryService.CollectQuestItems"/>). Rebuilt per entry
+    /// like the bag list: a quest item vanishes the moment the quest step is
+    /// done. False when there are none - silent, same reasoning as above.
+    /// </summary>
+    private bool BuildQuestItemList()
+    {
+        if (!_clientState.IsLoggedIn) return false;
+
+        _questItems.Clear();
+        _questItems.AddRange(_inventory.CollectQuestItems());
+        _questItemIndex = _questItems.Count > 0 ? 0 : -1;
+        return _questItems.Count > 0;
+    }
+
+    /// <summary>Skill list for the source stepper: builds it and reports whether
+    /// it has entries. Keeps the spoken diagnosis of <see cref="EnsureSkillList"/>
+    /// for the real failure cases (not logged in, player data not ready).</summary>
+    private bool BuildSkillList() => EnsureSkillList() && _skills.Count > 0;
 
     /// <summary>Closes the menu and says so.</summary>
     public void CloseSkillMenu()
@@ -290,6 +355,11 @@ public sealed class HotbarService
     {
         switch (_menuStep)
         {
+            case SkillMenuStep.PickSkill when _menuSource == AssignSource.QuestItems:
+                if (_questItems.Count == 0) return;
+                _questItemIndex = ((_questItemIndex + direction) % _questItems.Count + _questItems.Count) % _questItems.Count;
+                AnnounceQuestItem();
+                break;
             case SkillMenuStep.PickSkill when _menuSource == AssignSource.Items:
                 if (_items.Count == 0) return;
                 _itemIndex = ((_itemIndex + direction) % _items.Count + _items.Count) % _items.Count;
@@ -315,9 +385,15 @@ public sealed class HotbarService
         switch (_menuStep)
         {
             case SkillMenuStep.PickSkill:
-                var chosen = _menuSource == AssignSource.Items
-                    ? (_itemIndex >= 0 && _itemIndex < _items.Count ? _items[_itemIndex].Name : null)
-                    : (_skillIndex >= 0 && _skillIndex < _skills.Count ? _skills[_skillIndex].Name : null);
+                var chosen = _menuSource switch
+                {
+                    AssignSource.Items => _itemIndex >= 0 && _itemIndex < _items.Count
+                        ? _items[_itemIndex].Name : null,
+                    AssignSource.QuestItems => _questItemIndex >= 0 && _questItemIndex < _questItems.Count
+                        ? _questItems[_questItemIndex].Name : null,
+                    _ => _skillIndex >= 0 && _skillIndex < _skills.Count
+                        ? _skills[_skillIndex].Name : null,
+                };
                 if (chosen == null) return;
 
                 BuildTargetList();
@@ -335,10 +411,12 @@ public sealed class HotbarService
                 if (_targetIndex < 0 || _targetIndex >= _targets.Count) return;
                 var (bar, slot) = _targets[_targetIndex];
                 _menuStep = SkillMenuStep.Closed;    // leave the menu; assign speaks the result
-                if (_menuSource == AssignSource.Items)
-                    AssignItemToSlot(_itemIndex, bar, slot);
-                else
-                    AssignSkillToSlot(_skillIndex, bar, slot);
+                switch (_menuSource)
+                {
+                    case AssignSource.Items:      AssignItemToSlot(_itemIndex, bar, slot); break;
+                    case AssignSource.QuestItems: AssignQuestItemToSlot(_questItemIndex, bar, slot); break;
+                    default:                      AssignSkillToSlot(_skillIndex, bar, slot); break;
+                }
                 break;
         }
     }
@@ -350,15 +428,20 @@ public sealed class HotbarService
         if (_menuStep == SkillMenuStep.PickTarget)
         {
             _menuStep = SkillMenuStep.PickSkill;
-            if (_menuSource == AssignSource.Items)
+            switch (_menuSource)
             {
-                _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
-                AnnounceItem();
-            }
-            else
-            {
-                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-                AnnounceSkill();
+                case AssignSource.Items:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
+                    AnnounceItem();
+                    break;
+                case AssignSource.QuestItems:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
+                    AnnounceQuestItem();
+                    break;
+                default:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
+                    AnnounceSkill();
+                    break;
             }
         }
         else
@@ -385,6 +468,18 @@ public sealed class HotbarService
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
         _tolk.SpeakInterrupt(AccessibilityStrings.ItemBrowseEntry(
             item.Name, item.Quantity, item.IsHq, location, _itemIndex + 1, _items.Count));
+    }
+
+    /// <summary>Announces the current quest item: name, how many are left, its
+    /// cast time and where it already sits. The cast time is spoken because in a
+    /// fight it decides whether there is room to use the thing at all - a
+    /// sighted player reads it off the tooltip.</summary>
+    private void AnnounceQuestItem()
+    {
+        var item = _questItems[_questItemIndex];
+        var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.EventItem, item.ItemId);
+        _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemBrowseEntry(
+            item.Name, item.Quantity, item.CastTime, location, _questItemIndex + 1, _questItems.Count));
     }
 
     /// <summary>Announces the current target key: its label, what is on it now,
@@ -541,6 +636,46 @@ public sealed class HotbarService
 
         _framework.RunOnTick(
             () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.Item),
+            delayTicks: 2);
+    }
+
+    /// <summary>
+    /// Puts a usable quest item on the chosen key, through the same measured
+    /// path as the other two sources (see <see cref="PlaceOnSlot"/>).
+    /// <para>
+    /// The slot type is <c>EventItem</c> with the EventItem row id. The game
+    /// also knows <c>HotbarSlotType.KeyItem</c>, but its own doc marks that as
+    /// the drag-and-drop form whose id is a SLOT INDEX in the key-item
+    /// container, resolved to EventItem on write (RaptureHotbarModule,
+    /// ilspycmd 2026-08-09) - a slot index would break as soon as the container
+    /// reorders, so the stable row id is used.
+    /// </para>
+    /// </summary>
+    private unsafe void AssignQuestItemToSlot(int questItemIndex, int bar, int slot)
+    {
+        if (questItemIndex < 0 || questItemIndex >= _questItems.Count)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
+            return;
+        }
+
+        var module = RaptureHotbarModule.Instance();
+        if (module == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            return;
+        }
+
+        var item = _questItems[questItemIndex];
+        _log.Info($"[Hotbar] Belegen: {SlotLabel(bar, slot)} (Leiste {bar + 1} Slot {slot}) <- eventitem {item.ItemId} " +
+                  $"'{item.Name}' (Anzahl {item.Quantity}, Wirkzeit {item.CastTime}s). " +
+                  $"Vorher: {DescribeSlotRaw(module, bar, slot)}");
+
+        if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.EventItem, item.ItemId, item.Name))
+            return;
+
+        _framework.RunOnTick(
+            () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.EventItem),
             delayTicks: 2);
     }
 

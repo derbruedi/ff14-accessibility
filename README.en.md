@@ -53,7 +53,9 @@ cues — including braille display output and automatic walking.
   where you are facing, and an arrival tone.
 - **Auto-walk**: walk to the target automatically (requires the
   third-party plugin vnavmesh), with route preview, progress
-  announcements and an honest message when no path exists.
+  announcements and an honest message when no path exists. When the
+  route stops just short of the destination, the last few metres are
+  walked as well, provided there is solid ground all the way.
 - **Follow**: trail your current target continuously — stops when the
   target stops, ends on a zone change or when the target disappears
   (also requires vnavmesh).
@@ -68,7 +70,8 @@ cues — including braille display output and automatic walking.
 
 ### Combat
 
-- Combat status on demand: your own HP and MP.
+- Combat status on demand: your own HP and MP as a percentage — exactly what
+  a sighted player reads off the bar.
 - Target HP in steps, a short tone when you target an enemy.
 - **Cast warning**: when an enemy casts a spell **at you** it is announced
   — from any nearby enemy, not just the one you have targeted. If it is

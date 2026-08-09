@@ -3,7 +3,1403 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-06, V5.74 OEFFENTLICH RELEASED)
+## STAND JETZT (2026-08-09, "QUEST-GEGENSTAENDE IM KAMPF" - GEBAUT, UNGETESTET)
+
+>>> USER-FRAGE: "es gibt quests wo man mit gegenstaenden im kampf sachen
+    ausloesen muss ne idee wie wir das fuer blinde barrierefrei machen
+    koennen?" - genannter Fall: "Stufe 28, Nebenauftrag: Ein Licht fuer die
+    Nacht".
+
+>>> DER FALL IST OFFLINE AUFGEKLAERT (Lumina gegen sqpack, kein Spiel noetig,
+    User musste nichts nachspielen). Quest **66333 "Ein Licht fuer die Nacht"**
+    (Stufe 28, JournalGenre 113 "Nebenauftraege Finsterwald", Nordwald):
+      QuestParams: ITEM0 = EventItem 2000627 "Bergmannslampe" (Stapel 1, Cast 1s)
+                   ITEM1 = EventItem 2000628 "Gleissende Lampe" (Stapel 2, Cast 3s)
+                   ENEMY0 = 2266
+    Also KEINE Duty-Action-Leiste, sondern ein Schluesselgegenstand.
+
+>>> ZWEI MECHANIKEN, NICHT VERMISCHEN (beide in docs/game-api.md dokumentiert):
+    A) Schluesselgegenstand (EventItem) - dieser Fall. Auf die Leiste legbar,
+       dann per normaler Spieltaste ausloesbar.
+    B) Duty Actions (Sonderaktions-Leiste in Instanzen) - DutyActionManager +
+       RaptureHotbarModule.ExecuteDutyActionSlot. Im Tastenbelegungs-Dump
+       (679 Eintraege, 2026-08-09) gibt es dafuer KEINE Belegung, das Spiel
+       erwartet einen Mausklick. Getrenntes Feature, auf Wunsch des Users als
+       naechstes.
+
+>>> GEBAUT (A):
+    1. InventoryService.CollectQuestItems() - die getragenen Schluessel-
+       gegenstaende, die etwas TUN. Filter ist die spieleigene Spalte
+       EventItem.Action != 0, genau das Gegenstueck zu Item.ItemAction bei den
+       Beutel-Gegenstaenden. MESSUNG (Sheet-Dump 2026-08-09): von 3534 benannten
+       EventItem-Zeilen haben 1708 eine Action (1570 davon Action#1
+       "Schluesselgegenstand", Rest Wurf-/Trankartiges); die 1826 ohne Action
+       sind reine Beleg-Stuecke wie "Diebesgut", fuer die das Spiel selbst keine
+       Benutzung anbietet.
+    2. Zuweisungs-Menue (Strg+Numpad0) hat jetzt DREI Listen statt zwei:
+       Skills / Gegenstaende / Quest-Gegenstaende. Numpad 6 vor, Numpad 4
+       zurueck. Eine Liste ohne Eintraege wird UEBERSPRUNGEN statt als Fehler
+       angesagt - Blaettern soll immer irgendwo Brauchbarem landen. Ist gar
+       nichts anderes da: "Keine andere Liste verfuegbar."
+    3. Ansage beim Blaettern nennt auch die WIRKZEIT ("Gleissende Lampe,
+       2 Stueck, Wirkzeit 3 Sekunden, 1 von 1") - im Kampf ist das eine
+       Entscheidung, und ein sehender Spieler liest sie vom Tooltip ab.
+    4. Belegen laeuft ueber HotbarSlotType.EventItem + EventItem-Zeilen-Id,
+       durch denselben gemessenen Pfad wie Skills/Gegenstaende (Set +
+       WriteSavedSlot + LoadSavedHotbar, PlaceOnSlot). BEWUSST NICHT
+       HotbarSlotType.KeyItem: dessen Id ist laut Struct-Doku ein SLOT-INDEX im
+       Schluesselgegenstand-Container (DragDrop-Sonderform) - das braeche, sobald
+       der Container umsortiert.
+    5. Leiste vorlesen benennt EventItem-Slots jetzt ueber das EventItem-Sheet
+       statt ueber den Anzeigetext.
+    6. Erhalt-Ansage: "Quest-Gegenstand zum Benutzen: <Name>. Mit Strg und
+       Nummernblock 0 auf die Leiste legen." Bewusst NICHT dasselbe wie der
+       Beute-Kanal (der sagt nur, DASS etwas ankam) - Schalter
+       Configuration.AnnounceQuestItems.
+
+>>> LOGIN-GEPLAPPER AUSGESCHLOSSEN, OHNE TIMER-HACK: Dalamuds IGameInventory
+    taugt direkt nach dem Login nicht als Neuigkeits-Quelle - sein Vergleichs-
+    Cache wird pro Container beim ersten Sehen LEER angelegt (Dalamud.Game.
+    Inventory.GameInventory, dekompiliert 2026-08-09), also meldet er jeden
+    getragenen Gegenstand als "Added". Deshalb keine Events, sondern eine stille
+    GRUNDLINIE: die erste Beobachtung nach dem Login schreibt nur mit und sagt
+    nichts; erst spaetere Neuzugaenge werden angesagt. Beim Ausloggen wird die
+    Grundlinie verworfen. Log-Beleg: "[QuestItem] Grundlinie gesetzt: N ...
+    (stumm)".
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Strg+Numpad0 oeffnen, mit Numpad 6 zweimal weiter: Skills ->
+       Gegenstaende -> Quest-Gegenstaende. Die "Gleissende Lampe" muss dort mit
+       Stueckzahl und Wirkzeit erscheinen.
+    2. Sie auf eine Taste legen und die Leiste vorlesen: der Platz muss
+       "Gleissende Lampe" sagen (nicht "EventItem, 2000628").
+    3. Im Kampf die Taste druecken - loest das Spiel die Lampe aus?
+    4. Neuen Quest-Gegenstand abholen: die Ansage muss EINMAL kommen, und beim
+       naechsten Einloggen NICHT erneut.
+    OFFEN UND EHRLICH: dass das Setzen mit Typ EventItem wirklich haftet, ist
+    NICHT vorab gemessen - nur der Pfad ist derselbe, der fuer Action/Item in
+    zwei Jobs gemessen wurde. Der Read-back nach 2 Frames meldet ehrlich
+    "keine Aenderung", falls das Spiel den Typ anders behandelt. Genau dieser
+    Fall (SetAndSaveSlot war job-abhaengig wirkungslos) ist hier schon einmal
+    passiert.
+
+## VORHERIGER STAND (2026-08-09, "GELEERTE TRUHEN RAUS AUS DER LISTE" - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "objekte die man aufhebt in dugeons bzw generell sollten aus
+    der liste verschwinden."
+
+>>> IM LOG BELEGT (dalamud.log 2026-08-09 00:19:35):
+    "Schatztruhe 2, Schatz, schon besucht, 2 Meter, geradeaus, 1 von 26."
+    Die Truhe belegt nach dem Besuch weiter einen Listenplatz.
+
+>>> NEBENBEI BESTAETIGT: die Features von gestern LAUFEN im Spiel.
+    00:15:31 "[Ortsgedaechtnis] Besucht: 'Schatztruhe' (id=4002003A,
+    art=Treasure)" und 00:19:26 "'Schatztruhe' kommt mehrfach vor - ab jetzt
+    nummeriert" -> danach "Schatztruhe 2". Nummer und Besuchsmarke tun also
+    beide, was sie sollen. (Der User hat das noch nicht selbst bewertet.)
+
+>>> DAS SPIEL FUEHRT DEN ZUSTAND SELBST - nichts nachgebaut.
+    FFXIVClientStructs `Treasure` (ilspycmd 2026-08-09):
+      State (Offset 416): Unopened=0, Opening=1, Opened=2, Unk3=3,
+                          FadingOut=4, FadedOut=5
+    Alles ausser Unopened = erledigt. Die Truhe bleibt danach noch kurz in der
+    ObjectTable, nur um ihr Ausblenden zu spielen.
+    WARUM State UND NICHT Flags.Opened: die Struct-Doku nennt beide
+    ueberlappend und sagt zu Flags ausdruecklich "sometimes set when fading
+    starts, sometimes when fading is complete" - also unzuverlaessig. State ist
+    eine geordnete Folge und deckt auch Opening ab, wo die Sache schon
+    entschieden ist.
+
+>>> NUR DIE BROWSER-LISTE wird gefiltert (NavigationService.IsWorthBrowsing ->
+    IsEmptiedTreasure). Visiert der Spieler die Truhe mit den SPIELTASTEN an,
+    wird sie weiterhin angesagt - das Spiel laesst sie anvisieren, und dort zu
+    schweigen wuerde etwas verstecken, das der Spieler bewusst gewaehlt hat.
+
+>>> GRENZE, EHRLICH: das gilt fuer SCHATZTRUHEN (ObjectKind.Treasure), weil es
+    dafuer eine belegte Zustandsquelle gibt. Fuer andere "erledigte" Objekte -
+    betaetigte Schalter, benutzte EventObj - ist KEINE Quelle geprueft.
+    GameObject.EventState existiert, aber was seine Werte bedeuten, ist nicht
+    belegt; das waere zu messen, nicht zu raten. Bitte melden, wenn es konkrete
+    andere Objekte gibt, die haengenbleiben.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Dungeon, Truhe oeffnen, dann Objekt-Browser: die Truhe darf NICHT mehr
+       in der Liste auftauchen, und die Gesamtzahl ("... von N") muss um eins
+       kleiner werden.
+    2. Ungeoeffnete Truhen muessen weiterhin erscheinen.
+    3. Die geoeffnete Truhe direkt anvisieren (Tab/F-Tasten): sie soll
+       weiterhin angesagt werden.
+    LOG-BELEG: "[Nav] Schatztruhe <id> ist 'Opened' - faellt aus der
+    Browser-Liste." (einmal je Truhe).
+
+## VORHERIGER STAND (2026-08-08, "SYSTEMMELDUNG DOPPELT" + GEFUNDENER CRASH - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "wenn system meldungen kommen werden die zwei mal vorgelesen
+    einmal als system meldung und dann noch mal so schau in die log."
+
+>>> IM LOG BELEGT, dieselbe Meldung auf zwei Wegen (dalamud.log 2026-08-08):
+      23:43:53.396 [Chat] kind=SystemMessage (57) text='Sind alle Gruppen...'
+      23:43:53.396 [Speak] 'System: Sind alle Gruppenmitglieder kampfunfaehig...'
+      23:43:53.397 [Toast] Toast: 'Sind alle Gruppenmitglieder kampfunfaehig...'
+    Also einmal ueber ChatGui, 1 ms spaeter einmal ueber ToastGui.
+    Gegenprobe: NICHT jede Systemmeldung ist doppelt - "'Haukke-Herrenhaus' hat
+    begonnen" (23:43:51) kam nur ueber den Chat. Und die meisten Toasts haben
+    gar kein Chat-Pendant (Ortsnamen wie "Zwieselgrund"). Ein pauschales
+    Abschalten eines der beiden Kanaele waere also falsch gewesen.
+
+>>> URSACHE: der Dublettenschutz existierte bereits, griff aber nur in EINE
+    Richtung. TolkService.WasRecentlySpoken vergleicht ganze Zeichenketten
+    (`t == text`). Der Chat sprach MIT Kanal-Praefix ("System: ..."), der Toast
+    fragte OHNE Praefix - kein Treffer, also zweimal gesprochen. Umgekehrt
+    (Toast zuerst) funktionierte es immer, weil der Chat-Reader den nackten Text
+    gegen einen nackten Eintrag prueft.
+
+>>> FIX: neue Methode TolkService.RememberSpokenVariant(text) legt einen Text in
+    die Verlaufsliste, ohne ihn zu sprechen. Der ChatReaderService meldet damit
+    nach dem Sprechen zusaetzlich den praefixlosen Wortlaut - und nur dann, wenn
+    ueberhaupt ein Praefix angehaengt wurde.
+    VERWORFENE ALTERNATIVE: WasRecentlySpoken praefix-tolerant machen ("endet
+    auf"). Das haette kurze echte Wiederholungen still verschluckt. Die Quelle,
+    die das Praefix ANHAENGT, weiss als einzige, was ihr nackter Wortlaut war.
+
+>>> DABEI GEFUNDEN, NICHT GEMELDET, ABER GRAVIEREND: NullReferenceException in
+    CombatService.AoeCastProbe Zeile 573, laufend waehrend des Dungeons
+    (23:43:47 und fortlaufend). Dalamud implementiert IsCasting als
+    `Struct->GetCastInfo()->IsCasting` OHNE Null-Pruefung (Dalamud.dll
+    dekompiliert 2026-08-08). Die Ausnahme faellt bis in OnFrameworkUpdate
+    durch - alles, was nach dem Sonden-Aufruf laeuft, faellt in dem Frame aus.
+    FIX: derselbe ObjectKind-Filter (BattleNpc), den die produktive Schleife
+    Zeile 392 schon hat und der sie nachweislich verschont; zusaetzlich an der
+    zweiten ungefilterten Stelle (Zeile 423), die dasselbe Muster hat und nur
+    seltener laeuft.
+    EHRLICH: WELCHER ObjectKind den Nullzeiger liefert, ist NICHT ermittelt. Der
+    Filter ist von der Schleife uebernommen, die es nachweislich ueberlebt, nicht
+    aus einer Diagnose. Die Sonde ist eine #if-DEBUG-Sonde und koennte nach
+    Abschluss des AoE-Themas ganz weg - das ist eine Entscheidung des Users.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Dungeon betreten: die Hinweistexte ("Sind alle Gruppenmitglieder...",
+       "Routine-Bonus") duerfen nur noch EINMAL kommen.
+    2. Ortsnamen-Einblendungen (z. B. beim Betreten eines Gebiets) muessen
+       WEITERHIN kommen - die haben kein Chat-Pendant und duerfen nicht
+       mitgefiltert werden.
+    3. Im Log darf "NullReferenceException ... AoeCastProbe" nicht mehr
+       auftauchen.
+
+## VORHERIGER STAND (2026-08-08, "ZWEI VNAVMESH-ENDPUNKTE" - GEBAUT, UNGETESTET)
+
+>>> USER-FRAGE: "gibt es eine moeglichkeit das vnavmesh objekte erreicht die
+    uebereinem liegen?" -> vnavmesh.dll komplett dekompiliert (ilspycmd,
+    2026-08-08). Vollstaendige Analyse in docs/game-api.md.
+
+>>> KERNBEFUND ZUR FRAGE: das Gehnetz kann Hoehe (Treppen, Rampen, Bruecken sind
+    drin). Was es nicht kann, ist eine Verbindung, die es begehbar nicht gibt.
+    Der `fly`-Parameter waehlt einen ANDEREN SUCHRAUM (QueryPath Zeile 189):
+    `flying ? PathfindVolume : PathfindMesh`. Wir uebergeben ueberall false.
+
+>>> EINE FRUEHERE EMPFEHLUNG WAR ZU OPTIMISTISCH UND IST HIER KORRIGIERT:
+    `Nav.PathfindWithTolerance` bringt beim LAUFEN nichts Neues.
+    `AsyncMoveRequest.MoveTo(dest, fly, range)` reicht `range` bereits an
+    QueryPath weiter - unser `_moveCloseTo(dest, false, stopRange)` nutzt die
+    Toleranz also seit jeher. NEU ist sie nur bei den reinen ABFRAGEN, die mit
+    range=0 liefen.
+
+>>> EINGEBAUT, ZWEI STELLEN:
+
+    1. `Query.Mesh.NearestPointReachable` -> AutoWalkService.SnapToReachableMesh,
+       benutzt in der Kandidatensuche der Zugangssuche.
+       WAS "ERREICHBAR" WIRKLICH HEISST (dekompiliert, nicht angenommen): NICHT
+       "von meinem Standort aus". Das Gate setzt allowUnreachable=false, das
+       tauscht den Filter gegen FloodFillAwareFilter, und der verwirft Polygone
+       mit Flag 0x10. Gesetzt wird das Flag einmal pro Zone von
+       NavmeshManager.Prune per Flood-Fill von Saatpunkten. Die Eigenschaft ist
+       also "haengt mit der Hauptflaeche der Zone zusammen" - eine vorberechnete
+       Karteneigenschaft.
+       NUTZEN: abgetrennte Inseln (der Astalicia-Fall) kommen gar nicht erst in
+       die Kandidatenliste, statt je einen vollen Pathfind zum Aussortieren zu
+       kosten.
+       GRENZE: Prune laeuft nur, wo FloodFill.TryLookup Saatpunkte fuer die Zone
+       hat. Ohne sie ist nichts markiert und es verhaelt sich exakt wie vorher.
+
+    2. `Nav.PathfindWithTolerance` -> RouteService.RequestPath(from, to,
+       tolerance), gesetzt in der Gehhilfe (_walkArrivalRange) und in der
+       Routenvorschau (ArrivalDistance).
+       WAS DIE TOLERANZ TUT: > 0 tauscht die A*-Heuristik gegen
+       GoalRadiusHeuristic, die -1 liefert sobald ein Knoten im Radius liegt -
+       der Knoten wird als Ziel akzeptiert.
+       GRENZE, WICHTIG: das Zielpolygon wird trotzdem zuerst gesucht, mit
+       vnavmeshs eigenem Standard-Extent von 5 m (PathfindMesh ruft
+       FindNearestMeshPoly(to) ohne Argumente). Liegt das Ziel weiter als das
+       vom Netz weg, gibt es kein Polygon und damit keine Route - egal wie gross
+       die Toleranz ist. Toleranz rettet "knapp neben der Flaeche", nicht "weit
+       davon weg". Der Haukke-Fall (14,6 m) faellt NICHT darunter.
+
+>>> BEIDE MIT RUECKFALL: ein aelteres vnavmesh registriert die Gates nicht und
+    wirft beim INVOKE. Dann wird auf den alten Aufruf zurueckgefallen und einmal
+    gewarnt (nicht still, nicht pro Frame).
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Gehhilfe zu einem Ziel, das frueher in den Luftlinien-Modus fiel
+       ("Kein Wegenetz, Luftlinie") - kommt jetzt eine echte Route?
+    2. Routenvorschau auf einen Kartenmarker: kommt haeufiger eine Route?
+    3. Zugangssuche: im Log muesste "[Zugang] N Kandidatenpunkte" jetzt eher
+       WENIGER Kandidaten zeigen als frueher, dafuer bessere.
+    LOG-BELEG: "[Zugang] NearestPointReachable nicht verfuegbar" bzw.
+    "[Route] Nav.PathfindWithTolerance nicht verfuegbar" duerfen NICHT
+    erscheinen - wenn doch, ist das installierte vnavmesh zu alt.
+
+>>> NICHT GEBAUT, bewusst: Fliegen (fly=true). Dafuer muesste erst gemessen
+    werden, ob das Voxel-Volumen in den fraglichen Zonen ueberhaupt existiert -
+    NavmeshQuery legt VolumeQuery nur an wenn navmesh.Volume != null, sonst
+    kommt "Nav volume was not built". Und eine Flugroute nuetzt nur mit
+    freigeschaltetem Flug und Mount.
+
+## VORHERIGER STAND (2026-08-08, "GLEICHNAMIGE OBJEKTE UNTERSCHEIDEN" - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "ob man die objekte wenn man mehrere von einer sorte hat wie in
+    dungeons benennen kann so das ich weiss ob ich da schon mal war bzw damit ich
+    weiss wo ich zuerst hin muss."
+
+>>> DAS PROBLEM IM CODE BELEGT, nicht vermutet: GetObjectsOfKinds sortiert die
+    Browser-Liste bei JEDEM Tastendruck neu nach Entfernung
+    (NavigationService.cs:1009). Damit ist "3 von 8" ein Listenplatz, kein
+    Objekt - zwei Schritte weiter ist dieselbe Truhe "2 von 8". Vier Truhen
+    hiessen alle gleich, und nichts in der Ansage blieb beim Objekt.
+
+>>> NEU: ObjectMemoryService (Ortsgedaechtnis). Zwei Dinge, bewusst getrennt:
+    1. NUMMER: "Truhe 2, Schatz". Vergeben in der Reihenfolge der ersten Ansage,
+       gebunden an das Objekt, nicht an die Liste. Erst ab dem ZWEITEN
+       gleichnamigen Objekt - eine einzelne Truhe bleibt "Truhe".
+    2. BESUCHT: ", schon besucht", sobald der Spieler naeher als 5 m dran war.
+
+>>> WARUM GETRENNT: der erste Entwurf hatte beides in einer Struktur, und die
+    Positionssuche lief dann ueber alle Namensgruppen - eine neu geladene Truhe
+    haette den Eintrag der Tuer daneben bekommen. Getrennt sucht die Nummer nur
+    innerhalb ihrer Namensgruppe, und "besucht" braucht gar keinen Namen.
+
+>>> IDENTITAET ZWEISTUFIG: GameObjectId solange geladen (das nutzt der Rest des
+    Plugins schon so), sonst Position auf 1 m genau. Begruendung: ob das Spiel
+    nach dem Ausladen dieselbe Id wieder vergibt, ist NICHT belegt - also nicht
+    angenommen. Eine Truhe bewegt sich nicht, die Position traegt.
+
+>>> EHRLICHE GRENZE: ein Objekt, das sich BEWEGT UND auslaedt (patrouillierender
+    NPC), kann mit neuer Nummer zurueckkommen. Kampf-NPCs und Spieler sind
+    deshalb ganz ausgeschlossen (IsLandmark) - ein respawnender Gegner ist kein
+    Ort. Gedaechtnis gilt fuer EventObj, Schatz, Sammelpunkt, Aetheryt, EventNpc.
+
+>>> ZONENWECHSEL LEERT ALLES: beim zweiten Dungeon-Besuch sind die Truhen wieder
+    voll, "schon besucht" waere dort schlicht gelogen.
+
+>>> ZUM ZWEITEN TEIL DER FRAGE ("wo muss ich zuerst hin"): das beantwortet die
+    Nummer NICHT - sie ist Unterscheidung, keine Reihenfolge. Was der Spieler
+    bekommt, ist die Gegenprobe: was noch nicht "schon besucht" sagt, steht noch
+    aus. Eine echte Reihenfolge waere Spielwissen, das auch ein sehender Spieler
+    nicht angezeigt bekommt.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+    (Hinweis: scripts/Build-Mod.ps1 aus CLAUDE.md existiert hier nicht - der
+    Deploy nach devPlugins haengt am Target DeployToDevFolder im csproj.)
+
+>>> ZU TESTEN:
+    1. Dungeon mit mehreren gleichnamigen Objekten: sagt der Browser jetzt
+       "Truhe 1", "Truhe 2" - und BLEIBT die Nummer dieselbe, wenn du naeher
+       rangehst oder wieder weggehst?
+    2. An einer Truhe stehen, weglaufen, spaeter zurueckblaettern: kommt
+       ", schon besucht"?
+    3. Stoert die Nummer irgendwo, wo Objekte zwar gleich heissen, aber egal
+       sind (viele gleiche NPCs in der Stadt)? Dann bitte melden, dann grenzen
+       wir die Arten ein.
+    LOG-BELEG: Zeilen mit "[Ortsgedaechtnis]" - "kommt mehrfach vor - ab jetzt
+    nummeriert", "Besucht: ..." und die Zonenwechsel-Zeile.
+
+## VORHERIGER STAND (2026-08-08, "WEGE WERDEN NICHT GEFUNDEN" - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "eine sache zum navigieren er findet manchmal wege nicht schau
+    das er das navmesh wegenetz nuzt dann sollte er alle wege finden die dort
+    verfuegbar sind."
+
+>>> IM LOG GEFUNDEN, nicht vermutet - ein Fall, viermal wiederholt
+    (dalamud.log 2026-08-08 18:32:15, 18:32:23, 18:32:33, 18:33:13).
+    Ziel "Haukke-Herrenhaus" (Kartenmarker, 603 m):
+      1. vnavmesh liefert 54 Wegpunkte. Echtes Pfadende <-575,8|67,2|64,1>,
+         also 14,6 m waagerecht und 13,8 m hoch vor dem Ziel <-590,4|81,0|63,6>.
+      2. Fall 1 "falsche Etage" greift und leitet um auf <-590,4|67,2|63,6>
+         (Marker-XZ + Pfadende-Hoehe).
+      3. Der Lauf dorthin meldet restWp=0 -> "Kein Weg zu Haukke-Herrenhaus
+         gefunden." ENDE.
+    Der Spieler hoerte also viermal eine Absage, waehrend das Wegenetz einen
+    603-m-Weg bis auf 14,6 m ans Ziel hatte. Genau die gemeldete Beschwerde.
+
+>>> ZWEI URSACHEN, beide behoben:
+
+    1. DER KORRIGIERTE PUNKT WAR NIE AUF DEM WEGENETZ. `_destPosition with
+       { Y = realEnd.Y }` ist reine Rechnung: Marker-X/Z plus eine Hoehe, die
+       woanders gemessen wurde. Dass dort Boden liegt, hat nie jemand geprueft -
+       hier lag er daneben, darum 0 Wegpunkte. Der Kommentar an der Stelle
+       behauptete "the chain cannot run away" - sie lief sehr wohl weg, weil der
+       Rueckfall einen PFAD voraussetzt und es gar keinen gab.
+       FIX: `NearestMeshPoint(computed, 3 m waagerecht, 2 m hoch)` legt den Punkt
+       aufs Netz, bevor umgeleitet wird. Die Hoehenbox bleibt bei ImpossibleRise
+       (2 m) - die Etage ist ja der ganze Zweck der Korrektur, ein weiter Griff
+       nach oben wuerde genau den Fehler wiederholen, den sie beheben soll.
+       Findet sich dort kein Netz, wird gar nicht erst umgeleitet, sondern
+       direkt die Zugangssuche gestartet.
+
+    2. "KEIN WEG GEFUNDEN" WAR EINE SACKGASSE. Der Zweig lief in eine Absage,
+       ohne die vorhandene Zugangssuche auch nur zu versuchen - obwohl Fall 3
+       sie fuer den verwandten Fall schon nutzt und die Regel des Users dieselbe
+       ist ("es sollen alle angelaufen werden koennen die das navmesh hat").
+       Das trifft JEDES Ziel, dessen exakter Punkt neben dem Netz liegt, nicht
+       nur diesen einen.
+       FIX: keine Route -> Zugangssuche um das Ziel, still. Erst wenn auch die
+       nichts findet, kommt die Absage.
+
+>>> GEGEN DIE ENDLOSSCHLEIFE, die dabei droht: die Zugangssuche endet selbst in
+    einem Lauf, der wieder scheitern koennte. `_approachTried` erlaubt genau
+    EINEN Versuch je Ziel; der Lauf, den die Suche startet, setzt das Flag
+    selbst, statt es zuruecksetzen zu duerfen.
+
+>>> DAZU `_walkOrigin` NEU: ein Lauf wird intern mehrfach neu gestartet (falsche
+    Etage, Pfadende, Zugangspunkt), und jeder Neustart ueberschreibt
+    `_destPosition` mit einem Zwischenpunkt. Die Zugangssuche muss aber um das
+    suchen, was der SPIELER genannt hat - sonst sucht sie den Zugang zu einem
+    Punkt, den nie jemand wollte. BeginWalk setzt es, die beiden Umleitungen in
+    Update stellen es danach wieder her.
+
+>>> KEIN INFORMATIONSVERLUST BEI DER ABSAGE: die alte Zeile trug den
+    Aetheryt-Hinweis (BuildNoPathHint, "Reise per Aethernet dorthin"). Der geht
+    jetzt als `noPathHint` an die Suche mit und haengt an ApproachNone. Kein
+    neuer String noetig - der Hinweis ist bereits ein eigener Satz mit
+    fuehrendem Leerzeichen und in beiden Sprachen vorhanden.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> ZU TESTEN:
+    1. Objekt-Browser -> "Haukke-Herrenhaus" -> Numpad 3. Erwartung: KEINE
+       Absage mehr. Entweder laeuft er los und kommt in der Naehe an, oder er
+       sagt am Ende ehrlich, dass es keinen erreichbaren Punkt gibt.
+    2. Bitte auch bei anderen Zielen achten, wo frueher "Kein Weg zu ...
+       gefunden" kam - die muessten jetzt meist losgehen.
+    3. Wenn er losgeht und irgendwo stehenbleibt: bitte melden WO. Im Log
+       stehen dann "[Zugang] Naechster erreichbarer Punkt" mit Koordinaten und
+       Hoehenunterschied.
+    LOG-BELEG: die Zeilen "[Nav] Auto-Lauf: keine Route zu <...> - suche den
+    naechsten erreichbaren Punkt um '<Ziel>'" und "[Zugang] N von M Kandidaten
+    sind erreichbar."
+
+>>> EHRLICHE GRENZE: dass der Zugang zum Haukke-Herrenhaus im Wegenetz
+    UEBERHAUPT existiert, ist nicht belegt - gemessen ist nur, dass das Netz bis
+    14,6 m heranreicht. Die Zugangssuche tastet Ringe bis 28 m ab; findet sie
+    nichts, ist der Eingang wirklich nicht angebunden. Das entscheidet erst der
+    Test.
+
+## VORHERIGER STAND (2026-08-08, "UNBENANNTE OBJEKTE" - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "ist es moeglich alle objekte die unbenannt sind zu benennen?
+    weil manchmal unbenanntes objekt da steht so das man nicht weiss was es
+    ist." Gehoert wird es beim Blaettern im Objekt-Browser UND beim Anvisieren.
+
+>>> DIE NAHELIEGENDE ANTWORT IST FALSCH, OFFLINE BELEGT (Lumina-Dump gegen das
+    installierte Spiel, 2026-08-08): Die namenlosen Objekte haben AUCH IM SPIEL
+    keinen Namen. Alle 25 namenlosen EventNpc aus dem Live-Log (DataIds 1001183,
+    1003517, 1007977, ...) stehen in ENpcResident mit Singular='' UND Title=''.
+    Der EventObj 2013278: EObjName.Singular=''. Es gibt also nichts zu holen -
+    ein Name dafuer waere Erfindung.
+    GEGENPROBE, damit das kein Werkzeugfehler ist: fuer die Objekte, die das
+    Spiel benannt hat, steht der Name auch im Sheet - Robyn, Hasthwab, Muriel,
+    Sekka, Gelbjacken-Wache exakt gleich. Das Auslesen stimmt also.
+    Alle 25 hatten zielbar=False: Statisten, Kulisse, unsichtbare Ausloeser.
+
+>>> ABER ZWEI ECHTE FEHLER GEFUNDEN, beide im Log belegt:
+
+    1. DER NAMENSFILTER WAR IN DER KATEGORIE "ALLES" KOMPLETT AUS.
+       NavigationService.GetObjectsOfKinds fragte
+         var isGathering = kinds.Contains(ObjectKind.GatheringPoint);
+         ... && (isGathering || <Name nicht leer>)
+       Die Ausnahme war fuer Sammelpunkte gedacht (die haben nie einen eigenen
+       Namen), galt aber PRO KATEGORIE. AllBrowseKinds enthaelt GatheringPoint
+       -> in "Alles" war der Filter fuer JEDES Objekt abgeschaltet.
+       BELEG im Log: "Auswahl: , Objekt, 24 Meter, geradeaus, 7 von 68"
+       (2026-08-08 00:40) und "Auswahl: , NPC, 7 Meter, 1 von 68" (2026-08-06
+       20:49) - Ansagen, die mit einem leeren Namen anfangen, mitten in einer
+       68 Eintraege langen Liste.
+
+    2. NAMEN OHNE SPRECHBAREN INHALT rutschten durch jede Leer-Pruefung.
+       EObjName 2004123 heisst im Spiel woertlich "?" -> Log 2026-08-06 19:49:
+       "Auswahl: ?, Objekt, 55 Meter". IsNullOrWhiteSpace sagt "nicht leer",
+       der Screenreader sagt nichts Brauchbares. Kein Einzelfall: 52 Zeilen in
+       EObjName tragen kein einziges Buchstaben-/Ziffernzeichen.
+
+>>> DAZU EIN DRITTER, VOM USER NICHT GEMELDETER FEHLER: derselbe Gegenstand
+    hiess je nach Taste anders. Der Browser loeste Sammelpunkte sauber auf
+    ("Erzader, Stufe 20"), der Auto-Lauf merkte sich aber nur den ROHEN Namen
+    (leer) -> Numpad 3 sagte danach "Laufe zu Unbenannt". Dasselbe beim
+    Anvisieren (NavigationService:186) und beim Ziel-Folgen
+    (AutoWalkService:355). Vier Stellen, vier verschiedene Antworten.
+
+>>> GEBAUT - Services/ObjectNameService.cs (neu), EINE Quelle fuer die Frage
+    "wie heisst das":
+    - IsSpeakable(text): mindestens ein Buchstabe ODER eine Ziffer nach
+      Sanitize. Ersetzt "nicht leer" ueberall - faengt "?", Icon-Glyphen und
+      Nullbreiten-Fueller in einem Zug.
+    - Resolve(obj): roher Name -> sonst Sheet ueber BaseId -> sonst null.
+      Sheet-Zuordnungen BELEGT, nicht angenommen:
+        EventNpc -> ENpcResident (dieselbe Bindung, die NpcPrefix seit jeher
+          fuer NPC-Titel nutzt; Gegenprobe oben).
+        EventObj -> EObjName (gleiche Zeilenzahl wie EObj, 15710; und Zeile
+          2004123 liest "?" - genau der Name, den das Spiel live fuer das
+          Objekt mit dieser BaseId zeigte. Die Zeilennummern decken sich also).
+      NICHT aufgeloest: BattleNpc (BaseId adressiert BNpcBase, der Name liegt
+      unter einer anderen Id in BNpcName) und Treasure - keine Quelle, also
+      kein Rateversuch.
+    - Deklinationsmarker werden entfernt: die Sheets fuehren "Soldat[p] von
+      Nophicas Schar", "Highwind-Bedienstet[a]". Offline gezaehlt sind es genau
+      drei Marker ([a] 6679x, [p] 2246x, [t] 32x), das Muster ist also
+      geschlossen. Das Spiel setzt die Endung zur Laufzeit aus dem Satz - den
+      haben wir nicht, also faellt der Marker weg statt geraten zu werden.
+    - Describe(obj): Name, oder ehrlicher Platzhalter "Objekt ohne Namen" /
+      "NPC ohne Namen" (User-Entscheidung 2026-08-08: Art plus Hinweis, damit
+      klar ist dass das Spiel dort nichts hat und nicht das Plugin versagt).
+
+>>> FILTERREGEL NEU, jetzt pro OBJEKT (IsWorthBrowsing):
+    drin bleiben Sammelpunkte (Typ+Stufe sind die Beschreibung), alles mit
+    sprechbarem Namen, und namenlose Dinge, die das Spiel ANVISIEREN laesst -
+    die markiert es selbst als benutzbar, die zu verstecken koennte etwas
+    Nutzbares verstecken. Raus fliegt nur namenlos UND nicht anvisierbar.
+    Erwartung fuer die gemessene Stelle: 25 der 38 Objekte verschwinden.
+
+>>> ALLE VIER STELLEN NUTZEN JETZT DIESELBE AUFLOESUNG: Browser (CycleObject +
+    gemerkte Auswahl fuer Numpad 3), Zielwechsel-Ansage, Auto-Lauf zum
+    Spielziel, Ziel-Folgen, Annaeherungs-Ansage. Neue gemeinsame Methode
+    DescribeObject laesst das Art-Wort in zwei Faellen weg, damit nichts doppelt
+    kommt: bei Sammelpunkten (sonst "Erzader, Stufe 20, Sammelpunkt") und bei
+    namenlosen (sonst "Objekt ohne Namen, Objekt").
+    AccessibilityStrings.Unnamed ("Unbenannt") ist ersatzlos entfernt.
+
+>>> NEUE ANSAGE bilingual: UnnamedOfKind.
+
+>>> ZUR VERIFIKATION eingebaut: eine Log-Zeile pro Tastendruck, aber nur wenn
+    wirklich etwas ausgeblendet wurde -
+    "[Nav] Browser: 40 von 68 Objekten (28 ohne Namen und nicht anvisierbar
+    ausgeblendet)."
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> NACHTRAG SELBE SITZUNG - USER-BEISPIEL: "Zielort, Objekt, 88 Meter, rechts,
+    1 von 1. und da weiss man nicht was es ist." Das ist ein ANDERER Fall als
+    oben: hier IST ein Name da, er sagt nur nichts.
+
+>>> OFFLINE GEMESSEN, wie generisch die Objektnamen sind (EObjName + EObj.Data):
+      1667x "Zielort"   -> davon 1547 mit Quest-Bindung
+       183x "Portal"    -> 175 ohne auswertbare Bindung
+       152x "Windaetherquelle"
+       135x "Ausgang"   -> davon 96 mit Warp-Bindung (Ziel-Gebiet bekannt)
+       104x "Miniatur-Aetheryt"
+        41x "Transportvorrichtung" -> alle ohne auswertbare Bindung
+        13x "Abkuerzung"           -> alle ohne auswertbare Bindung
+    "Zielort" ist also der Sammelname fuer Quest-Objekte, und das Spiel weiss
+    bei 93 % davon, zu WELCHER Quest. Bei "Ausgang" kennt es das Ziel-Gebiet
+    ("Neu-Gridania", "Noerdliches Thanalan").
+
+>>> GEBAUT - ObjectNameService.Qualifier(obj), aus EObj.Data:
+    - Quest-Bindung  -> " fuer <Questname>"  ("Zielort fuer Narben im Wald")
+    - Warp-Bindung   -> " nach <Gebiet>"     ("Ausgang nach Neu-Gridania")
+    - sonst leer. Fuer Portal/Abkuerzung/Transportvorrichtung fuehrt das Spiel
+      nichts Auswertbares - das bleibt ehrlich unbeantwortet statt geraten.
+    Gilt nur fuer EventObj: nur die tragen die EObj.Data-Bindung.
+
+>>> FREMDE QUESTS WERDEN AUSGEBLENDET (User-Entscheidung 2026-08-08). Ein
+    "Zielort" einer NICHT angenommenen Quest verschwindet aus dem Browser: er
+    ist gerade nicht benutzbar, und ein sehender Spieler bekommt dort auch
+    keinen Questnamen zu sehen - ihn zu nennen waere mehr als Paritaet.
+    QUELLE: QuestManager.NormalQuests (30 Plaetze, QuestWork.QuestId @8,
+    ilspycmd 2026-08-08) - ein schlichtes Datenfeld, bewusst der per Signatur
+    gesuchten Funktion IsQuestAccepted vorgezogen.
+    ID-UMRECHNUNG BELEGT: das Sheet fuehrt uint-RowIds, das Journal ushort.
+    Alle 5533 Questzeilen liegen zwischen 0x10000 und 0x1159C, die unteren
+    16 Bit sind also KOLLISIONSFREI eindeutig (offline geprueft).
+    LIMIT, ehrlich vermerkt: nur normale Quests. Freibrief-Ziele stehen in
+    LeveQuests und haben ihre eigene Browser-Kategorie.
+
+>>> REGRESSION, NOCH AM SELBEN TAG GEMELDET UND ZURUECKGENOMMEN:
+    USER: "er liest nicht mehr alle kategorien und jetzt seh ich an der stelle
+    wo vorhin ein objekt war keins mehr."
+    IM LOG SAUBER EINGEKREIST, welcher der beiden Filter es war:
+      18:00:25  "Browser: 1 von 4 (3 namenlos ausgeblendet)" + Ansage
+                "Zielort, Objekt, 88 Meter, 1 von 1"  -> Objekt DA
+      18:13:02  "Browser: 0 von 4 (ausgeblendet: 4 fremde Quest)" + Ansage
+                "Keine Objekte in 100 Metern."        -> Kategorie STUMM
+    Der Namensfilter war um 18:00 bereits aktiv und hat den Zielort gerade
+    NICHT gefressen. Schuldig ist allein der Fremd-Quest-Filter: er haelt
+    Quests fuer fremd, auf denen der Spieler tatsaechlich ist.
+    "Liest nicht mehr alle Kategorien" ist dieselbe Ursache: leergefilterte
+    Kategorien sagen "Keine Objekte in 100 Metern".
+
+>>> MEIN FEHLER, benannt statt umschrieben: ich habe offline geprueft, dass
+    (RowId & 0xFFFF) EINDEUTIG ist (keine Kollisionen unter 5533 Zeilen) - und
+    daraus geschlossen, dass es die RICHTIGE Umrechnung ist. Das folgt nicht.
+    Dass QuestManager.NormalQuests dieselbe Konvention benutzt, war nie belegt.
+    Eindeutigkeit ist keine Korrektheit.
+
+>>> SOFORT ENTSCHAERFT: Die Ausblendung ist raus, IsWorthBrowsing filtert
+    wieder nur namenlos+nicht anvisierbar. Ein Objekt zu viel kostet einen
+    Tastendruck, ein fehlendes kostet dem Spieler sein Questziel.
+    Qualifier/BelongsToForeignQuest bleiben im Code, aber ungenutzt fuer den
+    Filter - der Questname wird weiter angesagt, WENN die Pruefung anschlaegt.
+
+>>> SONDE [QuestProbe] GELAUFEN UND AUSGEWERTET (Log 2026-08-08 18:17), Sonde
+    danach wieder entfernt. ERGEBNIS - die Technik war NICHT kaputt:
+      Journal: 801, 788, 789, 1106, 794, 790, 797
+      Objekte: 2560 (RowId 68096), 2572 (68108), 2575 (68111)
+    Rueckgerechnet ergeben die Journal-Ids lauter echte Questnamen ('Die
+    Tragoedie der Dartancours', 'Ein Schluessel und ein Schussel', ...), die
+    Umrechnung 65536+low stimmt also. Die drei Objekt-Quests ('Thal zu Ehren',
+    'Die hohe Kunst des Schwertkampfs') sind schlicht Gladiator-Klassenquests,
+    die der Spieler wirklich nicht angenommen hat. angenommen=False war KORREKT.
+    Falsch war nicht die Messung, sondern der Schluss daraus.
+
+>>> USER-EINWAND, der die Sache entscheidet: "die objekte haben nicht immer was
+    mit quests zu tun, es koennen auch einfach objekte sein, mit denen man
+    unabhaengig agieren kann." Genau so ist EObj.Data zu lesen: es sagt, dass
+    ein Objekt AUCH in einer Quest vorkommt - nicht, dass es sonst wertlos ist.
+    Quest-Zustand ist damit dauerhaft KEIN Filterkriterium mehr.
+
+>>> QUESTNAME WIRD JETZT IMMER GENANNT, auch bei nicht angenommener Quest.
+    Die vorherige Regel (nur bei eigener Quest) liess ausgerechnet den Fall
+    stumm, der die ganze Meldung ausgeloest hat: ein nacktes "Zielort". Der
+    Questname ist das EINZIGE, was das Spiel ueber so ein Objekt weiss - ihn
+    zurueckzuhalten hilft niemandem. Der Spieler hoert jetzt "Zielort fuer
+    Thal zu Ehren" und weiss, woran er ist.
+    Falls Questtitel je stoeren (Story-Spoiler), ist die Stelle eine Zeile:
+    ObjectNameService.Qualifier.
+
+>>> AUFGERAEUMT: IsQuestAccepted, BelongsToForeignQuest und die Sonde sind
+    raus - toter Code nach dieser Entscheidung. Die verifizierte Umrechnung
+    (Journal-QuestId = RowId - 65536, kollisionsfrei ueber alle 5533 Zeilen)
+    steht hier dokumentiert, falls sie je wieder gebraucht wird.
+
+>>> NEBENBEFUND aus derselben Sonde: 3 der 4 Objekte (BaseId 2008321, 2008175,
+    2008186) haben AUCH im EObjName-Sheet keinen Namen und sind nicht
+    anvisierbar - die bleiben also ausgeblendet. Nur 2008101 heisst "Zielort".
+
+>>> ZWEITER FEHLER, SCHWERER ALS GEDACHT (User: "die quest npcs werden nicht
+    vorgelesen"). Der Log hatte den Stacktrace:
+      System.NullReferenceException
+        at ObjectNameService.Qualifier(IGameObject) : line 123
+        at ObjectNameService.Describe(IGameObject)  : line 93
+        at NavigationService.CycleObject(Int32)
+    URSACHE: `return default` bei einem `readonly record struct ObjectPurpose`
+    laesst die STRING-Felder NULL - nicht leer. `purpose.QuestName.Length`
+    warf danach. Der Compiler warnt dabei NICHT, auch mit Nullable an.
+    TRAGWEITE: nicht nur Quest-NPCs. Es traf JEDES Objekt ohne Quest-/Warp-
+    Bindung, also fast alle - NPCs, Gegner, Spieler. Die Ausnahme flog mitten
+    in CycleObject, also VOR der Ansage: Tastendruck = gar nichts. Nur der
+    "Zielort" ging, weil der eine Bindung hat und darum echte Strings bekam.
+    Deshalb sah es wie ein Quest-NPC-Problem aus.
+    FIX: ObjectPurpose.None (leere Strings) ueberall statt `default`, plus
+    string.IsNullOrEmpty statt .Length als zweite Sicherung.
+    LEHRE fuer record structs mit Referenztypen: `default` ist nie "leer".
+
+>>> NEUE ANSAGEN bilingual: ForQuest, LeadsToArea.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt (beide Teile).
+
+>>> ZU TESTEN:
+    1. Bild-auf/-ab in Kategorie "Alles": kommt noch eine Ansage, die mit einem
+       Komma anfaengt? Und wird die Liste spuerbar kuerzer (Zaehler "x von y")?
+    2. Einen Sammelpunkt anwaehlen, dann Numpad 3: muss "Laufe zu Erzader,
+       Stufe 20" sagen, nicht mehr "Unbenannt".
+    3. Der gemeldete "Zielort" muss jetzt entweder "Zielort fuer <Questname>"
+       heissen ODER ganz aus der Liste sein (wenn die Quest nicht angenommen
+       ist). Beides ist richtig - wichtig ist, dass kein nacktes "Zielort"
+       mehr kommt.
+    4. Ein "Ausgang" sollte "Ausgang nach <Gebiet>" sagen.
+    5. Falls irgendwo "Objekt ohne Namen" kommt: bitte melden WO - dann steht
+       im Log die BaseId und ich kann pruefen, ob das Spiel dafuer doch einen
+       Namen fuehrt.
+    LOG-BELEG dafuer: "[Nav] Browser: 40 von 68 Objekten (ausgeblendet: 12
+    fremde Quest, 16 namenlos und nicht anvisierbar)."
+
+## VORHERIGER STAND (2026-08-08, HANDWERKER-NOTIZBUCH LESBAR - GEBAUT, TEILWEISE BESTAETIGT)
+
+>>> USER-ANSAGE: "jetzt ist es an der zeit mal was fuer die sammler und
+    handwerker berufe zu machen. das handwerker notizbuch aendert sich ja je
+    nach dem welche handwerkerklasse man grad ist aber es ist nicht richtig
+    auslesbar."
+
+>>> IST-ZUSTAND GEMESSEN, NICHT VERMUTET (Live-Log 2026-08-08, Oeffnen um
+    09:52:04 und Navigation um 09:38:18-22). Gesprochen wurde AUSSCHLIESSLICH:
+      09:52:04.838  "HANDWERKER-NOTIZBUCH"
+      09:52:04.894  "NEU"
+      09:52:04.904  "Menue, 1 Eintraege"
+      09:52:04.912  "Favoriten, NEU"
+      danach beim Blaettern: "0/40", "Zuletzt gesucht", "Favoriten, NEU"
+    Klasse, Stufe, Rezeptname und JEDER Rezeptwert kamen NIE vor. Das Fenster
+    war also nicht "schlecht lesbar", sein Inhalt wurde gar nicht angefasst.
+
+>>> DREI URSACHEN, alle im UI-Dump vom selben Tag belegt (109 Nodes):
+    1. "NEU" ist ein UNSICHTBARER Marker-Text in jeder Listenzeile (id=3 bzw.
+       id=10, Flag 0x0023 = kein V). Der generische Fokus-Leser griff ihn ab
+       statt der Zeilenbeschriftung ("1-5", "6-10").
+    2. "Menue, 1 Eintraege" zaehlte die FALSCHE Liste: die Favoriten-Liste
+       id=30 mit ListLen=1. Die echte Rezeptliste ist eine TreeList (id=45)
+       und wurde nie erreicht.
+    3. "0/40" ist der Zeichenzaehler des Suchfelds (id=26 -> id=17).
+
+>>> DATENQUELLE: nicht Node-IDs, sondern die BENANNTEN Felder von
+    AddonRecipeNote (ilspycmd 2026-08-08 gegen FFXIVClientStructs.dll). Der
+    Dump bestaetigt jede Zuordnung: CurrentJobName id=10 "Alchemist",
+    CurrentJobLevel id=7 "Stufe 5", SelectedRecipeName id=63,
+    SelectedRecipeDifficulty id=66 (Label id=65 "Fertig mit"),
+    SelectedRecipeDurability id=69 (id=68 "Belastbar bis"),
+    SelectedRecipeMaximumQuality id=74 (id=71 "Qualitaet"),
+    ...QuantityCraftable... id=78 (id=77 "Herstellbar"),
+    Ingredients id=94..89 (Name id=18 als Item-Link -> ReadClean),
+    Crystals id=83/82, CharacteristicsTexts id=54..50.
+    Zusaetzlich verfuegbar und fuer die Sonde genutzt: AgentRecipeNote
+    (SelectedCraftType/-RecipeCategory/-RecipeIndex) und die Spieldaten
+    RecipeNote.Instance()->RecipeList (SelectedIndex, RecipeCount).
+
+>>> GEBAUT:
+    - RecipeNote in SpecialSetup- + SpecialUpdateAddons: der generische Pfad,
+      der nur Rauschen lieferte, schweigt komplett.
+    - OnRecipeNoteUpdate: sagt die HANDWERKERKLASSE beim Oeffnen an
+      ("Handwerker-Notizbuch, Alchemist, Stufe 5") und erneut bei jedem
+      Klassenwechsel - genau der Punkt aus der User-Ansage.
+    - Zeile unter dem Cursor kurz ansagen (User-Entscheidung 2026-08-08):
+      "Destilliertes Wasser, Stufe 1, 3 von 12". Fokus-Weg wie beim
+      Bestiarium (ClimbToItemRenderer), weil Listen-Indizes in TreeLists bei
+      Tastaturnavigation nachweislich stehen bleiben (Log 2026-07-12).
+      Item-Link-Namen ueber ReadClean, unsichtbare Nodes raus -> das ist es,
+      was den "NEU"-Muell entfernt.
+      Namen fuehren vor Zahlen: das Spiel listet den Stufen-Chip ("St. 1",
+      id=7) VOR dem Namen (id=6). Sortiert wird auf ZIFFERN, nicht auf "St.",
+      damit es im englischen Client ("Lv. 1") genauso stimmt.
+    - Strg+F10 im Notizbuch liest das ganze Rezept: Name, Klasse+Stufe,
+      Fertig mit / Belastbar bis / Qualitaet maximal / Startqualitaet (nur
+      wenn != 0) / Herstellbar / Im Beutel, dann jedes Material mit
+      "n benoetigt, x NQ, y HQ" (User-Entscheidung: NQ und HQ IMMER beide,
+      weil HQ-Material die Startqualitaet hebt), Kristalle und die
+      Voraussetzungszeilen ("Empfohlen: Kunstfertigkeit min. 22").
+      Steht VOR TryReadItemDetail, damit ein offener Material-Tooltip das
+      Rezept nicht verdeckt.
+    - Suchfeld: statt "0/40" jetzt der fenstereigene Label-Node
+      (SearchHintText, "Rezeptsuche").
+    - Der globale Fokus-Leser schweigt NUR fuer Listenzeilen des Notizbuchs
+      (Zugehoerigkeit ueber den Node-Baum geprueft, nicht ueber "Fenster
+      offen"). Knoepfe wie "Synthese"/"Eilsynthese" bleiben generisch
+      ansagbar, sonst waeren sie nicht mehr ansteuerbar.
+
+>>> KEIN VERLUST durch die Stilllegung geprueft: RecipeNote landet nicht mehr
+    im Menue-Stack, aber der steuert nur die PFEILTASTEN-Navigation
+    (Plugin.cs 1128 -> Navigate). Der User navigiert per Numpad, und der Stack
+    haette hier ohnehin die Favoriten-Liste mit 1 Eintrag bedient.
+
+>>> NEUE ANSAGEN bilingual: RecipeNoteOpened, RowWithPosition,
+    RecipeDifficulty, RecipeDurability, RecipeMaxQuality, RecipeStartQuality,
+    RecipeCraftable, RecipeInBag, RecipeMaterial, RecipeCrystal,
+    RecipeNoSelection.
+
+>>> OFFEN, EHRLICH VERMERKT - drei Punkte, die die Quelle nicht beantwortet:
+    1. Ob der Fokus-Weg der Numpad-Navigation in DIESEM Fenster folgt, ist
+       nicht gemessen (im Bestiarium tut er es, das ist keine Garantie). Die
+       Debug-Sonde [RecipeProbe] loggt bei jeder Aenderung Fokus-Node,
+       Detail-Name und die Agent-Indizes - falls der Fokus-Weg tot ist, zeigt
+       das Log sofort, welcher Agent-Index stattdessen traegt.
+    2. Auf WELCHE der beiden TreeLists AddonRecipeNote.RecipeList zeigt
+       (id=45 Rezepte oder id=39 Stufenbereiche) ist unbelegt - nur die
+       Rezeptliste darf die "x von y"-Position liefern. Die Sonde loggt die
+       Node-Id mit.
+    3. Die Klassen-REITER selbst (TabButtons, 9 Stueck) sind icon-only und
+       werden beim Durchtabben nicht benannt. Abgedeckt ist bisher nur der
+       Fall, dass ein Reiterwechsel den Fensterinhalt umstellt - dann greift
+       die Klassen-Ansage. Ob das Durchtabben allein schon umstellt: ungeprueft.
+
+>>> KRISTALLNAMEN bewusst NICHT erfunden: CrystalNodes traegt Image, aber
+    keinen Namens-Node (ilspycmd). Die Ansage lautet "Kristall, 1 benoetigt,
+    256 im Beutel". Ein Weg ueber das Recipe-Sheet waere moeglich, ist aber
+    noch nicht gebaut.
+
+>>> SAMMLER-NOTIZBUCH: noch offen. In FFXIVClientStructs gibt es dafuer KEIN
+    Addon-Struct mit benannten Nodes (nur AgentGatheringNote + Game.UI.
+    GatheringNote), also braucht es dort einen eigenen UI-Dump.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+>>> IM SPIEL BESTAETIGT (Live-Log 2026-08-08 10:20-10:23), die drei offenen
+    Punkte von oben sind damit erledigt:
+    - "Handwerker-Notizbuch, Alchemist, Stufe 5" beim Oeffnen. STIMMT.
+    - "Destilliertes Wasser, St. 1, 1 von 8" ... "Gegengift, St. 5, 8 von 8"
+      beim Blaettern - der Fokus-Weg TRAEGT also auch in diesem Fenster.
+    - tree=id45: RecipeList zeigt auf die RICHTIGE Liste (Rezepte), nicht auf
+      die Stufenbereiche. Die Position ist damit belegt korrekt.
+    - Agent-Indizes UND gameList[sel] folgen der Navigation synchron 0..7,
+      stehen also als Ersatzquelle bereit, falls der Fokus-Weg je ausfaellt.
+    - Stufenbereiche ("1-5", "6-10") und "Favoriten" werden gelesen.
+    - Strg+F10 liefert: "Gegengift. Alchemist Stufe 5. Fertig mit 33.
+      Belastbar bis 60. Qualitaet maximal 150. Herstellbar 0. Im Beutel 5".
+
+>>> VIER FEHLER AUS DEMSELBEN LOG, drei davon gefixt:
+    1. "NEU" kam WEITER (10:20:10.907). Ursache: der Fokus lag auf dem
+       TreeList-CONTAINER (id=39), nicht auf einer Zeile - die Pruefung auf
+       einen Zeilen-Renderer liess das durch. Jetzt schweigt der generische
+       Leser auch fuer den Container (IsInsideListComponent).
+    2. "0/40" kam WEITER (10:21:38). Ursache: SearchHintText ist der
+       Platzhalter IM Feld und liest leer. Fallback auf den sichtbaren
+       Label-Node daneben (Dump id=25 "Rezeptsuche").
+    3. Gesprochen wurde "St. 1" statt "Stufe 1". Jetzt wie beim Sammel-Fenster
+       expandiert (Ziffern bleiben unangetastet).
+    4. OFFEN: die MATERIALIEN fehlen in der Detail-Ansage komplett - die
+       Ausgabe bricht nach "Im Beutel 5" ab, obwohl das Fenster Materialien
+       hat (der Cursor des Users lief Minuten vorher ueber die Slots).
+       NICHT geraten: die Struct-Offsets sind geprueft und sauber
+       (CrystalNodes 32 B + IngredientNodes 144 B kacheln ab 1280 lueckenlos),
+       es muss also Laufzeit-Zustand sein. Sonde [RecipeMat] gebaut, die BEIDE
+       Quellen nebeneinander loggt: die Addon-Nodes (aktuell benutzt) und die
+       Spieldaten RecipeEntry.Ingredients (Name/Amount/NQCount/HQCount, ganz
+       ohne UI-Nodes). Wer echte Werte traegt, gewinnt.
+
+>>> NEBENBEFUND, noch nicht angefasst: beim Fokussieren der Material-Slots
+    sprach der generische Item-Resolver unpassende Namen ("Phantasmasalz,
+    Gegenstandsstufe 547", "Federfall-Giftschlange, 430") bei einem
+    Stufe-5-Rezept - die Icon->Item-Aufloesung greift dort offenbar daneben.
+    Erst nachgehen, wenn die Materialien selbst sauber gelesen werden.
+
+>>> NAECHSTES FENSTER, vom User schon gedumpt (2026-08-08 10:23): "Synthesis"
+    (101 Nodes) - das eigentliche Handwerken. Traegt Zustand ("Ausreichend"),
+    Belastbar 40/40, Qualitaet 0/80, Fortschritt 0/9, Schritt 1, HQ-Chance
+    1 %, Rezeptname. Dazu "CraftActionSimulator" (Synthese-Planer). Fuer
+    Synthesis gibt es ein AddonSynthesis-Struct in FFXIVClientStructs, also
+    voraussichtlich wieder benannte Felder statt Node-Raten.
+
+## VORHERIGER STAND (2026-08-07, "ALLES ANLAUFBAR, WAS DAS NETZ HAT" - GEBAUT, UNGETESTET)
+
+>>> USER-ANSAGE: "manche sachen sind nicht erreichbar ... ich will das aber
+    nicht mit jedem objekt machen, also das ich dir alle sagen muss die nicht
+    erreichbar sind - es sollen alle angelaufen werden koennen die das navmesh
+    hat." Also KEINE Einzelfall-Flicken mehr, sondern die Ursachen.
+
+>>> IM LOG STANDEN FUENF ABBRUECHE, ZWEI VERSCHIEDENE URSACHEN:
+    - waagerecht knapp daneben: Uebergang Nordwald 9,1 m, Uebergang Westliches
+      La Noscea 4,1 m, Chocobo-Staelle 5,0 m.
+    - falsche ETAGE: Aetheryt Herbstkuerbis-See, waagerecht nur 2,7 m, aber
+      9,0 m Hoehenunterschied.
+    - und ein Ausreisser: Quest "Halb getanzt ist ganz verheimlicht", 139,7 m.
+
+>>> URSACHE DER ETAGEN-FAELLE, OFFLINE BELEGT (Cache f1f4, Suedwald):
+    Kartendaten sind 2D, die Zielhoehe wird geraten - und zwar mit der
+    SPIELERHOEHE als Referenz. Ueber XZ (-44|228) liegen ZWEI Netz-Ebenen:
+    Y -49 (nicht erreichbar) und Y -39 (erreichbar). Der Spieler stand 232 m
+    entfernt auf Y -54, also gewann die naechstliegende - die falsche. Der
+    echte Pfad endete korrekt auf Y -40. Nicht der Weg fehlte, die geratene
+    Hoehe war falsch.
+    -> Das betrifft JEDEN Kartenmarker (Orte, Aetheryte, Uebergaenge,
+       Questziele, getippte Koordinaten), nicht diesen einen Aetheryt.
+
+>>> GEBAUT - drei Faelle, in dieser Reihenfolge geprueft:
+    1. FALSCHE ETAGE: Zielhoehe war geraten (neues Flag `_destHeightIsGuess`,
+       von `TryResolveMarkerDestination` durchgereicht - Spielobjekte tragen
+       ihre echte Hoehe und sind ausgenommen), waagerecht <= 15 m, Hoehe
+       >= 2 m. Dann glaubt der Code dem Wegenetz statt der Schaetzung und
+       zielt auf Marker-XZ mit der Hoehe des Pfadendes. Genau das trennt den
+       Fall vom Astalicia-Schiff, wo die Hoehe BEKANNT war und die Luecke
+       echt: dort bleibt es beim Abbruch.
+    2. KNAPP DANEBEN, gleiche Ebene: wie vorher - bis zum Pfadende laufen,
+       Rest ohne Wegsuche fahren.
+    3. ALLES ANDERE: statt "nicht erreichbar" laeuft jetzt automatisch die
+       schon vorhandene Zugangssuche (Ringe ums Ziel, naechster erreichbarer
+       Punkt) - im neuen STILLEN Modus, also ohne die Zwischenansagen von
+       `/acc zugang`. Nur wenn sie gar nichts findet, wird das gesagt.
+
+>>> ERWARTUNGSWERTE OFFLINE GEGENGERECHNET fuer den Aetheryt-Fall: das
+    korrigierte Ziel <-44,0|-40,0|228,0> liegt auf erreichbarem Netz, und der
+    Weg dorthin endet mit 0,00 m Abstand exakt darauf (19 Wegpunkte). Der
+    Spieler landet also auf dem Marker, nicht daneben.
+
+>>> NICHT GEPRUEFT, ehrlich vermerkt: der 139-m-Quest-Fall. Ihn faengt Fall 3
+    ab, aber ob die Ringsuche dort etwas findet, weiss ich nicht - Zone und
+    Zielkoordinate stehen nicht im Log. Fall 3 kostet ausserdem viele
+    Wegsuchen und kann ein paar Sekunden brauchen, bevor die Figur losgeht.
+
+>>> IM SPIEL BESTAETIGT (Live-Log 2026-08-07, beide Mechaniken):
+    - RESTFAHRT: 23:12:24 "Letztes Stueck: fahre die restlichen 9,9 m nach
+      Norden ohne Wegsuche zu 'Uebergang nach Nordwald'", 23:12:26 "Gebiet
+      gewechselt (148 -> 154), erreicht". Der Zonenwechsel ist der Beweis,
+      dass die Figur wirklich IN den Uebergang gelaufen ist - genau der
+      Punkt, an dem der Lauf vorher gar nicht erst losging.
+    - ETAGEN-KORREKTUR: 23:14:14 "umgeleitet (falsche Etage): die geratene
+      Zielhoehe lag 9,0 m neben der begehbaren. Neues Ziel <-44,0, -40,0,
+      228,0>", 23:14:47 "Ziel erreicht: Herbstkuerbis-See." Der offline
+      vorausberechnete Punkt war exakt dieser.
+    - Fall 3 (automatische Zugangssuche) ist dabei NICHT ausgeloest worden,
+      steht also weiter aus.
+
+>>> DANACH NEUE USER-MELDUNG: "ich bin grad bei einem etheryten, konnte auch
+    hinlaufen, aber er wird nicht markiert so das ich in nutzen kann."
+    URSACHE: Die Aetheryten-Kategorie browst KARTENDATEN (PlacesService), dort
+    gibt es kein Spielobjekt - also auch kein Ziel, und ohne Ziel keine
+    Benutzung. Kein Fehler im Lauf, eine Luecke im Konzept der
+    Marker-Kategorien.
+    GEBAUT: `TryTargetMarkerObject` - bei jeder Marker-Auswahl wird geprueft,
+    ob das echte Objekt (ObjectKind.Aetheryte) geladen und hoechstens 15 m vom
+    Marker entfernt ist; dann wird es als Spielziel gesetzt und die Ansage
+    haengt "Angezielt." an. 15 m deckt die Pixel-Ungenauigkeit der Marker ab,
+    ohne den naechsten Aethernet-Splitter zu erwischen. Findet sich nichts,
+    bleibt alles still - sonst wuerde das Blaettern durch weit entfernte
+    Aetheryten staendig kommentiert. `_ownSelectionId` wird gesetzt, damit der
+    Ziel-Waechter die Markerauswahl nicht verwirft.
+    IM SPIEL BESTAETIGT (User, 2026-08-07: "ok funktioniert") - der Aetheryt
+    steht also als ObjectKind.Aetheryte in der ObjectTable und das Spiel nimmt
+    das Anvisieren an. Damit ist der Marker benutzbar.
+
+>>> NEUE ANSAGE bilingual: `MarkerTargeted`.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt.
+
+## VORHERIGER STAND (2026-08-07, WEG ENDET KURZ VORM ZIEL - GEBAUT, UNGETESTET)
+
+>>> USER-MELDUNG: "manchmal hat der das problem das er wege nicht findet
+    obwohl es glaub gehen muesste, schau in die log".
+
+>>> IM LOG GEFUNDEN (2026-08-07 21:51, dreimal hintereinander): Auto-Lauf zum
+    "Uebergang nach Nordwald" (Zentralwald, Map 4), 652 m. vnavmesh findet
+    einen vollstaendigen Pfad ueber 62 Wegpunkte - der endet bei
+    <-506,2|74,2|-354,5>, das Ziel liegt bei <-503,0|74,8|-363,0>. 9,1 m
+    Luecke, erlaubt waren 3,5 m -> harter Abbruch, "dorthin fuehrt kein Weg".
+
+>>> OFFLINE NACHGEMESSEN, NICHT VERMUTET (vnavmesh-Cache `f1f1`, Werkzeug wie
+    bei der Astalicia, Breitensuche ueber die Polygon-Verbindungen):
+    - Vom Spieler erreichbar: 22.937 Polygone.
+    - Der Zielpunkt liegt auf einer ABGETRENNTEN Flaeche von 57 Polygonen
+      (X -515..-484, Y 74,2..78,8, Z -392..-356) - keine einzige Verbindung.
+    - DER BODEN IST DURCHGEHEND. Strecke alle 0,5 m abgetastet: an JEDEM Punkt
+      liegt Netz, Hoehe steigt sanft 74,2 -> 74,8. Kein Loch, keine Wand - nur
+      die Polygon-Verknuepfung fehlt. Die Trennung sitzt zwischen 0,5 m und
+      1,0 m hinter dem Pfadende. Beide Polygone liegen sogar im selben Tile
+      (Refs ...90002C und ...900017).
+    - Naechster erreichbarer Punkt am Ziel: 8,5 m davor.
+    -> Die Ansage war technisch richtig und praktisch irrefuehrend: 650 m Weg
+       wurden wegen der letzten 9 m verweigert, die man zu Fuss einfach geht.
+    -> NICHT belegt und daher NICHT behauptet: dass alle Zonenuebergaenge so
+       gebaut sind. Gemessen ist genau dieser eine.
+
+>>> ENTSCHEIDUNG DES USERS (gefragt, weil sie den harten Abbruch aus der
+    Vorsession beruehrt): Bis zum letzten erreichbaren Punkt HINLAUFEN und den
+    Restweg ansagen. Grenze 15 m waagerecht, darueber bleibt der Abbruch.
+
+>>> GEBAUT (AutoWalkService):
+    - `NearMissGap` = 15 m waagerecht. Zusaetzlich muss der Hoehenunterschied
+      unter `ImpossibleRise` (2 m) liegen - das ist die schon vorhandene,
+      begruendete Schwelle fuer "kann die Figur steigen", keine neue Zahl. Sie
+      trennt diesen Fall vom Astalicia-Fall, wo das Ziel 9,1 m SENKRECHT ueber
+      dem Pfadende lag: dort haette "9 m vor dem Ziel" geheissen, direkt
+      darunter zu stehen.
+    - Umleitung laeuft ueber `_pendingNearMissWalk` (naechster Frame, wie
+      Zugangs-Suche und Planke) - der Check sitzt in der Wegpunkt-Auswertung
+      des Laufs, den er ersetzt.
+    - `_nearMissGoal` haelt das echte Ziel waehrend des umgeleiteten Laufs;
+      geloescht in `Stop()` und in `BeginWalk()`, damit es nie in einen
+      spaeteren, fremden Lauf leckt. Beide Endzweige (sauberes Pfadende UND
+      "keine Bewegung seit 5 s") lesen es vor dem Loeschen.
+    - Statt "Ziel erreicht" (waere eine Luege, die der User nicht pruefen kann)
+      kommt Entfernung + Himmelsrichtung.
+
+>>> NEUE ANSAGEN bilingual: `NearMissRedirect`, `NearMissArrived`.
+
+>>> README DE + EN: Auto-Lauf-Zeile nennt das neue Verhalten.
+
+>>> NACHTRAG, USER-WUNSCH direkt danach: "er soll direkt bis zu den
+    uebergaengen laufen so wie navmesh es macht" - also nicht 9 m davor
+    absetzen, sondern die letzten Meter mitfahren, damit der Uebergang
+    ausloest.
+
+>>> DAFUER GEBAUT (dieselbe Mechanik wie die Planke, die in-game schon
+    getragen hat - `Path.MoveTo` faehrt eine feste Punktliste OHNE Wegsuche):
+    - `FinishNearMiss` haengt am Pfadende die Restfahrt an.
+    - `GroundIsContinuous` ist die Sicherung davor und der Grund, warum blind
+      fahren hier vertretbar ist: die Strecke wird alle 1 m abgetastet, an
+      jedem Punkt muss Netz in einer engen Box liegen (1 m waagerecht, 1,5 m
+      hoch), und zwischen den Punkten darf kein Sprung stehen, den die Figur
+      nicht steigen kann (dieselbe Regel wie `RouteHasImpossibleJump`). Fehlt
+      irgendwo Boden, wird NICHT gefahren, sondern der Restweg angesagt.
+      Ohne diese Pruefung wuerde die Figur ueber die Kante gesteuert.
+    - `FinalHopUpdate` beobachtet die Fahrt von aussen, weil `Path.MoveTo`
+      nichts zurueckmeldet: Zonenwechsel = angekommen, 2 m ans Ziel =
+      angekommen, nach 20 s Aufgabe mit ehrlicher Rest-Ansage.
+    - Die Auto-Lauf-Taste bricht auch die Restfahrt ab (`StopFinalHopIfRunning`)
+      - fuer den Spieler ist sie der Schwanz desselben Laufs.
+    - `MoveWithoutPathfinding` + `NearestMeshPoint` sind dafuer aus dem
+      `#if DEBUG`-Block der Planke herausgezogen worden; der Planken-Befehl
+      selbst bleibt Debug.
+
+>>> ANSAGEN WIEDER ENTFERNT auf Zuruf des Users, noch vor dem ersten Test:
+    "ich will nicht das er ansagt wann er stopt, das ist evtl zu viel info,
+    ich werd ja sehen wie weit er vom ziel weg ist". Geloescht sind alle drei
+    frisch gebauten Bausteine (`NearMissRedirect`, `FinalHopStarting`,
+    `NearMissArrived`) - tot ist tot, sie stehen nicht als Leichen herum; an
+    ihrer Stelle steht eine Notiz in AccessibilityStrings, damit sie niemand
+    aus Versehen neu erfindet. Der ganze Ablauf laeuft jetzt STILL durch.
+    NICHT still bleibt der Fall, in dem der Lauf ohne Ankunft endet - dann
+    kommt die laengst vorhandene Standardzeile "Auto-Lauf beendet, noch X
+    Meter.", die JEDER abgebrochene Lauf schon immer gesprochen hat. Stille
+    waere hier das eine, was der User nicht von Erfolg unterscheiden kann.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. IM SPIEL
+    UNGETESTET. ERWARTUNGSWERTE fuer genau den Log-Fall vorausberechnet
+    (Uebergang nach Nordwald, aus Zwieselgrund):
+    (a) beim Start nur "Laufe zu Uebergang nach Nordwald." - sonst nichts.
+    (b) die Figur laeuft die vollen ~650 m (vorher lief sie gar nicht los)
+        und faehrt die letzten 9 m ohne weitere Ansage durch.
+    (c) am Ende "Angekommen, neues Gebiet erreicht." - der Zonenwechsel ist
+        der eigentliche Beweis, dass die Figur bis in den Uebergang gekommen
+        ist. Kommt sie nicht rein: nach 20 s "Auto-Lauf beendet, noch 9
+        Meter."
+    (d) im Log: "[Nav] Auto-Lauf umgeleitet ...", dann "[Nav] Letztes Stueck:
+        fahre die restlichen 9,1 m nach Norden ohne Wegsuche ...".
+    DIE BODENPRUEFUNG IST OFFLINE GEGENGERECHNET (gleicher Cache, gleiche
+    Parameter wie im Code): 10 Abtastpunkte, groesste Abweichung zum Netz
+    0,40 m (erlaubt 1 m), groesste Stufe 0,08 m -> Restfahrt startet JA.
+    Gegenprobe, dass die Sicherung noch greift: ein Ziel auf einem echten
+    anderen Stockwerk muss weiterhin "ist nicht erreichbar" sagen.
+
+## VORHERIGER STAND (2026-08-07, HP/MP/SP IN PROZENT - GEBAUT, UNGETESTET)
+
+>>> USER-WUNSCH: "ich wurde darauf hingewiesen das es besser waere hp und mp in
+    prozent anzuzeigen, da das spiel wohl schon einen hp prozent leser hat; man
+    sieht die hp / den balken wohl auch nur in prozent."
+
+>>> ENTSCHEIDUNG DES USERS (gefragt, weil es das Ansage-Format aller Vitalwerte
+    aendert): NUR Prozent, absolute Zahlen fallen ganz weg. SP/GP wird
+    mitumgestellt (User hat sich ausdruecklich fuer "SP auch in Prozent"
+    entschieden, gegen meine Empfehlung, die absolute SP-Kosten anfuehrte).
+
+>>> HISTORIE VORHER GEPRUEFT, NICHT ANGENOMMEN: Die Ansage WAR frueher schon
+    Prozent. Commit 01a144c (V5.31, 22.07.2026) hat sie auf "X von Y" gedreht -
+    laut derselben STATUS-Datei als "vorbestehende, bis dahin UNDOKUMENTIERTE +
+    vermutlich ungetestete WIP-Arbeit aus fruehrer Session" mitgezogen, ohne
+    festgehaltene Begruendung und ohne User-Wunsch. Wir kehren also zum
+    aelteren Verhalten zurueck, nicht gegen eine bewusste Entscheidung.
+
+>>> GEBAUT - eine einzige Rechenstelle, `AccessibilityStrings.Percent(cur, max)`:
+    - abgerundet (Integer-Division, dieselbe Formel wie das schon vorhandene
+      `CombatService.HpPercent`), damit "50 Prozent" nie "knapp unter der
+      Haelfte" heisst.
+    - EINE bewusste Klemmung unten: 5 von 5000 HP wuerde auf 0 abrunden, und
+      "HP 0 Prozent" bei lebender Figur klingt wie tot. Alles ueber 0 meldet
+      daher mindestens 1 Prozent; die 0 bleibt der leeren Leiste vorbehalten.
+      (Nach oben ist keine Klemmung noetig - abgerundet wird 100 nur bei
+      cur == max erreicht.)
+    - max == 0 gibt 0 - unveraendertes Verhalten fuer Jobs ohne Mana.
+
+>>> UMGESTELLT (alle Aufrufer bleiben unveraendert, die Signaturen nehmen
+    weiterhin cur/max):
+    - `HpSentence` - eigene HP-Schwelle im Kampf (75/50/25/10).
+    - `TargetHpSentence` - Ziel-HP-Schwelle im Kampf.
+    - `TargetHpFragment` - HP-Anhang beim Anvisieren / im Objekt-Browser
+      (NavigationService.DescribeTargetHp).
+    - `VitalStatus` - Strg+Entf bzw. `/acc status`, eigene HP + MP.
+    - `TargetStatusClause` - Ziel-Anhang derselben Statusabfrage.
+    - `GpValue` - Strg+Ende, SP-Stand.
+    Alle sechs bilingual DE/EN ("Prozent" / "percent"), passend zu den schon
+    vorhandenen Prozent-Ansagen (FATE-Fortschritt, Wegenetz-Ladestand).
+
+>>> GELOESCHT: `HpValue`/`MpValue` - Bausteine ohne einen einzigen Aufrufer.
+    Dass sie tot waren, ist nicht vermutet: Grep ueber das ganze Repo fand nur
+    ihre Definition, und der Build danach ist 0/0.
+
+>>> LOGS BLEIBEN ABSOLUT (z. B. `[SP] 480/600`) - fuer die Fehlersuche ist der
+    Rohwert die bessere Quelle, gesprochen wird Prozent.
+
+>>> README DE + EN: Kampfstatus-Zeile nennt jetzt das Prozent-Format.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien nach devPlugins deployt.
+
+>>> IM SPIEL BESTAETIGT (User, 2026-08-07): "das mit den prozenten
+    funktioniert". Damit ist die Umstellung durch.
+
+## VORHERIGER STAND (2026-08-07, PLANKE IN BEIDE RICHTUNGEN - GEBAUT, UNGETESTET)
+
+>>> USER-MELDUNG: "ich kann jetzt nichts mehr anlaufen auch keine questziele".
+
+>>> WAS WIRKLICH LOS WAR (am Log belegt, nicht vermutet): Die Figur stand auf
+    dem abgetrennten SCHIFFSNETZ der Astalicia. Alle 13 Abbrueche der Sitzung
+    00:14-00:46 kamen von dort. Die Route 00:46:29 startet bei
+    <-271,2|11,9|189,6> und fuehrt nur noch das Schiff HINAUF (12,0 -> 15,0 ->
+    16,0 -> 17,8 -> 19,2 -> 24,2), Ende oben auf dem Oberdeck. Der gleiche
+    Endpunkt bei verschiedenen Startpunkten kam daher, dass alle Startpunkte
+    auf derselben isolierten Flaeche lagen - NICHT von einer Suchgrenze (das
+    war meine erste, falsche Deutung).
+    -> Die Ansagen "nicht erreichbar" waren also inhaltlich RICHTIG. Der Fehler
+       lag woanders: `/acc planke` fuhr nur HIN. Das Feature hat den Spieler
+       auf dem Schiff eingesperrt.
+
+>>> ZWEITER, ECHTER FEHLER, den derselbe Log aufdeckt: Der Lauf 00:46:18 zur
+    Uebergangsstelle sah erfolgreich aus ("angekommen=True"), sein echter Pfad
+    endete aber bei <-272,8|12,0|190,0> - auf der SCHIFFSSEITE der 1,2-m-
+    Luecke, 1,3 m vom Kai-Punkt entfernt. Die 3-m-Toleranz `UnreachableGap`
+    hat das durchgewunken. Hinueber ist die Figur nie gekommen.
+
+>>> ENTSCHEIDUNG DES USERS (gefragt, weil sie das Grundverhalten aendert):
+    (a) Harter Abbruch bei "kein Weg" BLEIBT wie er ist - kein Loslaufen auf
+        Verdacht. Der Preis (ein Fehlalarm macht bewegungsunfaehig) ist
+        ausdruecklich in Kauf genommen.
+    (b) Die Planke bekommt einen Rueckweg.
+
+>>> GEBAUT:
+    1. `RouteReachesSpot(route, spot, from)` - eine Pruefstelle fuer alle
+       Punkte, die AUF dem Netz liegen (Zugangs-Kandidaten wie Uebergangs-
+       stellen): Abstand des vorletzten Wegpunkts <= `ApproachSnapTolerance`
+       (1 m, nicht 3 m) UND kein unmoeglicher Sprung. Genau die 1,3-m-
+       Fehldiagnose von oben faellt damit durch. Die Kandidatenpruefung in
+       AnnounceApproach benutzt jetzt dieselbe Methode statt eigener Kopie.
+       Die ZIELpruefung des normalen Auto-Laufs bleibt unveraendert bei 3 m.
+    2. `/acc planke` erkennt die Seite selbst und faehrt vorwaerts ODER
+       rueckwaerts. Entschieden wird NICHT ueber die Hoehe - die beiden Seiten
+       trennen nur 0,5 m und die Figur steht gewohnheitsmaessig dazwischen
+       (gemessen: Y 11,9 auf der Schiffsseite, Kai liegt bei 11,5) - sondern
+       ueber das Wegenetz: erreichbar ist die eigene Seite. Kai zuerst
+       geprueft (Normalfall), sonst Deck, sonst Ansage "von hier fuehrt kein
+       Weg zur Uebergangsstelle".
+    3. Zonenpruefung: die Koordinaten gelten nur in TerritoryType 129 und 404
+       (beide Bg `ffxiv/sea_s1/twn/s1t2/level/s1t2`, offline aus dem
+       TerritoryType-Sheet gelesen 2026-08-07). Sonst Ansage und Abbruch -
+       vorher haette der Befehl in JEDER Zone zu diesen Koordinaten gesteuert.
+    4. Die Seitenpruefung laeuft auf einem Worker (Pfadsuchen sind async) und
+       parkt das Ergebnis in `_pendingPlankRun`; `Update()` startet den Lauf
+       im naechsten Frame - vor dem Ueberquerungs-Block, dessen `!_active`
+       sonst im selben Frame ausloesen wuerde.
+
+>>> NEUE ANSAGEN bilingual: `GapCrossWrongZone`, `GapCrossNoSide`.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt.
+
+>>> IM SPIEL BESTAETIGT (User, 2026-08-07): "ja funktioniert, /acc planke hat
+    mich wieder weg gefuehrt" - der Rueckweg vom Schiff greift, die
+    Seitenerkennung ueber das Wegenetz liegt richtig. Damit ist die
+    Einbahn-Falle (Spieler auf dem Schiff eingesperrt) behoben.
+
+## STAND JETZT II (2026-08-07, VNAVMESH-ALTERNATIVE GEPRUEFT + BODENSONDE GEBAUT)
+
+>>> USER-FRAGE: "gibt es eine alternative zu vnavmesh das aktueller ist?"
+
+>>> ANTWORT: NEIN, und ein Wechsel wuerde auch nichts bringen.
+    - Installiert 1.2.3.10 (DLL 25.07.2026), neueste ist 1.2.3.11 (29.07.2026).
+      Also praktisch aktuell.
+    - Es gibt keinen Konkurrenten. Questionable, GatherBuddyReborn, AutoDuty
+      benutzen vnavmesh SELBST. Das einzige "andere" ist ein chinesischer Fork
+      desselben Codes (AtmoOmen/ffxiv_navmesh-cn).
+    - Das Problem ist nicht das Plugin, sondern dass das Wegenetz aus der
+      Kollisionsgeometrie GEBAUT wird und dabei Flaechen verliert.
+
+>>> BAU-PARAMETER aus der installierten DLL per Reflection ausgelesen
+    (Navmesh.NavmeshSettings, 2026-08-07):
+    AgentHeight 2, AgentRadius 0,5, AgentMaxClimb 0,5, AgentMaxSlopeDeg 55,
+    CellSize/CellHeight 0,25, GenerateEdgeClimbLinks FALSE,
+    GenerateEdgeJumpLinks FALSE, ClimbDownMinHeight 1,5, ClimbDownMaxHeight
+    3,2, ClimbDownDistance 0,4, EdgeJumpMinDrop 1,5, EdgeJumpHeight 1,8.
+
+>>> VNAVMESH HAT EINEN VORGESEHENEN MECHANISMUS FUER GENAU DIESES PROBLEM:
+    `NavmeshCustomization` je Gebiet. 35 Zonen haben schon eine, darunter
+    Z0128LimsaLominsaUpperDecks (128) - Inhalt dort nur eine Zeile,
+    `Settings.AgentRadius = 0.75f`. Fuer UNTERE Decks (129) gibt es keine.
+    `CustomizeScene` ist im Original dokumentiert als "customization point to
+    add or remove colliders in the scene".
+
+>>> VERDACHT (NICHT BELEGT, ausdruecklich als Vermutung markiert): Die
+    Kanten-Links sind vermutlich NICHT unsere Loesung - sie greifen erst ab
+    1,5 m Hoehenunterschied (ClimbDownMinHeight/EdgeJumpMinDrop), unsere Luecke
+    hat aber nur 0,5 m. Naeher liegt die Erosion: AgentRadius 0,5 nimmt von
+    JEDER Kante 0,5 m weg, eine Laufplanke unter 1,0 m Breite verschwindet
+    damit vollstaendig aus dem Netz.
+
+>>> DIE GEPLANTE OFFLINE-MESSUNG IST NICHT MOEGLICH. `SceneDefinition` kennt
+    nur `FillFromActiveLayout()` und `FillFromLayout(LayoutManager*)` - die
+    Kollisionsgeometrie kommt aus dem LAUFENDEN SPIELPROZESS, nicht aus
+    sqpack-Dateien. Ein Neubau des Netzes am Rechner scheidet damit aus.
+
+>>> ERSATZ GEBAUT - `/acc boden` (DEBUG): stellt den Kollisionsboden des
+    SPIELS dem Wegenetz gegenueber. Raster +/-3 m um den Spieler in 0,25-m-
+    Schritten (= CellSize, also kann die Sonde nichts sehen, was der Netzbau
+    nicht auch gesehen haette); je Punkt ein Strahl von 3 m ueber Kopfhoehe
+    nach unten via `BGCollisionModule.RaycastMaterialFilter` (statische
+    Ueberladung, unabhaengig von vnavmesh), dann Vergleich mit
+    `NearestPoint` in einer ENGEN Box (0,5 m) - die weite Box von SnapToMesh
+    (3 m / 15 m) wuerde fast ueberall "ja" sagen.
+    Geloggt werden Treffer gesamt, mit Netz, ohne Netz, und je Fehlstelle
+    Position und Neigung (ueber 55 Grad darf der Bau ohnehin verwerfen).
+
+>>> SO IST DAS ERGEBNIS ZU LESEN:
+    - Viele Treffer OHNE Netz an der Planke = der Boden ist da, das Netz
+      verwirft ihn -> eine Zonen-Anpassung koennte die Stelle richtig
+      reparieren, und alle vergleichbaren Stellen mit.
+    - Keine Treffer ueber der Luecke = dort ist wirklich kein Boden -> nur
+      `Path.MoveTo` kann hinueber, so wie es heute schon laeuft.
+
+>>> NACHTRAG: HELFEN DIE ZWEI SCHALTER? NEIN - am Generierungscode belegt.
+    Edge-Climb-Links spannen `-ClimbDownMaxHeight` bis `-ClimbDownMinHeight`
+    (-3,2 bis -1,5 m) bei einer Reichweite von `CellSize + 2*AgentRadius +
+    ClimbDownDistance` = 1,65 m; Edge-Jump-Links -500 bis -1,5 m bei 2 m.
+    BEIDE verlangen mindestens 1,5 m Hoehenunterschied und sind reine
+    ABWAERTS-Verbindungen. Unsere Luecke hat 0,5 m - sie ist fuer diese
+    Schalter zu KLEIN, nicht zu gross. Die Reichweite waagerecht (1,65 m gegen
+    1,2 m) haette sogar gereicht.
+
+>>> KANN DER USER SIE IM SPIEL ANSCHALTEN? PRAKTISCH NEIN:
+    - `NavmeshSettings.Draw()` ist public, es gibt also eine Oberflaeche. Das
+      einzige Feld dieses Typs ausserhalb von Builder und Zonen-Anpassungen
+      sitzt aber in `Navmesh.Debug.DebugNavmeshCustom+Customization` - also im
+      Debug-Teil, an einem separat gebauten Testnetz. (Aus der Feldverteilung
+      geschlossen; welche Methode Draw() aufruft, wurde nicht im IL verfolgt.)
+    - NICHT GESPEICHERT: `Navmesh.Config` - die Klasse mit Save/Load - haelt
+      kein NavmeshSettings-Feld. Nach einem Neustart waere alles zurueck.
+    - Und es ist ImGui: fuer NVDA nicht lesbar.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, deployt. IM SPIEL UNGETESTET.
+    Zu tun: an der Planke stehen und `/acc boden` eingeben.
+
+## VORHERIGER STAND (2026-08-06, ZUGANGS-ERKENNUNG - GEBAUT, UNGETESTET)
+
+>>> USER-WUNSCH: "wo ich nicht zu dem npc kommen konnte ist auf einem schiff und
+    da gibt es treppen die muesste man evtl anlaufen koennen kannst du rausfinden
+    bei welchen coords die treppen sind so das man da wegpunkte macht"
+
+>>> ANTWORT AUF DIE FRAGE: Es gibt dort KEINE Treppe im Wegenetz, auf die man
+    Wegpunkte setzen koennte. Das Schiff ist eine vollstaendig abgetrennte
+    Flaeche. Wegpunkte helfen prinzipiell nicht.
+
+>>> WIE GEMESSEN (kein Test im Spiel noetig, keine Vermutung): vnavmesh legt
+    jedes gebaute Wegenetz unter pluginConfigs\vnavmesh\meshcache\*.navmesh ab.
+    Ein Konsolenprogramm im Scratchpad laedt die Datei von Limsa Lominsa
+    (sea_s1_twn_s1t2, gebaut 2026-08-06 19:42) ueber den ORIGINALCODE von
+    vnavmesh (Navmesh.Deserialize, Verweis auf vnavmesh.dll + DotRecast) und
+    verfolgt die Polygon-Verbindungen wie NavmeshQuery.FindReachableMeshPolys.
+    - Kai-Flaeche des Spielers: 1468 Polygone, Y 6,0 bis 11,5.
+    - Schiffsflaeche mit dem NPC: 129 Polygone, Y 12,0 bis 24,8.
+    - Verbindungen zwischen beiden: NULL.
+    - Engste Stelle: Kai (-274,0 | 11,5 | 190,0) -> Schiff (-272,8 | 12,0 |
+      190,0), nur 1,2 m waagerecht und 0,5 m hoch (die Laufplanke). Alle
+      anderen Kandidaten haben 3,5 m Hoehenunterschied = Wand.
+    - Beide Teilstrecken sind fahrbar: Spieler -> Kai-Punkt 11 Wegpunkte /
+      32,8 m; Schiff-Punkt -> NPC 13 Wegpunkte / 39,9 m ueber den Schiffs-
+      aufgang Deck 12 -> 15 -> 16,5.
+
+>>> GEGEN DIE REALITAET GEPRUEFT: Dieselbe Wegsuche offline auf Spieler -> NPC
+    endet nach 0,9 m - exakt der Fehlschlag aus dem Log vom 06.08. 20:03.
+
+>>> DAMIT IST DIE ALTE DEUTUNG WIDERLEGT (STATUS 2026-08-01: "vnavmesh kann
+    keine senkrechten Aufstiege"): Der "9-Meter-Sprung" war nie eine Route.
+    NavmeshQuery.PathfindMesh haengt das ZIEL immer als letzten Wegpunkt an,
+    auch wenn die Suche es nie erreicht hat (dekompiliert 2026-08-06). Der
+    VORLETZTE Wegpunkt ist das Ende des echten Pfades. Es ist keine
+    Steilheits-Grenze, sondern eine fehlende Verbindung.
+
+>>> GEBAUT, zwei Teile in AutoWalkService:
+    1. `RouteReachesGoal` + Pruefung beim Auto-Lauf-Start: ist das Ziel nicht
+       erreichbar, wird SOFORT abgebrochen und "X ist nicht erreichbar -
+       dorthin fuehrt kein Weg" angesagt, statt stumm loszulaufen und nach
+       zwei Metern stehenzubleiben. Toleranz = 3 m + stopRange (bei Quest-
+       Zielen endet der Pfad absichtlich im Radius, sonst Fehlalarm).
+    2. `AnnounceApproach` / Befehl `/acc zugang`: sucht den naechsten Punkt,
+       an den man herankommt, und nennt Richtung, Gehstrecke, Restabstand und
+       Hoehenunterschied. Kandidaten auf Ringen um das ZIEL, je 16 Richtungen
+       und 4 Hoehenebenen zwischen Spieler- und Zielhoehe.
+
+>>> ZWEI FALLEN, die die Vorausberechnung VOR dem Test aufgedeckt hat:
+    - Sondiert man nur von der eigenen Fusshoehe, schnappt JEDER Kandidat auf
+      die eigene Etage. Ergebnis waere "3 Meter suedwestlich" gewesen - der
+      Spieler haette sich unter das Schiff gestellt. Daher 4 Hoehenebenen.
+    - Nach reiner 3D-Naehe gewinnt immer ein Punkt direkt unter dem Ziel.
+      Hoehe zaehlt deshalb 5-fach gegen waagerechte Naehe.
+
+>>> ERWARTUNGSWERTE VORAUSBERECHNET (dieselbe Logik offline, 156 Kandidaten,
+    58 erreichbar), so muss `/acc zugang` am Kai der Astalicia klingen:
+    "Kein durchgehender Weg zu Mitglied der Galgenvoegel. Am naechsten kommst
+    du 31 Meter nach Nordwesten. Von dort ist das Ziel noch 18 Meter entfernt,
+    5 Meter ueber dir."  (bester Punkt (-276,4 | 11,5 | 187,7) - die obere
+    Kai-Ebene, 3,3 m neben der Laufplanke)
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. IM SPIEL
+    UNGETESTET. Offen: (a) sagt Numpad3 auf den NPC jetzt "nicht erreichbar"?
+    (b) fuehrt `/acc zugang` auf die obere Kai-Ebene? (c) kommt man von dort
+    ueber die 1,2-m-Luecke aufs Schiff - das ist der einzige Punkt, den die
+    Messung NICHT beantworten kann.
+
+>>> NOCH KEINE TASTE: `/acc zugang` ist bisher nur ein Befehl. Wenn sich das
+    Feature bewaehrt, gehoert es auf eine Taste.
+
+>>> ERSTER TEST IM SPIEL 2026-08-07 00:16 - BEIDE TEILE FUNKTIONIEREN:
+    - Numpad3 auf den NPC: "Auto-Lauf abgebrochen ... Echter Pfad endet bei
+      <-261,8, 7,5, 194,2>, 8,9 m vor dem Ziel (erlaubt waeren 5,5 m)" ->
+      Ansage "ist nicht erreichbar - dorthin fuehrt kein Weg". Wie entworfen.
+    - `/acc zugang`: 156 Kandidaten, 65 erreichbar, bester Punkt
+      <-255,7 | 16,5 | 194,2>, 5 m Weg nach Osten, von dort noch 5,0 m zum
+      Ziel bei 0,1 m Hoehenunterschied. Suche dauerte 5,3 s.
+
+>>> DER GEFUNDENE PUNKT IST VIEL BESSER als die Vorausberechnung (die sagte
+    31 m nach Nordwesten): er liegt auf DERSELBEN HOEHE wie der NPC und nur
+    5 m entfernt. ABER die Abweichung ist noch nicht erklaert - offline galten
+    58 von 156 Kandidaten als erreichbar, im Spiel 65. Verdacht: die
+    Kandidatenpruefung lief mit der 3-m-Toleranz von UnreachableGap, die fuer
+    auf das Netz geschnappte Punkte zu lasch ist.
+    -> NACHGEZOGEN: eigene, strengere Schwelle `ApproachSnapTolerance` = 1 m
+       fuer Kandidaten, und der Restabstand des besten Punktes wird jetzt
+       geloggt ("Route endet X,XX m neben dem Punkt"). Beim naechsten Lauf
+       zeigt diese Zahl, ob <-255,7 | 16,5 | 194,2> echt erreichbar ist
+       (nahe 0,00) oder ein Grenzfall war.
+
+>>> ZWEITER TEST 2026-08-07 00:25 - DER LAUF ZUM ZUGANGSPUNKT SCHLUG FEHL,
+    UND DAS HAT EINEN ECHTEN FEHLER IM KRITERIUM AUFGEDECKT:
+    Route zum Punkt <-255,7 | 16,5 | 194,2> war
+    "(-260,9|7,4|194,2) -> (-255,7|16,5|194,2) -> (-255,7|16,5|194,2)",
+    Ergebnis "angekommen=False, Hoehenunterschied=9,1 m". Der Punkt war NIE
+    erreichbar - die Pruefung hat ihn mit "Route endet 0,00 m neben dem Punkt"
+    durchgewinkt.
+    URSACHE: Findet die Wegsuche GAR KEINEN Pfad, liefert sie nur das
+    Startpolygon; FindStraightPath macht daraus [Start, Ziel] und PathfindMesh
+    haengt das Ziel nochmal an. Damit IST der vorletzte Wegpunkt das Ziel und
+    der Abstand misst null. Beim NPC fiel das nicht auf, weil dort ein
+    Teilpfad ueber zwei Polygone lief. Erklaert auch 65 statt 58 Kandidaten:
+    sieben Fehlalarme derselben Art.
+    -> BEHOBEN: `RouteHasImpossibleJump` als ZWEITE, unabhaengige Pruefung.
+       Ein Segment mit mindestens 2 m Anstieg, das mehr als das 1,5-fache
+       seiner Bodenstrecke steigt, ist ein Loch im Wegenetz. Beide Pruefungen
+       zusammen in `RouteIsWalkable`; die Abstandspruefung faengt Teilpfade,
+       die Sprungpruefung die leeren. An echter Geometrie gegengeprueft:
+       der Schiffsaufgang steigt 3,0 m auf 5,1 m (0,59), der Scheinsprung
+       9,1 m auf 5,2 m (1,75) - die Schwelle 1,5 trennt sauber, keine
+       Fehlalarme auf echten Treppen/Rampen.
+    -> Damit hatte die urspruengliche Aufstiegs-Sonde in EINEM Punkt recht:
+       die Steilheitspruefung ist noetig. Sie reicht nur nicht allein.
+
+>>> DRITTER TEST 2026-08-07 00:30: DER SPRUNG-FIX GREIFT NICHT. Die falschen
+    Punkte haben Steigungen von 1,12 und 1,32 (9,1 m hoch auf 8,1 bzw. 6,9 m
+    Boden) - die Schwelle stand auf 1,5. Sie HOEHER zu setzen geht nicht:
+    vnavmesh baut Flaechen bis `AgentMaxSlopeDeg = 55` Grad als begehbar
+    (= Steigung 1,43, aus NavmeshSettings dekompiliert). Ein Phantomsprung mit
+    1,12 liegt also INNERHALB dessen, was echte Geometrie sein darf.
+    -> UEBER DIE STEILHEIT SIND DIE FAELLE NICHT UNTERSCHEIDBAR. Die
+       Steilheitspruefung bleibt drin (sie faengt die krassen Faelle), taugt
+       aber nicht als alleiniges Kriterium.
+    -> Sauberer waere: liegt die MITTE eines Wegabschnitts auf begehbarem
+       Boden? Bei einer echten Rampe ja, bei einem Sprung durch die Luft nein.
+       Braucht `Query.Mesh.NearestPoint` und damit den Framework-Thread - die
+       Kandidatenpruefung laeuft heute auf einem Worker. NOCH OFFEN.
+
+>>> USER-FRAGE ("nutzt du die lauffunktion vom vnavmesh und das genaue
+    wegenetz oder berechnest du die route?"): Wir berechnen NICHTS selbst.
+    Gelaufen wird mit `SimpleMove.PathfindAndMoveCloseTo` (vnavmesh sucht UND
+    steuert), geprueft mit `Nav.Pathfind` (dieselbe Suche ohne Bewegung),
+    Bodenpunkte aus `Query.Mesh.NearestPoint`. Daraus folgt zwingend: wir
+    koennen NIE weiter kommen als vnavmesh, weil wir dieselbe Karte fragen.
+
+>>> DARAUS DER NEUE ANSATZ (User: "ueber die planke steuern"): `Path.MoveTo`
+    faehrt eine feste Punktliste ab, GANZ OHNE Wegsuche (IPCProvider ->
+    FollowPath.Move). Damit laeuft die Figur auch ueber Boden, den das Netz
+    nicht kennt - der einzige Weg an Bord.
+    GEBAUT als `/acc planke` (nur DEBUG, Koordinaten hartkodiert, Versuch an
+    EINER Stelle): Etappe 1 laeuft normal zur Uebergangsstelle
+    (-274,0 | 11,5 | 190,0); ist der Lauf beendet und die Figur hoechstens 3 m
+    daneben, faehrt Etappe 2 ohne Wegsuche ueber (-272,8 | 12,0 | 190,0) nach
+    (-271,0 | 12,0 | 189,5) an Bord. Danach traegt das Wegenetz wieder bis zum
+    NPC (Etappe 3 war offline durchgerechnet: 13 Wegpunkte, 39,9 m).
+
+>>> IM SPIEL BESTAETIGT 2026-08-07 00:37 - DER GANZE WEG TRAEGT. Log:
+    - 00:37:41 Etappe 1 gestartet, dist=14,3.
+    - 00:37:46 "Pfad beendet, dist=0,9, angekommen=True" - Figur bei
+      <-274,9 | 11,3 | 190,0>, also 0,9 m neben der Uebergangsstelle.
+    - 00:37:46 "Etappe 2: an der Uebergangsstelle (0,9 m daneben). Fahre ohne
+      Wegsuche" -> Path.MoveTo abgesetzt.
+    - 00:38:06 Auto-Lauf zum NPC "angekommen=True", Figur bei
+      <-262,2 | 16,4 | 196,1>, 2,5 m vom NPC. Y 16,4 = OBERES DECK.
+    Damit ist die komplette Kette bewiesen: Wegenetz -> Path.MoveTo ueber die
+    Luecke -> Wegenetz. Die Offline-Vermessung des Uebergangs war korrekt.
+    USER-BESTAETIGUNG: "das hat funktioniert man ist bis zu dem punkt gelaufen
+    und dann konnte man den npc ueber die liste anlaufen".
+
+>>> NAECHSTER SCHRITT OFFEN - Verallgemeinerung. `/acc planke` hat die
+    Koordinaten hartkodiert und gilt nur fuer diese eine Stelle. Damit das ein
+    echtes Feature wird, muss das Plugin die Uebergangsstelle SELBST finden,
+    und das heisst: die beiden getrennten Flaechen kennen. Ueber IPC geht das
+    nicht (siehe Phantompunkt-Problem). Die drei Wege:
+    (a) Das Plugin liest die .navmesh-Cachedatei selbst und macht denselben
+        Flood-Fill wie das Scratchpad-Programm. Praezise und bewiesen, aber
+        Kopplung an ein undokumentiertes Fremdformat (Magic+Version im Header
+        pruefen, sonst Feature aus) und die Poly-Links muessten rekonstruiert
+        werden - Detour baut sie erst beim AddTile, serialisiert sind nur
+        `neis`.
+    (b) Eine mitgelieferte Datentabelle bekannter Uebergangsstellen je Gebiet,
+        offline ausgemessen. Sofort machbar und exakt, skaliert aber nicht auf
+        alle Zonen.
+    (c) Zur Laufzeit Kandidatenpaare per NearestPoint/Pathfind suchen - das
+        ist genau der Weg, an dem die Zugangssuche schon scheitert.
+
+>>> NEU AUF USER-WUNSCH ("kannst du ihn automatisch zum besten punkt laufen
+    lassen?"): `/acc zugang` laeuft den gefundenen Punkt jetzt selbst an.
+    Die Suche laeuft auf einem Worker-Thread und darf weder ObjectTable noch
+    vnavmesh-IPC anfassen - sie parkt den Punkt in `_pendingApproachWalk`,
+    `Update()` startet den Lauf im naechsten Frame (vor dem _active-Check,
+    der Takt laeuft auch ohne aktiven Lauf). Zielname wird zu "Zugang zu X",
+    damit die Laufansage nicht behauptet, es ginge zum NPC selbst.
+    Selbstkorrigierend: ist der Punkt doch nicht erreichbar, greift beim
+    Hinlaufen dieselbe Unerreichbar-Pruefung.
+
+## VORHERIGER STAND (2026-08-06, KATEGORIE + GEGENSTANDSSTUFE IM BEUTEL - GEBAUT, UNGETESTET)
+
+>>> USER-WUNSCH: "da gibt es wohl eine kategorie und eine gegenstandsstufe die
+    sollte bei den sachen wenn man auf dem gegenstand steht auch noch angesagt
+    werden."
+
+>>> AUSGANGSLAGE: `GearInfoService.DescribeGear` steigt bei allem aus, was keine
+    Ausruestung ist (`EquipSlotCategory.RowId == 0`). Ein Sehender liest im
+    Tooltip auch beim Trank Kategorie und Gegenstandsstufe - der Blinde hoerte
+    nur "10 mal Kupfererz".
+
+>>> AM SHEET GEPRUEFT, NICHT VERMUTET (Offline-Dump ueber Lumina + sqpack,
+    2026-08-06, siehe Konvention "Sheets offline auslesen"):
+    - `Item.ItemUICategory` ist ein RowRef auf `ItemUICategory`, dessen `Name`
+      in Spielsprache steht ("Arznei", "Baustein", "Angelkoeder", "Kristall",
+      "Metall", "Materia", "Zutat"). Wird GELESEN, nicht uebersetzt - genau wie
+      die Attributnamen bei DescribeStats.
+    - Gegenstandsstufe = `Item.LevelItem.RowId`, dieselbe Quelle wie bei der
+      Ausruestung. 21.733 von 21.781 Nicht-Ausruestungs-Gegenstaenden tragen
+      eine - die Zahl ist echte Spieldaten, keine leere Spalte.
+
+>>> GEBAUT: `GearInfoService.DescribeItemBasics(itemId)`, aufgerufen in
+    `UIReaderService.ResolveFocusedItemName` - also genau beim "auf dem
+    Gegenstand stehen" (Beutel, Ruestkammer, Laden-Kacheln). Die Bulk-Ansagen
+    (Quest-Belohnung) bleiben bewusst unveraendert, die sind schon lang.
+    - Bei Ausruestung wird die Gegenstandsstufe NICHT wiederholt: die kommt dort
+      schon aus `DescribeStats`. Es kommt nur die Kategorie dazu.
+    - Ist die Kategorie wortgleich mit dem Namen ("Leder" in Kategorie "Leder"),
+      faellt sie weg - sonst haette es gestottert.
+
+>>> ERWARTUNGSWERTE VORAUSBERECHNET (dieselbe Logik offline gefahren), so muss
+    es im Spiel klingen:
+    - "Heiltrank, Arznei, Gegenstandsstufe 10"
+    - "Kupfererz, Baustein, Gegenstandsstufe 1"
+    - "Rattenschwanz, Angelkoeder, Gegenstandsstufe 15"
+    - "Staerke-Materia I, Materia, Gegenstandsstufe 15"
+    - "Leder, Gegenstandsstufe 1"  (Kategorie unterdrueckt)
+    - Ausruestung: "Bronze-Gladius, Hauptwaffe der Gladiatoren, Stufe 6,
+      tragbar, Gegenstandsstufe 6, ..."
+
+>>> KEINE neuen Ansage-Texte noetig: `ItemLevelValue` gibt es bilingual schon,
+    die Kategorie kommt aus dem Sheet.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. IM SPIEL NOCH
+    UNGETESTET. Offen fuer den Test: ist die Ansage beim Blaettern durch den
+    Beutel zu lang? Falls ja, ist die Kategorie bei AUSRUESTUNG der erste
+    Kandidat zum Streichen (dort steht die Klasse schon in der Tragbarkeit).
+
+## VORHERIGER STAND (2026-08-06, V5.74 OEFFENTLICH RELEASED)
 
 >>> RELEASE v5.74 IST DRAUSSEN (Commit db04160, Tag v5.74,
     https://github.com/derbruedi/ff14-accessibility/releases/tag/v5.74).
