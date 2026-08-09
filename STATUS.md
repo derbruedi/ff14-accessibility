@@ -80,7 +80,13 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     (vgl. Astalicia-Untersuchung).
 
 >>> IN-GAME BESTAETIGT (User 2026-08-09): "laufen geht erstmal wieder".
-    Der Auto-Lauf tritt den vnavmesh-Weg wieder an. Als v5.77 released.
+    Der Auto-Lauf tritt den vnavmesh-Weg wieder an.
+
+>>> RELEASE v5.77 RAUS (2026-08-09 20:00 UTC). Versionen an allen drei Stellen
+    auf 5.77 / 5.77.0.0, vier Assets dran, Installer unveraendert
+    wiederverwendet (SHA passt zu installer.json). VERIFIZIERT: v5.77 ist
+    "Latest", und releases/latest/download/latest.zip liefert HTTP 200 mit
+    668.543 Bytes - exakt die neu gebaute Datei.
 
 >>> NOCH OFFEN AN DIESEM FALL: ob nach `/vnav rebuild` die beiden Flaechen von
     Oestlichem La Noscea zusammenhaengen. Bleibt die Trennung, laeuft der
