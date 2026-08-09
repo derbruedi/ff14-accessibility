@@ -3,7 +3,52 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-09, "WEGENETZ-ANSAGE WAR TOT" - URSACHE BEWIESEN, GEFIXT)
+## STAND JETZT (2026-08-09, "WEGENETZ ZURUECK AUF 5.73" - AUF ANSAGE DES USERS)
+
+>>> USER-ENTSCHEIDUNG: "mach das alles rueckgaengig, in v5.73 hat alles was das
+    wegenetz angeht funktioniert, unsere extra sachen haben irgendwas kaputt
+    gemacht."
+
+>>> WELCHER STAND GENAU: ein Tag v5.73 gibt es nicht (Releases springen von
+    v5.72 auf v5.74). Die PLUGIN-Version 5.73 endete mit Commit db04160, und
+    dessen Release v5.74 hat den `AutoWalkService` NICHT angefasst - der
+    Wegenetz-Stand von 5.73 und 5.74 ist also nachweislich identisch
+    (`git diff db04160^ v5.74 -- AutoWalkService.cs` = leer). Damit ist v5.74
+    der saubere Bezugspunkt.
+
+>>> ZURUECKGEBAUT (seit v5.74 waren 2.460 Zeilen dazugekommen):
+    - `AutoWalkService.cs` per `git checkout v5.74 --` auf den alten Stand.
+      Weg sind damit: die Pruefung "Ziel haengt an einer anderen Flaeche"
+      (RouteIsWalkable), die Uebergangs-Suche, die Zugangssuche mit Ringgitter,
+      die Umleitungen (falsche Etage / near miss), der Durchlauf durch
+      Zonengrenzen, `/acc zugang`, `/acc netz`, `/acc planke`, `/acc boden`.
+    - `NavmeshCacheService.cs` GELOESCHT (Cache-Analyse, Flaechen-Flood-Fill).
+    - `ZoneExitService.cs` GELOESCHT (echte Zonengrenzen, `/acc uebergang`).
+    - `Plugin.cs`: alle Aufrufe, Konstanten und Befehle dazu entfernt.
+    - `AccessibilityStrings`: die verwaisten Texte entfernt.
+
+>>> EINZIGE ABWEICHUNG VOM ALTEN STAND, und sie ist erzwungen:
+    `AccessibilityStrings.Unnamed` existiert nicht mehr (das Objektnamen-Feature
+    aus v5.75 hat es durch `UnnamedOfKind` ersetzt, und DAS wird nicht
+    zurueckgebaut). Eine Zeile im Folgen-Code nutzt jetzt `UnnamedOfKind`.
+    `git diff v5.74 -- AutoWalkService.cs` zeigt genau diese eine Zeile.
+
+>>> WAS DAMIT AUCH WEG IST - bewusst, der User hat den Rueckbau angeordnet:
+    die Ueberquerung abgetrennter Flaechen (war in-game bestaetigt), der
+    Durchlauf durch Zonenuebergaenge (nie getestet), die reparierte
+    Wegenetz-Fortschrittsansage und `/acc netz`. Die letzten beiden sind reine
+    Ansage-Fixes ohne Einfluss aufs Laufen und koennen auf Wunsch einzeln
+    wieder drauf - das Wissen dazu steht in docs/game-api.md und in der
+    Historie unter v5.76/v5.77.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.78.
+
+>>> ZU TESTEN: genau die Faelle, die vorher scheiterten - der Lauf zur
+    Sonnenkueste in Oestlichem La Noscea und der Quest-Marker 'Infame
+    Informanten'. Erwartung nach dem Rueckbau: der Auto-Lauf laeuft den
+    vnavmesh-Pfad, ohne vorher zu urteilen.
+
+## FRUEHER (2026-08-09, "WEGENETZ-ANSAGE WAR TOT" - URSACHE BEWIESEN, IN 5.77 GEFIXT, MIT DEM RUECKBAU WIEDER RAUS)
 
 >>> USER-MELDUNG: "ich bin auf einer map wo er angeblich keine wege findet."
 

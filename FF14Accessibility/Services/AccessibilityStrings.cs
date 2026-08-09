@@ -1205,16 +1205,6 @@ public static class AccessibilityStrings
     /// <summary>Fallback spoken name for an unnamed aetheryte.</summary>
     public static string AetheryteFallbackName => IsGerman ? "Ätheryt" : "Aetheryte";
 
-    // ── Übergangs-Sonde (ZoneExitService, nur Debug-Builds) ──
-    /// <summary>Spoken when the layout holds no exit range at all.</summary>
-    public static string ExitProbeNone =>
-        IsGerman ? "Kein Übergang in dieser Zone gefunden." : "No transition found in this zone.";
-    /// <summary>Spoken summary of the exit probe: count and nearest transition.</summary>
-    public static string ExitProbeResult(int count, string nearestName, float distance) =>
-        IsGerman
-            ? $"{count} Übergänge. Nächster: {(string.IsNullOrWhiteSpace(nearestName) ? "unbenannt" : nearestName)}, {distance:F0} Meter."
-            : $"{count} transitions. Nearest: {(string.IsNullOrWhiteSpace(nearestName) ? "unnamed" : nearestName)}, {distance:F0} metres.";
-
     // ════════════════════════════════════════════════════════════════
     //  NavigationService - Gehhilfe (walk guide)
     // ════════════════════════════════════════════════════════════════
