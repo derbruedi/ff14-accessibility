@@ -43,7 +43,16 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     mehr), und `PathfindInProgress` muss falsch bleiben (unsere Etappe rechnet
     nie). Trifft eines zu: ehrlich abbrechen statt weiterzudriften.
 
->>> Build Debug 0 Warnungen / 0 Fehler. Version 5.82, IN-GAME UNGETESTET.
+>>> Build Debug 0 Warnungen / 0 Fehler. Version 5.82.
+
+>>> RELEASED als v5.82 (2026-08-10, 21:15). Verifiziert: v5.82 ist "Latest",
+    4 Assets dran, `releases/latest/download/latest.zip` liefert 651.549 Bytes
+    (= der neue Build), repo.json auf main steht auf 5.82.0.0.
+    Getestet war zum Release-Zeitpunkt NUR der NPC-Dialog-Teil (beide Punkte, im
+    Log nachgewiesen). Die SPUR-AUFZEICHNUNG ist weiterhin in-game ungetestet -
+    sie kann aber nichts kaputtmachen, solange keine Spur aufgezeichnet wurde:
+    ohne Eintrag in `Configuration.Trails` verhaelt sich der Auto-Lauf exakt wie
+    in V5.81.
 
 >>> SO WIRD ES GETESTET (Vorschlag fuer Oestliches La Noscea):
     1. Auf dem Plateau an die Stelle laufen, wo der Auto-Lauf bisher endet.
@@ -98,8 +107,12 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     ALLGEMEINEN Historie wuerde aber auch einen Boss verschlucken, der dieselbe
     Warnung zweimal ruft - und genau das darf einem blinden Spieler nicht
     passieren. Die getrennte Liste trifft nur Fremdquellen-Wiederholungen.
-    NOCH ZU PRUEFEN: (a) Quest-Dialog mit Fenster wird jetzt genau EINMAL
-    gesprochen; (b) ein Kampf-Ruf OHNE Fenster kommt weiterhin an.
+    PUNKT (a) IM SPIEL BESTAETIGT (User + Log 21:11:18-28): Die drei
+    Wheiskaet-Zeilen der Tauglichkeitspruefung wurden je EINMAL gesprochen -
+    aus dem Fenster - und die nachfolgende Chat-Zeile erzeugte keine zweite
+    Ansage mehr.
+    OFFEN bleibt (b): ein Kampf-Ruf OHNE Textfenster. Das ist genau der Fall,
+    um den es dem User urspruenglich ging, und er ist noch nicht getestet.
 
 ## FRUEHER (2026-08-10, V5.81 - GEHHILFE ERKENNT DAS NETZENDE)
 
