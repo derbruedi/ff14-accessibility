@@ -3,7 +3,69 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-10, V5.80 - IN-GAME VERIFIZIERT + NACHSCHLIFF)
+## STAND JETZT (2026-08-10, V5.81 - GEHHILFE ERKENNT DAS NETZENDE)
+
+>>> LOG-AUSWERTUNG DER SITZUNG 19:29-19:40 (dalamud.log), drei Ergebnisse:
+    1. NETZ WURDE ECHT NEU GEBAUT (19:30:31-19:30:58, Fortschritt 20/40/60/80 %)
+       mit vnavmesh 1.2.3.13.
+    2. DIE TRENNUNG BESTEHT TROTZDEM. Lauf zu "Infame Informanten": Start
+       (-17|70|-1), 24 Wegpunkte, 508 m produktiv bis (443|76|4), dann
+       "keine Annaeherung seit 2,5 s bei restWp=1, dist=469,3 - Netz endet hier".
+       Damit ist die letzte offene Frage beantwortet: NEUBAU + NEUE VNAVMESH-
+       FASSUNG SCHLIESSEN DIE LUECKE IN OESTLICHEM LA NOSCEA NICHT. Plateau
+       (Y 76) und Kueste bleiben getrennt, wie aus den Recast-Grenzen erwartet.
+       Damit sind alle drei Erklaerungsversuche durch: Cache widerlegt, Neubau
+       widerlegt, Version widerlegt. Bleibt nur eine NavmeshCustomization fuer
+       Gebiet 135 - ungeprueft, ob das der Aufwand wert ist.
+    3. AUTO-LAUF AN DER NETZKANTE ARBEITET WIE ENTWORFEN (19:32:21):
+       "Pfad besteht nur aus dem angehaengten Ziel - keine Routen-Vorschau",
+       2,3 s spaeter die ehrliche Absage. Kein Schieben mehr. V5.80 bestaetigt.
+
+>>> NEUER BEFUND, IN V5.81 BEHOBEN: DIE GEHHILFE HATTE DIE V5.80-PRUEFUNGEN
+    NICHT. Sie ist ein eigener Codepfad (NavigationService, "Gehhilfe"-Block),
+    und im Log kam dort beides zurueck, was beim Auto-Lauf behoben ist:
+    - Sie sagte die Phantom-Route an: "Weg zu Infame Informanten, 466 Meter:
+      466 Meter nach Sueden" (19:32:31), obwohl die Route nur aus dem
+      angehaengten Ziel bestand.
+    - Danach 30 s lang alle 5 s "0,5 Kilometer, geradeaus, abwaerts" bei
+      unveraendert dist=469,5 und wp=1/2 - sie merkte das Netzende nicht und
+      schickte den Spieler weiter gegen die Kante (19:32:36-19:32:56).
+
+>>> GEBAUT IN V5.81 (beides in NavigationService):
+    (a) Besteht die Route nach dem Vorruecken nur noch aus dem angehaengten
+        Ziel, wird keine Routen-Vorschau gesprochen (RouteIsOnlyAppendedDestination).
+        Bewusst STILL statt "kein Weg gefunden": auf freiem Gelaende sieht eine
+        echte Gerade genauso aus, und eine falsche Absage waere schlimmer als
+        Schweigen. Die Wahrheit kommt aus (b), sobald der Spieler laeuft.
+    (b) CheckMeshEnd: nur noch das angehaengte Ziel als Wegpunkt, Ziel weiter
+        als Ankunftsreichweite+20 m, SPIELER BEWEGT SICH GERADE (Fenster 1 s)
+        und ist seit 5 s nicht naeher gekommen -> einmalige Ansage
+        GuideMeshEndsHere, danach Luftlinien-Fuehrung.
+
+>>> ZWEI BEWUSSTE ABWEICHUNGEN VOM AUTO-LAUF, jeweils begruendet:
+    - Die Gehhilfe wird NICHT beendet. Der Auto-Lauf muss stoppen, weil er die
+      Figur steuert; die Gehhilfe steuert nichts. Abschalten haette dem Spieler
+      nur die Fuehrung genommen, obwohl er sich selbst einen Weg suchen kann.
+    - Das Zeitfenster ist 5 s statt 2,5 s, und die Pruefung greift nur waehrend
+      echter Bewegung. Stillstand beweist beim manuellen Laufen nichts (Kampf,
+      Menue), und ein Mensch dreht und tastet sich beim Laufen.
+    - Nach dem Netzende bleibt die langsame 5-s-Ansage statt der 2-s-Luftlinien-
+      Kadenz: bei 469 m Rest waere dieselbe Zeile alle 2 s reine Belastung.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.81.
+
+>>> ZU TESTEN (in-game noch UNGEPRUEFT):
+    1. Gehhilfe auf ein Ziel jenseits der Netzkante (z. B. wieder "Infame
+       Informanten" von oben): beim Start darf KEINE "466 Meter nach Sueden"-
+       Route mehr kommen.
+    2. Dann losgehen bis zur Kante und weiterlaufen: nach etwa 5 s Laufen ohne
+       Annaeherung soll einmal kommen "Hier endet der begehbare Weg. Noch X
+       Meter nach Sueden, ich fuehre ab jetzt in Luftlinie."
+    3. GEGENPROBE, wichtig: normale Gehhilfe zu einem erreichbaren Ziel - die
+       Routen-Vorschau muss weiterhin kommen, und unterwegs stehenbleiben
+       (Kampf, Menue) darf die Netzende-Ansage NICHT ausloesen.
+
+## FRUEHER (2026-08-10, V5.80 - IN-GAME VERIFIZIERT + NACHSCHLIFF)
 
 >>> V5.79 IM SPIEL BESTAETIGT (Log 2026-08-10, 18:25-18:32). Alle drei Fixes
     greifen nachweislich:

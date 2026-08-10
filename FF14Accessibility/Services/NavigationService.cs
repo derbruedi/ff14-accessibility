@@ -1547,6 +1547,13 @@ public sealed class NavigationService
     private bool _computeAnnounced;
     private DateTime _lastRerouteAt = DateTime.MinValue;
 
+    // Netzende-Erkennung (siehe Konstanten unten).
+    private Vector3 _guideLastPosition;
+    private DateTime _guideLastMoveAt;
+    private float _guideBestDistance;
+    private DateTime _guideLastApproachAt;
+    private bool _guideMeshEndAnnounced;
+
     /// <summary>Arrival distance for the walk guide, in yalms/meters.</summary>
     private const float ArrivalDistance = 3f;
 
@@ -1563,6 +1570,34 @@ public sealed class NavigationService
     private const float DriftRerouteDistance = 10f;
 
     private const double RerouteMinIntervalS = 3;
+
+    // ── Netzende erkennen (V5.81, aus dem Auto-Lauf übernommen) ──
+    // vnavmesh hängt die angeforderte Zielkoordinate JEDEM Ergebnis an, auch
+    // einer unerreichbaren (Fakt 3 im Kopf von AutoWalkService). Hängt der
+    // Führungspunkt an genau diesem Punkt, ist der begehbare Weg zu Ende, und
+    // die Gehhilfe hat den Spieler bisher trotzdem dorthin geschickt
+    // (Log 2026-08-10 19:32:36-19:32:56: 30 s "0,5 Kilometer, geradeaus" bei
+    // unveränderten 469,5 m).
+
+    /// <summary>Keine Annäherung so lange trotz Bewegung: das Netz endet hier.
+    /// Großzügiger als die 2,5 s des Auto-Laufs, weil ein Mensch sich beim
+    /// Laufen dreht, ausweicht und tastet - der Auto-Lauf hält stur Kurs.</summary>
+    private const double GuideNoApproachS = 5;
+
+    /// <summary>So viel näher zählt als Annäherung (darunter ist es Rauschen).</summary>
+    private const float GuideApproachEpsilon = 1f;
+
+    /// <summary>Nur so weit außerhalb der Ankunftsreichweite urteilen: auf den
+    /// letzten Metern ist eine Weile ohne Annäherung normal (um ein Hindernis
+    /// herum), und dort führt die Luftlinie ohnehin richtig.</summary>
+    private const float GuideNoApproachMinDistance = 20f;
+
+    /// <summary>Zählt als echte Bewegung (darunter Zittern an der Geometrie).</summary>
+    private const float GuideMovementEpsilon = 0.5f;
+
+    /// <summary>Nur urteilen, solange der Spieler gerade wirklich läuft.
+    /// Stillstand beweist nichts: er kann kämpfen oder im Menü sein.</summary>
+    private const double GuideMovingWindowS = 1.0;
 
     // Spoken cadence: route mode speaks on EVENTS (waypoint reached) with a
     // slow reassurance repeat between them; the straight-line fallback has no
@@ -1622,6 +1657,8 @@ public sealed class NavigationService
         // interrupt-speakers cut each other off).
         _lastGuideTick = DateTime.UtcNow;
         ClearRoute();
+        ResetApproachTracking(_objectTable.LocalPlayer?.Position ?? destination, destination);
+        _guideMeshEndAnnounced = false;
         _beacon.Start();
         _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideOn(_walkTargetName));
         _log.Info($"[Nav] Gehhilfe: gestartet zu {name} (id={targetId:X}, ankunft={arrivalRange:F1})");
@@ -1734,10 +1771,24 @@ public sealed class NavigationService
         _routeDest = _walkDestPosition;
         // The first waypoint is the start position - skip everything already in reach.
         AdvancePastReachedWaypoints(player, announce: false);
+        // A fresh route deserves a fresh verdict: judging approach against the
+        // old route's best distance would condemn a detour that starts by
+        // walking away from the destination.
+        ResetApproachTracking(player.Position, _walkDestPosition);
 
         if (!_routeTaskIsReroute)
         {
-            _tolk.Speak(_routes.DescribeRoute(_walkTargetName, waypoints));
+            // A "route" that is nothing but the appended destination is not a
+            // route at all (see the mesh-end constants above). Announcing it
+            // produced "Weg zu Infame Informanten, 466 Meter: 466 Meter nach
+            // Süden" for a corridor that does not exist (log 2026-08-10
+            // 19:32:31). Stay QUIET rather than claim "no path": on open ground
+            // a genuine straight run looks exactly the same from here, and
+            // CheckMeshEnd tells the truth as soon as the player actually walks.
+            if (RouteIsOnlyAppendedDestination(Vector3.Distance(player.Position, _walkDestPosition)))
+                _log.Info("[Nav] Gehhilfe: Route besteht nur aus dem angehängten Ziel - keine Routen-Vorschau.");
+            else
+                _tolk.Speak(_routes.DescribeRoute(_walkTargetName, waypoints));
         }
         else if (_route != null && _routeCursor < _route.Count)
         {
@@ -1777,12 +1828,16 @@ public sealed class NavigationService
             return;
         }
 
+        var now = DateTime.UtcNow;
+        TrackApproach(player.Position, distance, now);
+
         PollRouteTask(player);
 
         if (_route != null)
         {
             AdvancePastReachedWaypoints(player, announce: true);
             CheckReroute(player);
+            CheckMeshEnd(player, distance, now);
         }
 
         var guidePoint = _route != null && _routeCursor < _route.Count
@@ -1795,8 +1850,11 @@ public sealed class NavigationService
         _beacon.Update(relAngle, distance);
 
         // Reassurance repeat between waypoint events; the beacon carries the
-        // direction continuously in the frames between.
-        var interval = _route != null ? RouteSpeakIntervalS : StraightSpeakIntervalS;
+        // direction continuously in the frames between. After the mesh ended we
+        // keep the slower route cadence: the straight-line rhythm exists for
+        // short final approaches, and at 469 m remaining it would repeat the
+        // same line every 2 s with nothing new to say.
+        var interval = _route != null || _guideMeshEndAnnounced ? RouteSpeakIntervalS : StraightSpeakIntervalS;
         if ((DateTime.UtcNow - _lastGuideTick).TotalSeconds < interval) return;
         _lastGuideTick = DateTime.UtcNow;
 
@@ -1903,6 +1961,75 @@ public sealed class NavigationService
 
         _log.Info($"[Nav] Gehhilfe: Re-Routing (drift={drift:F1}, zielBewegt={destMoved}).");
         RequestRoute(player.Position, isReroute: true);
+    }
+
+    /// <summary>Starts the movement/approach bookkeeping over (guide start, new route).</summary>
+    private void ResetApproachTracking(Vector3 playerPosition, Vector3 destination)
+    {
+        _guideLastPosition = playerPosition;
+        _guideLastMoveAt = DateTime.UtcNow;
+        _guideBestDistance = Vector3.Distance(playerPosition, destination);
+        _guideLastApproachAt = DateTime.UtcNow;
+    }
+
+    /// <summary>Records whether the player is walking at all, and whether the
+    /// destination is getting closer. Both are needed to tell "the mesh ends
+    /// here" apart from "the player is standing still".</summary>
+    private void TrackApproach(Vector3 playerPosition, float distance, DateTime now)
+    {
+        if (Vector3.Distance(playerPosition, _guideLastPosition) >= GuideMovementEpsilon)
+        {
+            _guideLastPosition = playerPosition;
+            _guideLastMoveAt = now;
+        }
+
+        if (distance <= _guideBestDistance - GuideApproachEpsilon)
+        {
+            _guideBestDistance = distance;
+            _guideLastApproachAt = now;
+        }
+    }
+
+    /// <summary>
+    /// True when the only waypoint left is the destination vnavmesh appends to
+    /// every path whether it is reachable or not - i.e. the walkable corridor is
+    /// used up and what remains is a wish. Restricted to distant destinations:
+    /// close by, a one-waypoint route is simply the last hop.
+    /// </summary>
+    private bool RouteIsOnlyAppendedDestination(float distance)
+    {
+        var route = _route;
+        if (route == null || route.Count == 0) return false;
+        if (_routeCursor < route.Count - 1) return false;       // real waypoints still ahead
+        if (distance <= _walkArrivalRange + GuideNoApproachMinDistance) return false;
+        // Guards against a target that walked off since the pathfind: then the
+        // last waypoint is the OLD destination, not the appended current one.
+        return Vector3.Distance(route[^1], _walkDestPosition) <= _walkArrivalRange;
+    }
+
+    /// <summary>
+    /// The mesh ends here: nothing is left but the appended destination, the
+    /// player IS walking, and they are getting no closer. The auto-walk stops at
+    /// this point because it steers the character; the guide does not steer, so
+    /// stopping would only take the guidance away from someone who may well find
+    /// their own way down. It says so once and keeps pointing straight-line.
+    /// </summary>
+    private void CheckMeshEnd(IGameObject player, float distance, DateTime now)
+    {
+        if (_guideMeshEndAnnounced) return;
+        if (!RouteIsOnlyAppendedDestination(distance)) return;
+        // Standing still proves nothing - the player may be fighting or reading
+        // a menu. Only someone actively walking who still gets no closer does.
+        if ((now - _guideLastMoveAt).TotalSeconds > GuideMovingWindowS) return;
+        if ((now - _guideLastApproachAt).TotalSeconds <= GuideNoApproachS) return;
+
+        _guideMeshEndAnnounced = true;
+        _route = null;   // straight-line guidance from here on
+        var direction = RouteService.CompassWord(player.Position, _walkDestPosition);
+        _log.Info($"[Nav] Gehhilfe: keine Annäherung seit {GuideNoApproachS:F1} s am angehängten Ziel, " +
+                  $"dist={distance:F1} - Netz endet hier, weiter in Luftlinie.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.GuideMeshEndsHere(distance, direction));
+        _lastGuideTick = now;
     }
 
     /// <summary>", aufwärts"/", abwärts" when the guide point sits clearly above

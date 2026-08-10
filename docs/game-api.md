@@ -528,11 +528,44 @@ ueber einen steilen Hang erreicht, existiert im Netz nicht. Genau so zerfaellt
 Oestliches La Noscea (s1f3) in zwei Haelften - Weinhafen-Plateau (Y ca. 59-76)
 und Kueste/Costa del Sol (Y ca. 17-20). Zu Fuss kommt man hinunter, ueber eine
 55-Grad-Kante fuehrt aber kein Recast-Polygon.
-→ Zu versuchen, in dieser Reihenfolge: `/vnav rebuild` in der Zone (der Cache
-   ist vom 02.08.2026 und koennte unvollstaendig gebaut sein); falls das nichts
-   aendert, in den vnavmesh-Einstellungen `GenerateEdgeClimbLinks` einschalten
-   und neu bauen. Ob Letzteres diese konkrete Luecke schliesst, ist NICHT
-   geprueft - 3,2 m Climb-Down pro Verbindung muessen die Hangkette abdecken.
+→ ERLEDIGT UND WIDERLEGT (2026-08-10): `/vnav rebuild` in der Zone gemacht, Cache
+   nachweislich neu geschrieben, vnavmesh auf 1.2.3.13 - die Trennung besteht
+   reproduzierbar weiter (Lauf endete wieder bei 469 m Restentfernung).
+
+KORREKTUR ZUR FRUEHEREN NOTIZ (ilspycmd 2026-08-10): `GenerateEdgeClimbLinks`
+laesst sich NICHT "in den vnavmesh-Einstellungen einschalten". `NavmeshSettings`
+wird ausschliesslich aus `NavmeshCustomization.Settings` gelesen
+(`NavmeshBuilder..ctor`: `Settings = customization.Settings`), und die
+Nutzer-`Config` enthaelt diese Felder gar nicht - sie hat nur AutoLoadNavmesh,
+EnableDTR, ShowQueryStatusInDTR, AlignCameraToMovement/-Height, ShowWaypoints,
+ForceShowGameCollision, CancelMoveOnUserInput, StopOnStuck, StuckTolerance,
+StuckTimeoutMs, RetryOnStuck, RandomnessMultiplier, BuildMaxCores. Die
+`NavmeshSettings.Draw()`-Regler gehoeren zum Debug-Fenster "NavmeshCustom", also
+zu manuell gebauten Testnetzen, nicht zum automatisch geladenen Zonennetz.
+→ Recast-Parameter aendern = vnavmesh forken. Kein Weg ueber eine Datei oder UI.
+
+#### Was stattdessen geht, um eine Netzluecke zu ueberbruecken (IPC, ilspycmd 2026-08-10)
+- `Path.MoveTo(List<Vector3> waypoints, bool fly)` faehrt eine EIGENE Punktliste
+  ab, ganz ohne Wegsuche (geht direkt an `FollowPath.Move`). Das ist der einzige
+  Weg, die Figur ueber Boden zu schicken, den das Netz nicht kennt - im Spiel
+  bestaetigt 2026-08-07 (Astalicia) und 2026-08-09 (Hinweg zum Magneten).
+- `NavmeshCustomization.LinkPoints(mesh, start, end)` ist vnavmeshs eigener
+  Mechanismus fuer handgemachte Verbindungen, aber `protected static` in einer
+  Customization-Klasse mit `[CustomizationTerritory(id)]` - nur per Fork
+  erreichbar, nicht ueber die IPC. Fuer Gebiet 135 existiert keine Customization.
+- FLIEGEN: `NavmeshCustomization.IsFlyingSupported` gibt true fuer
+  `TerritoryType.TerritoryIntendedUse` 1, 47 und 49; dann baut `NavmeshBuilder`
+  zusaetzlich eine `VoxelMap`, und `Nav.Pathfind`/`Path.MoveTo` nehmen ein
+  `fly`-Flag. Ein Flugvolumen kennt die 55-Grad-Grenze nicht - fuer Hoehenbrueche
+  in Feldzonen also die grundsaetzlich saubere Umgehung. UNGEPRUEFT ist beides:
+  ob Gebiet 135 einen der drei IntendedUse-Werte hat, und ob der Charakter dort
+  fliegen darf (Aetherstroeme - reiner Spielzustand, steht nicht im Netz).
+- `seeds-local.json` (`FloodFill.AddPoint` + `Serialize`, Ablage im
+  vnavmesh-pluginConfigs-Ordner) markiert nur, welche Flaechen von einem Seed aus
+  erreichbar sind, und schaltet damit `NavmeshManager.Prune` scharf. Das schliesst
+  KEINE Luecke; es macht nur `Query.Mesh.NearestPointReachable` /
+  `IsPointOnMesh(allowUnreachable: false)` ueberhaupt wirksam (die ohne Seeds
+  wirkungslos sind, gemessen 2026-08-09).
 
 Weitere belegte Kleinigkeiten:
 - `Path.IsRunning` ist exakt `FollowPath.Waypoints.Count > 0`, nichts weiter.

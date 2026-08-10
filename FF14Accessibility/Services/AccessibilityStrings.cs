@@ -1225,6 +1225,12 @@ public static class AccessibilityStrings
         IsGerman ? $"Gehhilfe an: {name}." : $"Walk guide on: {name}.";
     public static string NoPathStraightLine(string hint) =>
         IsGerman ? $"Kein Weg gefunden, führe in Luftlinie.{hint}" : $"No path found, guiding in a straight line.{hint}";
+    /// <summary>The walk guide ran out of walkable mesh. Unlike the auto-walk
+    /// nothing is stopped - the player does the walking - so the line says what
+    /// actually changes: guidance continues as the crow flies.</summary>
+    public static string GuideMeshEndsHere(float distance, string direction) =>
+        IsGerman ? $"Hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}, ich führe ab jetzt in Luftlinie."
+                 : $"This is where the walkable path ends. {MetersRemaining(distance)} to the {direction}; guiding in a straight line from here.";
 
     // ════════════════════════════════════════════════════════════════
     //  HotbarService - Aktionsleiste & Skill-Browser
