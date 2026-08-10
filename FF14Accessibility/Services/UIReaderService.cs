@@ -40,6 +40,9 @@ public sealed class UIReaderService : IDisposable
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
     private readonly TooltipService  _tooltips;
+    /// <summary>Sagt die FORM einer Wirkflaeche in Worten - das Einzige am
+    /// Aktions-Tooltip, das das Spiel ausschliesslich zeichnet.</summary>
+    private readonly ActionShapeService _actionShape;
     private readonly List<string>    _titleMenuItems = [];
 
     // Debug probe (/acc mountprobe): one-shot scan of the mount guide grid.
@@ -308,6 +311,7 @@ public sealed class UIReaderService : IDisposable
         _history        = history;
         _config         = config;
         _data           = data;
+        _actionShape    = new ActionShapeService(data, log);
         RegisterHooks();
     }
 
@@ -3148,6 +3152,13 @@ public sealed class UIReaderService : IDisposable
 
         var sb = new StringBuilder(name);
         if (row.ClassJobLevel > 0) sb.Append(AccessibilityStrings.LevelSuffix(row.ClassJobLevel));
+
+        // Die FORM der Wirkflaeche. Der Tooltip nennt nur die Zahl ("Radius, 5y");
+        // ob das ein Kreis, ein Kegel oder eine Linie ist, zeichnet das Spiel nur.
+        // "" fuer jede Aktion ohne bestaetigte Form - siehe ActionShapeService.
+        var shape = _actionShape.Describe(id);
+        if (shape.Length > 0) sb.Append($", {AccessibilityStrings.ShapeSuffix(shape)}");
+
         return sb.ToString();
     }
 
