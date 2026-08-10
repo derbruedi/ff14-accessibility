@@ -379,8 +379,13 @@ Zeichen selbst (V4.90). Quelle:
 
 ### vnavmesh-IPC (Quellcode-verifiziert 2026-07-10, github.com/awgil/ffxiv_navmesh)
 - Fremd-Plugin für Navmesh-Wegfindung + Auto-Bewegung. Installation:
-  Repo `https://puni.sh/api/repository/veyn`; aktuell 1.2.3.8, ApiLevel 15
-  (kompatibel). Alternativ als Dev-Plugin nach devPlugins entpackbar.
+  Repo `https://puni.sh/api/repository/veyn`, ApiLevel 15. Beim User liegt es
+  als Dev-Plugin unter `devPlugins\vnavmesh` — Dalamud aktualisiert das NICHT
+  automatisch, ein Update heisst Dateien austauschen (2026-08-10 von 1.2.3.10
+  auf 1.2.3.13; alte Fassung liegt in `devPlugins\vnavmesh_backup_1.2.3.10`).
+  Die Downloadadresse steht als `DownloadLinkInstall` in der Repo-JSON.
+  ACHTUNG: Ein Versionswechsel kann die Navmesh-Formatversion aendern, dann
+  werden alle gecachten Netze beim ersten Betreten neu gebaut.
 - Für uns relevante IPC-Gates (alle mit Präfix `vnavmesh.`):
   - `Nav.IsReady` → bool (Mesh der Zone geladen)
   - `Nav.BuildProgress` → float (Ladefortschritt)

@@ -48,8 +48,34 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     neu bauen (ob das die Luecke schliesst, ist UNGEPRUEFT).
 
 >>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.80.
->>> ZU TESTEN: an der Netzkante Numpad3 druecken - es darf keine Route mehr
-    angesagt werden, und die Absage soll nach gut 2 s kommen statt nach 12.
+>>> V5.80 IN-GAME BESTAETIGT (Log 18:48-18:53): "keine Annaeherung seit 2,5 s
+    bei restWp=1" greift genau wie entworfen, statt 12 s Schieben. Der Lauf um
+    18:48:44 lief 83 s produktiv, bevor das Netzende kam.
+
+>>> CACHE-THEORIE WIDERLEGT (2026-08-10 abends): Der User hat `/vnav rebuild`
+    ausgefuehrt. Die Cache-Datei s1f3 wurde nachweislich neu geschrieben
+    (18:48:27), die Trennung besteht trotzdem — Lauf endete wieder bei 413,5 m,
+    "Landpomeranzen" bei 485,9 m. Das Netz wird REPRODUZIERBAR getrennt gebaut.
+    Ursache ist also die Geometrie plus die Recast-Grenzen, nicht eine kaputte
+    Datei. Die Datei liegt gesichert in `meshcache_backup_20260810`.
+
+>>> VNAVMESH AKTUALISIERT: 1.2.3.10 (25.07.) -> 1.2.3.13 (05.08.), verifiziert
+    (Assembly-Version 1.2.3.13, DLL 448 statt 439 KB). Alte Fassung gesichert in
+    `devPlugins\vnavmesh_backup_1.2.3.10`. Neu darin u.a. "Better road pathing in
+    western thanalan", "Link limsa ship interior stairs", "add pathfindavoid" —
+    fuer Oestliches La Noscea ist NICHTS dabei, eine Besserung dort ist also
+    nicht zu erwarten. Wichtig ist das Muster: solche Luecken werden bei
+    vnavmesh durch handgemachte Zonen-Anpassungen (`NavmeshCustomization`)
+    behoben, und fuer Gebiet 135 existiert keine.
+    HINWEIS: Downloads/Installationen von Fremd-Plugins blockiert der
+    Sicherheitsfilter dieser Sitzung — der Kopierschritt muss vom User selbst
+    ausgefuehrt werden (`! cp -r <stage> <devPlugins\vnavmesh>`).
+
+>>> ZU TESTEN, NAECHSTE SITZUNG:
+    1. Einloggen, Oestliches La Noscea betreten: das Netz wird neu gebaut (Cache
+       entfernt + neue vnavmesh-Version). Auf "Wegenetz fertig geladen" warten.
+    2. Lauf zur Sonnenkueste: kommt er jetzt durch, oder wieder Stopp bei ~413 m?
+    3. An der Netzkante Numpad3: keine Route-Ansage, Absage nach gut 2 s.
 
 ## FRUEHER (2026-08-10, V5.79 "AUTO-LAUF KOMPLETT NEU AUF VNAVMESH")
 
