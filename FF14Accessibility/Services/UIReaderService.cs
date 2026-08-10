@@ -40,6 +40,11 @@ public sealed class UIReaderService : IDisposable
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
     private readonly TooltipService  _tooltips;
+
+    /// <summary>Charaktererstellung, Schritt Aussehen. Der globale Fokus-Leser
+    /// reicht ihm an genau EINER Stelle den Text durch, den er sonst sprechen
+    /// wuerde - siehe CharaMakeReader.DescribeFocus.</summary>
+    private readonly CharaMakeReader _charaMake;
     private readonly List<string>    _titleMenuItems = [];
 
     // Debug probe (/acc mountprobe): one-shot scan of the mount guide grid.
@@ -294,9 +299,10 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake)
     {
         _tooltips       = tooltips;
+        _charaMake      = charaMake;
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
         _tolk           = tolk;
@@ -2147,6 +2153,12 @@ public sealed class UIReaderService : IDisposable
             // ~14 ms later with the raw number and cut the label off (log
             // 2026-07-27 15:42: "Hauptlautstärke, 100 %" interrupted by "100").
             if (IsBareNumber(text) && IsAddonVisible("ConfigSystem")) return;
+            // Charaktererstellung, Schritt Aussehen: der EINZIGE Eingriff dieses
+            // Features in den Fokus-Leser. Gibt den Text unveraendert zurueck, solange
+            // der Fokus nicht in _CharaMakeFeature oder einem CMF*-Waehler steht - dort
+            // faltet er Anzahl, aktuellen Wert und Position in DIESELBE Ansage, statt
+            // eine zweite hinterherzuschicken, die die erste abschneiden wuerde.
+            text = _charaMake.DescribeFocus(node, text);
             // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
             // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
@@ -7128,6 +7140,16 @@ public sealed class UIReaderService : IDisposable
                 var idx   = renderer->ListItemIndex;
                 if (count <= 0 || idx < 0 || idx >= count) return false;
                 text = AccessibilityStrings.Counter(idx + 1, count);
+                // Die Typ-4-Waehler (Gesichtsmerkmale, Taetowierungen) sagen WAS die
+                // Zeile ist und ob sie an ist, nicht nur wo sie steht. Sie sind die
+                // einzigen Icon-Gitter ohne eigenen CustomizeData-WERT - eine
+                // Typ-4-Zeile ist ein Bit in einer Bitmaske - und diese Ansage ist
+                // damit ihr einziger Sprecher. User: *"needs to read the toggle when
+                // highlighted, not just when toggled. EG: 1 of 5: pointed chin beard:
+                // off."* Leer fuer jedes andere Fenster, die Zeile bleibt dann genau
+                // wie sie war.
+                var feature = _charaMake.DescribeFeatureRow(a->NameString, idx + 1, count);
+                if (!string.IsNullOrEmpty(feature)) text = $"{text}, {feature}";
                 return true;
             }
         }

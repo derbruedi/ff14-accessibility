@@ -55,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
     private readonly TrailService       _trails;
+    private readonly CharaMakeReader    _charaMake;
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
@@ -230,7 +231,11 @@ public sealed class Plugin : IDalamudPlugin
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
         _tooltips   = new TooltipService(Interop, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
+        // Charaktererstellung, Schritt Aussehen. Faehrt sich selbst ueber Update()
+        // und liefert dem Fokus-Leser an einer Stelle den Satz zur Kategorie bzw.
+        // zum Waehler-Eintrag.
+        _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _chatChannel = new ChatChannelService(_history, _tolk, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
@@ -948,6 +953,10 @@ public sealed class Plugin : IDalamudPlugin
     {
         UpdateKeyEdges();
 
+        // Charaktererstellung: kostet nichts ausserhalb des Aussehen-Schritts -
+        // die Methode steigt sofort wieder aus, wenn dessen Addon nicht sichtbar ist.
+        _charaMake.Update();
+
         // Sample the text-input state once for this frame. Log only on change so
         // the in-game test can confirm it flips exactly when the chat opens/closes.
         var textInputActive = IsGameTextInputActive();
@@ -1038,7 +1047,16 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeyGotoCoords))    GotoClipboardCoords();
         if (IsJustPressed(_config.KeyCopyCoords))    CopyCurrentCoords();
-        if (IsJustPressed(_config.KeyReadUI))        _uiReader.ReadCurrentFocus();
+        if (IsJustPressed(_config.KeyReadUI))
+        {
+            // Im Schritt Aussehen liest diese Taste das GANZE Aussehen zurueck. Das
+            // ist genau das, was das Spiel selbst nirgends anbietet: die Werte liegen
+            // in zwanzig Waehler-Fenstern und keiner davon ist Text. Keine neue Taste
+            // und keine neue Einstellung - "aktuelles Menue vorlesen" heisst hier eben
+            // das.
+            if (_charaMake.IsActive) _charaMake.ReadSummary();
+            else                     _uiReader.ReadCurrentFocus();
+        }
         if (IsJustPressed(_config.KeySilence))       _tolk.Silence();
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();

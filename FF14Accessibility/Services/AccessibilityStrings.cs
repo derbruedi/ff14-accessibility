@@ -1918,4 +1918,212 @@ public static class AccessibilityStrings
 
     // ── Plugin-Liste ────────────────────────────────────────────────
     public static string UnnamedPlugin => IsGerman ? "Unbenanntes Plugin" : "Unnamed plugin";
+
+    // -- Charaktererstellung: Schritt "Aussehen" ---------------------
+    // Die Menue-Namen und die Namen der einzelnen Eintraege kommen aus dem
+    // spieleigenen Lobby-Sheet, also in der Client-Sprache. Uebersetzt sind hier
+    // nur die Bindewoerter.
+
+    /// <summary>Ein Menuepunkt des Aussehen-Schritts. Ein LEERES Label heisst
+    /// "dasselbe Menue wie eben" - "Hautfarbe" auf jedem Pfeiltastendruck zu
+    /// wiederholen, waehrend man ueber 192 Farbfelder streicht, ist unbenutzbar.
+    /// <paramref name="shape"/> ist die mod-eigene Beschreibung des BILDES auf
+    /// einem Icon-Eintrag, oder null wo keine geschrieben ist. Sie steht ganz
+    /// hinten, hinter der Position: die Position ist das, wonach der Spieler
+    /// steuert, und die Beschreibung ist der Teil, den der naechste
+    /// Pfeiltastendruck gefahrlos abschneiden darf.</summary>
+    public static string CharaMakeOption(string label, string name, int index, int count, string? shape = null)
+    {
+        var head = string.IsNullOrEmpty(label) ? string.Empty : label + ", ";
+        var body = string.IsNullOrEmpty(name) ? string.Empty : name + ", ";
+        if (index <= 0)
+            return IsGerman ? $"{head}{body}Auswahl unbekannt" : $"{head}{body}selection unknown";
+        var text = $"{head}{body}" + Counter(index, count);
+        return string.IsNullOrEmpty(shape) ? text : $"{text}, {shape}";
+    }
+
+    /// <summary>
+    /// EINMAL am Ende der Aussehen-Zusammenfassung gesagt, und nur dann, wenn diese
+    /// Zusammenfassung wirklich eine der mod-eigenen Bildbeschreibungen enthielt.
+    /// Die Icon-Gitter haben in den Spieldaten weder Namen noch Beschreibung, diese
+    /// Worte hat also der Mod geschrieben - und ein blinder Spieler kann Mod-Text
+    /// nicht von Spiel-Text unterscheiden, ausser man sagt es ihm. Nicht bei jedem
+    /// Pfeiltastendruck: einmal pro Zusammenfassung genuegt, oefter kostet mehr als
+    /// es informiert.
+    /// </summary>
+    public static string CharaMakeAuthoredNote =>
+        IsGerman ? "Die Bildbeschreibungen stammen vom Mod, nicht vom Spiel."
+                 : "The picture descriptions come from the mod, not from the game.";
+
+    /// <summary>
+    /// Was Eintrag 1 eines Typ-0-Form-Menues IST. User: *"every type 1 ... had no
+    /// description ... I'm assuming this means unmodified, but the mod needs to say
+    /// that it's basically the base value for the face."*
+    ///
+    /// Genau richtig gelesen, und die Daten sagen dasselbe: ein Typ-0-Eintrag ist ein
+    /// Morph-Target auf dem Gesichtsmodell, Eintrag 1 ist das unveraenderte Mesh und
+    /// die Eintraege 2..N sind die Formen a..N-1. Eintrag 1 fehlt in der Messtabelle
+    /// also KONSTRUKTIONSBEDINGT - es gibt keine Verschiebung zu messen, weil er das
+    /// ist, wogegen alles andere gemessen wird.
+    ///
+    /// Schweigen war der falsche Weg, das zu sagen: jeder andere Eintrag bekommt eine
+    /// Beschreibung, ein Eintrag ohne liest sich also als "noch nicht geschrieben"
+    /// statt als "das ist die Ausgangsform". Das ist KEINE mod-eigene
+    /// Bildbeschreibung, sondern eine Aussage ueber die Daten des Spiels, und deshalb
+    /// bewusst nicht von <see cref="CharaMakeAuthoredNote"/> abgedeckt.
+    /// </summary>
+    public static string CharaMakeShapeBase =>
+        IsGerman ? "unverändert" : "unmodified";
+
+    /// <summary>Welches Auge eine Farbe betrifft - nur gesprochen, wenn die beiden
+    /// sich unterscheiden. Das Spiel hat dafuer keinen eigenen Text: das Lobby-Sheet
+    /// benennt den Schalter "Odd Eyes" (Zeile 2125), aber nie die beiden Haelften des
+    /// Fensters. Die Worte sind also mod-eigen, und das ist richtig - einem sehenden
+    /// Spieler wird die Trennung ausschliesslich dadurch vermittelt, in welche
+    /// Haelfte des Fensters er schaut.</summary>
+    public static string EyeLeft  => IsGerman ? "linkes Auge" : "left eye";
+
+    /// <summary>Siehe <see cref="EyeLeft"/>.</summary>
+    public static string EyeRight => IsGerman ? "rechtes Auge" : "right eye";
+
+    /// <summary>Eine Farbe OHNE Label und OHNE Position, fuer den Fall dass der
+    /// Fokus-Leser die Position schon gesagt hat und dies dahinter eingereiht wird.
+    /// Das Gegenstueck zur reinen Bildbeschreibung bei den Icon-Gittern.</summary>
+    public static string CharaMakeColourOnly(string colour, int group, int shade, string eye)
+    {
+        var head = string.IsNullOrEmpty(eye) ? string.Empty : eye + ", ";
+        return IsGerman
+            ? $"{head}{colour}, Gruppe {group} Ton {shade}"
+            : $"{head}{colour}, group {group} shade {shade}";
+    }
+
+    /// <summary>Ein Farbmenue, dessen SCHALTER AUS ist - die Lippenfarbe ohne
+    /// aufgetragenen Lippenstift. Keine Farbe, keine Position: auf dem Gesicht ist
+    /// nichts zu beschreiben, und eine Feldnummer wuerde den Spieler glauben lassen,
+    /// dass doch etwas da ist. <paramref name="state"/> ist das WORT DES SPIELS
+    /// dafuer (eine Lobby-Zeile, an der Aufrufstelle gelesen), dieser Satz braucht
+    /// also keine eigene Uebersetzung.</summary>
+    public static string CharaMakeColourOff(string label, string state)
+        => string.IsNullOrEmpty(label) ? state : $"{label}, {state}";
+
+    /// <summary>Ein Farbfeld. Das Farbwort steht mit Absicht vorne: es ist der Teil,
+    /// der "wie sieht mein Charakter aus" beantwortet, und der Teil, den ein Spieler
+    /// beim Durchstreichen des Gitters braucht, bevor die naechste Ansage ihn
+    /// unterbricht. Gruppe und Ton beschreiben den Aufbau der Palette selbst - jede
+    /// Palette in human.cmp besteht aus Rampen zu acht Toenen.</summary>
+    public static string CharaMakeColour(string label, string? colour, int index, int count, int group, int shade)
+    {
+        var head = string.IsNullOrEmpty(label) ? string.Empty : label + ", ";
+        // Kein Farbwort heisst: die Position ist alles, was die Zeile hat.
+        if (colour == null)
+            return head + Counter(index, count);
+        var pos = $"{Counter(index, count)}, ";
+        return IsGerman
+            ? $"{head}{colour}, {pos}Gruppe {group} Ton {shade}"
+            : $"{head}{colour}, {pos}group {group} shade {shade}";
+    }
+
+    /// <summary>Ein 0-100-Schieberegler. Die beiden Endbezeichnungen sind die Worte
+    /// des Spiels fuer die Extreme ("Klein"/"Gross"), und die sind es, die einer
+    /// nackten Zahl ueberhaupt Bedeutung geben.</summary>
+    public static string CharaMakeSlider(string label, int value, string low, string high)
+    {
+        // Die Endbezeichnungen fallen weg, sobald der Spieler in EINEM Regler
+        // arbeitet: "Klein bis Gross" braucht man einmal, nicht bei jedem Schritt.
+        if (string.IsNullOrEmpty(low) || string.IsNullOrEmpty(high))
+            return IsGerman ? $"{label}, {value} von 100" : $"{label}, {value} of 100";
+        return IsGerman
+            ? $"{label}, {value} von 100, {low} bis {high}"
+            : $"{label}, {value} of 100, {low} to {high}";
+    }
+
+    /// <summary>Ein Schalter der Gesichtsmerkmals-Bitmaske. Die Zahl ist das BIT,
+    /// nicht eine Menueposition: das Sheet sagt nicht, welches Bit zu welchem
+    /// Typ-4-Menue gehoert, also wird nichts zugeschrieben, was sich nicht belegen
+    /// laesst.</summary>
+    public static string CharaMakeFeatureBit(string label, int number, bool on) =>
+        IsGerman ? $"{label} {number}, {(on ? "an" : "aus")}"
+                 : $"{label} {number}, {(on ? "on" : "off")}";
+
+    /// <summary>Derselbe Schalter, aber mit NAMEN statt Nummer. User: *"facial
+    /// features have no descriptions, and neither do tattoos. those need descriptions
+    /// so the player knows what they are toggling off and on."* Erreichbar, seit die
+    /// Zuordnung Reihe-zu-Bit im Spiel gemessen wurde: das 5-Eintraege-Menue
+    /// Gesichtsmerkmale, Eintrag "1 von 5", kippte Bit 0 - also Reihe i = Bit
+    /// i-1.</summary>
+    public static string CharaMakeFeatureNamed(string label, int number, string what, bool on) =>
+        IsGerman ? $"{label} {number}, {what}, {(on ? "an" : "aus")}"
+                 : $"{label} {number}, {what}, {(on ? "on" : "off")}";
+
+    /// <summary>Eine Typ-4-Reihe beim MARKIEREN: was sie ist und ob sie gerade an
+    /// ist. Die Position spricht der Fokus-Leser bereits, hier stehen nur die beiden
+    /// Teile, die er nicht wissen kann.</summary>
+    public static string CharaMakeFeatureRow(string what, bool on) =>
+        IsGerman ? $"{what}, {(on ? "an" : "aus")}" : $"{what}, {(on ? "on" : "off")}";
+
+    /// <summary>Nur der Zustand, fuer ein Merkmal ohne geschriebene Beschreibung -
+    /// "aus" ist auch dann die Ansage wert, wenn sich die Sache nicht benennen
+    /// laesst.</summary>
+    public static string CharaMakeFeatureState(bool on) =>
+        IsGerman ? (on ? "an" : "aus") : (on ? "on" : "off");
+
+    public static string CharaMakeFeatureLabel => IsGerman ? "Merkmal" : "Feature";
+
+    /// <summary>Eine Aussehen-Kategorie, deren aktueller Wert sich nicht als EINE
+    /// Position benennen laesst - die Typ-4-Bitmasken-Menues, bei denen das Sheet
+    /// nicht sagt, welches Bit zu welchem Menue gehoert. Die Anzahl ist das, was sich
+    /// ehrlich sagen laesst, und der User hat genau danach gefragt: *"the total number
+    /// of selections per value is useful information to have"*.</summary>
+    public static string CharaMakeCategory(string label, int count) =>
+        IsGerman ? $"{label}, {count} Einträge" : $"{label}, {count} entries";
+
+    /// <summary>
+    /// Die ZWEITE Achse des Stimmen-Waehlers - die Hoerprobe, die das Spiel abspielt,
+    /// damit Stimmen vergleichbar sind (User: *"there are categories like laugh,
+    /// grunt, thinking etc"*). NUR POSITION, solange das Spiel keinen Namen liefert:
+    /// die sieben Knoepfe sind reine Icon-Radiobuttons ohne Textknoten irgendwo im
+    /// Fenster, und die beiden Sheets, die nach den Namen aussahen, enthalten sie
+    /// nicht. Eine erfundene Liste waere eine selbstbewusste Luege darueber, was der
+    /// Spieler gerade hoert.
+    ///
+    /// Die Position ist hier NICHT entbehrlich, auch wenn das Kopfwort "Hoerprobe"
+    /// die Art der Zeile schon nennt: am User gemessen sagten mit abgeschalteten
+    /// Positionen alle sieben Zeilen nur das eine Wort, und der Wechsel zwischen
+    /// ihnen war nicht hoerbar.
+    /// </summary>
+    public static string CharaMakeVoiceSample(string name, int index, int count)
+    {
+        var head = IsGerman ? "Hörprobe" : "Sample";
+        var lead = string.IsNullOrEmpty(name) ? head : $"{head}, {name}";
+        return $"{lead}, {Counter(index, count)}";
+    }
+
+    /// <summary>Die Klasse, die die Erstellungs-Vorschau gerade zeigt. Nur der Name -
+    /// die BESCHREIBUNG der Klasse liegt wie bei jedem anderen Erstellungsschritt auf
+    /// der Vorlese-Taste.</summary>
+    public static string CharaMakeClass(string name) => name;
+
+    /// <summary>Ersatzbezeichnung fuer den Stimmen-Waehler. Normal wird das
+    /// Lobby-Label des Spiels benutzt; das hier deckt eine Zeile ohne Stimmen-Menue
+    /// ab.</summary>
+    public static string CharaMakeVoiceLabel => IsGerman ? "Stimme" : "Voice";
+
+    /// <summary>
+    /// Markiert in der Aussehen-Zusammenfassung einen Wert, den das SPIEL selbst
+    /// geaendert hat, nicht der Spieler. Die Charaktererstellung bildet Werte wirklich
+    /// menueuebergreifend um - Hrothgar-Gesicht 1 zu waehlen verschiebt das
+    /// Frisur-Byte mit - und genau so etwas kann ein blinder Spieler sonst nicht
+    /// bemerken. Bewusst NICHT in dem Moment gesprochen, in dem es passiert: das
+    /// wuerde die Position unterbrechen, nach der der Spieler gerade steuert, und
+    /// zwar ueber ein Menue, in dem er gar nicht ist.
+    /// </summary>
+    public static string CharaMakeChangedByGame =>
+        IsGerman ? "vom Spiel geändert" : "changed by the game";
+
+    /// <summary>Gesagt, wenn das Aussehen nicht gelesen werden kann, weil das
+    /// Vorschau-Modell nicht eindeutig ist. Niemals Schweigen: der Spieler koennte
+    /// das nicht von "nichts zu melden" unterscheiden.</summary>
+    public static string CharaMakeNoPreview =>
+        IsGerman ? "Vorschau-Modell nicht eindeutig, Aussehen nicht lesbar."
+                 : "Preview model not identifiable, appearance cannot be read.";
 }
