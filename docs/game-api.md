@@ -465,6 +465,84 @@ dekompiliert. Zum Thema „Objekt liegt über mir":
   Punkt überhaupt auf dem Netz liegt.
 - `Nav.PathfindCancelable(from, to, fly, CancellationToken)`.
 
+#### Wie vnavmesh Pfade wirklich startet und beendet (ilspycmd 2026-08-10)
+Drei Eigenschaften, die jede Auto-Lauf-Logik kennen MUSS. Alle drei haben die
+Implementierung vor V5.79 stillschweigend kaputtgemacht — Beleg jeweils im
+Dalamud-Log vom 2026-08-10.
+
+1. **Ein Pfadauftrag ist asynchron und stoppt den laufenden Pfad NICHT.**
+   `AsyncMoveRequest.MoveTo` setzt nur `_pendingTask` (gibt `false` zurück,
+   wenn schon einer läuft). Erst `AsyncMoveRequest.Update` reicht das Ergebnis
+   an `FollowPath.Move` weiter. In diesem Fenster beschreibt `Path.IsRunning`
+   noch den VORHERIGEN Pfad, und `Path.ListWaypoints` liefert dessen Wegpunkte.
+   → Log 08:05:05: Auftrag „Weinhafen", zurückgelesen wurde die Wegpunktliste
+   des Sonnenküste-Laufs; 52 ms später meldete das Plugin „beendet, noch 499 m",
+   während vnavmesh gleich darauf 50 m weit lossteuerte.
+   → Konsequenz: vor dem eigenen Start `Path.Stop` rufen, und nach dem eigenen
+   Ende noch einige Sekunden nachwachen (ein Task in flight belebt den Lauf neu).
+
+2. **vnavmesh startet sich selbst neu.** Mit `StopOnStuck` + `RetryOnStuck`
+   (beide in der Nutzerkonfiguration an, `StuckTimeoutMs` 1000,
+   `StuckTolerance` 0,05) ruft `FollowPath.Update` nach einer Sekunde ohne
+   Bewegung `Stop()` und feuert `OnStuck`; `AsyncMoveRequest` schickt daraufhin
+   denselben Auftrag erneut. `Path.IsRunning` blinkt dadurch **im Sekundentakt
+   auf false**, ohne dass der Lauf zu Ende wäre.
+   → Log 08:04:24–08:05:55: 91 „Queueing move-to" im Sekundentakt, nachdem das
+   Plugin sich längst ausgeklinkt hatte — die Figur wurde eine Minute lang
+   lautlos gegen die Netzkante geschoben.
+   → Konsequenz: „Pfad zu Ende" nur nach Entprellung (V5.79: 1,6 s durchgehend
+   `!IsRunning && !PathfindInProgress`). Ein einzelnes Frame lügt.
+
+3. **Der letzte Wegpunkt ist frei erfunden.** `NavmeshQuery.PathfindMesh` hängt
+   das ANGEFRAGTE Ziel unbedingt an das Ergebnis an (`list.Add(new Waypoint(
+   rcVec3f...))`), ob es auf dem Netz liegt oder nicht. Zerfällt das Netz einer
+   Zone in unverbundene Inseln, liefert vnavmesh also einen Pfad, dessen letzter
+   Sprung quer durch den Fels geht, und drückt die Figur dann endlos dagegen.
+   → Log 08:04:23: `restWp=1 nextWp=(490,5|19,0|466,6) distNextWp=453,8` —
+   Spieler auf Höhe 58,7, Ziel auf Höhe 19,0, Östliches La Noscea.
+   → Konsequenz: bleibt die Figur stehen und ist nur noch EIN Wegpunkt übrig,
+   ist nicht sie festgesteckt, sondern das begehbare Netz endet dort. V5.79 sagt
+   das so an, statt „festgesteckt" zu behaupten.
+
+#### Warum das Wegenetz NICHT alle Wege kennt (Navmesh.NavmeshSettings, ilspycmd 2026-08-10)
+Haeufiges Missverstaendnis: das Netz ist keine von Square Enix mitgelieferte
+Wegkarte, sondern wird von vnavmesh selbst mit **Recast** aus der
+Kollisionsgeometrie berechnet - fuer eine idealisierte Figur mit festen Grenzen:
+- `AgentMaxSlopeDeg = 55` - alles steiler als 55 Grad ist NICHT begehbar.
+- `AgentMaxClimb = 0,5` - Absaetze ueber einen halben Meter sind unueberwindbar.
+- `AgentHeight = 2`, `AgentRadius = 0,5` - die Flaeche wird zusaetzlich um einen
+  halben Meter von jeder Wand weg geschrumpft.
+- `GenerateEdgeClimbLinks = false` (Standard, beim User nicht gesetzt) - es
+  werden also KEINE "hier kann man runterspringen/-klettern"-Verbindungen
+  erzeugt. Die zugehoerigen Werte (`ClimbDownMaxHeight` 3,2 m, `EdgeJumpHeight`
+  1,8 m) liegen brach.
+- `RegionMinSize = 8` - kleine isolierte Flaechen fallen ganz raus.
+
+Folge: Jede Stelle, die man im Spiel nur durch Herunterspringen, Rutschen oder
+ueber einen steilen Hang erreicht, existiert im Netz nicht. Genau so zerfaellt
+Oestliches La Noscea (s1f3) in zwei Haelften - Weinhafen-Plateau (Y ca. 59-76)
+und Kueste/Costa del Sol (Y ca. 17-20). Zu Fuss kommt man hinunter, ueber eine
+55-Grad-Kante fuehrt aber kein Recast-Polygon.
+→ Zu versuchen, in dieser Reihenfolge: `/vnav rebuild` in der Zone (der Cache
+   ist vom 02.08.2026 und koennte unvollstaendig gebaut sein); falls das nichts
+   aendert, in den vnavmesh-Einstellungen `GenerateEdgeClimbLinks` einschalten
+   und neu bauen. Ob Letzteres diese konkrete Luecke schliesst, ist NICHT
+   geprueft - 3,2 m Climb-Down pro Verbindung muessen die Hangkette abdecken.
+
+Weitere belegte Kleinigkeiten:
+- `Path.IsRunning` ist exakt `FollowPath.Waypoints.Count > 0`, nichts weiter.
+- `Path.Stop` = `Waypoints.Clear()`. Es bricht KEINE laufende Wegfindung ab.
+- `FollowPath.OnNavmeshChanged` leert die Wegpunkte — beim Zonenwechsel oder
+  `Nav.Reload` verschwindet ein Pfad also von selbst.
+- `Nav.PathfindCancelAll` ist irreführend benannt: es ruft `Reload(allowLoadFromCache: true)`,
+  lädt das Netz also neu.
+- `Query.Mesh.NearestPointReachable` filtert über `FloodFillAwareFilter`
+  (`NavmeshQuery` Zeile 83) — das ist vnavmeshs eigene Erreichbarkeitsprüfung,
+  eine selbstgebaute Flächenanalyse ist dafür nicht nötig.
+- `CancelMoveOnUserInput`: drückt der Spieler selbst eine Bewegungstaste, ruft
+  `FollowPath.Update` `Stop()` — der Pfad ist dann weg, ohne dass unser Plugin
+  etwas davon erfährt.
+
 ### Spieler „folgen" — KEIN natives API (verifiziert per ilspycmd, 2026-07-26)
 Das Kontextmenü „Folgen" existiert im Spiel, ist aber in FFXIVClientStructs
 **nicht** als aufrufbare Funktion freigelegt. Vollständige Assembly dekompiliert

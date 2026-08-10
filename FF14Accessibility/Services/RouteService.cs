@@ -188,8 +188,22 @@ public sealed class RouteService
     /// relative directions are meaningless several segments ahead; the live
     /// guidance during the walk stays relative to the player's heading.
     /// </summary>
-    public string DescribeRoute(string targetName, IReadOnlyList<Vector3> waypoints)
+    public string DescribeRoute(string targetName, IReadOnlyList<Vector3> waypoints, Vector3? from = null)
     {
+        // vnavmesh's waypoint list starts at the FIRST HOP, not at the character.
+        // Measuring only between waypoints therefore drops the entire leg from
+        // where the player stands to where the path begins - and a list holding
+        // just one far-away point yields no segments at all, which announced a
+        // 454 m walk as "practically there" (log 2026-08-10 08:04:45). Feeding
+        // the player's position in as the first point makes the spoken total the
+        // distance actually to be walked.
+        if (from.HasValue)
+        {
+            var full = new List<Vector3>(waypoints.Count + 1) { from.Value };
+            full.AddRange(waypoints);
+            waypoints = full;
+        }
+
         var segments = BuildSegments(waypoints);
         if (segments.Count == 0) return AccessibilityStrings.RoutePracticallyThere(targetName);
 

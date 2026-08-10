@@ -2,20 +2,44 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
-using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 
 namespace FF14Accessibility.Services;
 
 /// <summary>
-/// Automatic walking to the current target via the external vnavmesh plugin
-/// (IPC): vnavmesh computes a path on the walkable-surface mesh and steers
-/// the character around obstacles. This service starts/stops the walk,
-/// watches progress every frame, feeds the audio beacon and announces
-/// arrival. All IPC names and signatures verified against the vnavmesh
-/// source (see docs/game-api.md -> "vnavmesh-IPC").
+/// Automatic walking via the external vnavmesh plugin: vnavmesh computes a path
+/// on the walkable-surface mesh and steers the character, this service decides
+/// when a walk starts, when it is over, and what the player is told.
+///
+/// The whole design follows three facts decompiled from the installed
+/// vnavmesh.dll (2026-08-10), each of which broke the previous implementation:
+///
+/// 1. A path request is ASYNCHRONOUS and does not cancel the running path.
+///    <c>AsyncMoveRequest.MoveTo</c> only queues a task; the old path keeps
+///    steering until <c>Update</c> hands the result to <c>FollowPath.Move</c>.
+///    So right after a start, "is a path running" still describes the PREVIOUS
+///    walk. Reading it then produced instant bogus "arrived/ended" verdicts
+///    (log 2026-08-10 08:05:05: ended 52 ms after start, 499 m short).
+///
+/// 2. vnavmesh restarts itself. With <c>StopOnStuck</c> + <c>RetryOnStuck</c>
+///    (both on in the user's config) <c>FollowPath</c> calls <c>Stop()</c> after
+///    <c>StuckTimeoutMs</c> without movement and immediately re-queues the same
+///    destination. "Path is running" therefore blinks false once a second while
+///    the character is wedged - it is NOT an end-of-walk signal. Every such gap
+///    must be debounced (<see cref="PathEndDebounceS"/>).
+///
+/// 3. The last waypoint is fiction. <c>NavmeshQuery.PathfindMesh</c> appends the
+///    requested destination to the result unconditionally, reachable or not.
+///    When a zone's mesh falls apart into unconnected islands, vnavmesh happily
+///    returns a path whose final hop is hundreds of metres through solid rock,
+///    and then shoves the character against the mesh edge forever (log
+///    2026-08-10 08:04:24-08:05:55: 91 retries, one per second, in silence).
+///
+/// Consequences for this service: it stops the running path BEFORE starting its
+/// own, it never trusts a single frame's status, it always calls Path.Stop when
+/// it ends a walk, and it keeps watching for a while afterwards because a
+/// pathfind already in flight can revive a stopped walk (see <see cref="_guardUntil"/>).
 /// </summary>
 public sealed class AutoWalkService : IDisposable
 {
@@ -23,6 +47,63 @@ public sealed class AutoWalkService : IDisposable
     /// Public so a position-based walk to a browsed object stops as close as the
     /// walk to a game target would (Plugin.TryResolveMarkerDestination).</summary>
     public const float StopRange = 2.5f;
+
+    /// <summary>Counts as arrived this far beyond the requested stop range. vnavmesh
+    /// aims for the range, the character coasts a little past it.</summary>
+    private const float ArrivalSlack = 1.5f;
+
+    /// <summary>A walk is only over once "no path running and none computing" has
+    /// held this long. Shorter than vnavmesh's own 1 s stuck-retry cycle would
+    /// mistake its self-restart for the end of the walk (see fact 2 above).</summary>
+    private const double PathEndDebounceS = 1.6;
+
+    /// <summary>No path has appeared this long after the request - treat it as
+    /// "no route". Covers pathfind time on large zones with room to spare.</summary>
+    private const double StartTimeoutS = 6.0;
+
+    /// <summary>The character has not moved this long while a path claims to run:
+    /// wedged on geometry, or shoved against the edge of the mesh towards a
+    /// destination the mesh cannot reach.</summary>
+    private const double StallS = 4.0;
+
+    /// <summary>Counts as real movement (below this is jitter against geometry).</summary>
+    private const float MovementEpsilon = 0.5f;
+
+    /// <summary>
+    /// Getting no closer to the destination for this long, with only the appended
+    /// destination left as a waypoint, means the mesh ends here. Needed next to
+    /// the stall check because being shoved at an unreachable point makes the
+    /// character skid a little every retry, which keeps resetting the stall timer
+    /// (log 2026-08-10 18:31:26: 12 s of shoving before the stall check fired).
+    /// </summary>
+    private const double NoApproachS = 2.5;
+
+    /// <summary>Getting at least this much closer counts as progress.</summary>
+    private const float ApproachEpsilon = 1f;
+
+    /// <summary>
+    /// Only judge "no approach" while still this far outside the stop range. On
+    /// the final straight a walk legitimately spends a moment without closing in
+    /// (rounding an obstacle), and there the normal stall check is the right tool.
+    /// </summary>
+    private const float NoApproachMinDistance = 20f;
+
+    /// <summary>After ending a walk, keep vetoing revivals this long: a pathfind
+    /// that was already computing when we stopped still gets handed to FollowPath
+    /// and would walk off unsupervised (fact 1).</summary>
+    private const double StopGuardS = 3.0;
+
+    private enum Phase
+    {
+        /// <summary>Nothing running.</summary>
+        Idle,
+        /// <summary>Path requested, waiting for vnavmesh to deliver it.</summary>
+        Starting,
+        /// <summary>Our path is steering the character.</summary>
+        Walking,
+        /// <summary>Walk over; suppressing late revivals (see <see cref="StopGuardS"/>).</summary>
+        Guarding,
+    }
 
     private readonly IObjectTable _objectTable;
     private readonly ITargetManager _targetManager;
@@ -32,54 +113,38 @@ public sealed class AutoWalkService : IDisposable
     private readonly PlacesService _places;
     private readonly RouteService _routes;
     private readonly IPluginLog _log;
+    private readonly NavmeshIpc _nav;
 
-    private readonly ICallGateSubscriber<bool> _navIsReady;
-    private readonly ICallGateSubscriber<float> _navBuildProgress;
-    private readonly ICallGateSubscriber<Vector3, bool, float, bool> _moveCloseTo;
-    private readonly ICallGateSubscriber<object> _pathStop;
-    private readonly ICallGateSubscriber<bool> _pathIsRunning;
-    private readonly ICallGateSubscriber<bool> _pathfindInProgress;
-    private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> _pointOnFloor;
-    private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> _nearestPoint;
-    // DIAGNOSTIC (temporary): the waypoints of the path vnavmesh is actually
-    // following. Lets us tell whether the destination is reachable (last
-    // waypoint sits on the target) or the route jams short of it. Verified
-    // against vnavmesh IPCProvider: Path.ListWaypoints -> List<Vector3>.
-    private readonly ICallGateSubscriber<List<Vector3>> _pathListWaypoints;
+    private Phase _phase = Phase.Idle;
+    private DateTime _startedAt;
+    private DateTime _guardUntil;
+    private bool _guardWarned;          // late revival reported once per walk
 
-    private bool _active;
-    private bool _sawRunning;          // the path actually started at least once
+    private ulong _targetId;            // 0 for position destinations (quest markers)
+    private string _targetName = string.Empty;
+    private Vector3 _destPosition;      // refreshed from the object each frame if _targetId != 0
+    private float _stopRange = StopRange;
+    private ushort _startTerritory;
+
+    private Vector3 _lastPosition;      // where the character last actually moved
+    private DateTime _lastMoveAt;
+    private DateTime _pathQuietSince;   // when "no path, no pathfind" started holding
+    private bool _pathQuiet;
+    private float _lastProgressDistance;
+    private float _bestDistance;        // closest we have been to the destination
+    private DateTime _lastApproachAt;   // when that last improved
+    private bool _routeSpoken;
+    private int _lastWaypointCount;     // remaining hops at the last check
+    private DateTime _lastDiagAt;
 
     /// <summary>Whether an auto-walk is currently running. Plugin.cs suppresses
     /// automatic target-change announcements while this is true - passing NPCs
     /// grab the soft target every few steps and each one would be announced
     /// with distance and direction (user feedback 2026-07-10).</summary>
-    public bool IsActive => _active;
+    public bool IsActive => _phase is Phase.Starting or Phase.Walking;
 
-    /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).
-    /// Plugin.cs suppresses target-change announcements while this is true, for the
-    /// same reason as <see cref="IsActive"/>.</summary>
+    /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).</summary>
     public bool IsFollowing => _following;
-    private DateTime _startedAt;
-    private ulong _targetId;           // 0 for position destinations (quest markers)
-    private string _targetName = string.Empty;
-    private Vector3 _destPosition;     // refreshed from the object each frame if _targetId != 0
-    private float _stopRange = StopRange;
-
-    // Progress tracking so the walk always ends with feedback and the user
-    // hears it is working (a slow 190 m walk with no spoken updates felt broken
-    // and got cancelled; log 2026-07-11 21:00). The auto-walk deliberately does
-    // NOT sound the direction beacon - it was distracting while the game steers
-    // for you (user 2026-07-12); the beacon stays with the manual walk guide.
-    private ushort _startTerritory;    // announce success when the player crosses into a new zone
-    private Vector3 _lastPosition;     // where the character last moved (for stall detection)
-    private DateTime _lastMoveAt;
-    // Remaining distance at the last spoken progress line - the next one waits
-    // until another AutoWalkProgressStep metres are behind us (never the clock,
-    // or a slow/blocked walk chatters while nothing happens).
-    private float _lastProgressDistance;
-    private bool _diagLoggedPath;      // DIAGNOSTIC: full waypoint route logged once per walk
-    private DateTime _lastDiagAt;      // DIAGNOSTIC: throttles the per-second position log
 
     public AutoWalkService(
         IDalamudPluginInterface pluginInterface,
@@ -100,126 +165,79 @@ public sealed class AutoWalkService : IDisposable
         _places = places;
         _routes = routes;
         _log = log;
-
-        // Subscribing is always safe - the gates only fail on INVOKE while
-        // vnavmesh is not loaded (IpcNotReadyError).
-        _navIsReady         = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
-        _navBuildProgress   = pluginInterface.GetIpcSubscriber<float>("vnavmesh.Nav.BuildProgress");
-        _moveCloseTo        = pluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo");
-        _pathStop           = pluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
-        _pathIsRunning      = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
-        _pathfindInProgress = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.SimpleMove.PathfindInProgress");
-        // Query.Mesh.PointOnFloor(p, allowUnlandable, halfExtentXZ) -> Vector3?
-        // (vnavmesh IPCProvider decompiled 2026-07-11): finds the walkable
-        // floor near p - built for exactly our case, 2D map coordinates
-        // without a height (same mechanism as vnavmesh's own FlagToPoint).
-        _pointOnFloor       = pluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
-        // NearestPoint(p, halfExtentXZ, halfExtentY) -> Vector3? finds the
-        // closest mesh point INSIDE a box around p. Unlike PointOnFloor (which
-        // casts straight DOWN and can snap to a floor far below a bridge/walkway
-        // - log 2026-07-11: -12.9 -> -50.5), the bounded vertical extent keeps
-        // the result near the player's level. See docs/game-api.md -> vnavmesh.
-        _nearestPoint       = pluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
-        _pathListWaypoints  = pluginInterface.GetIpcSubscriber<List<Vector3>>("vnavmesh.Path.ListWaypoints");
+        _nav = new NavmeshIpc(pluginInterface, log);
     }
+
+    // ── Höhen auf dem Netz suchen ────────────────────────────────────
 
     /// <summary>
     /// Resolves the walkable height for a 2D map position (map markers carry
-    /// no Y). Uses the player's height as the search origin. Returns null if
+    /// no Y). Uses the given height as the search origin. Returns null if
     /// vnavmesh is missing/not ready or no floor exists near the point.
     /// </summary>
     public Vector3? ResolveFloorPoint(Vector3 approximate)
     {
-        // try-catch: IPC into a foreign plugin (vnavmesh may be missing/loading)
-        try
+        if (!_nav.IsReady) return null;
+
+        // Prefer NearestPoint with a bounded vertical extent: it stays near the
+        // given height instead of dropping to a lower floor. 10 m XZ covers
+        // markers a little off the path, 10 m Y catches small level changes
+        // without falling through to a floor tens of metres below.
+        var nearest = _nav.NearestPoint(approximate, 10f, 10f);
+        if (nearest.HasValue)
         {
-            if (!_navIsReady.InvokeFunc()) return null;
-
-            // Prefer NearestPoint with a bounded vertical extent: it stays near
-            // the given height instead of dropping to a lower floor. 10 m XZ
-            // covers markers a little off the path, 10 m Y catches small level
-            // changes without falling through to a floor tens of metres below.
-            var nearest = _nearestPoint.InvokeFunc(approximate, 10f, 10f);
-            if (nearest.HasValue)
-            {
-                _log.Info($"[Orte] NearestPoint ({approximate.X:F1}|{approximate.Y:F1}|{approximate.Z:F1}) -> " +
-                          $"({nearest.Value.X:F1}|{nearest.Value.Y:F1}|{nearest.Value.Z:F1})");
-                return nearest;
-            }
-
-            // Second pass with a tall column: 2D markers use the PLAYER's height
-            // as reference, but a target hundreds of metres away can sit on very
-            // different ground (log 2026-07-13 10:11/10:18: aetheryte 0.5 km off
-            // and a transition failed with the +-10 m box). NearestPoint picks
-            // the mesh point CLOSEST to the input, so with several levels the
-            // one nearest the reference height still wins - unlike PointOnFloor's
-            // blind down-cast (bridge trap, V4.41).
-            nearest = _nearestPoint.InvokeFunc(approximate, 10f, 100f);
-            if (nearest.HasValue)
-            {
-                _log.Info($"[Orte] NearestPoint (hohe Säule) ({approximate.X:F1}|{approximate.Y:F1}|{approximate.Z:F1}) -> " +
-                          $"({nearest.Value.X:F1}|{nearest.Value.Y:F1}|{nearest.Value.Z:F1})");
-                return nearest;
-            }
-
-            // Fallback: PointOnFloor casts straight down - a last resort when no
-            // mesh sits near the height (e.g. the marker is above a deep drop).
-            var floor = _pointOnFloor.InvokeFunc(approximate, false, 5f);
-            _log.Info($"[Orte] NearestPoint leer, PointOnFloor ({approximate.X:F1}|{approximate.Y:F1}|{approximate.Z:F1}) -> " +
-                      (floor.HasValue ? $"({floor.Value.X:F1}|{floor.Value.Y:F1}|{floor.Value.Z:F1})" : "null"));
-            return floor;
+            _log.Info($"[Orte] NearestPoint ({Fmt(approximate)}) -> ({Fmt(nearest.Value)})");
+            return nearest;
         }
-        catch (Exception ex)
+
+        // Second pass with a tall column: 2D markers use the PLAYER's height as
+        // reference, but a target hundreds of metres away can sit on very
+        // different ground (log 2026-07-13: aetheryte 0.5 km off failed with the
+        // +-10 m box). NearestPoint returns the point CLOSEST to the input, so
+        // with several levels the one nearest the reference height still wins -
+        // unlike PointOnFloor's blind down-cast (bridge trap, V4.41).
+        nearest = _nav.NearestPoint(approximate, 10f, 100f);
+        if (nearest.HasValue)
         {
-            _log.Error(ex, "[Orte] Floor-Query-IPC fehlgeschlagen");
-            return null;
+            _log.Info($"[Orte] NearestPoint (hohe Säule) ({Fmt(approximate)}) -> ({Fmt(nearest.Value)})");
+            return nearest;
         }
+
+        // Last resort when no mesh sits near the height at all.
+        var floor = _nav.PointOnFloor(approximate, 5f);
+        _log.Info($"[Orte] NearestPoint leer, PointOnFloor ({Fmt(approximate)}) -> " +
+                  (floor.HasValue ? $"({Fmt(floor.Value)})" : "null"));
+        return floor;
     }
 
     /// <summary>
     /// Resolves a fishing spot's WATER-CENTRE position to the nearest walkable
     /// bank you can cast from. Fishing spots sit in the middle of the water where
-    /// no mesh exists, so the generic <see cref="ResolveFloorPoint"/> (a 10 m box
-    /// plus a straight-down cast) either finds nothing or snaps to a lakebed far
-    /// below - the player then does not land at the water. Here we search a WIDE
-    /// horizontal area (banks can be tens of metres from the centre) but a THIN
-    /// vertical slab around the player's height, so the nearest point returned is
-    /// the bank at water-surface level, never a floor above or below it.
-    /// Returns null (caller falls back to the generic resolver) when vnavmesh is
-    /// missing/not ready or no bank is found within range.
+    /// no mesh exists, so the generic <see cref="ResolveFloorPoint"/> either finds
+    /// nothing or snaps to a lakebed far below. Here we search a WIDE horizontal
+    /// area (banks can be tens of metres from the centre) but a THIN vertical slab
+    /// around the player's height, so the result is the bank at water level.
     /// </summary>
     public Vector3? ResolveNearestBank(Vector3 waterCentre)
     {
-        // try-catch: IPC into a foreign plugin (vnavmesh may be missing/loading).
-        try
-        {
-            if (!_navIsReady.InvokeFunc()) return null;
+        if (!_nav.IsReady) return null;
 
-            // 75 m horizontal covers a bank well out from a large water centre;
-            // 8 m vertical keeps the result at the player's level (the bank),
-            // not a lakebed or bridge. NearestPoint returns the CLOSEST mesh
-            // point in the box, so the near bank always wins over a far one.
-            var bank = _nearestPoint.InvokeFunc(waterCentre, 75f, 8f);
-            _log.Info($"[Angeln] Ufer: NearestPoint ({waterCentre.X:F1}|{waterCentre.Y:F1}|{waterCentre.Z:F1}) -> " +
-                      (bank.HasValue ? $"({bank.Value.X:F1}|{bank.Value.Y:F1}|{bank.Value.Z:F1})" : "null"));
-            return bank;
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Angeln] Ufer-Query-IPC fehlgeschlagen");
-            return null;
-        }
+        var bank = _nav.NearestPoint(waterCentre, 75f, 8f);
+        _log.Info($"[Angeln] Ufer: NearestPoint ({Fmt(waterCentre)}) -> " +
+                  (bank.HasValue ? $"({Fmt(bank.Value)})" : "null"));
+        return bank;
     }
+
+    // ── Auto-Lauf starten und beenden ────────────────────────────────
 
     /// <summary>Starts the auto-walk to the current game target, or stops a running one.</summary>
     public void Toggle()
     {
-        // Starting a one-shot walk cancels a running follow (they share vnavmesh).
-        StopFollowQuiet();
+        StopFollowQuiet();   // a one-shot walk cancels a running follow (shared vnavmesh)
 
-        if (_active)
+        if (IsActive)
         {
-            Stop(announce: true);
+            Finish(AccessibilityStrings.AutoWalkStopped, "vom Spieler gestoppt");
             return;
         }
 
@@ -230,73 +248,464 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        if (!TryStartPath(target.Position, StopRange)) return;
-
-        _targetId = target.GameObjectId;
-        _targetName = target.Name.TextValue;
-        _destPosition = target.Position;
-        _stopRange = StopRange;
-        BeginWalk();
+        Begin(target.Position, target.Name.TextValue, StopRange, target.GameObjectId);
     }
 
     /// <summary>
-    /// Starts the auto-walk to a fixed world position (quest markers and
-    /// waypoints have no game object to target), or stops a running one.
-    /// The caller passes the final stop range: tight for locations (~1 m) so
-    /// the player actually arrives on the spot, tighter still for zone
-    /// transitions so they trigger, or the objective radius for quest areas.
-    /// The position should already be snapped onto the walkable mesh so
-    /// vnavmesh can finish within that range.
+    /// Starts the auto-walk to a fixed world position (quest markers and waypoints
+    /// have no game object to target), or stops a running one. The caller passes
+    /// the final stop range: tight for locations so the player arrives on the spot,
+    /// tighter still for zone transitions so they trigger. The position should
+    /// already be snapped onto the walkable mesh.
     /// </summary>
     public void ToggleToPosition(Vector3 position, string name, float stopRange)
     {
         StopFollowQuiet();
 
-        if (_active)
+        if (IsActive)
         {
-            Stop(announce: true);
+            Finish(AccessibilityStrings.AutoWalkStopped, "vom Spieler gestoppt");
             return;
         }
 
-        if (!TryStartPath(position, stopRange)) return;
+        Begin(position, name, stopRange, 0);
+    }
 
-        _targetId = 0;
+    /// <summary>
+    /// Requests the path and enters <see cref="Phase.Starting"/>. Stops whatever
+    /// vnavmesh was doing FIRST: a leftover path (quite possibly a stuck-retry
+    /// cycle re-arming itself once a second) would otherwise both steer the
+    /// character and make our own status reads describe the wrong walk.
+    /// </summary>
+    private void Begin(Vector3 destination, string name, float stopRange, ulong targetId)
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+
+        if (!_nav.IsReady)
+        {
+            // Absent plugin and "mesh still building" are different problems and
+            // get different advice; LastCallFailed tells them apart.
+            var progress = _nav.BuildProgress;
+            if (_nav.LastCallFailed)
+            {
+                _log.Warning("[Nav] Auto-Lauf: vnavmesh antwortet nicht (Plugin installiert und aktiv?)");
+                _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
+            }
+            else
+            {
+                _tolk.SpeakInterrupt(progress >= 0
+                    ? AccessibilityStrings.MeshStillLoading(progress * 100)
+                    : AccessibilityStrings.MeshNotReady);
+            }
+            return;
+        }
+
+        var distance = Vector3.Distance(player.Position, destination);
+        if (distance <= stopRange)
+        {
+            // Already there - starting a walk would be a no-op the player has to
+            // wait out, and vnavmesh would report an immediate end that reads
+            // like a failure.
+            _log.Info($"[Nav] Auto-Lauf: schon am Ziel {name} (dist={distance:F1} <= {stopRange:F1}).");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AlreadyAtTarget(name));
+            return;
+        }
+
+        _nav.Stop();
+
+        if (!_nav.MoveCloseTo(destination, stopRange))
+        {
+            _tolk.SpeakInterrupt(_nav.LastCallFailed
+                ? AccessibilityStrings.AutoWalkUnavailable
+                : AccessibilityStrings.PathfindBusy);
+            return;
+        }
+
+        _targetId = targetId;
         _targetName = name;
-        _destPosition = position;
+        _destPosition = destination;
         _stopRange = stopRange;
-        BeginWalk();
+        _startTerritory = (ushort)_clientState.TerritoryType;
+
+        _phase = Phase.Starting;
+        _startedAt = DateTime.UtcNow;
+        _lastPosition = player.Position;
+        _lastMoveAt = _startedAt;
+        _lastProgressDistance = distance;
+        _bestDistance = distance;
+        _lastApproachAt = _startedAt;
+        _lastDiagAt = _startedAt;
+        _pathQuiet = false;
+        _routeSpoken = false;
+        _guardWarned = false;
+        _lastWaypointCount = 0;
+
+        _log.Info($"[Nav] Auto-Lauf: gestartet zu {name} (id={targetId:X}, stopRange={stopRange:F1}, dist={distance:F1})");
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
+    }
+
+    /// <summary>
+    /// Ends the walk: clears vnavmesh's path, announces <paramref name="spoken"/>
+    /// (null for silent) and enters the guard phase. ALWAYS the way a walk ends -
+    /// the previous implementation had exits that only dropped their own tracking
+    /// and left vnavmesh steering (log 2026-08-10: a minute of unsupervised
+    /// shoving after "Auto-Lauf beendet").
+    /// </summary>
+    private void Finish(string? spoken, string reason)
+    {
+        _nav.Stop();
+        _phase = Phase.Guarding;
+        _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+        _log.Info($"[Nav] Auto-Lauf: beendet ({reason}).");
+        if (spoken != null) _tolk.SpeakInterrupt(spoken);
+    }
+
+    /// <summary>Stops a running auto-walk without any announcement (e.g. when the
+    /// manual walk guide takes over).</summary>
+    public void StopQuiet()
+    {
+        if (IsActive) Finish(null, "still gestoppt");
+    }
+
+    // ── Jede Frame: Aufsicht über den laufenden Weg ──────────────────
+
+    /// <summary>Watches the running walk. Called every frame from Plugin.OnFrameworkUpdate.</summary>
+    public void Update()
+    {
+        // Runs even when no walk is active: the player wants to know when the
+        // navmesh finishes loading, precisely BECAUSE they cannot walk yet.
+        MonitorMeshBuild();
+
+        if (_following) { FollowUpdate(); return; }
+
+        switch (_phase)
+        {
+            case Phase.Guarding: GuardUpdate(); return;
+            case Phase.Starting: StartingUpdate(); return;
+            case Phase.Walking:  WalkingUpdate(); return;
+            default: return;
+        }
+    }
+
+    /// <summary>
+    /// Waits for vnavmesh to deliver OUR path. Since <see cref="Begin"/> cleared
+    /// the old one, a running path here is ours. Nothing is judged before it
+    /// exists - that mistake produced instant "ended, 499 m remaining" verdicts.
+    /// </summary>
+    private void StartingUpdate()
+    {
+        if (_objectTable.LocalPlayer == null) { Finish(null, "Spieler weg"); return; }
+
+        if (_nav.IsRunning)
+        {
+            _phase = Phase.Walking;
+            _lastMoveAt = DateTime.UtcNow;
+            _pathQuiet = false;
+            _log.Info($"[Nav] Auto-Lauf: Pfad steht ({_nav.NumWaypoints} Wegpunkte), laufe.");
+            return;
+        }
+
+        // Still computing is fine; only give up once nothing is coming.
+        if ((DateTime.UtcNow - _startedAt).TotalSeconds <= StartTimeoutS) return;
+
+        _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
+        Finish(AccessibilityStrings.NoPathTo(_targetName, _places.BuildNoPathHint(_destPosition)), "kein Weg");
+    }
+
+    private void WalkingUpdate()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { Finish(null, "Spieler weg"); return; }
+
+        // Zone transition succeeded: walking to a transition put the player into a
+        // new area. This is the real "arrived" signal for cross-zone walks -
+        // vnavmesh's own path never reports it (the destination is on the far side).
+        if ((ushort)_clientState.TerritoryType != _startTerritory)
+        {
+            Finish(AccessibilityStrings.ArrivedNewZone, $"Gebiet {_startTerritory} -> {_clientState.TerritoryType}");
+            return;
+        }
+
+        // Moving objects (NPCs) update their destination; markers are fixed.
+        if (_targetId != 0)
+        {
+            var obj = _objectTable.FirstOrDefault(o => o.GameObjectId == _targetId);
+            if (obj != null) _destPosition = obj.Position;
+        }
+
+        var now = DateTime.UtcNow;
+        var distance = Vector3.Distance(player.Position, _destPosition);
+        var waypoints = _nav.Waypoints;
+        var remaining = waypoints.Count;
+
+        // Arrival is decided on distance, not on vnavmesh going quiet: its path
+        // goes quiet for a second on every stuck-retry too.
+        if (distance <= _stopRange + ArrivalSlack)
+        {
+            Finish(AccessibilityStrings.TargetReached(_targetName), $"angekommen, dist={distance:F1}");
+            return;
+        }
+
+        SpeakRoutePreviewOnce(player.Position, waypoints);
+        LogDiagnostics(player.Position, distance, waypoints, now);
+
+        // Own movement, not distance to the destination: a detour legitimately
+        // moves away from the target for a while (false abort right after start,
+        // log 2026-07-13 01:08).
+        if (Vector3.Distance(player.Position, _lastPosition) >= MovementEpsilon)
+        {
+            _lastPosition = player.Position;
+            _lastMoveAt = now;
+        }
+
+        if (distance <= _bestDistance - ApproachEpsilon)
+        {
+            _bestDistance = distance;
+            _lastApproachAt = now;
+        }
+
+        // Being shoved at the appended destination (fact 3): the only waypoint
+        // left IS that destination, and we are getting no closer to it. Checked
+        // separately from the stall timer because every stuck-retry skids the
+        // character a little, which resets that timer and dragged the verdict out
+        // to 12 s. Restricted to targets still far away - near the destination a
+        // pause without progress is just a walk rounding an obstacle.
+        if (remaining <= 1
+            && distance > _stopRange + NoApproachMinDistance
+            && (now - _lastApproachAt).TotalSeconds > NoApproachS)
+        {
+            var far = RouteService.CompassWord(player.Position, _destPosition);
+            _log.Info($"[Nav] Auto-Lauf: keine Annäherung seit {NoApproachS:F1} s bei restWp={remaining}, " +
+                      $"dist={distance:F1} - Netz endet hier.");
+            Finish(AccessibilityStrings.WalkMeshEndsHere(distance, far), "Netz endet hier (keine Annäherung)");
+            return;
+        }
+
+        // Not moving while a path claims to run. Two causes, one remedy, but the
+        // player deserves to know which: with a single waypoint left we are being
+        // shoved at the appended destination the mesh cannot reach (fact 3), so
+        // the mesh ends here; otherwise we are wedged on geometry.
+        if ((now - _lastMoveAt).TotalSeconds > StallS)
+        {
+            var direction = RouteService.CompassWord(player.Position, _destPosition);
+            var meshEnds = remaining <= 1;
+            _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit {StallS:F0} s, dist={distance:F1}, " +
+                      $"restWp={remaining}, Netzende={meshEnds}");
+            Finish(meshEnds
+                    ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
+                    : AccessibilityStrings.StuckRemaining(distance),
+                meshEnds ? "Netz endet hier" : "festgesteckt");
+            return;
+        }
+
+        // End of path - but only when it HOLDS. vnavmesh clears its waypoints for
+        // a moment on every stuck-retry (once a second in the user's config), and
+        // a single-frame read of that gap used to end the walk on the spot.
+        var idle = !_nav.IsRunning && !_nav.PathfindInProgress;
+        if (idle && !_pathQuiet)
+        {
+            _pathQuiet = true;
+            _pathQuietSince = now;
+        }
+        else if (!idle)
+        {
+            _pathQuiet = false;
+        }
+
+        if (_pathQuiet && (now - _pathQuietSince).TotalSeconds >= PathEndDebounceS)
+        {
+            var direction = RouteService.CompassWord(player.Position, _destPosition);
+            _log.Info($"[Nav] Auto-Lauf: Pfad zu Ende, dist={distance:F1}, restWp={remaining}");
+            Finish(AccessibilityStrings.WalkMeshEndsHere(distance, direction), "Pfad zu Ende ohne Ankunft");
+            return;
+        }
+
+        _lastWaypointCount = remaining;
+        SpeakProgress(distance);
+    }
+
+    /// <summary>
+    /// After a walk ends: a pathfind that was already in flight when we stopped
+    /// still gets handed to FollowPath, and vnavmesh's own stuck-retry re-arms
+    /// the same way - either would walk the character off with nobody watching.
+    /// Stop it again, and say so once, because unexplained movement is worse than
+    /// no movement for someone who cannot see it.
+    /// </summary>
+    private void GuardUpdate()
+    {
+        if (DateTime.UtcNow >= _guardUntil)
+        {
+            _phase = Phase.Idle;
+            return;
+        }
+
+        if (!_nav.IsRunning) return;
+
+        _nav.Stop();
+        if (_guardWarned) return;
+        _guardWarned = true;
+        _log.Info("[Nav] Auto-Lauf: nachlaufender Pfad nach dem Ende abgeräumt.");
+    }
+
+    /// <summary>
+    /// Speaks the route preview once the path exists (user request 2026-07-15).
+    /// The player's own position is passed along: vnavmesh's waypoint list starts
+    /// at the first hop, so measuring only between waypoints dropped the whole
+    /// leg from the character to the path - a 454 m walk was announced as
+    /// "practically there" (log 2026-08-10 08:04:45).
+    /// </summary>
+    private void SpeakRoutePreviewOnce(Vector3 playerPosition, IReadOnlyList<Vector3> waypoints)
+    {
+        if (_routeSpoken || waypoints.Count == 0) return;
+        _routeSpoken = true;
+
+        var last = waypoints[^1];
+        _log.Info($"[Nav] Pfad: {waypoints.Count} Wegpunkte, letzter->Ziel={Vector3.Distance(last, _destPosition):F1} m. " +
+                  $"Route: {string.Join(" -> ", waypoints.Select(w => $"({Fmt(w)})"))}");
+
+        // A "route" consisting only of the appended destination is not a route at
+        // all - vnavmesh found no corridor and just handed the wish back (fact 3).
+        // Announcing it produced "Weg zu X, 411 Meter: 411 Meter nach Osten" for a
+        // walk that could not take a single step (log 2026-08-10 18:31:21). Stay
+        // quiet; the no-approach check speaks the truth a moment later.
+        if (waypoints.Count <= 1 &&
+            Vector3.Distance(playerPosition, _destPosition) > _stopRange + NoApproachMinDistance)
+        {
+            _log.Info("[Nav] Pfad besteht nur aus dem angehängten Ziel - keine Routen-Vorschau.");
+            return;
+        }
+
+        // Queued, not interrupting, so it follows "Laufe zu ...".
+        _tolk.Speak(_routes.DescribeRoute(_targetName, waypoints, playerPosition));
+    }
+
+    /// <summary>
+    /// Spoken progress, tied to distance covered rather than the clock: one line
+    /// per configured step, so a short hop stays silent and a long run reports a
+    /// handful of times. Originally every 3 s, which turned a long walk into a
+    /// wall of "noch X Meter" (report 2026-07-18). 0 turns it off.
+    /// </summary>
+    private void SpeakProgress(float distance)
+    {
+        var step = _config.AutoWalkProgressStep;
+        if (step <= 0 || distance > _lastProgressDistance - step) return;
+
+        _lastProgressDistance = distance;
+        _tolk.SpeakInterrupt(AccessibilityStrings.StillToGo(distance));
+    }
+
+    private void LogDiagnostics(Vector3 position, float distance, IReadOnlyList<Vector3> waypoints, DateTime now)
+    {
+        if ((now - _lastDiagAt).TotalSeconds < 1) return;
+        _lastDiagAt = now;
+
+        var next = waypoints.Count > 0 ? waypoints[0] : default;
+        var distNext = waypoints.Count > 0 ? Vector3.Distance(position, next) : -1f;
+        _log.Info($"[NavDiag] pos=({Fmt(position)}) distZiel={distance:F1} restWp={waypoints.Count} " +
+                  $"nextWp=({Fmt(next)}) distNextWp={distNext:F1}");
+    }
+
+    private static string Fmt(Vector3 v) => $"{v.X:F1}|{v.Y:F1}|{v.Z:F1}";
+
+    // ── Wegenetz-Aufbau mitverfolgen ─────────────────────────────────
+
+    private float _lastMeshProgress = -1f;   // -1 = kein Aufbau läuft
+    private int _lastSpokenMeshStep = -1;    // last announced 20 % step (0..4)
+    private DateTime _lastMeshRetryLog;
+
+    /// <summary>
+    /// Announces the navmesh build in 20 % steps and reports when it is done
+    /// (user request 2026-07-18). Without it the player has no way to tell "still
+    /// loading" from "broken" - the auto-walk simply refuses to start.
+    ///
+    /// vnavmesh semantics (NavmeshManager, decompiled 2026-07-18): LoadTaskProgress
+    /// is -1 while no build runs, 0 when one starts, grows to 1, and returns to -1
+    /// when the task ends - so completion shows up as the drop back to -1, and only
+    /// Nav.IsReady tells success from cancellation. Cache-served loads can finish
+    /// so fast that no intermediate step is seen; then only start and finish speak.
+    ///
+    /// Never latches off: the plugin can load a second before vnavmesh does, and
+    /// an early failed read used to disable the announcement for the whole session
+    /// (log 2026-08-09 21:31).
+    /// </summary>
+    private void MonitorMeshBuild()
+    {
+        if (!_config.AnnounceMeshProgress) return;
+
+        var progress = _nav.BuildProgress;
+        if (_nav.LastCallFailed)
+        {
+            // vnavmesh not up yet (or gone). Keep trying, but log at most once a minute.
+            if ((DateTime.UtcNow - _lastMeshRetryLog).TotalSeconds >= 60)
+            {
+                _lastMeshRetryLog = DateTime.UtcNow;
+                _log.Info("[Nav] Wegenetz-Fortschritt noch nicht lesbar, versuche es weiter.");
+            }
+            return;
+        }
+
+        var wasBuilding = _lastMeshProgress >= 0f;
+        var isBuilding = progress >= 0f;
+        _lastMeshProgress = progress;
+
+        if (isBuilding)
+        {
+            if (!wasBuilding)
+            {
+                _lastSpokenMeshStep = 0;   // step 0 counts as spoken, so 0 % stays quiet
+                _log.Info("[Nav] Wegenetz-Aufbau gestartet.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.MeshLoading);
+                return;
+            }
+
+            var step = (int)(progress * 5); // 0..4 = 0/20/40/60/80 %
+            if (step > _lastSpokenMeshStep && step < 5)
+            {
+                _lastSpokenMeshStep = step;
+                _log.Info($"[Nav] Wegenetz-Aufbau: {step * 20} % (progress={progress:F2})");
+                _tolk.SpeakInterrupt(AccessibilityStrings.MeshPercent(step * 20));
+            }
+            return;
+        }
+
+        if (!wasBuilding) return;
+
+        _lastSpokenMeshStep = -1;
+        var ready = _nav.IsReady;
+        _log.Info($"[Nav] Wegenetz-Aufbau beendet, bereit={ready}");
+        _tolk.SpeakInterrupt(ready ? AccessibilityStrings.MeshReady : AccessibilityStrings.MeshAborted);
     }
 
     // ── Ziel folgen (kontinuierlich) ─────────────────────────────────
     //
-    // Unlike Toggle() - which computes ONE path and stops on arrival - follow
-    // keeps re-issuing PathfindAndMoveCloseTo to the target's CURRENT position,
-    // so the character trails a moving player and stops when they stop (user
-    // request 2026-07-26). FFXIV has no plugin-callable native "follow" (verified
-    // against FFXIVClientStructs: MoveController carries no follow, only companion/
-    // mount/camera/map "follow" exist), so this rebuilds it on vnavmesh - the same
-    // engine the auto-walk already uses.
+    // Unlike the one-shot walk - which computes ONE path and stops on arrival -
+    // follow keeps re-issuing the path to the target's CURRENT position, so the
+    // character trails a moving player and stops when they stop (user request
+    // 2026-07-26). FFXIV has no plugin-callable native "follow" (verified against
+    // FFXIVClientStructs: MoveController carries no follow field), so this is
+    // rebuilt on vnavmesh - the same engine the auto-walk uses.
 
     private bool _following;
     private ulong _followTargetId;
     private string _followName = string.Empty;
     private ushort _followStartTerritory;
-    private Vector3 _lastFollowDest;      // target position the last path was issued for
+    private Vector3 _lastFollowDest;
     private DateTime _lastFollowPathAt;
 
     /// <summary>Trail distance in yalms: stop this far behind the target.</summary>
     private const float FollowDistance = 3f;
     /// <summary>Only re-path once the target has drifted this far from the last
-    /// commanded destination - keeps a slow-moving target from re-pathing per frame.</summary>
+    /// commanded destination - keeps a slow target from re-pathing every frame.</summary>
     private const float FollowRepathMove = 1.5f;
     /// <summary>Minimum seconds between re-paths (throttle for vnavmesh).</summary>
     private const double FollowRepathIntervalS = 0.4;
 
     /// <summary>
-    /// Starts following the current game target, or stops a running follow.
-    /// The character trails the target at <see cref="FollowDistance"/> and halts
-    /// when the target halts; a second key press ends it. Mutually exclusive with
-    /// the one-shot auto-walk (the caller stops the walk guide first).
+    /// Starts following the current game target, or stops a running follow. The
+    /// character trails the target at <see cref="FollowDistance"/> and halts when
+    /// the target halts; a second key press ends it. Mutually exclusive with the
+    /// one-shot auto-walk (each cancels the other).
     /// </summary>
     public void ToggleFollow()
     {
@@ -306,8 +715,7 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        // A running one-shot walk and follow must not fight over vnavmesh.
-        if (_active) Stop(announce: false);
+        if (IsActive) Finish(null, "Folgen übernimmt");
 
         var target = _targetManager.Target ?? _targetManager.SoftTarget;
         if (target == null)
@@ -323,10 +731,9 @@ public sealed class AutoWalkService : IDisposable
 
         _following = true;
         _followTargetId = target.GameObjectId;
-        // AccessibilityStrings.Unnamed is gone since the object-name rework -
-        // the kind-specific fallback replaced it everywhere.
         _followName = string.IsNullOrWhiteSpace(target.Name.TextValue)
-            ? AccessibilityStrings.UnnamedOfKind(target.ObjectKind) : target.Name.TextValue;
+            ? AccessibilityStrings.UnnamedOfKind(target.ObjectKind)
+            : target.Name.TextValue;
         _followStartTerritory = (ushort)_clientState.TerritoryType;
         _lastFollowDest = default;         // force the first path immediately
         _lastFollowPathAt = DateTime.MinValue;
@@ -338,11 +745,11 @@ public sealed class AutoWalkService : IDisposable
     {
         if (!_following) return;
         _following = false;
-
-        // try-catch: IPC into a foreign plugin (see Toggle)
-        try { _pathStop.InvokeAction(); }
-        catch (Exception ex) { _log.Error(ex, "[Nav] Folgen: Path.Stop fehlgeschlagen"); }
-
+        _nav.Stop();
+        // Same guard as the one-shot walk: a pathfind in flight would revive it.
+        _phase = Phase.Guarding;
+        _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+        _guardWarned = false;
         _log.Info("[Nav] Folgen: gestoppt.");
         if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.FollowStopped);
     }
@@ -350,18 +757,13 @@ public sealed class AutoWalkService : IDisposable
     /// <summary>Ends a running follow without announcement (e.g. when a walk takes over).</summary>
     public void StopFollowQuiet() => StopFollow(announce: false);
 
-    /// <summary>Runs every frame while follow is active. Re-issues the vnavmesh path
-    /// toward the target's current position and ends the follow when the target
-    /// vanishes, the player leaves, or the zone changes.</summary>
+    /// <summary>Runs every frame while follow is active: re-issues the path toward
+    /// the target's current position and ends when the target vanishes, the player
+    /// leaves, or the zone changes.</summary>
     private void FollowUpdate()
     {
         var player = _objectTable.LocalPlayer;
-        if (player == null)
-        {
-            // Logout/zone change - vnavmesh drops the path itself.
-            StopFollow(announce: false);
-            return;
-        }
+        if (player == null) { StopFollow(announce: false); return; }
 
         if ((ushort)_clientState.TerritoryType != _followStartTerritory)
         {
@@ -384,376 +786,28 @@ public sealed class AutoWalkService : IDisposable
         var distance = Vector3.Distance(player.Position, dest);
         var now = DateTime.UtcNow;
 
-        // Nothing to do while already within trail distance - let the target
-        // pull away first (the character stops when the target stops).
+        // Nothing to do while already within trail distance - let the target pull
+        // away first (the character stops when the target stops).
         if (distance <= FollowDistance + 0.5f) return;
 
-        // Throttle re-paths and skip while one is still being computed.
         if ((now - _lastFollowPathAt).TotalSeconds < FollowRepathIntervalS) return;
-
-        bool running, computing;
-        // try-catch: IPC into a foreign plugin (see Toggle)
-        try
-        {
-            computing = _pathfindInProgress.InvokeFunc();
-            running   = _pathIsRunning.InvokeFunc();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Nav] Folgen: Status-IPC fehlgeschlagen, breche ab");
-            StopFollow(announce: false);
-            _tolk.SpeakInterrupt(AccessibilityStrings.FollowAbortedNoResponse);
-            return;
-        }
-        if (computing) return;
+        if (_nav.PathfindInProgress) return;
 
         // Re-path when the target drifted enough OR the previous path already
-        // finished (we are idle but still beyond the trail distance - the target
-        // walked off while we stood still).
-        if (Vector3.Distance(dest, _lastFollowDest) < FollowRepathMove && running) return;
+        // finished (idle but still beyond trail distance - the target walked off).
+        if (Vector3.Distance(dest, _lastFollowDest) < FollowRepathMove && _nav.IsRunning) return;
 
-        // try-catch: IPC into a foreign plugin (vnavmesh may vanish mid-follow)
-        try
+        if (!_nav.MoveCloseTo(dest, FollowDistance))
         {
-            _moveCloseTo.InvokeFunc(dest, false, FollowDistance);
-            _lastFollowDest = dest;
-            _lastFollowPathAt = now;
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Nav] Folgen: MoveCloseTo fehlgeschlagen, breche ab");
+            if (!_nav.LastCallFailed) return;   // pathfind busy: just try again next frame
+            _log.Warning("[Nav] Folgen: vnavmesh antwortet nicht, breche ab");
             StopFollow(announce: false);
             _tolk.SpeakInterrupt(AccessibilityStrings.FollowAbortedUnavailable);
-        }
-    }
-
-    // ── Wegenetz-Aufbau mitverfolgen ──
-
-    private float _lastMeshProgress = -1f;   // -1 = kein Aufbau läuft
-    private int _lastSpokenMeshStep = -1;    // last announced 20 % step (0..4)
-    private bool _meshMonitorOff;            // IPC unavailable - reported once, then quiet
-
-    /// <summary>
-    /// Announces the navmesh build in 20 % steps and reports when it is done
-    /// (user request 2026-07-18). Without it the player has no way to tell
-    /// "still loading" from "broken" - the auto-walk simply refuses to start.
-    ///
-    /// vnavmesh semantics verified by decompiling NavmeshManager (2026-07-18):
-    /// LoadTaskProgress is -1 while no build runs, set to 0 when one starts,
-    /// grows to 1 via BuildTiles, and is reset to -1 in an OnDispose when the
-    /// task ends - so completion shows up as the drop back to -1, and only
-    /// Nav.IsReady tells success (mesh present) from cancellation.
-    /// Loads served from the tile cache can finish so fast that no intermediate
-    /// step is ever seen; then only start and finish speak. That is correct.
-    /// </summary>
-    private void MonitorMeshBuild()
-    {
-        if (_meshMonitorOff || !_config.AnnounceMeshProgress) return;
-
-        float progress;
-        bool ready;
-        // try-catch: IPC into a foreign plugin (vnavmesh may be missing).
-        try
-        {
-            progress = _navBuildProgress.InvokeFunc();
-            ready    = _navIsReady.InvokeFunc();
-        }
-        catch (Exception ex)
-        {
-            // Never per frame: report once, then stay off. A missing vnavmesh is
-            // already announced properly when a walk is actually attempted.
-            _meshMonitorOff = true;
-            _log.Warning(ex, "[Nav] Wegenetz-Fortschritt nicht lesbar - Überwachung aus.");
             return;
         }
 
-        var wasBuilding = _lastMeshProgress >= 0f;
-        var isBuilding  = progress >= 0f;
-        _lastMeshProgress = progress;
-
-        if (isBuilding)
-        {
-            if (!wasBuilding)
-            {
-                // Step 0 counts as spoken, so 0 % never announces itself.
-                _lastSpokenMeshStep = 0;
-                _log.Info("[Nav] Wegenetz-Aufbau gestartet.");
-                _tolk.SpeakInterrupt(AccessibilityStrings.MeshLoading);
-                return;
-            }
-
-            var step = (int)(progress * 5); // 0..4 = 0/20/40/60/80 %
-            if (step > _lastSpokenMeshStep && step < 5)
-            {
-                _lastSpokenMeshStep = step;
-                _log.Info($"[Nav] Wegenetz-Aufbau: {step * 20} % (progress={progress:F2})");
-                _tolk.SpeakInterrupt(AccessibilityStrings.MeshPercent(step * 20));
-            }
-            return;
-        }
-
-        if (!wasBuilding) return;
-
-        _lastSpokenMeshStep = -1;
-        _log.Info($"[Nav] Wegenetz-Aufbau beendet, bereit={ready}");
-        _tolk.SpeakInterrupt(ready
-            ? AccessibilityStrings.MeshReady
-            : AccessibilityStrings.MeshAborted);
-    }
-
-    /// <summary>Queues the vnavmesh path. False (with announcement) when vnavmesh is not ready.</summary>
-    private bool TryStartPath(Vector3 destination, float stopRange)
-    {
-        // try-catch: IPC into a foreign plugin - vnavmesh may be missing,
-        // disabled or still loading (IpcNotReadyError).
-        try
-        {
-            if (!_navIsReady.InvokeFunc())
-            {
-                var progress = _navBuildProgress.InvokeFunc();
-                _tolk.SpeakInterrupt(progress >= 0
-                    ? AccessibilityStrings.MeshStillLoading(progress * 100)
-                    : AccessibilityStrings.MeshNotReady);
-                return false;
-            }
-
-            if (!_moveCloseTo.InvokeFunc(destination, false, stopRange))
-            {
-                // MoveTo returns false only while a previous pathfind is queued
-                _tolk.SpeakInterrupt(AccessibilityStrings.PathfindBusy);
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Nav] Auto-Lauf: vnavmesh-IPC fehlgeschlagen (Plugin installiert?)");
-            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
-            return false;
-        }
-        return true;
-    }
-
-    private void BeginWalk()
-    {
-        _active = true;
-        _sawRunning = false;
-        _startedAt = DateTime.UtcNow;
-        _startTerritory = (ushort)_clientState.TerritoryType;
-        _lastPosition = _objectTable.LocalPlayer?.Position ?? default;
-        _lastMoveAt = DateTime.UtcNow;
-        // Baseline for the progress lines: the first one is due once we are a
-        // full step closer than the start, so short walks never speak at all.
-        _lastProgressDistance = Vector3.Distance(_lastPosition, _destPosition);
-        _diagLoggedPath = false;
-        _lastDiagAt = DateTime.UtcNow;
-        _log.Info($"[Nav] Auto-Lauf: gestartet zu {_targetName} (id={_targetId:X}, stopRange={_stopRange:F1}, " +
-                  $"dist={Vector3.Distance(_objectTable.LocalPlayer?.Position ?? default, _destPosition):F1})");
-        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(_targetName));
-    }
-
-    /// <summary>Stops a running auto-walk without any announcement (e.g. when the walk guide takes over).</summary>
-    public void StopQuiet()
-    {
-        if (_active) Stop(announce: false);
-    }
-
-    private void Stop(bool announce)
-    {
-        _active = false;
-
-        // try-catch: IPC into a foreign plugin (see Toggle)
-        try
-        {
-            _pathStop.InvokeAction();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Nav] Auto-Lauf: Path.Stop fehlgeschlagen");
-        }
-
-        _log.Info("[Nav] Auto-Lauf: gestoppt.");
-        if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkStopped);
-    }
-
-    /// <summary>Watches the running walk. Called every frame from Plugin.OnFrameworkUpdate.</summary>
-    public void Update()
-    {
-        // Runs even when no walk is active: the player wants to know when the
-        // navmesh finishes loading, precisely BECAUSE they cannot walk yet.
-        MonitorMeshBuild();
-
-        // Follow is a separate, continuously re-pathing mode; it never overlaps
-        // the one-shot walk (each cancels the other on start).
-        if (_following) { FollowUpdate(); return; }
-
-        if (!_active) return;
-
-        var player = _objectTable.LocalPlayer;
-        if (player == null)
-        {
-            // Logout/zone change - vnavmesh drops the path itself, we just clean up.
-            Stop(announce: false);
-            return;
-        }
-
-        // Zone transition succeeded: walking to a transition put the player into
-        // a new area. This is the real "arrived" signal for cross-zone walks -
-        // vnavmesh's own path never reports it (the destination is on the far
-        // side of the zone line).
-        if ((ushort)_clientState.TerritoryType != _startTerritory)
-        {
-            _active = false;
-            _log.Info($"[Nav] Auto-Lauf: Gebiet gewechselt ({_startTerritory} -> {_clientState.TerritoryType}), Ziel erreicht.");
-            _tolk.SpeakInterrupt(AccessibilityStrings.ArrivedNewZone);
-            return;
-        }
-
-        bool running;
-        bool computing;
-        // try-catch: IPC into a foreign plugin (see Toggle)
-        try
-        {
-            running = _pathIsRunning.InvokeFunc();
-            computing = _pathfindInProgress.InvokeFunc();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[Nav] Auto-Lauf: Status-IPC fehlgeschlagen, breche ab");
-            Stop(announce: false);
-            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkAbortedNoResponse);
-            return;
-        }
-
-        if (running) _sawRunning = true;
-
-        // Moving objects (NPCs) update their destination; quest markers are fixed.
-        if (_targetId != 0)
-        {
-            var obj = _objectTable.FirstOrDefault(o => o.GameObjectId == _targetId);
-            if (obj != null) _destPosition = obj.Position;
-        }
-
-        var distance = Vector3.Distance(player.Position, _destPosition);
-        var now = DateTime.UtcNow;
-
-        // Stall detection watches the character's OWN movement, not the distance
-        // to the destination: detours legitimately move away from the target for
-        // a while (false abort right after start, log 2026-07-13 01:08). Jitter
-        // while pushed against geometry stays under the 0.5 m threshold.
-        if (Vector3.Distance(player.Position, _lastPosition) >= 0.5f)
-        {
-            _lastPosition = player.Position;
-            _lastMoveAt = now;
-        }
-
-        // Reads the path vnavmesh is actually following (Path.ListWaypoints):
-        //  - once, when the route first appears: speak the route preview (user
-        //    request 2026-07-15: announce via which waypoints the destination
-        //    is reached) and log the full waypoint list plus how far its LAST
-        //    point sits from our target. Last-point-near-target => destination
-        //    reachable, the char jams on collision; last point far short =>
-        //    the mesh has no route there (a gap / wrong target).
-        //  - every second (diagnostic): live position, remaining waypoint
-        //    count and the distance to the next waypoint.
-        // try-catch: IPC into a foreign plugin (see Toggle).
-        try
-        {
-            var waypoints = _pathListWaypoints.InvokeFunc();
-            if (!_diagLoggedPath && waypoints is { Count: > 0 })
-            {
-                _diagLoggedPath = true;
-                var last = waypoints[^1];
-                var route = string.Join(" -> ", waypoints.Select(w => $"({w.X:F1}|{w.Y:F1}|{w.Z:F1})"));
-                _log.Info($"[NavDiag] Pfad: {waypoints.Count} Wegpunkte, letzter->Ziel={Vector3.Distance(last, _destPosition):F1} m. Route: {route}");
-                // Queued (not interrupting) so it follows "Laufe zu ...". The
-                // progress lines are distance-gated now, so nothing has to be
-                // pushed back to protect the preview from being cut off.
-                _tolk.Speak(_routes.DescribeRoute(_targetName, waypoints));
-            }
-            if ((now - _lastDiagAt).TotalSeconds >= 1)
-            {
-                _lastDiagAt = now;
-                var p = player.Position;
-                var remaining = waypoints?.Count ?? 0;
-                var next = remaining > 0 ? waypoints![0] : default;
-                var distNext = remaining > 0 ? Vector3.Distance(p, next) : -1f;
-                _log.Info($"[NavDiag] pos=({p.X:F1}|{p.Y:F1}|{p.Z:F1}) distZiel={distance:F1} " +
-                          $"restWp={remaining} nextWp=({next.X:F1}|{next.Y:F1}|{next.Z:F1}) distNextWp={distNext:F1}");
-#if DEBUG
-                // Direction probe (2026-08-01, user report "left is right"):
-                // vnavmesh is actively steering the character towards nextWp, so
-                // its own heading must read "straight ahead" there. That makes
-                // this line ground truth for the direction formula - no game
-                // target, no turning, and no judgement about one's own facing
-                // needed. angleZiel is the straight line to the destination and
-                // may legitimately differ around corners.
-                if (remaining > 0)
-                {
-                    var angleWp = NavigationService.RelativeAngle(player, next);
-                    var angleDest = NavigationService.RelativeAngle(player, _destPosition);
-                    _log.Info($"[NavDirProbe] auto-walk: rot={player.Rotation:F3} " +
-                              $"dxWp={next.X - p.X:F2} dzWp={next.Z - p.Z:F2} " +
-                              $"angleWp={angleWp:F1} wortWp='{AccessibilityStrings.RelativeDirection(angleWp)}' " +
-                              $"angleZiel={angleDest:F1} wortZiel='{AccessibilityStrings.RelativeDirection(angleDest)}'");
-                }
-#endif
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "[NavDiag] Waypoint-IPC fehlgeschlagen");
-        }
-
-        // Spoken progress. Originally every 3 s, because the beacon tone alone
-        // left the user unsure and cancelling walks (report 2026-07-11) - but on
-        // a long walk that is a wall of "Noch X Meter" (report 2026-07-18).
-        // Now tied to PROGRESS instead of the clock: one line per
-        // ProgressStepMetres covered, so a short hop stays silent and a long run
-        // reports a handful of times. The reassurance survives, the chatter does
-        // not. ProgressStepMetres = 0 turns it off entirely.
-        var step = _config.AutoWalkProgressStep;
-        if (step > 0 && distance <= _lastProgressDistance - step)
-        {
-            _lastProgressDistance = distance;
-            _tolk.SpeakInterrupt(AccessibilityStrings.StillToGo(distance));
-            _log.Info($"[Nav] Auto-Lauf: läuft, dist={distance:F1} running={running} computing={computing}");
-        }
-
-        if (_sawRunning && !running)
-        {
-            // Path finished. Arrived, or did vnavmesh stop early?
-            _active = false;
-            var arrived = distance <= _stopRange + 1.5f;
-            _log.Info($"[Nav] Auto-Lauf: Pfad beendet, dist={distance:F1}, angekommen={arrived}");
-            _tolk.SpeakInterrupt(arrived
-                ? AccessibilityStrings.TargetReached(_targetName)
-                : AccessibilityStrings.AutoWalkEndedRemaining(distance));
-            return;
-        }
-
-        // Stall: vnavmesh keeps running but the character has not moved for 5 s
-        // (wedged on geometry the mesh does not know, e.g. the zone-line spots
-        // from 2026-07-12/13). Stop the path too - previously only our tracking
-        // ended and vnavmesh kept pushing against the obstacle.
-        if (_sawRunning && (now - _lastMoveAt).TotalSeconds > 5)
-        {
-            var arrived = distance <= _stopRange + 2f;
-            _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit 5 s, dist={distance:F1}, angekommen={arrived}");
-            Stop(announce: false);
-            _tolk.SpeakInterrupt(arrived
-                ? AccessibilityStrings.TargetReached(_targetName)
-                : AccessibilityStrings.StuckRemaining(distance));
-            return;
-        }
-
-        // Pathfind finished but produced no path (unreachable destination).
-        // Grace period covers the frames between queueing and task start.
-        if (!_sawRunning && !computing && (now - _startedAt).TotalSeconds > 1.5)
-        {
-            _active = false;
-            _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
-            _tolk.SpeakInterrupt(AccessibilityStrings.NoPathTo(_targetName, _places.BuildNoPathHint(_destPosition)));
-        }
+        _lastFollowDest = dest;
+        _lastFollowPathAt = now;
     }
 
     public void Dispose()

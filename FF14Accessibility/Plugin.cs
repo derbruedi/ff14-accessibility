@@ -71,8 +71,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.78";
-    private const string PluginVersionTag = "Wegenetz zurueck auf den Stand von 5.73 - alle spaeteren Lauf-Zusaetze entfernt";
+    private const string PluginVersion    = "5.80";
+    private const string PluginVersionTag = "Auto-Lauf: Netzende in 2,5 s statt 12 s erkannt, keine Phantom-Route mehr angesagt";
 
     public Plugin()
     {

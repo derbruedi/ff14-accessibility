@@ -3,7 +3,131 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-09, "WEGENETZ ZURUECK AUF 5.73" - AUF ANSAGE DES USERS)
+## STAND JETZT (2026-08-10, V5.80 - IN-GAME VERIFIZIERT + NACHSCHLIFF)
+
+>>> V5.79 IM SPIEL BESTAETIGT (Log 2026-08-10, 18:25-18:32). Alle drei Fixes
+    greifen nachweislich:
+    - Der Stopp haelt: nach dem Ende um 18:30:46 kam KEIN weiterer vnavmesh-
+      Auftrag mehr (vorher 91 in einer Minute). Das lautlose Weiterschieben ist
+      weg.
+    - Kein Fehlabbruch: der Lauf zu "Infame Informanten" (18:26:33) lief 106 s
+      durch, bis der User selbst stoppte. Vorher stieg er nach Millisekunden aus.
+    - Ankunft: "Ziel erreicht: Weinhafen" bei dist=2,5.
+    - Ehrliche Ansage statt Luege: "Weiter komme ich nicht, hier endet der
+      begehbare Weg. Noch 413 Meter nach Osten." An genau der Stelle, wo vorher
+      "praktisch am Ziel" behauptet wurde.
+
+>>> RESTPROBLEM AUS DEM TEST, in V5.80 behoben:
+    Stand der Spieler schon an der Netzkante, sagte das Plugin trotzdem
+    "Weg zu Freibriefe der Sonnenkueste, 411 Meter: 411 Meter nach Osten" -
+    eine Route, die nur aus dem angehaengten Wunschziel bestand. Danach wurde
+    4 bis 12 Sekunden gegen den Fels gedrueckt, bis die Stillstandspruefung
+    ansprang (sie wird durch das Rutschen bei jedem Retry immer wieder
+    zurueckgesetzt).
+    GEBAUT: (a) besteht die "Route" nur aus dem angehaengten Ziel, wird sie gar
+    nicht erst angesagt; (b) neue Pruefung "keine Annaeherung": nur noch ein
+    Wegpunkt uebrig, Ziel weiter als stopRange+20 m weg, und 2,5 s lang nicht
+    naeher gekommen -> Netz endet hier. Das Kriterium ist die Annaeherung, nicht
+    die Bewegung, deshalb taeuscht das Rutschen es nicht.
+    Absichtlich NICHT gebaut: eine Verweigerung beim Start. Der Lauf zu "Infame
+    Informanten" hat ebenfalls ein Netzende ~466 m vor dem Ziel und brachte den
+    Spieler trotzdem ueber 500 m weit. Genau dieses vorschnelle Verweigern war
+    es, was der User in 5.78 zurueckbauen liess.
+
+>>> WARUM DAS NETZ NICHT ALLE WEGE KENNT (Frage des Users, jetzt beantwortet
+    und in docs/game-api.md dokumentiert): vnavmesh berechnet das Netz SELBST
+    mit Recast aus der Kollisionsgeometrie - es kommt nicht vom Spiel. Grenzen
+    laut `Navmesh.NavmeshSettings`: max. 55 Grad Steigung, max. 0,5 m Absatz,
+    und `GenerateEdgeClimbLinks` ist standardmaessig AUS, es gibt also keine
+    "hier kann man runterspringen"-Verbindungen. Alles, was man nur durch
+    Springen oder ueber einen steilen Hang erreicht, existiert im Netz nicht.
+    Deshalb zerfaellt Oestliches La Noscea in Plateau (Y 59-76) und Kueste
+    (Y 17-20).
+    NAECHSTE SCHRITTE dafuer, in dieser Reihenfolge: `/vnav rebuild` in der Zone
+    (Cache ist vom 02.08.), danach ggf. `GenerateEdgeClimbLinks` einschalten und
+    neu bauen (ob das die Luecke schliesst, ist UNGEPRUEFT).
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.80.
+>>> ZU TESTEN: an der Netzkante Numpad3 druecken - es darf keine Route mehr
+    angesagt werden, und die Absage soll nach gut 2 s kommen statt nach 12.
+
+## FRUEHER (2026-08-10, V5.79 "AUTO-LAUF KOMPLETT NEU AUF VNAVMESH")
+
+>>> USER-AUFTRAG: "mach das mit dem wegenetz einfach komplett neu mit dem
+    vnavmesh" - nachdem der Rueckbau auf 5.73 die Symptome NICHT behoben hat
+    ("er bleibt manchmal mitten auf der straeke und laeuft obwohl er
+    stehenbleiben sollte").
+
+>>> URSACHE, AUS DEM LOG BEWIESEN (dalamud.log 2026-08-10, 07:54-08:06):
+    Es lag NICHT an unserer zurueckgebauten Logik, sondern daran, dass das
+    Plugin vnavmesh falsch abgefragt hat. Drei dekompilierte Fakten (jetzt in
+    docs/game-api.md -> "Wie vnavmesh Pfade wirklich startet und beendet"):
+    1. `MoveTo` ist asynchron und stoppt den laufenden Pfad NICHT. Direkt nach
+       dem Start beschreibt `Path.IsRunning` noch den VORIGEN Lauf.
+       Beleg 08:05:05: Auftrag "Weinhafen", 52 ms spaeter "beendet, noch 499 m" -
+       und vnavmesh steuerte danach 50 m weit los, ohne Aufsicht.
+    2. vnavmesh startet sich selbst neu (`StopOnStuck` + `RetryOnStuck`, beide
+       beim User an). `Path.IsRunning` blinkt dadurch jede Sekunde auf false,
+       ohne dass der Lauf zu Ende ist. Beleg 08:04:24-08:05:55: 91 "Queueing
+       move-to" im Sekundentakt, waehrend das Plugin schon ausgeklinkt war -
+       eine Minute lautloses Schieben gegen die Netzkante.
+    3. Der letzte Wegpunkt ist frei erfunden: `PathfindMesh` haengt das
+       Wunschziel unbedingt an, erreichbar oder nicht. Beleg 08:04:23:
+       `restWp=1 distNextWp=453,8`.
+    Beide Symptome des Users sind derselbe Mechanismus: das Plugin hielt den
+    Selbst-Neustart fuer das Ende ("bleibt stehen"), klinkte sich aus OHNE
+    `Path.Stop` zu rufen, und vnavmesh lief weiter ("laeuft, obwohl er
+    stehenbleiben sollte").
+
+>>> NEU GEBAUT:
+    - `Services/NavmeshIpc.cs` (NEU): alle vnavmesh-Gates an einer Stelle,
+      einmal gekapselt. `LastCallFailed` trennt "vnavmesh fehlt" von
+      "vnavmesh sagt nein". Die Lauflogik enthaelt kein try-catch mehr.
+    - `Services/AutoWalkService.cs` neu geschrieben, oeffentliche API
+      unveraendert (Plugin.cs blieb unangetastet). Zustandsmaschine
+      Idle -> Starting -> Walking -> Guarding:
+      * Vor jedem Start `Path.Stop` - toetet einen laufenden Retry-Zyklus und
+        macht die Statusabfragen eindeutig.
+      * `Starting` urteilt ueber gar nichts, bis der eigene Pfad wirklich steht.
+      * Ankunft entscheidet die ENTFERNUNG, nicht "vnavmesh ist still".
+      * Pfadende erst nach 1,6 s durchgehender Stille (Entprellung gegen den
+        Sekundentakt des Stuck-Retry).
+      * Stillstand 4 s: ist nur noch EIN Wegpunkt uebrig, endet das Netz dort -
+        eigene, ehrliche Ansage statt "festgesteckt".
+      * Jeder Ausgang ruft `Path.Stop`. Danach `Guarding` (3 s): belebt ein
+        Task-in-flight oder der Retry den Lauf wieder, wird erneut gestoppt.
+      * "Du bist schon bei X" statt eines Laufs ueber 1,5 m.
+    - `RouteService.DescribeRoute` nimmt jetzt die Spielerposition entgegen und
+      zaehlt die Strecke bis zum ersten Wegpunkt mit. Vorher wurden 454 m als
+      "praktisch am Ziel" angesagt (Log 08:04:45).
+    - Neue bilinguale Strings: `WalkMeshEndsHere`, `AlreadyAtTarget`.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.79
+    (die Ansage beim Login sagt die Versionsnummer - so ist hoerbar, dass der
+    neue Stand laeuft; das Log vom 10.08. zeigte noch V5.77, weil die DLL eine
+    Minute vor dem Versions-Commit gebaut worden war).
+
+>>> ZU TESTEN, IN DIESER REIHENFOLGE:
+    1. Einloggen: sagt er "Version 5.79 bereit"? Sonst laeuft die alte DLL.
+    2. Irgendein normaler Lauf zu einem NPC: geht er los, kommt er an, sagt er
+       "Ziel erreicht"?
+    3. Zweimal Numpad3 hintereinander: stoppt der zweite Druck wirklich, und
+       bleibt die Figur dann auch stehen?
+    4. Der Sonnenkueste-Fall in Oestlichem La Noscea: er sollte die ~238 m
+       laufen und dann sagen "Weiter komme ich nicht, hier endet der begehbare
+       Weg. Noch 454 Meter nach Osten." - und danach STILLSTEHEN, nicht weiter
+       gegen die Kante druecken.
+    5. Wenn der Lauf an einem NPC oder Stein haengenbleibt: nach 4 s "Ich stecke
+       fest" - und dann Ruhe.
+
+>>> NICHT GELOEST, BEWUSST: dass das Wegenetz von Oestlichem La Noscea in zwei
+    unverbundene Haelften zerfaellt. Das ist ein Fehler in vnavmeshs Cache
+    (Datei vom 02.08.2026), nicht in unserem Plugin - dorthin fuehrt schlicht
+    kein Weg, den man lesen koennte. Der naechste Versuch waere `/vnav rebuild`
+    in der Zone (baut das Netz ohne Cache neu). Das Plugin sagt den Zustand
+    jetzt wenigstens ehrlich an, statt stumm zu schieben.
+
+## FRUEHER (2026-08-09, "WEGENETZ ZURUECK AUF 5.73" - AUF ANSAGE DES USERS)
 
 >>> USER-ENTSCHEIDUNG: "mach das alles rueckgaengig, in v5.73 hat alles was das
     wegenetz angeht funktioniert, unsere extra sachen haben irgendwas kaputt

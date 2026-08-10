@@ -1186,6 +1186,15 @@ public static class AccessibilityStrings
                  : $"I'm stuck, {MetersRemaining(distance)} remaining. Auto-walk ended.";
     public static string NoPathTo(string name, string hint) =>
         IsGerman ? $"Kein Weg zu {name} gefunden.{hint}" : $"No path to {name} found.{hint}";
+    /// <summary>The walk ran as far as the walkable mesh goes. Says the direction
+    /// too, because "still 454 metres" without a bearing leaves the player with
+    /// nothing to do next.</summary>
+    public static string WalkMeshEndsHere(float distance, string direction) =>
+        IsGerman ? $"Weiter komme ich nicht, hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}."
+                 : $"This is as far as the walkable path goes. {MetersRemaining(distance)} to the {direction}.";
+    /// <summary>Refuses a walk that would not move the character at all.</summary>
+    public static string AlreadyAtTarget(string name) =>
+        IsGerman ? $"Du bist schon bei {name}." : $"You are already at {name}.";
 
     /// <summary>The "no path, near &lt;aetheryte&gt;" hint appended to a no-path
     /// announcement (empty when no aetheryte is close). The aetheryte name is
