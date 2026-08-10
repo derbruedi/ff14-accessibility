@@ -54,6 +54,45 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 >>> Build Debug 0 Warnungen / 0 Fehler, 10 Dateien deployt. Version 5.81.
 
+>>> RELEASED als v5.81 (2026-08-10, 20:29). Verifiziert: v5.81 ist "Latest",
+    4 Assets dran, `releases/latest/download/latest.zip` liefert 645.298 Bytes
+    (= der neue Build), repo.json auf main steht auf 5.81.0.0. WICHTIG: repo.json
+    hing auf 5.77 fest - 5.78, 5.79 und 5.80 wurden nie veroeffentlicht, Spieler
+    steckten also drei Fassungen zurueck. Mit 5.81 ist das nachgezogen.
+    ACHTUNG: veroeffentlicht auf ausdruecklichen Wunsch OHNE In-Game-Test; die
+    drei Testpunkte unten stehen weiterhin aus.
+
+>>> FLIEGEN ALS DAUERLOESUNG FUER NETZLUECKEN - RECHERCHIERT (2026-08-10):
+    Fliegen scheitert NICHT am Reittier (in FF14 fliegt jedes Reittier) und
+    NICHT an Aetherstroemen (die gibt es in ARR-Gebieten gar nicht - Fliegen kam
+    dort erst mit Patch 5.3 dazu). Einzige Bedingung ist der Abschluss der
+    2.0-Hauptstory ("Die ultimative Waffe", Stufe 50); danach ist Fliegen in
+    La Noscea, Thanalan, Schwarzem Schilfguertel, Coerthas und Mor Dhona frei.
+    Der User ist bei Story-Stufe 30 -> derzeit keine Option, aber sie kommt
+    allein durchs Weiterspielen. Dann waere der Hoehenbruch in Oestlichem
+    La Noscea gegenstandslos.
+    OFFEN dafuer: ob vnavmesh fuer Gebiet 135 ueberhaupt ein Flugvolumen baut
+    (`IsFlyingSupported` verlangt TerritoryIntendedUse 1, 47 oder 49 - fuer 135
+    NICHT nachgesehen).
+
+>>> KEIN FORK NIMMT UNS DIE ARBEIT AB (GitHub-API, 2026-08-10): vnavmesh hat 38
+    handgemachte Zonen-Anpassungen bei ueber tausend Gebieten - 134 (Mittleres
+    La Noscea) hat eine, 135 nicht. Von den 51 Forks hat KEINER mehr als 38
+    (aethergel 36, lilasrepo 36, Lunarisnia 36, alydevs 37, Jaksuhn 34,
+    HoshinoCorp 32), alle sind 9-64 Commits hinterher. Einzige echte
+    Weiterentwicklung ist AtmoOmen/ffxiv_navmesh-cn (356 Commits voraus), aber
+    das ist die Fassung fuer den chinesischen Client, unbrauchbar fuer Global.
+    Aufschlussreich sind deren Commit-Titel: "Sprung/Fall standardmaessig
+    einschalten" wurde kurz darauf WIEDER ZURUECKGENOMMEN - dort hat also jemand
+    genau das versucht, was bei uns als naechster Schritt notiert war.
+
+>>> NAECHSTES FEATURE, vom User beauftragt: SPUR AUFZEICHNEN. Taste startet die
+    Aufzeichnung, der Spieler laeuft die Luecke einmal selbst ab (Gehhilfe fuehrt
+    ihn seit V5.81 auch dort in Luftlinie), Taste beendet und benennt die
+    Verbindung. Danach nutzt der Auto-Lauf sie automatisch IN BEIDE RICHTUNGEN,
+    wenn das Netz an der Kante endet. Bewusst keine Automatik-Suche wie in V5.78
+    - genau die hat falsch geraten und den Spieler eingesperrt.
+
 >>> ZU TESTEN (in-game noch UNGEPRUEFT):
     1. Gehhilfe auf ein Ziel jenseits der Netzkante (z. B. wieder "Infame
        Informanten" von oben): beim Start darf KEINE "466 Meter nach Sueden"-
