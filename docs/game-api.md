@@ -549,6 +549,16 @@ zu manuell gebauten Testnetzen, nicht zum automatisch geladenen Zonennetz.
   ab, ganz ohne Wegsuche (geht direkt an `FollowPath.Move`). Das ist der einzige
   Weg, die Figur ueber Boden zu schicken, den das Netz nicht kennt - im Spiel
   bestaetigt 2026-08-07 (Astalicia) und 2026-08-09 (Hinweg zum Magneten).
+  ACHTUNG, die Punktliste ist NICHT sicher (ilspycmd 2026-08-10): Bleibt die
+  Figur `StuckTimeoutMs` (500 ms) unter `StuckTolerance` stehen, ruft
+  `FollowPath.Update` sein eigenes `Stop()` und feuert `OnStuck` mit dem LETZTEN
+  Wegpunkt. Daran haengt `AsyncMoveRequest`, das bei `RetryOnStuck` (beim User
+  an) ein normales `MoveTo` auf diesen Punkt startet - unsere Liste ist weg und
+  die Figur laeuft wieder ueber das Netz, das die Luecke ja nicht kennt.
+  Erkennen laesst sich das an zwei Dingen, die `AutoWalkService.TrailWalkingUpdate`
+  beide prueft: die Wegpunktzahl WAECHST (eine neue Route hat mehr Punkte als
+  unsere Restliste; unsere schrumpft nur), und `PathfindInProgress` wird wahr
+  (unsere Etappe rechnet nie).
 - `NavmeshCustomization.LinkPoints(mesh, start, end)` ist vnavmeshs eigener
   Mechanismus fuer handgemachte Verbindungen, aber `protected static` in einer
   Customization-Klasse mit `[CustomizationTerritory(id)]` - nur per Fork
