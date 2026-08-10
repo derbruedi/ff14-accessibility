@@ -83,6 +83,19 @@ public sealed class ChatReaderService : IDisposable
         // just spoken (log 2026-07-12: "Du hast einen Auftrag angenommen!" twice).
         if (_tolk.WasRecentlySpoken(messageText, 6)) return;
 
+        // NPC speech reaches the player TWICE: the Talk/_BattleTalk window shows
+        // it, and the chat log repeats it seconds later (measured 2026-08-10:
+        // 2.5 to 5.5 s, and it stretches with how long the box stays up - every
+        // line of the Wheiskaet scene was read out twice). Checked against the
+        // foreign-source list rather than the general history on purpose: a boss
+        // shouting the same warning twice must still be announced twice.
+        if (msg.LogKind is XivChatType.NPCDialogue or XivChatType.NPCDialogueAnnouncements &&
+            _tolk.WasSpokenElsewhere(messageText, NpcDialogueEchoSeconds))
+        {
+            _log.Info($"[Chat] NPC-Dialog schon aus dem Fenster gesprochen, nicht wiederholt: '{messageText}'");
+            return;
+        }
+
         var prefix = GetChatPrefix(msg.LogKind);
 
         // The player's OWN messages are announced as "Du sagst: ..." instead of
@@ -97,6 +110,10 @@ public sealed class ChatReaderService : IDisposable
             fullText = $"{GetOwnChatPrefix(msg.LogKind)}{addressee}: {messageText}";
         else if (string.IsNullOrWhiteSpace(senderText))
             fullText = string.IsNullOrEmpty(prefix) ? messageText : $"{prefix}: {messageText}";
+        else if (string.IsNullOrEmpty(prefix))
+            // Named speaker, no channel word (NPC dialogue): "Y'shtola: ..." -
+            // ChatFromLine would produce a dangling " von Y'shtola: ...".
+            fullText = $"{senderText}: {messageText}";
         else
             fullText = AccessibilityStrings.ChatFromLine(prefix, senderText, messageText);
 
@@ -135,6 +152,14 @@ public sealed class ChatReaderService : IDisposable
         // erhalten", "Du bist fertig ..."). Empty sender, so it is announced
         // without a prefix (the message is already a full sentence).
         XivChatType.Gathering        => _config.ReadGatheringMessages,
+        // NPCDialogue (61) / NPCDialogueAnnouncements (68), values verified with
+        // ilspycmd on Dalamud.dll (2026-08-10): what bosses and quest NPCs say
+        // during a fight. Both were missing entirely and fell through to false,
+        // so the lines never reached the player (user report 2026-08-10). The
+        // _BattleTalk WINDOW was already handled - this is the chat side of the
+        // same speech, and the echo guard below keeps it from being said twice.
+        XivChatType.NPCDialogue      => _config.ReadNpcDialogue,
+        XivChatType.NPCDialogueAnnouncements => _config.ReadNpcDialogue,
         // LootNotice (62): items/currency picked up ("Du hast ein Lammfilet
         // erhalten.", "Du hast 115 Gil erhalten.") - covers enemy drops and
         // everything else that lands in the bag. Verified from a live [Chat] log
@@ -155,6 +180,11 @@ public sealed class ChatReaderService : IDisposable
     // Miss=42, Action=43, Item=44, Healing=45, GainBuff=46, ... LoseDebuff=49
     // (Dalamud XivChatType enum). Real messages can arrive as combined values
     // with source/target bits set high, so mask to the base before comparing.
+    /// <summary>How long after the dialogue window the chat echo of the same line
+    /// is still recognised. Generous because the delay is the player's own
+    /// reading pace, not a fixed game timer.</summary>
+    private const double NpcDialogueEchoSeconds = 120;
+
     private const int CombatBaseMin = 41;
     private const int CombatBaseMax = 49;
 
@@ -244,6 +274,10 @@ public sealed class ChatReaderService : IDisposable
         // Beute-Kanal: eingesammelte Gegenstaende/Waehrung zum Nachlesen
         // (gemeinsam mit den XP-Gewinnen aus CombatService.TrackXpGain).
         XivChatType.LootNotice    => MessageHistoryService.Category.Loot,
+        // Was NPCs say goes into the "Dialoge" channel, where the player already
+        // looks for conversation - not into "System".
+        XivChatType.NPCDialogue   => MessageHistoryService.Category.Dialogue,
+        XivChatType.NPCDialogueAnnouncements => MessageHistoryService.Category.Dialogue,
         _                         => MessageHistoryService.Category.System
     };
 

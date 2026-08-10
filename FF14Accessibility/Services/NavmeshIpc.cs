@@ -24,6 +24,7 @@ public sealed class NavmeshIpc
     private readonly ICallGateSubscriber<bool> _isReady;
     private readonly ICallGateSubscriber<float> _buildProgress;
     private readonly ICallGateSubscriber<Vector3, bool, float, bool> _moveCloseTo;
+    private readonly ICallGateSubscriber<List<Vector3>, bool, object> _moveAlong;
     private readonly ICallGateSubscriber<object> _stop;
     private readonly ICallGateSubscriber<bool> _isRunning;
     private readonly ICallGateSubscriber<int> _numWaypoints;
@@ -45,6 +46,7 @@ public sealed class NavmeshIpc
         _isReady               = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
         _buildProgress         = pluginInterface.GetIpcSubscriber<float>("vnavmesh.Nav.BuildProgress");
         _moveCloseTo           = pluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo");
+        _moveAlong             = pluginInterface.GetIpcSubscriber<List<Vector3>, bool, object>("vnavmesh.Path.MoveTo");
         _stop                  = pluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
         _isRunning             = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
         _numWaypoints          = pluginInterface.GetIpcSubscriber<int>("vnavmesh.Path.NumWaypoints");
@@ -110,6 +112,35 @@ public sealed class NavmeshIpc
         {
             LastCallFailed = true;
             _log.Warning(ex, "[Nav] vnavmesh-IPC 'PathfindAndMoveCloseTo' fehlgeschlagen");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Walks a FIXED list of points, with no pathfinding at all: the list goes
+    /// straight to <c>FollowPath.Move</c>. This is the only way to steer the
+    /// character over ground the navmesh does not know - everything else asks the
+    /// same map vnavmesh does and can never get further than vnavmesh itself.
+    ///
+    /// CAUTION (decompiled 2026-08-10): with the user's <c>StopOnStuck</c> +
+    /// <c>RetryOnStuck</c>, half a second without movement makes FollowPath drop
+    /// OUR list and re-route normally to its LAST point (<c>OnStuck</c> →
+    /// <c>AsyncMoveRequest.MoveTo</c>). Over a gap the mesh does not know, that
+    /// turns the crossing back into a phantom path. Callers must watch the
+    /// waypoint count: it may only ever shrink while our list is being walked.
+    /// </summary>
+    public bool MoveAlong(List<Vector3> waypoints)
+    {
+        try
+        {
+            _moveAlong.InvokeAction(waypoints, false);
+            LastCallFailed = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LastCallFailed = true;
+            _log.Warning(ex, "[Nav] vnavmesh-IPC 'Path.MoveTo' fehlgeschlagen");
             return false;
         }
     }

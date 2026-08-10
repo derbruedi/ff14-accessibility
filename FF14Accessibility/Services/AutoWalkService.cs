@@ -88,6 +88,17 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     private const float NoApproachMinDistance = 20f;
 
+    /// <summary>Counts as "reached the far end of the trail". Wider than the
+    /// normal arrival slack: the recording ends wherever the player happened to
+    /// stand, and the point of a crossing is being on the other side, not on a
+    /// particular metre of it.</summary>
+    private const float TrailArrivalRange = 4f;
+
+    /// <summary>Grace period before an empty waypoint list counts as the end of
+    /// the trail - FollowPath prunes points it deems already reached on its first
+    /// update, so the list can look empty for a frame right after the handover.</summary>
+    private const double TrailSettleS = 0.5;
+
     /// <summary>After ending a walk, keep vetoing revivals this long: a pathfind
     /// that was already computing when we stopped still gets handed to FollowPath
     /// and would walk off unsupervised (fact 1).</summary>
@@ -101,6 +112,9 @@ public sealed class AutoWalkService : IDisposable
         Starting,
         /// <summary>Our path is steering the character.</summary>
         Walking,
+        /// <summary>Driving a recorded trail over a gap in the mesh (see
+        /// <see cref="TryTakeTrail"/>), with vnavmesh's pathfinding out of the loop.</summary>
+        TrailWalking,
         /// <summary>Walk over; suppressing late revivals (see <see cref="StopGuardS"/>).</summary>
         Guarding,
     }
@@ -112,6 +126,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly Configuration _config;
     private readonly PlacesService _places;
     private readonly RouteService _routes;
+    private readonly TrailService _trails;
     private readonly IPluginLog _log;
     private readonly NavmeshIpc _nav;
 
@@ -137,11 +152,17 @@ public sealed class AutoWalkService : IDisposable
     private int _lastWaypointCount;     // remaining hops at the last check
     private DateTime _lastDiagAt;
 
+    // Spur-Etappe (siehe TryTakeTrail / TrailWalkingUpdate)
+    private Vector3 _trailEnd;
+    private int _trailWaypointsSeen;    // highest waypoint count seen on our own list
+    private DateTime _trailStartedAt;
+    private readonly HashSet<string> _usedTrails = new();
+
     /// <summary>Whether an auto-walk is currently running. Plugin.cs suppresses
     /// automatic target-change announcements while this is true - passing NPCs
     /// grab the soft target every few steps and each one would be announced
     /// with distance and direction (user feedback 2026-07-10).</summary>
-    public bool IsActive => _phase is Phase.Starting or Phase.Walking;
+    public bool IsActive => _phase is Phase.Starting or Phase.Walking or Phase.TrailWalking;
 
     /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).</summary>
     public bool IsFollowing => _following;
@@ -155,6 +176,7 @@ public sealed class AutoWalkService : IDisposable
         Configuration config,
         PlacesService places,
         RouteService routes,
+        TrailService trails,
         IPluginLog log)
     {
         _objectTable = objectTable;
@@ -164,6 +186,7 @@ public sealed class AutoWalkService : IDisposable
         _config = config;
         _places = places;
         _routes = routes;
+        _trails = trails;
         _log = log;
         _nav = new NavmeshIpc(pluginInterface, log);
     }
@@ -277,10 +300,16 @@ public sealed class AutoWalkService : IDisposable
     /// cycle re-arming itself once a second) would otherwise both steer the
     /// character and make our own status reads describe the wrong walk.
     /// </summary>
-    private void Begin(Vector3 destination, string name, float stopRange, ulong targetId)
+    /// <param name="fresh">False when this is the continuation of a walk that was
+    /// interrupted by a trail crossing: the "walking to X" line would repeat, and
+    /// the trails already used must stay used so a crossing cannot be taken in a
+    /// loop.</param>
+    private void Begin(Vector3 destination, string name, float stopRange, ulong targetId, bool fresh = true)
     {
         var player = _objectTable.LocalPlayer;
         if (player == null) return;
+
+        if (fresh) _usedTrails.Clear();
 
         if (!_nav.IsReady)
         {
@@ -341,8 +370,9 @@ public sealed class AutoWalkService : IDisposable
         _guardWarned = false;
         _lastWaypointCount = 0;
 
-        _log.Info($"[Nav] Auto-Lauf: gestartet zu {name} (id={targetId:X}, stopRange={stopRange:F1}, dist={distance:F1})");
-        _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
+        _log.Info($"[Nav] Auto-Lauf: gestartet zu {name} (id={targetId:X}, stopRange={stopRange:F1}, " +
+                  $"dist={distance:F1}, neu={fresh})");
+        if (fresh) _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
     }
 
     /// <summary>
@@ -384,6 +414,7 @@ public sealed class AutoWalkService : IDisposable
             case Phase.Guarding: GuardUpdate(); return;
             case Phase.Starting: StartingUpdate(); return;
             case Phase.Walking:  WalkingUpdate(); return;
+            case Phase.TrailWalking: TrailWalkingUpdate(); return;
             default: return;
         }
     }
@@ -475,9 +506,10 @@ public sealed class AutoWalkService : IDisposable
             && distance > _stopRange + NoApproachMinDistance
             && (now - _lastApproachAt).TotalSeconds > NoApproachS)
         {
-            var far = RouteService.CompassWord(player.Position, _destPosition);
             _log.Info($"[Nav] Auto-Lauf: keine Annäherung seit {NoApproachS:F1} s bei restWp={remaining}, " +
                       $"dist={distance:F1} - Netz endet hier.");
+            if (TryTakeTrail(player.Position)) return;
+            var far = RouteService.CompassWord(player.Position, _destPosition);
             Finish(AccessibilityStrings.WalkMeshEndsHere(distance, far), "Netz endet hier (keine Annäherung)");
             return;
         }
@@ -488,10 +520,11 @@ public sealed class AutoWalkService : IDisposable
         // the mesh ends here; otherwise we are wedged on geometry.
         if ((now - _lastMoveAt).TotalSeconds > StallS)
         {
-            var direction = RouteService.CompassWord(player.Position, _destPosition);
             var meshEnds = remaining <= 1;
             _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit {StallS:F0} s, dist={distance:F1}, " +
                       $"restWp={remaining}, Netzende={meshEnds}");
+            if (meshEnds && TryTakeTrail(player.Position)) return;
+            var direction = RouteService.CompassWord(player.Position, _destPosition);
             Finish(meshEnds
                     ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
                     : AccessibilityStrings.StuckRemaining(distance),
@@ -515,14 +548,114 @@ public sealed class AutoWalkService : IDisposable
 
         if (_pathQuiet && (now - _pathQuietSince).TotalSeconds >= PathEndDebounceS)
         {
-            var direction = RouteService.CompassWord(player.Position, _destPosition);
             _log.Info($"[Nav] Auto-Lauf: Pfad zu Ende, dist={distance:F1}, restWp={remaining}");
+            if (TryTakeTrail(player.Position)) return;
+            var direction = RouteService.CompassWord(player.Position, _destPosition);
             Finish(AccessibilityStrings.WalkMeshEndsHere(distance, direction), "Pfad zu Ende ohne Ankunft");
             return;
         }
 
         _lastWaypointCount = remaining;
         SpeakProgress(distance);
+    }
+
+    // ── Spur-Etappe: über eine Lücke, die das Netz nicht kennt ───────
+
+    /// <summary>
+    /// Called wherever the walk has established that the mesh ends here. Looks for
+    /// a trail the player recorded themselves and, if one fits, drives it with
+    /// <c>Path.MoveTo</c> - a fixed point list, no pathfinding involved, which is
+    /// the only way past a gap Recast does not know about.
+    ///
+    /// Each trail is used at most once per walk: after the crossing the normal
+    /// walk resumes, and if THAT one ends at the mesh edge again, offering the
+    /// same crossing would just loop.
+    /// </summary>
+    private bool TryTakeTrail(Vector3 position)
+    {
+        var points = _trails.FindUsableTrail(position, _destPosition, out var name);
+        if (points == null || _usedTrails.Contains(name)) return false;
+
+        _nav.Stop();
+        if (!_nav.MoveAlong(points))
+        {
+            _log.Warning("[Nav] Auto-Lauf: Spur konnte nicht gestartet werden.");
+            return false;
+        }
+
+        _usedTrails.Add(name);
+        _trailEnd = points[^1];
+        _trailWaypointsSeen = points.Count;
+        _trailStartedAt = DateTime.UtcNow;
+        _phase = Phase.TrailWalking;
+        _lastPosition = position;
+        _lastMoveAt = _trailStartedAt;
+
+        _log.Info($"[Nav] Auto-Lauf: nehme Spur '{name}' mit {points.Count} Punkten, Ende ({Fmt(_trailEnd)}).");
+        _tolk.SpeakInterrupt(AccessibilityStrings.TrailTaking(name));
+        return true;
+    }
+
+    /// <summary>
+    /// Watches the trail crossing. Two things end it, and they are told apart
+    /// because they mean different things to the player: arriving at the far end
+    /// (walk continues normally), or vnavmesh taking the wheel back. The latter
+    /// happens when the figure stalls for half a second - FollowPath then drops
+    /// our point list and re-routes to its last point over the mesh that has no
+    /// connection (OnStuck + RetryOnStuck, decompiled). The tell is the waypoint
+    /// count GROWING: our own list only ever shrinks.
+    /// </summary>
+    private void TrailWalkingUpdate()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { Finish(null, "Spieler weg"); return; }
+
+        var now = DateTime.UtcNow;
+        var remaining = _nav.NumWaypoints;
+        var toEnd = Vector3.Distance(player.Position, _trailEnd);
+
+        // Two independent tells that vnavmesh took the wheel back, because either
+        // alone can miss: a re-route over the zone yields MORE waypoints than our
+        // list, a re-route straight at the point yields fewer - but it always
+        // starts with a pathfind, and our own crossing never runs one.
+        if (remaining > _trailWaypointsSeen || _nav.PathfindInProgress)
+        {
+            _log.Warning($"[Nav] Auto-Lauf: Spur verloren, vnavmesh routet selbst " +
+                         $"(restWp={remaining}, vorher {_trailWaypointsSeen}, wegsuche={_nav.PathfindInProgress}).");
+            Finish(AccessibilityStrings.TrailLost, "Spur von vnavmesh überschrieben");
+            return;
+        }
+        _trailWaypointsSeen = remaining;
+
+        // Arrival at the far end, or the list simply ran out: either way the
+        // crossing is behind us and the normal walk takes over from here. The
+        // empty-list case is only trusted after a moment: FollowPath drops
+        // waypoints it considers already reached in its first update.
+        if (toEnd <= TrailArrivalRange ||
+            (remaining == 0 && (now - _trailStartedAt).TotalSeconds > TrailSettleS))
+        {
+            _log.Info($"[Nav] Auto-Lauf: Spur zu Ende (dist zum Spur-Ende={toEnd:F1}, restWp={remaining}), " +
+                      "normaler Lauf geht weiter.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.TrailFinished);
+            _nav.Stop();
+            Begin(_destPosition, _targetName, _stopRange, _targetId, fresh: false);
+            return;
+        }
+
+        if (Vector3.Distance(player.Position, _lastPosition) >= MovementEpsilon)
+        {
+            _lastPosition = player.Position;
+            _lastMoveAt = now;
+        }
+
+        // Wedged on the crossing itself. Not the same as the check above: there
+        // vnavmesh took over, here nothing moves at all (movement disabled,
+        // combat, a ledge the recording glossed over).
+        if ((now - _lastMoveAt).TotalSeconds > StallS)
+        {
+            _log.Info($"[Nav] Auto-Lauf: auf der Spur festgesteckt, noch {toEnd:F1} m bis zum Spur-Ende.");
+            Finish(AccessibilityStrings.TrailLost, "auf der Spur festgesteckt");
+        }
     }
 
     /// <summary>

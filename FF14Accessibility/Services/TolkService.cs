@@ -93,6 +93,19 @@ public sealed class TolkService : IDisposable
     // Auftrag angenommen!" spoken twice).
     private readonly List<(string text, long tick)> _history = new();
 
+    // Kept SEPARATE from _history on purpose: this list holds only wordings that
+    // ANOTHER source has already spoken (see RememberSpokenVariant), and it is
+    // kept far longer. The distinction matters for NPC dialogue: the chat log
+    // repeats a line seconds to minutes after the Talk window showed it
+    // (measured 5.5 s, and it grows with how long the player leaves the box up),
+    // so the echo window has to be long - but stretching the GENERAL history
+    // that far would also swallow a boss shouting the same warning twice, which
+    // is exactly what a blind player must not miss.
+    private readonly List<(string text, long tick)> _variants = new();
+
+    /// <summary>How long a foreign source's wording stays known (seconds).</summary>
+    private const double VariantKeepSeconds = 180;
+
     private void Remember(string text)
     {
         var now = Stopwatch.GetTimestamp();
@@ -130,6 +143,30 @@ public sealed class TolkService : IDisposable
         text = Sanitize(text);
         if (text.Length == 0) return;
         Remember(text);
+
+        var now = Stopwatch.GetTimestamp();
+        _variants.Add((text, now));
+        var cutoff = now - (long)(VariantKeepSeconds * Stopwatch.Frequency);
+        _variants.RemoveAll(e => e.tick < cutoff);
+    }
+
+    /// <summary>
+    /// True if ANOTHER source already spoke <paramref name="text"/> within
+    /// <paramref name="seconds"/> - i.e. it was filed via
+    /// <see cref="RememberSpokenVariant"/>. Unlike <see cref="WasRecentlySpoken"/>
+    /// this never matches the caller's own earlier announcements, so a line that
+    /// genuinely occurs twice still gets through.
+    /// </summary>
+    public bool WasSpokenElsewhere(string text, double seconds)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        text = Sanitize(text);
+        if (text.Length == 0) return false;
+        var now = Stopwatch.GetTimestamp();
+        var window = (long)(seconds * Stopwatch.Frequency);
+        foreach (var (t, tick) in _variants)
+            if (t == text && now - tick <= window) return true;
+        return false;
     }
 
     /// <summary>True if <paramref name="text"/> (after sanitizing) was spoken

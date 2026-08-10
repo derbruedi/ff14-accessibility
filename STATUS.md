@@ -3,7 +3,105 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-10, V5.81 - GEHHILFE ERKENNT DAS NETZENDE)
+## STAND JETZT (2026-08-10, V5.82 - SPUREN SELBST ABLAUFEN)
+
+>>> DAS FEATURE: Eine Luecke im Wegenetz einmal selbst ablaufen, danach kennt
+    der Auto-Lauf sie. Der Spieler muss die Stelle nicht SEHEN, er muss sie
+    GEHEN - das ist der ganze Kniff.
+    - Strg+Umschalt+F6 startet die Aufzeichnung, dieselbe Taste beendet sie.
+      Waehrenddessen wird alle 2 m ein Punkt mitgeschrieben.
+    - Gespeichert wird in der Plugin-Konfiguration (`Configuration.Trails`),
+      pro Gebiet, mit automatischem Namen ("Verbindung 1").
+    - `/acc trails` listet die Spuren des Gebiets auf, `/acc trail del <nr>`
+      loescht eine.
+    - Der Auto-Lauf greift NICHT beim Start darauf zu, sondern erst dort, wo er
+      ohnehin feststellt "hier endet das Netz" (alle drei Stellen: keine
+      Annaeherung, keine Bewegung mit restWp<=1, Pfad zu Ende). Passt eine Spur
+      (Einstieg <= 15 m, bringt >= 10 m naeher), sagt er "Hier endet das
+      Wegenetz, ich nehme Verbindung 1" und faehrt sie ab. Danach laeuft der
+      normale Lauf weiter.
+
+>>> WARUM AUFZEICHNEN STATT SUCHEN: Genau das gab es schon (NavmeshCacheService,
+    V5.77) und der User liess es in V5.78 zurueckbauen - die Automatik hat zu
+    oft falsch geraten und ihn einmal auf einem Plateau eingesperrt. Eine Spur,
+    die der Spieler GELAUFEN ist, ist keine Schaetzung.
+
+>>> DIE EINBAHN-FALLE IST MITBEDACHT: Beim Speichern wird die Hoehenspanne der
+    ganzen Spur gemessen. Bleibt sie unter 1,5 m, gilt die Spur in beide
+    Richtungen. Sonst nur in Laufrichtung, und das wird ANGESAGT ("Achtung,
+    diese Spur ueberwindet 12 Meter Hoehe ... fuer den Rueckweg zeichne bitte
+    eine eigene Spur auf"). Grund: die Figur laeuft Absaetze hinunter, aber
+    nicht hinauf - genau daran ist die alte Automatik gescheitert.
+
+>>> DEKOMPILIERTER FUND, DER DEN BAU BESTIMMT HAT: `Path.MoveTo` faehrt zwar
+    eine feste Punktliste ohne Wegsuche - ABER kommt die Figur 500 ms nicht vom
+    Fleck, wirft `FollowPath` unsere Liste weg und routet normal zum LETZTEN
+    Punkt (`OnStuck` -> `AsyncMoveRequest.MoveTo`, weil `RetryOnStuck` beim User
+    an ist). Ueber eine Luecke, die das Netz nicht kennt, wird daraus wieder ein
+    Phantompfad. Deshalb ueberwacht `TrailWalkingUpdate` zwei Dinge: die
+    Wegpunktzahl darf nur FALLEN (eine Neuberechnung ueber die Zone liefert
+    mehr), und `PathfindInProgress` muss falsch bleiben (unsere Etappe rechnet
+    nie). Trifft eines zu: ehrlich abbrechen statt weiterzudriften.
+
+>>> Build Debug 0 Warnungen / 0 Fehler. Version 5.82, IN-GAME UNGETESTET.
+
+>>> SO WIRD ES GETESTET (Vorschlag fuer Oestliches La Noscea):
+    1. Auf dem Plateau an die Stelle laufen, wo der Auto-Lauf bisher endet.
+    2. Strg+Umschalt+F6, dann selbst hinunter zur Kueste laufen (die Gehhilfe
+       fuehrt seit V5.81 auch dort in Luftlinie weiter), unten nochmal
+       Strg+Umschalt+F6. Erwartet: "Spur gespeichert: Verbindung 1, X Meter"
+       plus die Einbahn-Warnung wegen des Hoehenunterschieds.
+    3. `/acc trails` - die Spur muss aufgelistet werden.
+    4. Wieder hinauf (per Aetheryt/zu Fuss) und den Auto-Lauf zur Sonnenkueste
+       starten. Erwartet: er laeuft bis zur Kante, sagt "ich nehme Verbindung 1",
+       faehrt die Spur ab, sagt "Spur zu Ende" und laeuft normal weiter.
+    5. Gegenprobe: In einem Gebiet ohne Spuren muss der Auto-Lauf sich genau wie
+       in V5.81 verhalten (ehrliche Absage am Netzende).
+
+>>> NOCH NICHT GEBAUT, bewusst: Die GEHHILFE nutzt die Spuren nicht - sie fuehrt
+    an der Kante weiter in Luftlinie. Sinnvoll waere, die Spurpunkte dort als
+    Wegpunkte anzusagen; das ist ein eigener Schritt.
+
+>>> NPC-DIALOGE IM KAMPF - URSACHE GEFUNDEN UND BEHOBEN (User-Meldung
+    2026-08-10, seine Vermutung "das sind wohl NPC-Chats" war richtig):
+    `ChatReaderService.ShouldRead` kannte die beiden Kanaele gar nicht, sie
+    fielen auf `_ => false` und wurden lautlos verworfen. Werte per ilspycmd aus
+    Dalamud bestaetigt: `NPCDialogue = 61`, `NPCDialogueAnnouncements = 68`.
+    Das _BattleTalk-FENSTER war laengst angebunden - der Chat-Weg derselben Rede
+    nie. Gebaut: beide Kanaele lesen (neues Flag `ReadNpcDialogue`, Standard an),
+    Nachlese-Kategorie "Dialoge" statt "System", kein Kanal-Wort davor (der
+    Sprechername reicht: "Y'shtola: ..." statt "Chat von Y'shtola: ...").
+    Doppelt gelesen wird nichts: der vorhandene Echo-Schutz
+    (`WasRecentlySpoken`, 6 s) faengt es ab, wenn das Fenster denselben Satz
+    schon gesprochen hat.
+    IM SPIEL BESTAETIGT (Log 2026-08-10, 21:01-21:03, V5.82): alle 8
+    NPCDialogue-Zeilen kamen mit `gelesen=True` an und wurden als
+    "Wheiskaet: Wie kann ich euch helfen? ..." gesprochen. Der Kanal war also
+    wirklich die Ursache.
+
+>>> ABER: JEDE ZEILE KAM DOPPELT (in derselben Messung gefunden). Erst das
+    Talk-Fenster ("[Speak] INT 'Kapitaen: Dies ist die Faehre...'" um
+    21:01:28.852), dann die Chat-Zeile mit demselben Wortlaut um 21:01:34.344.
+    URSACHE: Der Echo-Schutz im ChatReader prueft den BLANKEN Text ohne
+    Sprechernamen, gespeichert war aber nur "Kapitaen: <Text>" - kein Treffer.
+    Genau der Fall, fuer den `RememberSpokenVariant` existiert; der Talk-Leser
+    hat ihn nur nie benutzt.
+    GEBAUT (V5.82, zwei Teile):
+    (a) Der Talk/_BattleTalk-Leser meldet den Wortlaut OHNE Namen zusaetzlich per
+        `RememberSpokenVariant`.
+    (b) Neue Liste im TolkService fuer "hat eine ANDERE Quelle schon gesagt"
+        (`WasSpokenElsewhere`, 180 s Aufbewahrung), und der ChatReader prueft
+        NPC-Dialoge dagegen mit 120 s Fenster.
+    WARUM NICHT EINFACH DAS ALLGEMEINE FENSTER VERGROESSERN: der Abstand
+    Fenster->Chat betrug gemessen 2,5 bis 5,5 s und waechst mit der Lesezeit des
+    Spielers, ein 6-s-Fenster reicht also nicht. Ein langes Fenster auf der
+    ALLGEMEINEN Historie wuerde aber auch einen Boss verschlucken, der dieselbe
+    Warnung zweimal ruft - und genau das darf einem blinden Spieler nicht
+    passieren. Die getrennte Liste trifft nur Fremdquellen-Wiederholungen.
+    NOCH ZU PRUEFEN: (a) Quest-Dialog mit Fenster wird jetzt genau EINMAL
+    gesprochen; (b) ein Kampf-Ruf OHNE Fenster kommt weiterhin an.
+
+## FRUEHER (2026-08-10, V5.81 - GEHHILFE ERKENNT DAS NETZENDE)
 
 >>> LOG-AUSWERTUNG DER SITZUNG 19:29-19:40 (dalamud.log), drei Ergebnisse:
     1. NETZ WURDE ECHT NEU GEBAUT (19:30:31-19:30:58, Fortschritt 20/40/60/80 %)

@@ -54,6 +54,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ObjectMemoryService _objectMemory;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
+    private readonly TrailService       _trails;
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
@@ -71,8 +72,8 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.81";
-    private const string PluginVersionTag = "Gehhilfe erkennt jetzt auch das Netzende: keine Phantom-Route, ehrliche Ansage, danach Luftlinie";
+    private const string PluginVersion    = "5.82";
+    private const string PluginVersionTag = "Spuren: eine Luecke im Wegenetz einmal selbst ablaufen, danach nutzt der Auto-Lauf sie";
 
     public Plugin()
     {
@@ -221,7 +222,10 @@ public sealed class Plugin : IDalamudPlugin
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, Log);
+        // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
+        // greift darauf zurück, wo das Netz endet (siehe TrailService).
+        _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, Log);
         _history    = new MessageHistoryService(_tolk);
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
@@ -274,6 +278,27 @@ public sealed class Plugin : IDalamudPlugin
         {
             var dumpArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
             _uiReader.DumpAddon(dumpArg);
+            return;
+        }
+
+        // "trail loeschen <nr>" nimmt eine Nummer - vor dem switch prüfen.
+        // Die Nummer ist die aus "/acc trails", also pro Gebiet gezählt.
+        if (trimmed.StartsWith("trail ", StringComparison.OrdinalIgnoreCase))
+        {
+            var arg = trimmed[6..].Trim();
+            var parts = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2 &&
+                (parts[0].Equals("del", StringComparison.OrdinalIgnoreCase) ||
+                 parts[0].Equals("loesch", StringComparison.OrdinalIgnoreCase) ||
+                 parts[0].Equals("löschen", StringComparison.OrdinalIgnoreCase)) &&
+                int.TryParse(parts[1], out var number))
+            {
+                _trails.DeleteTrail(number);
+            }
+            else
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.TrailCommandHelp);
+            }
             return;
         }
 
@@ -331,6 +356,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "soundtest":
                 SoundTest();
+                break;
+            case "trails":
+                _trails.AnnounceTrails();
                 break;
 #if DEBUG
             // Objekt-Sonde per Befehl: auf Strg+F5 kommt sie nur ans Ruder, wenn
@@ -434,6 +462,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Plugin-Einstellungen", _config.KeyPluginsConfig),
             ("Kartenspiel Brett", _config.KeyReadBoard),
             ("Kartenspiel Hand",  _config.KeyReadHand),
+            ("Spur aufzeichnen",  _config.KeyRecordTrail),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -1045,6 +1074,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
         if (IsJustPressed(_config.KeyReadBoard))     _tripleTriad.ReadBoard();
         if (IsJustPressed(_config.KeyReadHand))      _tripleTriad.ReadHand();
+        if (IsJustPressed(_config.KeyRecordTrail))   _trails.ToggleRecording();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
@@ -1086,6 +1116,8 @@ public sealed class Plugin : IDalamudPlugin
         _objectMemory.Update();
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
+        // Records the player's own line while a trail recording runs (see TrailService).
+        _trails.Update();
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
         // on a bite - the last-mile fishing cues (reads the game's own state).
         _fishing.Update();

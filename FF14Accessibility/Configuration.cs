@@ -103,6 +103,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyFocusLootRolls = "Umschalt+F8";      // In das Verlosungs-Fenster springen, um dort per Nummernblock Bedarf/Gier/Passen zu waehlen. BEWUSST eine Taste und nicht automatisch: ein Fenster, das sich mitten im Kampf den Fokus greift, schluckt den Nummernblock, waehrend man noch laufen muss.
     public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
     public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
+    public string KeyRecordTrail    = "Strg+Umschalt+F6"; // Spur aufzeichnen an/aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. Strg+Umschalt+F6 ist frei (F1-F5 dieses Clusters sind Goto/Copy-Coords, AoE-Toggle und Kartenspiel).
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -157,6 +158,13 @@ public sealed class Configuration : IPluginConfiguration
     // Sammel-Meldungen (XivChatType.Gathering 67): "Du hast X erhalten",
     // "Du beginnst/bist fertig ..." - die Ausbeute-Rueckmeldung beim Abbauen.
     public bool ReadGatheringMessages = true;
+    // NPC-Dialoge (XivChatType.NPCDialogue 61 und NPCDialogueAnnouncements 68,
+    // Werte per ilspycmd aus Dalamud 2026-08-10). Das ist, was Bosse und
+    // Quest-NPCs waehrend eines Kampfes sagen - es kam bisher gar nicht an,
+    // weil beide Typen in ChatReaderService.ShouldRead fehlten (User-Meldung
+    // 2026-08-10: "in diversen Kaempfen npc dialoge die nicht vorgelesen
+    // werden"). Das _BattleTalk-FENSTER war schon angebunden, der Chat-Weg nicht.
+    public bool ReadNpcDialogue    = true;
     // (V4.91: ReadCombatMessages entfernt - das Kampflog-Vorlesen aus V4.90 kam
     // in-game nie an und wurde samt Nachlese-Kategorie "Kampf" zurueckgebaut.)
     // Tipp-Echo im Chat-Eingabefeld (Senden): NVDA liest das Spiel-Chatfeld
@@ -279,4 +287,38 @@ public sealed class Configuration : IPluginConfiguration
     // Zeilen-ID (sprachunabhaengig); Wert = [KarteX, KarteY]. Bleibt ueber Sitzungen
     // erhalten. Siehe FishingService.CaptureHere / GetSpotsInCurrentZone.
     public Dictionary<uint, float[]> FishingSpotOverrides = new();
+
+    // Selbst abgelaufene Spuren ueber Stellen, die das Wegenetz nicht kennt
+    // (Steilhaenge, Absaetze - siehe TrailService). Bleiben ueber Sitzungen
+    // erhalten, weil eine Luecke im Netz auch nach einem Neuaufbau da ist.
+    public List<NavTrail> Trails = new();
+}
+
+/// <summary>
+/// Eine selbst abgelaufene Verbindung ueber eine Luecke im Wegenetz. vnavmesh
+/// berechnet sein Netz mit Recast und kennt daher keine Stelle, die man nur ueber
+/// einen Steilhang oder einen Absatz erreicht; eine solche Strecke einmal selbst
+/// zu laufen ist die einzige Quelle, die nicht raet. Abgefahren wird sie mit
+/// <c>vnavmesh.Path.MoveTo</c>, das eine feste Punktliste ohne jede Wegsuche
+/// abarbeitet. Siehe TrailService und docs/game-api.md.
+/// </summary>
+[Serializable]
+public sealed class NavTrail
+{
+    /// <summary>Gebiet, in dem die Spur gilt (TerritoryType).</summary>
+    public ushort Territory;
+
+    /// <summary>Gesprochener Name, z. B. "Verbindung 1".</summary>
+    public string Name = string.Empty;
+
+    /// <summary>Aufgezeichnete Punkte in Laufrichtung, je [X, Y, Z]. Als float[]
+    /// und nicht als Vector3, damit die Dalamud-Konfiguration sie so verlaesslich
+    /// serialisiert wie die Angel-Koordinaten darueber.</summary>
+    public List<float[]> Points = new();
+
+    /// <summary>Ob die Spur auch rueckwaerts benutzt werden darf. Nur wahr, wenn
+    /// sie beim Aufzeichnen praktisch eben blieb: die Figur laeuft Absaetze
+    /// hinunter, aber nicht hinauf, und eine Einbahn-Ueberquerung sperrt den
+    /// Spieler auf der anderen Seite ein (2026-08-09 in-game passiert).</summary>
+    public bool BothWays;
 }

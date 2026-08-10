@@ -1080,6 +1080,7 @@ public static class AccessibilityStrings
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
           "Strg+Nummernblock 0, Skill-Menü öffnen: Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück. " +
+          "Strg+Umschalt+F6, Spur aufzeichnen an oder aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. " +
           "Befehle: " +
           "/acc nav, Richtung zum Ziel. " +
           "/acc set, Aktuelles Ziel verfolgen. " +
@@ -1090,6 +1091,8 @@ public static class AccessibilityStrings
           "/acc win, Aktives Fenster ansagen. " +
           "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
           "/acc cooldowns, Fähigkeit-bereit-Ansage an oder aus. " +
+          "/acc trails, aufgezeichnete Spuren in diesem Gebiet auflisten. " +
+          "/acc trail del und die Nummer, eine Spur löschen. " +
           "/acc stop, Sprache stoppen."
         : "Keys: " +
           "Page Down, announce and target the next object. " +
@@ -1111,6 +1114,7 @@ public static class AccessibilityStrings
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
           "Ctrl+Numpad 0, open the skill menu: Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back. " +
+          "Ctrl+Shift+F6, record a trail on or off: walk a stretch the navmesh does not know once yourself. " +
           "Commands: " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +
@@ -1121,6 +1125,8 @@ public static class AccessibilityStrings
           "/acc win, announce the active window. " +
           "/acc keys, save the game's key bindings to the desktop. " +
           "/acc cooldowns, ability-ready announcements on or off. " +
+          "/acc trails, list the trails recorded in this area. " +
+          "/acc trail del and the number, delete a trail. " +
           "/acc stop, stop speech.";
 
     // ════════════════════════════════════════════════════════════════
@@ -1225,6 +1231,57 @@ public static class AccessibilityStrings
         IsGerman ? $"Gehhilfe an: {name}." : $"Walk guide on: {name}.";
     public static string NoPathStraightLine(string hint) =>
         IsGerman ? $"Kein Weg gefunden, führe in Luftlinie.{hint}" : $"No path found, guiding in a straight line.{hint}";
+    // ════════════════════════════════════════════════════════════════
+    //  TrailService - selbst abgelaufene Spuren ueber Netzluecken
+    // ════════════════════════════════════════════════════════════════
+    public static string TrailRecordingStarted => IsGerman
+        ? "Spur wird aufgezeichnet. Lauf die Stelle jetzt ab und drueck die Taste am Ende noch einmal."
+        : "Recording a trail. Walk the stretch now and press the key again at the end.";
+    public static string TrailRecordingCancelledZone => IsGerman
+        ? "Spur verworfen, du hast das Gebiet verlassen."
+        : "Trail discarded, you left the area.";
+    public static string TrailTooShort => IsGerman
+        ? "Zu kurz, keine Spur gespeichert."
+        : "Too short, no trail saved.";
+    public static string TrailSaved(string name, float length) => IsGerman
+        ? $"Spur gespeichert: {name}, {MetersRemaining(length)}."
+        : $"Trail saved: {name}, {MetersRemaining(length)}.";
+    /// <summary>Said out loud, not just logged: a trail that only works downhill
+    /// is a promise the plugin cannot keep in reverse, and being stranded on the
+    /// far side is exactly what happened in-game on 2026-08-09.</summary>
+    public static string TrailOneWayOnly(float drop) => IsGerman
+        ? $"Achtung, diese Spur ueberwindet {MetersRemaining(drop)} Hoehe und gilt deshalb nur in Laufrichtung. Fuer den Rueckweg zeichne bitte eine eigene Spur auf."
+        : $"Careful: this trail covers {MetersRemaining(drop)} of height, so it only counts in the direction you walked it. Record a separate trail for the way back.";
+    public static string TrailDefaultName(int number) => IsGerman
+        ? $"Verbindung {number}" : $"Crossing {number}";
+    public static string TrailNoneHere => IsGerman
+        ? "Keine Spuren in diesem Gebiet." : "No trails in this area.";
+    public static string TrailCount(int count) => IsGerman
+        ? $"{count} Spuren in diesem Gebiet." : $"{count} trails in this area.";
+    public static string TrailListEntry(int number, string name, float length, bool bothWays) => IsGerman
+        ? $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "in beide Richtungen" : "nur in Laufrichtung")}."
+        : $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "both ways" : "one way only")}.";
+    public static string TrailUnknownNumber => IsGerman
+        ? "Diese Nummer gibt es hier nicht." : "No trail with that number here.";
+    public static string TrailDeleted(string name) => IsGerman
+        ? $"Spur geloescht: {name}." : $"Trail deleted: {name}.";
+    public static string TrailCommandHelp => IsGerman
+        ? "Sag Schrägstrich acc trails zum Auflisten, oder Schrägstrich acc trail del und die Nummer zum Löschen."
+        : "Use slash acc trails to list them, or slash acc trail del and the number to delete one.";
+    /// <summary>The auto-walk ran out of mesh and is taking a recorded trail.</summary>
+    public static string TrailTaking(string name) => IsGerman
+        ? $"Hier endet das Wegenetz, ich nehme {name}."
+        : $"The navmesh ends here; taking {name}.";
+    public static string TrailFinished => IsGerman
+        ? "Spur zu Ende, ich laufe normal weiter."
+        : "End of the trail, continuing normally.";
+    /// <summary>vnavmesh threw our fixed point list away and started routing on
+    /// its own (OnStuck + RetryOnStuck) - from here on nothing is under our
+    /// control, so the walk ends honestly instead of drifting off.</summary>
+    public static string TrailLost => IsGerman
+        ? "Ich komme auf der Spur nicht durch, Lauf beendet."
+        : "I cannot get through on the trail; walk ended.";
+
     /// <summary>The walk guide ran out of walkable mesh. Unlike the auto-walk
     /// nothing is stopped - the player does the walking - so the line says what
     /// actually changes: guidance continues as the crow flies.</summary>
@@ -1698,6 +1755,10 @@ public static class AccessibilityStrings
         XivChatType.Echo          => IsGerman ? "Echo"        : "Echo",
         XivChatType.Gathering     => "",   // full sentence, no channel prefix
         XivChatType.LootNotice    => "",   // full sentence, no channel prefix
+        // An NPC speaking needs no channel word - the name in front of the line
+        // says everything "Chat von ..." would have said, only shorter.
+        XivChatType.NPCDialogue   => "",
+        XivChatType.NPCDialogueAnnouncements => "",
         _                         => IsGerman ? "Chat"        : "Chat",
     };
 

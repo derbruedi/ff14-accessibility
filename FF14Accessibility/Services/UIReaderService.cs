@@ -1198,11 +1198,14 @@ public sealed class UIReaderService : IDisposable
         // speaker are never reordered wrongly.
         var nameNodeId = name switch { "Talk" => 2u, "_BattleTalk" => 4u, _ => 0u };
         string spoken;
+        // The line WITHOUT the speaker's name - what the chat log carries for the
+        // same speech (see the RememberSpokenVariant call at the end).
+        var bareBody = string.Empty;
         var nameSeg = nameNodeId != 0 ? segments.FirstOrDefault(s => s.Id == nameNodeId) : default;
         if (nameSeg.Text != null && segments.Count >= 2)
         {
-            var body = JoinDistinctParts(segments.Where(s => s.Id != nameNodeId).Select(s => s.Text).ToList(), ". ");
-            spoken = $"{nameSeg.Text}: {body}";
+            bareBody = JoinDistinctParts(segments.Where(s => s.Id != nameNodeId).Select(s => s.Text).ToList(), ". ");
+            spoken = $"{nameSeg.Text}: {bareBody}";
         }
         else
         {
@@ -1235,6 +1238,12 @@ public sealed class UIReaderService : IDisposable
         var probe = string.Join(" ", segments.Select(s => $"[id{s.Id}]='{(s.Text.Length > 40 ? s.Text[..40] + "..." : s.Text)}'"));
         _log.Info($"[Accessibility] {name} Dialog-Nodes: {probe}");
         _tolk.SpeakInterrupt(spoken);
+        // The very same line arrives in the chat log seconds later as
+        // NPCDialogue (measured 2026-08-10: window 21:01:28.852, chat 21:01:34.344,
+        // and every line was read out twice). The chat reader checks the BARE
+        // wording, which is not the string spoken here - so file that variant
+        // too, exactly what RememberSpokenVariant exists for.
+        if (bareBody.Length > 0) _tolk.RememberSpokenVariant(bareBody);
         _history.Add(MessageHistoryService.Category.Dialogue, spoken);
     }
 
