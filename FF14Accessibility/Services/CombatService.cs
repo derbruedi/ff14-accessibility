@@ -258,7 +258,7 @@ public sealed class CombatService
         {
             var gain = cur - _lastExp;
             _tolk.Speak(AccessibilityStrings.XpGained((int)gain));
-            _history.Add(MessageHistoryService.Category.Loot, AccessibilityStrings.XpGained((int)gain));
+            _history.Add(MessageHistoryService.SystemKey, AccessibilityStrings.XpGained((int)gain));
             _log.Info($"[XP] +{gain} (job={job} {_lastExp} -> {cur}/{needed})");
         }
         // Always follow the value, including the level-up drop-back, so the next

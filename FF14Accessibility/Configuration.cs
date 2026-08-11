@@ -79,6 +79,27 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyChatCatNext   = "Alt+BildAb";             // Nachlese: nächste Kategorie
     public string KeyChatReadOlder = "Umschalt+BildAuf";       // Nachlese: ältere Nachricht in der Kategorie
     public string KeyChatReadNewer = "Umschalt+BildAb";        // Nachlese: neuere Nachricht in der Kategorie
+    // [Chat-Puffer] An den Anfang / ans Ende des aktuellen Puffers springen. Der
+    // Verlauf hebt eine ganze Sitzung je Puffer auf, und ein Kampf-Register allein
+    // laeuft in die Tausende Zeilen - ein Ende durch wiederholtes Blaettern zu
+    // erreichen ist damit keine echte Moeglichkeit. Laut Live-Keybind-Dump
+    // (2026-08-11, 679 Eintraege) sind beide Kombis frei: das Spiel belegt HOME und
+    // END bare (CAMERA_MODE, CAMERA_LOAD), mit Strg (MENU_SCALE, CAMERA_SAVE) und
+    // Strg+Umschalt (CAMERA_RESET), aber nicht mit Umschalt allein.
+    public string KeyChatReadOldest = "Umschalt+Pos1";         // Nachlese: an den Anfang des Puffers springen
+    public string KeyChatReadNewest = "Umschalt+Ende";         // Nachlese: ans Ende des Puffers springen
+    // [Chat-Puffer] Chat-Registerkarte des SPIELS umschalten. Das Spiel hat dafuer
+    // ueberhaupt keine Taste: die vollstaendige InputId-Tabelle wurde nach LOG, TAB
+    // und CHAT durchsucht (640 Mitglieder, gegen den 679-Eintraege-Livedump
+    // geprueft) - TAB_NEXT/TAB_PREV sind der allgemeine UI-Cursor und erreichen den
+    // Chatlog nicht, CHATLOG_VIEWERMODE ist unbelegt und schaltet keine Register,
+    // ein LOG_TAB_NEXT o.ae. existiert nicht, und einen Slash-Befehl gibt es auch
+    // nicht. Ein Sehender KLICKT das Register an.
+    // Alt+Pos1/Alt+Ende, weil das Spiel Alt ausschliesslich mit BUCHSTABEN belegt
+    // (Chat-Befehle: Alt+R/S/P/L/H/Y/F/A/N/M/T/C) - dieselbe Begruendung, aus der
+    // KeyChatCatPrev/-Next oben schon auf Alt+Bild liegen.
+    public string KeyChatTabPrev   = "Alt+Pos1";               // Vorherige Chat-Registerkarte (schaltet das Spiel um)
+    public string KeyChatTabNext   = "Alt+Ende";               // Nächste Chat-Registerkarte
     // Benachrichtigungen (V5.9): Einladungen (Freie Gesellschaft, Gruppe,
     // Freundesliste) erscheinen als Popup, das ein Sehender anklickt. Ohne
     // Tastaturweg lief die Einladung fuer den User schlicht ab (Log 2026-07-18
@@ -104,6 +125,9 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
     public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
     public string KeyRecordTrail    = "Strg+Umschalt+F6"; // Spur aufzeichnen an/aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. Strg+Umschalt+F6 ist frei (F1-F5 dieses Clusters sind Goto/Copy-Coords, AoE-Toggle und Kartenspiel).
+    // [Einstellungsmenue] Oeffnet das gesprochene Einstellungsmenue. Umschalt+F9 ist
+    // laut Live-Keybind-Dump frei (F9 bare ist TARGET_PET, mit Umschalt unbelegt).
+    public string KeyOptionsMenu    = "Umschalt+F9";      // Einstellungen oeffnen
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -143,9 +167,64 @@ public sealed class Configuration : IPluginConfiguration
         KeyChatCatNext   = defaults.KeyChatCatNext;
         KeyChatReadOlder = defaults.KeyChatReadOlder;
         KeyChatReadNewer = defaults.KeyChatReadNewer;
+        KeyChatReadOldest = defaults.KeyChatReadOldest; // [Chat-Puffer]
+        KeyChatReadNewest = defaults.KeyChatReadNewest; // [Chat-Puffer]
+        KeyChatTabPrev   = defaults.KeyChatTabPrev;     // [Chat-Puffer]
+        KeyChatTabNext   = defaults.KeyChatTabNext;     // [Chat-Puffer]
+        KeyOptionsMenu   = defaults.KeyOptionsMenu;     // [Einstellungsmenue]
         KeyReadBoard     = defaults.KeyReadBoard;
         KeyReadHand      = defaults.KeyReadHand;
     }
+
+    // ── [Chat-Puffer] Sprachschaltungen ───────────────────────────
+    //
+    // BEIDE FELDER BRAUCHEN KEINE MIGRATION. Ein fehlender Schluessel bedeutet
+    // "noch nie angefasst" und erbt die Voreinstellung, die aus dem Filtersatz des
+    // Registers abgeleitet wird - eine leere Sammlung aus einer alten Konfiguration
+    // verhaelt sich also genau wie eine frische. Deshalb bleibt Version unangetastet.
+
+    /// <summary>
+    /// Welche der SPIELEIGENEN Chat-Register laut vorgelesen werden, nach
+    /// Registerindex. Fehlender Schluessel = die aus dem Filtersatz dieses Registers
+    /// abgeleitete Voreinstellung (siehe <see cref="Services.ChatTabSpeech"/>);
+    /// Index -1 ist der Sammelpuffer, der benutzt wird, wenn der Filterzustand des
+    /// Spiels nicht lesbar ist.
+    ///
+    /// Ein ausgeschaltetes Register wird weiterhin vollstaendig archiviert und
+    /// bleibt blaetterbar. Die Schaltung unterdrueckt die Echtzeit-Sprachausgabe und
+    /// sonst nichts.
+    ///
+    /// Schluessel als INT, damit im JSON schlichte Zahlen stehen, die auch dann noch
+    /// rund laufen, wenn das Spiel spaeter etwas mit seinen Registerplaetzen macht.
+    /// </summary>
+    public Dictionary<int, bool> ChatTabSpeech = new();
+
+    /// <summary>
+    /// Welche TEILE eines Registers laut vorgelesen werden: aeusserer Schluessel der
+    /// Registerindex des Spiels, innerer Schluessel eine der spieleigenen
+    /// Schaltungen. Je Register, damit ein Kanal im Kampfregister still sein und in
+    /// einem eigens dafuer gefuehrten Register hoerbar bleiben kann.
+    ///
+    /// DER INNERE SCHLUESSEL IST ENTWEDER EIN KANAL ODER EINE ZEILE, und beide
+    /// koennen nicht kollidieren: ein KANAL des Kampflogs ist minus seiner Kategorie
+    /// (negativ, so wie <see cref="Services.GameChatChannel.Key"/> ihn fuehrt), eine
+    /// ZEILE ist ihre <c>LogFilter</c>-Zeilennummer (nie negativ). Bei den Kategorien
+    /// 1 und 2 IST der Kanal seine einzige Zeile, dieselbe positive Zahl bedeutet
+    /// dort also auf beiden Ebenen dasselbe. Eine Zeilennummer gehoert zu genau einer
+    /// Kategorie, ein positiver Schluessel ist also nie mehrdeutig.
+    ///
+    /// EIN FEHLENDER SCHLUESSEL ERBT DEN HAUPTSCHALTER DES REGISTERS, und das ist
+    /// eine Regel, keine Bequemlichkeit: ein Kanal, den niemand angefasst hat, muss
+    /// sich wie seine Nachbarn verhalten und nicht verstummen - ein Kanal, den ein
+    /// Patch hinzufuegt, faengt in einem sprechenden Register also hoerbar an.
+    /// Stille ist nie die Voreinstellung fuer etwas, das der Spieler nie eingestellt
+    /// hat.
+    ///
+    /// NUR SPRACHE. Nichts hier entscheidet, ob eine Zeile existiert, ob sie
+    /// archiviert wird oder in welchem Puffer sie landet - alle drei bleiben bei den
+    /// Filterzeilen des Spiels (<see cref="Services.GameChatFilters"/>).
+    /// </summary>
+    public Dictionary<int, Dictionary<int, bool>> ChatTabChannelSpeech = new();
 
     // Chat
     public bool ReadSayChat        = true;

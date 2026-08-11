@@ -28,6 +28,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGamepadState           GamepadState    { get; init; } = null!;
     [PluginService] private ITargetManager          TargetManager   { get; init; } = null!;
     [PluginService] private IDataManager            DataManager     { get; init; } = null!;
+    // [Chat-Puffer] LogTabFilterN sagt, welchen Filtersatz ein Chat-Register benutzt.
+    [PluginService] private IGameConfig             GameConfig      { get; init; } = null!;
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
     [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
     [PluginService] private IGameInteropProvider    Interop         { get; init; } = null!;
@@ -58,7 +60,25 @@ public sealed class Plugin : IDalamudPlugin
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
-    private readonly ChatChannelService  _chatChannel;
+    // [Chat-Puffer] Die eigenen Filterzeilen und Register des Spiels. Der Chat-Leser
+    // fragt sie, welche Register eine eingehende Zeile zeigen wuerden.
+    private readonly GameChatFilters    _chatFilters;
+    // [Chat-Puffer] Liest, welches Chat-Register das Spiel anzeigt, und schaltet es
+    // auf den beiden Registertasten ueber die spieleigene ChangeTab um.
+    private readonly ChatTabControl     _chatTabs;
+    // [Chat-Puffer] Laedt den vom SPIEL gespeicherten Chatverlauf einmalig und still
+    // in die Puffer zurueck, damit ein Plugin-Neustart den Verlauf nicht verliert.
+    private readonly ChatBackfill       _chatBackfill;
+    // [Chat-Puffer] Puffer, die das aktive Register anbietet - wiederverwendet, damit
+    // die Blaettertaste nicht bei jedem Druck eine Liste anlegt.
+    private readonly List<int>          _offeredChannels = new();
+    // [Chat-Puffer] Zuletzt angesagtes Chat-Register. int.MinValue = in dieser
+    // Sitzung noch keines gesehen, der erste Wert wird still uebernommen.
+    private int _announcedChatTab = int.MinValue;
+    // [Einstellungsmenue] Das gesprochene Menue und seine Tastenabfrage.
+    private readonly SpokenMenu         _menu;
+    private readonly MenuInput          _menuInput;
+    private readonly OptionsMenu        _options;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly AoeWarningService  _aoeWarn;
@@ -231,8 +251,57 @@ public sealed class Plugin : IDalamudPlugin
         // icon buttons, which carry no text of their own.
         _tooltips   = new TooltipService(Interop, Log);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
-        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
-        _chatChannel = new ChatChannelService(_history, _tolk, Log);
+        // [Chat-Puffer] Vor dem Chat-Leser gebaut, der sie fragt, welche Register eine
+        // eingehende Zeile zeigen wuerden. Die aus den Sheets abgeleiteten Tabellen
+        // entstehen hier; der LIVE-Zustand wird erst bei Bedarf gelesen, denn weder das
+        // Log-Modul noch die Filterkonfiguration existieren, bevor der Spieler in einer
+        // Welt ist.
+        _chatFilters = new GameChatFilters(DataManager, GameConfig, Log);
+        // [Chat-Puffer] Liest, welches Register das Spiel zeigt, und schaltet es auf den
+        // beiden Registertasten ueber ChangeTab um - die spieleigene Funktion, dieselbe,
+        // die auch der Registerknopf ausloest. Die Blaetterliste des Plugins folgt genau
+        // diesem einen Index, es gibt also genau EINE Vorstellung von "aktuelles
+        // Register", und sie gehoert dem Spiel.
+        _chatTabs = new ChatTabControl(GameGui, Log);
+        // [Chat-Puffer] Die Blaetterliste = die Kanaele, die das AKTIVE Register
+        // eingeschaltet hat. Als Praedikat uebergeben und nicht als Liste, damit sie im
+        // Moment des Tastendrucks aus den Live-Filterbytes des Spiels beantwortet wird -
+        // eine frueher gebaute Liste waere eine zwischengespeicherte Kopie genau des
+        // Zustands, dem hier gefolgt werden soll.
+        //
+        // Die drei Puffer, die keine Kanaele sind (Dialoge, eigene Meldungen, der
+        // Sammelpuffer), gehoeren zu keinem Register und werden daher von keinem
+        // verborgen.
+        _history.BufferOffered = key =>
+        {
+            // Der "Alles"-Puffer eines Registers gehoert zu genau EINEM Register, wird
+            // also von diesem und von keinem anderen angeboten - dafuer ist keine
+            // Filterabfrage noetig, der Schluessel traegt die Antwort schon. Zuerst
+            // geprueft, weil die beiden Praefixe verschieden sind und nur einer davon
+            // die Filterbytes braucht.
+            if (key.StartsWith(MessageHistoryService.TabKeyPrefix, StringComparison.Ordinal))
+            {
+                var active = _chatTabs.ActiveTabIndex;
+                if (active < 0) return true;   // Chatlog nicht lesbar: nichts verbergen
+                return key == MessageHistoryService.TabKey(active);
+            }
+
+            if (!key.StartsWith(MessageHistoryService.ChannelKeyPrefix, StringComparison.Ordinal)) return true;
+            var tab = _chatTabs.ActiveTabIndex;
+            if (tab < 0) return true;          // Chatlog nicht lesbar: nichts verbergen
+            if (_chatFilters.ChannelsInTab(tab, _offeredChannels) != ChatFilterState.Ready)
+                return true;
+            foreach (var channel in _offeredChannels)
+                if (MessageHistoryService.ChannelKey(channel) == key) return true;
+            return false;
+        };
+        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log, _chatFilters);
+        // [Chat-Puffer] Direkt nach dem Leser gebaut, dessen Archivweg und dessen Zaehler
+        // gelaufener Nachrichten es beide braucht. Es tut nichts, solange das Log-Modul
+        // und der Filterzustand nicht lesbar sind - also bis einige Sekunden nach einer
+        // Anmeldung, und sofort nach einem Neuladen des Plugins, dem Fall, fuer den es da
+        // ist.
+        _chatBackfill = new ChatBackfill(_chatReader, _history, _chatFilters, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, _aoeWarn, Log);
@@ -242,6 +311,18 @@ public sealed class Plugin : IDalamudPlugin
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
         _tripleTriad = new TripleTriadService(GameGui, _tolk, Log);
+        // [Einstellungsmenue] Ein gesprochenes Menue, ueber den Nummernblock bedient.
+        // Es speichert ueber dasselbe SavePluginConfig wie die Schaltbefehle, sofort bei
+        // jeder Aenderung.
+        // _heading: das Umschalten der Himmelsrichtung muss den Dienst neu einnorden,
+        // sonst sagt er beim Wiedereinschalten die Richtung an, in die der Spieler
+        // ohnehin schon schaut.
+        // _chatFilters: der Chat-Abschnitt des Menues IST die Registerliste des Spiels,
+        // also fragt er denselben Leser wie der Chat-Router.
+        _menu       = new SpokenMenu(_tolk, Log);
+        _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
+        _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
+                                      _tolk, Log, _heading, _chatFilters);
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
@@ -457,6 +538,13 @@ public sealed class Plugin : IDalamudPlugin
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
             ("Nachlese älter", _config.KeyChatReadOlder),
             ("Nachlese neuer", _config.KeyChatReadNewer),
+            // [Chat-Puffer] Mit in der Konfliktpruefung, damit ein Patch, der eine
+            // dieser Kombis belegt, im Keybind-Dump auffaellt statt im Spiel.
+            ("Nachlese Anfang", _config.KeyChatReadOldest),
+            ("Nachlese Ende",   _config.KeyChatReadNewest),
+            ("Chat-Registerkarte zurück", _config.KeyChatTabPrev),
+            ("Chat-Registerkarte vor",    _config.KeyChatTabNext),
+            ("Einstellungen",   _config.KeyOptionsMenu), // [Einstellungsmenue]
             ("Plugin-Liste weiter",  _config.KeyPluginsNext),
             ("Plugin-Liste zurück",  _config.KeyPluginsPrev),
             ("Plugin-Einstellungen", _config.KeyPluginsConfig),
@@ -944,6 +1032,101 @@ public sealed class Plugin : IDalamudPlugin
         return module != null && module->IsTextInputActive();
     }
 
+    /// <summary>
+    /// [Chat-Puffer] Setzt das SPIEL auf das vorige/naechste Chat-Register.
+    ///
+    /// Es laeuft ueber <see cref="GameChatFilters.Tabs"/> und nicht ueber den rohen
+    /// Indexbereich, denn diese Liste sind die Register, die es GIBT - ein Register sagt
+    /// durch einen leeren Namen, dass es nicht existiert, und ein blosser Indexlauf
+    /// bliebe auf den leeren Plaetzen stehen, die das Spiel dazwischen fuehrt (gemessen:
+    /// fuenf Plaetze, drei davon benannt).
+    ///
+    /// Die Ansage macht <see cref="FollowChatTab"/> im naechsten Frame und nicht diese
+    /// Methode, damit ein mit der Maus erreichtes Register und ein mit dieser Taste
+    /// erreichtes von demselben Code angesagt werden und sich nie widersprechen koennen.
+    /// </summary>
+    private void SwitchChatTab(int dir)
+    {
+        var tabs = _chatFilters.Tabs;
+        if (tabs.Count == 0)
+        {
+            // Vor dem Betreten einer Welt normal, danach ein echter Fehler - das Log
+            // unterscheidet die beiden, und Stille waere so oder so das eine Ergebnis,
+            // das der Spieler nicht melden koennte.
+            _tolk.SpeakInterrupt(AccessibilityStrings.ChatTabUnavailable);
+            Log.Info("[ChatTab] Noch keine benannten Registerkarten - nicht umgeschaltet.");
+            return;
+        }
+
+        var current = _chatTabs.ActiveTabIndex;
+        var at = 0;
+        for (var i = 0; i < tabs.Count; i++)
+            if (tabs[i].Index == current) { at = i; break; }
+
+        var next = tabs[(at + dir + tabs.Count) % tabs.Count];
+        if (!_chatTabs.SwitchTo(next.Index))
+            _tolk.SpeakInterrupt(AccessibilityStrings.ChatTabUnavailable);
+    }
+
+    /// <summary>
+    /// [Chat-Puffer] Setzt den Blaetter-Cursor auf den naechsten/vorigen Puffer und sagt
+    /// der Nachlese dabei, IN WELCHEM REGISTER sie blaettert.
+    ///
+    /// Das Register wird genauso ermittelt wie in <see cref="FollowChatTab"/> - der
+    /// spieleigene <c>TabIndex</c>, benannt aus <see cref="GameChatFilters.Tabs"/> -,
+    /// damit die beiden sich nie darueber uneinig sein koennen, in welchem Register der
+    /// Spieler steht. Ist eines von beiden nicht lesbar, bekommt die Nachlese -1 und
+    /// faellt auf ihre alte Formulierung zurueck: "dieses Register ist leer" waere sonst
+    /// eine Behauptung ueber ein Register, das niemand lesen konnte.
+    /// </summary>
+    private void SwitchChatBuffer(int dir)
+    {
+        var index = _chatTabs.ActiveTabIndex;
+        var name = string.Empty;
+        if (index >= 0)
+            foreach (var tab in _chatFilters.Tabs)
+                if (tab.Index == index) { name = tab.Name; break; }
+
+        _history.SwitchCategory(dir, name.Length > 0 ? index : -1, name);
+    }
+
+    /// <summary>
+    /// [Chat-Puffer] Sagt das Chat-Register des Spiels an, sobald es sich aendert, und
+    /// setzt den Blaetter-Cursor hinein.
+    ///
+    /// Bewusst vom spieleigenen <c>TabIndex</c> getrieben und nicht vom Tastenhandler des
+    /// Plugins: was auch immer das Register bewegt hat - die Taste des Plugins, ein
+    /// Mausklick, oder der Gamepad-Registerlauf, falls er den Chatlog erreicht -, der
+    /// Spieler hoert denselben Satz und die Pufferliste folgt. Eine Quelle der Wahrheit,
+    /// und es ist die des Spiels.
+    ///
+    /// Der erste Wert einer Sitzung wird STILL uebernommen. Der Chatlog steht erst einige
+    /// Sekunden nach der Anmeldung, und bei jedem Charakterlogin ungefragt "Allgemein" zu
+    /// sagen waere Laerm, der an nichts haengt, was der Spieler getan hat.
+    /// </summary>
+    private void FollowChatTab()
+    {
+        _chatTabs.Poll();
+
+        var index = _chatTabs.ActiveTabIndex;
+        if (index < 0 || index == _announcedChatTab) return;
+
+        var first = _announcedChatTab == int.MinValue;
+        _announcedChatTab = index;
+        if (first) return;
+
+        var name = string.Empty;
+        foreach (var tab in _chatFilters.Tabs)
+            if (tab.Index == index) { name = tab.Name; break; }
+
+        // Kein Name heisst, dass die Filterseite dem Addon noch nicht gefolgt ist. Den
+        // rohen Index zu sagen waere hier schlechter als zu schweigen: der naechste Frame
+        // hat den Namen, und diese Methode laeuft dann erneut.
+        if (name.Length == 0) { _announcedChatTab = int.MinValue; return; }
+
+        _history.EnterTab(index, name);
+    }
+
     private void OnFrameworkUpdate(IFramework framework)
     {
         UpdateKeyEdges();
@@ -963,6 +1146,25 @@ public sealed class Plugin : IDalamudPlugin
             // Silent: the spoken "Tastenbelegung gespeichert" at every login was
             // noise (user 2026-07-13); conflicts are still announced.
             _keybinds.DumpKeybinds(GetPluginKeys(), announce: false);
+        }
+
+        // [Chat-Puffer] Dem Register des Spiels folgen und, einmal je Sitzung, den vom
+        // Spiel gespeicherten Verlauf nachtragen. Beides vor der Tastenauswertung, damit
+        // eine Blaettertaste in diesem Frame schon die richtige Liste sieht.
+        FollowChatTab();
+        _chatBackfill.Update();
+
+        // [Einstellungsmenue] Ein offenes Menue besitzt die Tastatur. Ein Textfeld
+        // besitzt sie ebenfalls - dann koennen keine Tasten gelesen werden, das Menue
+        // darf also nicht offen auf eine warten, die nie ankommt.
+        if (textInputActive)
+        {
+            if (_menu.IsOpen) _menu.Close();
+        }
+        else
+        {
+            _menuInput.Poll();
+            if (_menu.HandleKeys(_menuInput)) return;
         }
 
         if (IsJustPressed(_config.KeyHelp))          _uiReader.AnnounceContextHelp();
@@ -1068,10 +1270,23 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
         if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
         HandleSkillMenuKeys();
-        if (IsJustPressed(_config.KeyChatCatPrev))   _history.SwitchCategory(-1);
-        if (IsJustPressed(_config.KeyChatCatNext))   _history.SwitchCategory(+1);
+        if (IsJustPressed(_config.KeyChatCatPrev))   SwitchChatBuffer(-1); // [Chat-Puffer]
+        if (IsJustPressed(_config.KeyChatCatNext))   SwitchChatBuffer(+1); // [Chat-Puffer]
         if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
         if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
+        // [Chat-Puffer] An den Anfang / ans Ende des aktuellen Puffers springen.
+        if (IsJustPressed(_config.KeyChatReadOldest)) _history.ReadOldest();
+        if (IsJustPressed(_config.KeyChatReadNewest)) _history.ReadNewest();
+        // [Chat-Puffer] Register des Spiels umschalten. Die Ansage macht FollowChatTab
+        // im naechsten Frame, nicht diese Zeile - siehe dort.
+        if (IsJustPressed(_config.KeyChatTabPrev))   SwitchChatTab(-1);
+        if (IsJustPressed(_config.KeyChatTabNext))   SwitchChatTab(+1);
+        // [Einstellungsmenue] Zweiter Druck schliesst wieder.
+        if (IsJustPressed(_config.KeyOptionsMenu))
+        {
+            if (_menu.IsOpen) _menu.Close();
+            else              _menu.Open(_options.Build());
+        }
         if (IsJustPressed(_config.KeyReadBoard))     _tripleTriad.ReadBoard();
         if (IsJustPressed(_config.KeyReadHand))      _tripleTriad.ReadHand();
         if (IsJustPressed(_config.KeyRecordTrail))   _trails.ToggleRecording();
@@ -1181,15 +1396,19 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed("Return"))
         {
             _uiReader.HandleConfirmKey();
-            // Enter also opens the game's chat line. When the player has just
-            // been browsing the message history, the line should send into THAT
-            // channel - so the switch happens here, BEFORE the game opens the
-            // line, and the existing "Chat-Eingabe, <Kanal>" announcement states
-            // the result instead of a second one competing with it.
+            // [Chat-Puffer] HIER STAND ChatChannelService.TrySwitchToBrowsedChannel -
+            // Enter stellte den SENDEKANAL auf den Puffer um, in dem der Spieler gerade
+            // las. Das ist mit den neuen Puffern nicht mehr abbildbar und deshalb
+            // entfallen: ein Puffer ist jetzt eine LogFilter-Zeile des Spiels, also ein
+            // EMPFANGSFILTER, und daraus laesst sich kein Sendekanal ableiten. Die alte
+            // Zuordnung ging nur, solange die Puffer eine eigene, feste Aufzaehlung des
+            // Plugins waren (MessageHistoryService.Category), und genau die ersetzt
+            // dieser Beitrag. Eine erfundene Zuordnung waere schlimmer als keine: sie
+            // wuerde Nachrichten in den falschen Kanal schicken.
             //
-            // Never while the line is already open: there Enter SENDS, and moving
-            // the channel underneath it would misdeliver the message.
-            if (!_uiReader.IsChatInputActive()) _chatChannel.TrySwitchToBrowsedChannel();
+            // Das Umschalten des Sendekanals hat das Spiel selbst auf belegbaren Tasten:
+            // CMD_SAY, CMD_PARTY, CMD_LINKSHELL_1..8, CMD_REPLY, jeweils auch als
+            // _ALWAYS-Variante.
         }
 
         // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein
