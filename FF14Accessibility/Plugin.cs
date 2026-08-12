@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -31,6 +31,9 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
     [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
     [PluginService] private IGameInteropProvider    Interop         { get; init; } = null!;
+    // Read for the movement mode, which decides whether turning the character or
+    // turning the camera steers manual walking (NavigationService).
+    [PluginService] private IGameConfig             GameConfig      { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -221,7 +224,7 @@ public sealed class Plugin : IDalamudPlugin
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -230,7 +233,7 @@ public sealed class Plugin : IDalamudPlugin
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
         _tooltips   = new TooltipService(Interop, Log);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _lootRolls);
         _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log);
         _chatChannel = new ChatChannelService(_history, _tolk, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
@@ -430,6 +433,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Ziel folgen",       _config.KeyFollowTarget),
             ("Routen-Vorschau",   _config.KeyRoutePreview),
+            ("Zur Wegrichtung drehen", _config.KeyFaceWaypoint),
             ("Zu Koordinaten",    _config.KeyGotoCoords),
             ("Koordinaten kopieren", _config.KeyCopyCoords),
             ("Menü vorlesen",  _config.KeyReadUI),
@@ -647,6 +651,28 @@ public sealed class Plugin : IDalamudPlugin
             if (KeyState.IsVirtualKeyValid(vk) && KeyState[key])
                 KeyState[key] = false;
         }
+    }
+
+    /// <summary>
+    /// Turns the player towards the walk guide's next waypoint and takes the key
+    /// away from the game.
+    /// <para>
+    /// Bare NUMPAD5 is CAMERA_FOCUS in the keybind dump. The user chose to give
+    /// that up (it is purely visual) because NUMPAD5 carries the raised dot and
+    /// is found blind. Since the binding stays live in the game, the key is
+    /// swallowed like the skill menu does it - otherwise every turn would also
+    /// recentre the camera and fight the direction just set.
+    /// </para>
+    /// </summary>
+    private void HandleFaceWaypointKey()
+    {
+        if (!IsJustPressed(_config.KeyFaceWaypoint)) return;
+
+        _navigation.FaceGuideDirection();
+
+        const int vkNumpad5 = 0x65;
+        var key = (Dalamud.Game.ClientState.Keys.VirtualKey)vkNumpad5;
+        if (KeyState.IsVirtualKeyValid(vkNumpad5) && KeyState[key]) KeyState[key] = false;
     }
 
     /// <summary>
@@ -1065,6 +1091,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();
+        HandleFaceWaypointKey();
         if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
         if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
         HandleSkillMenuKeys();

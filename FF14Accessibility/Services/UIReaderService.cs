@@ -40,6 +40,8 @@ public sealed class UIReaderService : IDisposable
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
     private readonly TooltipService  _tooltips;
+    // Owns the loot roll state; asked for the row text of the NeedGreed list.
+    private readonly LootRollService _lootRolls;
     private readonly List<string>    _titleMenuItems = [];
 
     // Debug probe (/acc mountprobe): one-shot scan of the mount guide grid.
@@ -294,8 +296,9 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, LootRollService lootRolls)
     {
+        _lootRolls      = lootRolls;
         _tooltips       = tooltips;
         _addonLifecycle = addonLifecycle;
         _gameGui        = gameGui;
@@ -2820,9 +2823,9 @@ public sealed class UIReaderService : IDisposable
 
             case ComponentType.DropDownList:
             {
-                var value = ReadConfigControlValue(owner);
-                text = AccessibilityStrings.DropdownDesc(NearestPanelLabel(addon, ownerIdx), value);
-                return true;
+                text = DescribeDropDown((AtkComponentDropDownList*)comp, node,
+                                        NearestPanelLabel(addon, ownerIdx)).Text;
+                return text.Length > 0;
             }
 
             default:
@@ -3732,7 +3735,7 @@ public sealed class UIReaderService : IDisposable
             // Focus unchanged: reuse the cached control, only track its value.
             if (_csFocusTop == 0) return;
             top = (AtkResNode*)_csFocusTop;
-            var newValue = ReadConfigControlValue(top);
+            var newValue = ReadFocusedControlValue(top, focus);
             if (newValue.Length > 0 && newValue != _csFocusValue)
             {
                 _csFocusValue = newValue;
@@ -3782,10 +3785,11 @@ public sealed class UIReaderService : IDisposable
             }
             case ComponentType.DropDownList:
             {
-                // AtkComponentDropDownList.List (ilspycmd-verified); the list's
-                // SelectedItemIndex marks the chosen entry even while closed.
-                _csFocusValue = ReadConfigControlValue(top);
-                desc = AccessibilityStrings.DropdownDesc(NearestPrecedingLabel(addon, _csFocusTopIdx), _csFocusValue);
+                var dropdown = DescribeDropDown((AtkComponentDropDownList*)comp, focus,
+                                                NearestPrecedingLabel(addon, _csFocusTopIdx));
+                if (dropdown.Text.Length == 0) return;
+                _csFocusValue = dropdown.Value;
+                desc = dropdown.Text;
                 break;
             }
             case ComponentType.DragDrop when top->NodeId is >= 7 and <= 14 && _csTabs.Count > 0:
@@ -3810,6 +3814,27 @@ public sealed class UIReaderService : IDisposable
     /// read as "100 %"; dropdown selections and non-percentage sliders unchanged.</summary>
     private static string FormatSliderSpeech(string value, bool percent) =>
         percent ? $"{value} %" : value;
+
+    /// <summary>
+    /// Value of the focused control. Same as <see cref="ReadConfigControlValue"/>
+    /// except for an OPEN drop-down, where the focused option is the value - the
+    /// stored selection would differ from it on every row and make the
+    /// value-change branch announce the old setting after each step.
+    /// </summary>
+    private unsafe string ReadFocusedControlValue(AtkResNode* top, AtkResNode* focus)
+    {
+        if ((int)top->Type >= 1000)
+        {
+            var comp = ((AtkComponentNode*)top)->Component;
+            if (comp != null && comp->GetComponentType() == ComponentType.DropDownList)
+            {
+                var dd  = (AtkComponentDropDownList*)comp;
+                var row = FindDropDownFocusRow(dd, focus);
+                if (row >= 0) return ReadListItemText(dd->List, row);
+            }
+        }
+        return ReadConfigControlValue(top);
+    }
 
     /// <summary>Current value of a config control as speech: slider number or
     /// drop-down selection; "" for types without a trackable value.</summary>
@@ -3861,6 +3886,63 @@ public sealed class UIReaderService : IDisposable
         }
         index = -1;
         return null;
+    }
+
+    /// <summary>
+    /// Speech for a drop-down, shared by both configuration readers.
+    /// <para>
+    /// While the list is OPEN the focus sits on one of its options, and THAT is
+    /// what has to be spoken. Reading the stored value in that state said the
+    /// same sentence for every option: in the target settings the cursor
+    /// alternated between the two rows while "Art des automatischen Anvisierens,
+    /// Auswahlliste, Direkte Sichtlinie" was announced each time (log 2026-08-12,
+    /// 21:38:02 to 21:38:07). The stored value does NOT move while browsing (same
+    /// log), so it stays usable as the "ausgewählt" marker.
+    /// </para>
+    /// </summary>
+    /// <returns>Spoken line and the value to track; both "" when unreadable.</returns>
+    private unsafe (string Text, string Value) DescribeDropDown(
+        AtkComponentDropDownList* dd, AtkResNode* focus, string label)
+    {
+        var row = FindDropDownFocusRow(dd, focus);
+        if (row >= 0)
+        {
+            var option = ReadListItemText(dd->List, row);
+            if (option.Length == 0) return (string.Empty, string.Empty);
+            return (AccessibilityStrings.DropdownOption(
+                        option, row + 1, GetListEntryCount(dd->List),
+                        row == dd->List->SelectedItemIndex),
+                    option);
+        }
+
+        // Closed (or focus on the drop-down itself): AtkComponentDropDownList.List
+        // (ilspycmd-verified); its SelectedItemIndex marks the chosen entry.
+        var value = dd->List != null
+            ? ReadListItemText(dd->List, Math.Max(0, dd->List->SelectedItemIndex))
+            : string.Empty;
+        return (AccessibilityStrings.DropdownDesc(label, value), value);
+    }
+
+    /// <summary>
+    /// Row of an OPENED drop-down the focused node sits in, or -1 when the focus
+    /// is on the drop-down itself instead of one of its options. Told apart by
+    /// ownership, not by an index field: while the list is closed the focus rests
+    /// on the drop-down's embedded checkbox, while it is open it rests on a
+    /// collision node inside one item renderer (dump + log 2026-08-12).
+    /// </summary>
+    private static unsafe int FindDropDownFocusRow(AtkComponentDropDownList* dd, AtkResNode* focus)
+    {
+        var list = dd->List;
+        if (list == null) return -1;
+
+        var slots = Math.Min(list->AllocatedItemRendererListLength, 64);
+        for (var i = 0; i < slots; i++)
+        {
+            var renderer = list->ItemRendererList[i].AtkComponentListItemRenderer;
+            if (renderer == null) continue;
+            if (ComponentContainsNode((AtkComponentBase*)renderer, focus, 0)) return i;
+        }
+        return -1;
     }
 
     private static unsafe bool ComponentContainsNode(AtkComponentBase* comp, AtkResNode* needle, int depth)
@@ -7201,12 +7283,20 @@ public sealed class UIReaderService : IDisposable
         // is the fallback if the structure drifts. Stable text also fixes the
         // double announcement: the idx|text dedup below drops the repeat when a
         // column briefly flickers between frames (log 2026-07-25 GrandCompany).
-        var text = name switch
-        {
-            "ConfigKeybind"        => ReadConfigKeybindRow(list, idx),
-            "GrandCompanyExchange" => ReadGrandCompanyRow(list, idx),
-            _                      => string.Empty,
-        };
+        // Loot roll: the rows hold no name at all, only the roll number, so the
+        // generic reader announced a bare "0" (log 2026-08-12 20:38:10). The
+        // service reads the row from the window's own item table instead and
+        // hands back an identity without the countdown - otherwise the changing
+        // seconds would slip past the dedup on every cursor flicker.
+        var dedupKey = string.Empty;
+        var text     = name == "NeedGreed" ? _lootRolls.DescribeRollRow(idx, out dedupKey) : string.Empty;
+        if (string.IsNullOrEmpty(text))
+            text = name switch
+            {
+                "ConfigKeybind"        => ReadConfigKeybindRow(list, idx),
+                "GrandCompanyExchange" => ReadGrandCompanyRow(list, idx),
+                _                      => string.Empty,
+            };
         if (string.IsNullOrEmpty(text)) text = ReadListItemText(list, idx);
         // CharaMake-Aussehen-Picker (CMFIcon*/CMFColor*): rows are pure image
         // swatches without text (dump 2026-07-17 16:35) - the position is the
@@ -7214,7 +7304,7 @@ public sealed class UIReaderService : IDisposable
         if (string.IsNullOrEmpty(text) && name.StartsWith("CMF", StringComparison.Ordinal))
             text = AccessibilityStrings.Counter(idx + 1, GetListEntryCount(list));
         if (string.IsNullOrEmpty(text)) return;
-        var announce = $"{idx}|{text}";
+        var announce = $"{idx}|{(dedupKey.Length > 0 ? dedupKey : text)}";
         if (_lastListAnnounce.TryGetValue(name, out var lastA) && lastA == announce) return;
         _lastListAnnounce[name] = announce;
         _log.Info($"[Accessibility] {name} List-Navigation: [{idx}] {text}");

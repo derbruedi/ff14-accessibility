@@ -745,6 +745,27 @@ public static class AccessibilityStrings
         IsGerman ? $"{label}, {value} %" : $"{label}, {value}%";
     public static string DropdownDesc(string label, string value) =>
         IsGerman ? $"{label}, Auswahlliste, {value}." : $"{label}, dropdown, {value}.";
+    /// <summary>One option while stepping through an OPENED drop-down. Names the
+    /// stored choice, which a sighted player sees highlighted in the list.</summary>
+    public static string DropdownOption(string option, int index, int count, bool selected) =>
+        IsGerman
+            ? $"{option}, {index} von {count}{(selected ? ", ausgewählt" : "")}"
+            : $"{option}, {index} of {count}{(selected ? ", selected" : "")}";
+    // ── Zur Wegrichtung drehen (Numpad5) ─────────────────────────────
+    /// <summary>Spoken after the player was turned towards the guide point.</summary>
+    public static string FaceAligned(string distance) =>
+        IsGerman ? $"Ausgerichtet. {distance} geradeaus." : $"Aligned. {distance} straight ahead.";
+
+    /// <summary>The key was pressed without a walk guide running.</summary>
+    public static string FaceNoRoute =>
+        IsGerman
+            ? "Kein Weg aktiv. Erst ein Ziel wählen."
+            : "No route active. Pick a destination first.";
+
+    /// <summary>Guide point and player are on the same spot - no direction to turn to.</summary>
+    public static string FaceAlreadyThere =>
+        IsGerman ? "Du stehst schon am Wegpunkt." : "You are already at the waypoint.";
+
     /// <summary>Stand-in when no label text can be found next to a control.</summary>
     public static string NoLabel => IsGerman ? "Ohne Beschriftung" : "Unlabelled";
 
@@ -1683,6 +1704,20 @@ public static class AccessibilityStrings
         IsGerman
             ? $"{name}{(count > 1 ? $" mal {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}"
             : $"{name}{(count > 1 ? $" times {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}";
+
+    /// <summary>One row of the roll window while stepping through the list.</summary>
+    public static string LootRollRow(string name, int count, string options, string remaining) =>
+        IsGerman
+            ? $"{name}{(count > 1 ? $" mal {count}" : "")}" +
+              $"{(options.Length  > 0 ? $", {options}"  : "")}" +
+              $"{(remaining.Length > 0 ? $", {remaining}" : "")}"
+            : $"{name}{(count > 1 ? $" times {count}" : "")}" +
+              $"{(options.Length  > 0 ? $", {options}"  : "")}" +
+              $"{(remaining.Length > 0 ? $", {remaining}" : "")}";
+
+    /// <summary>Seconds left before the roll expires.</summary>
+    public static string LootRollRemaining(int seconds) =>
+        IsGerman ? $"noch {seconds} Sekunden" : $"{seconds} seconds left";
 
     /// <summary>What the player may still do - the game's RollState in words.</summary>
     public static string LootOptionsNeedGreedPass =>

@@ -3,6 +3,126 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-08-12, "NUMPAD5: ZUR WEGRICHTUNG DREHEN" - GEBAUT, UNGETESTET)
+
+>>> WUNSCH DES USERS: beim MANUELLEN Laufen per Tastendruck in die Richtung
+    gedreht werden, in die man laufen muss. Ein Druck = einmal ausrichten
+    (so gewaehlt, nicht dauerhaftes Nachfuehren).
+
+>>> TASTE: bare Numpad5. Im Keybind-Dump ist das CAMERA_FOCUS - der User hat die
+    Kamerafunktion bewusst geopfert (rein visuell), weil Numpad5 die tastbare
+    Erhebung traegt. Das Plugin SCHLUCKT die Taste (`KeyState[key]=false`, wie
+    beim Skill-Menue), sonst wuerde das Spiel die Kamera zusaetzlich zentrieren
+    und gegen die eben gesetzte Richtung arbeiten. Umschalt+Numpad war nie eine
+    Option (Windows-Falle, game-api.md).
+
+>>> WAS GEDREHT WIRD - UND WARUM BEIDES: gesetzt werden `GameObject.Rotation`
+    (@192) UND `Camera.DirH` (@320, beide ilspycmd 2026-08-12). Grund: ob beim
+    manuellen Laufen die FIGUR oder die KAMERA steuert, haengt am Bewegungsmodus
+    (Standard = kamerarelativ, Legacy = figurrelativ), und das steht in keiner
+    Struktur. Der Modus wird aus `GameConfig.UiControl["MoveMode"]` mitgeloggt.
+
+>>> DER FIGUR-WINKEL IST EXAKT, DER KAMERA-WINKEL IST EINE MARKIERTE ANNAHME:
+    Zielrotation = atan2(dx, dz) - dieselbe Konvention, auf der `RelativeAngle`
+    steht (in-game verifiziert 2026-07-10). Fuer `DirH` wird DIESELBE Konvention
+    ANGENOMMEN; ob das stimmt, ist offen. Deshalb loggt `[Face] vorher:` rot und
+    dirH im selben Moment, BEVOR etwas geschrieben wird - ein einziger Druck mit
+    der Kamera hinterm Ruecken zeigt, ob beide Werte zusammenpassen.
+
+>>> ZIEL IST DER FUEHRUNGSPUNKT DER GEHHILFE (`_route[_routeCursor]`, sonst das
+    Ziel selbst). Ohne laufende Gehhilfe sagt es "Kein Weg aktiv."
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. Zweig test/prs.
+
+## FRUEHER AM TAG (2026-08-12, "AUSWAHLLISTEN IN DER KONFIGURATION SAGTEN IMMER DENSELBEN WERT")
+
+>>> BEFUND (Dump + Log ConfigCharaOpeTarget "Zieleinstellungen", 21:31-21:32):
+    Die SCHALTER des Fensters gehen einwandfrei ("Bei Kommando automatisch zum
+    Ziel hinwenden, Schalter, an"). Die AUSWAHLLISTEN dagegen sagten bei jedem
+    Schritt denselben Satz: "Art des automatischen Anvisierens, Auswahlliste,
+    Direkte Sichtlinie." - egal auf welcher Option der Cursor stand. Im Log ist
+    das eindeutig: der Fokuszeiger wechselt (0x...FB880 / 0x...4B6A710), die
+    ConfigProbe daneben meldet abwechselnd 'Direkte Sichtlinie' und 'Naechster
+    Gegner', gesprochen wurde jedes Mal derselbe Satz (21:31:48 bis 21:32:08).
+
+>>> URSACHE: `AnnounceConfigGlobalFocus` bildet fuer eine DropDownList immer
+    Label + `SelectedItemIndex` - also den GESPEICHERTEN Wert. Beim Blaettern in
+    der offenen Liste sitzt der Fokus aber auf einer Zeile, und die wurde nie
+    gelesen. Der Spieler konnte also nicht hoeren, was er gerade auswaehlt.
+
+>>> ERSTER ANLAUF GING INS LEERE (Log 21:38, nach Hot-Reload der neuen DLL um
+    21:36:53 - der Build lag um 21:36:50 vor, es lief also wirklich die neue
+    Fassung): die Ansage kam weiterhin unveraendert. Grund: geaendert war
+    `AnnounceConfigGlobalFocus` (Praefix `[CS]`), aber im ganzen Log steht keine
+    einzige `[CS]`-Zeile - fuer die ConfigChara*-PANELS baut
+    `TryReadConfigPanelControl` den Satz. Die Logik sitzt jetzt in
+    `DescribeDropDown` und wird von BEIDEN Lesern benutzt.
+
+>>> GEBAUT: `FindDropDownFocusRow` stellt ueber die Besitzverhaeltnisse fest, ob
+    der Fokusknoten in einem ItemRenderer der Liste liegt (geschlossen sitzt er
+    auf der eingebetteten CheckBox, offen auf einer Zeile - im Dump und im Log
+    sauber unterscheidbar). Ist es eine Zeile, wird sie angesagt:
+    "Naechster Gegner, 2 von 2" bzw. beim gespeicherten Wert "Direkte
+    Sichtlinie, 1 von 2, ausgewaehlt". Sonst bleibt die alte Ansage.
+
+>>> DASS DER GESPEICHERTE WERT BEIM BLAETTERN STEHEN BLEIBT, ist gemessen, nicht
+    vermutet: `ReadConfigControlValue` liest genau `SelectedItemIndex`, und der
+    lieferte waehrend des ganzen Blaetterns unveraendert "Direkte Sichtlinie".
+    Darum taugt er als Markierung fuer "ausgewaehlt".
+
+>>> NICHT BEURTEILT, weil im Test nicht angefasst: der Regler
+    "Cursor-Geschwindigkeit (Freier Modus)" und die beiden Auswahlknoepfe unter
+    "Einstellung fuer Gegner anvisieren". Beide stehen im Dump, ob sie sauber
+    gelesen werden, zeigt erst ein Durchgang darueber.
+
+>>> IM SPIEL BESTAETIGT vom User (2026-08-12, nach dem zweiten Anlauf): das
+    Blaettern durch eine offene Auswahlliste nennt jetzt die Option.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. Zweig test/prs.
+
+## FRUEHER AM TAG (2026-08-12, "WUERFELN UM BEUTE - DIE ZEILEN SAGEN JETZT DEN GEGENSTAND")
+
+>>> BEFUND AUS DEM DUNGEON-TEST DES USERS (Dump + Log 2026-08-12, 20:37-20:45):
+    Was schon lief: der LootRollService hat alle sieben Verlosungen erkannt und
+    angesagt (Log `[Loot] Neue Verlosung: slot=0 item=2684 'Gepluenderte
+    Sturmhaube' x1 state=UpToGreed time=299,3`), und die Knoepfe "Bedarf",
+    "Gier", "Passen" werden beim Navigieren gelesen.
+    Was fehlte: beim Wechsel zwischen den LISTENZEILEN kam jedes Mal nur "0".
+    Ursache im Dump belegt - die Zeilen (ListItemRenderer, Node 1008) enthalten
+    keinen Namen, jeder Textknoten darin ist leer bis auf den Wurfwert. Der
+    Gegenstandsname steht nur einmal im Fenster, im TextNineGrid Node 5, und
+    dort in Item-Verweis-Bytes verpackt ("H'I(Gepluenderte SturmhaubeIH").
+
+>>> GEBAUT: `LootRollService.DescribeRollRow(idx, out dedupKey)` liest die Zeile
+    nicht aus Knoten, sondern aus der Tabelle, aus der das Fenster selbst
+    zeichnet: `AddonNeedGreed.Items` - 16 `LootItemInfo` mit ItemName, ItemId,
+    IconId, Roll, ItemCount, dazu `NumItems` und `SelectedItemIndex`
+    (ilspycmd 2026-08-12). Gesprochen wird Name (+ Anzahl bei Stapeln), was
+    laut RollState moeglich ist, und die Restzeit:
+    "Gepluenderte Sturmhaube, nur Gier oder Passen moeglich, noch 252 Sekunden".
+
+>>> WARUM DIE OPTIONEN DAZU GEHOEREN: im Test hat der User bei einem Gegenstand
+    Bedarf gedrueckt und erst NACH dem Druck die Absage gehoert ("Du besitzt
+    diesen Gegenstand bereits", Log 20:38:07). Der Knopf bleibt sichtbar, das
+    Spiel weist erst den Klick zurueck - die Auskunft muss also aus dem
+    Spielzustand kommen, nicht aus dem Fenster.
+
+>>> OFFENE MESSUNG (bewusst nicht geraten): Ob Zeilenreihenfolge im Fenster
+    gleich Slot-Reihenfolge in `Loot` ist, laesst sich aus den Strukturen NICHT
+    beweisen - `LootItem` hat nur ChestObjectId/ChestItemIndex, `LootItemInfo`
+    gar kein Slot-Feld. Darum wird der Slot ueber die ItemId gesucht, mit
+    Vorrang fuer den gleichnummerigen Slot, und `[Loot] Zeile N von M: ...
+    lootSlot=X` schreibt beide Nummern ins Log. Die naechste echte Verlosung mit
+    mehreren Gegenstaenden klaert es.
+
+>>> Die Restzeit ist absichtlich NICHT Teil des Wiederhol-Schutzes: die Sekunden
+    aendern sich staendig, und der Cursor flackert laut Log mehrmals pro Sekunde
+    zwischen den Zeilen. Der Schutz vergleicht darum ItemId + Anzahl.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt.
+    ACHTUNG: gebaut auf dem Zweig `test/prs`, der auch die fuenf Test-Merges
+    enthaelt - der In-Game-Test laeuft also mit beidem gleichzeitig.
+
 ## TESTZWEIG `test/prs` (2026-08-12) - FUENF FREMD-BEITRAEGE ZUM ANHOEREN
 
 >>> WAS DAS IST: Die fuenf offenen Pull Requests von bladestorm360, alle auf
@@ -45,7 +165,7 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 >>> KEINER DER FUENF IST VOM AUTOR IM SPIEL GETESTET. Er schreibt das bei jedem
     selbst dazu; er spielt ebenfalls blind. Alle fuenf kompilieren sauber.
 
-## STAND JETZT (2026-08-10, V5.82 - SPUREN SELBST ABLAUFEN)
+## FRUEHER (2026-08-10, V5.82 - SPUREN SELBST ABLAUFEN)
 
 >>> DAS FEATURE: Eine Luecke im Wegenetz einmal selbst ablaufen, danach kennt
     der Auto-Lauf sie. Der Spieler muss die Stelle nicht SEHEN, er muss sie
