@@ -849,8 +849,11 @@ public static class AccessibilityStrings
         return percent == 0 && cur > 0 ? 1 : percent;
     }
 
+    /// <summary>Eigene HP: als ZAHL, weil das Spiel sie als Zahl anzeigt.
+    /// Das Ziel behaelt den Prozentwert (<see cref="TargetHpSentence"/>) - dort
+    /// zeigt das Spiel nie eine Zahl an.</summary>
     public static string HpSentence(uint cur, uint max) =>
-        IsGerman ? $"HP: {Percent(cur, max)} Prozent." : $"HP: {Percent(cur, max)} percent.";
+        IsGerman ? $"HP: {cur} von {max}." : $"HP: {cur} of {max}.";
     public static string TargetHpSentence(uint cur, uint max) =>
         IsGerman ? $"Ziel HP: {Percent(cur, max)} Prozent." : $"Target HP: {Percent(cur, max)} percent.";
 
@@ -858,12 +861,26 @@ public static class AccessibilityStrings
     public static string TargetHpFragment(uint cur, uint max) =>
         IsGerman ? $", HP {Percent(cur, max)} Prozent" : $", HP {Percent(cur, max)} percent";
 
-    /// <summary>Full HP/MP status: HP always, MP only when the job has mana.</summary>
+    /// <summary>", Stufe 12, HP 40 Prozent" - der Anhang fuer eine Zielansage.
+    /// Die Stufe kommt aus ICharacter.Level, die HP bleiben prozentual.
+    /// Fehlt eines von beidem, faellt genau dieser Teil weg.</summary>
+    public static string TargetLevelHpFragment(byte level, uint cur, uint max)
+    {
+        var lvl = level > 0
+            ? (IsGerman ? $", Stufe {level}" : $", level {level}")
+            : string.Empty;
+        return max > 0 ? lvl + TargetHpFragment(cur, max) : lvl;
+    }
+
+    /// <summary>HP als Zahl, MP als Prozentwert und nur wenn die Klasse Mana hat.
+    /// MP bleibt prozentual, weil MaxMp seit Patch 5.0 fuer JEDE Klasse auf JEDEM
+    /// Level 10000 ist - "MP 10000 von 10000" ist keine Zahl, die ein Spieler
+    /// irgendwo sieht; das Partyfenster zeichnet daraus "100.00%".</summary>
     public static string VitalStatus(uint hp, uint hpMax, uint mp, uint mpMax, bool hasMp) =>
         hasMp
-            ? (IsGerman ? $"HP {Percent(hp, hpMax)} Prozent, MP {Percent(mp, mpMax)} Prozent."
-                        : $"HP {Percent(hp, hpMax)} percent, MP {Percent(mp, mpMax)} percent.")
-            : (IsGerman ? $"HP {Percent(hp, hpMax)} Prozent." : $"HP {Percent(hp, hpMax)} percent.");
+            ? (IsGerman ? $"HP {hp} von {hpMax}, MP {Percent(mp, mpMax)} Prozent."
+                        : $"HP {hp} of {hpMax}, MP {Percent(mp, mpMax)} percent.")
+            : (IsGerman ? $"HP {hp} von {hpMax}." : $"HP {hp} of {hpMax}.");
 
     /// <summary>" &lt;name&gt;, HP X percent." target clause appended to the status readout.</summary>
     public static string TargetStatusClause(string name, uint cur, uint max) =>

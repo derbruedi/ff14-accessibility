@@ -486,9 +486,16 @@ public sealed class NavigationService
         // Position goes LAST: the name is what the user is listening for, the
         // counter only tells them how far they have cycled (user wish
         // 2026-07-19). The rejection warning stays at the very end.
+        // Stufe und HP NUR wenn das Spiel die Anvisierung angenommen hat: nur dann
+        // ist die Ziel-Leiste gefuellt, und nur dann saehe ein sehender Spieler die
+        // Werte. Bei einer Ablehnung (ausser Reichweite, Sichtlinie unterbrochen)
+        // bleibt es beim bisherigen Hinweis "nicht anvisiert" - ohne Werte, die auf
+        // dem Bildschirm nirgends stehen.
+        var stats = rejected ? string.Empty : DescribeTargetHp(obj);
         var text = $"{description}, " +
                    $"{FormatDistance(distance)}, " +
-                   $"{CalculateDirection(player, obj.Position)}, " +
+                   $"{CalculateDirection(player, obj.Position)}" +
+                   $"{stats}, " +
                    $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
                    (rejected ? AccessibilityStrings.NotTargetedSuffix : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
@@ -2116,11 +2123,13 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(_routes.DescribeRoute(_previewName, waypoints));
     }
 
-    /// <summary>", HP X Prozent" for targets that have hit points, else empty.</summary>
+    /// <summary>", Stufe N, HP X Prozent" fuer Ziele mit Lebenspunkten, sonst "".
+    /// Wird sowohl beim Anvisieren ueber die Spieltaste als auch beim Blaettern im
+    /// Objekt-Browser angehaengt - vorher kannte nur der erste Weg die HP.</summary>
     private static string DescribeTargetHp(IGameObject target)
     {
         if (target is IBattleChara bc && bc.MaxHp > 0)
-            return AccessibilityStrings.TargetHpFragment(bc.CurrentHp, bc.MaxHp);
+            return AccessibilityStrings.TargetLevelHpFragment(bc.Level, bc.CurrentHp, bc.MaxHp);
         return string.Empty;
     }
 
