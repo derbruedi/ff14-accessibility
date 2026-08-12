@@ -3,6 +3,48 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## TESTZWEIG `test/prs` (2026-08-12) - FUENF FREMD-BEITRAEGE ZUM ANHOEREN
+
+>>> WAS DAS IST: Die fuenf offenen Pull Requests von bladestorm360, alle auf
+    einem lokalen Zweig zusammengefuehrt und als Debug nach devPlugins gebaut.
+    NICHT auf main, nichts released. Der Zweig existiert nur, damit der User sie
+    im Spiel hoeren kann, bevor entschieden wird.
+    - PR #1 Gegnerstufe + HP beim Blaettern, eigene HP wieder als ZAHL
+    - PR #2 Aktions-Tooltip nennt die Form der Wirkflaeche (Kreis/Kegel/Linie)
+    - PR #3 Objekt-Kategorien "Verbuendete" und "Inhalte"
+    - PR #4 Charaktererstellung, Schritt Aussehen (17.454 Zeilen)
+    - PR #5 Chat-Puffer folgen den Spielregistern (loescht ChatChannelService)
+
+>>> ZWEI PUNKTE DREHEN BESTAETIGTE ENTSCHEIDUNGEN UM - das ist die eigentliche
+    Frage an den User, nicht die Technik:
+    1. PR #1 macht die EIGENEN HP wieder zu "X von Y". Prozent war eine
+       ausdrueckliche Entscheidung vom 2026-08-07, und das Format ist in V5.31
+       schon einmal unbemerkt gekippt. Ziel-HP und MP bleiben Prozent.
+    2. PR #5 loescht `ChatChannelService` - damit faellt weg, dass ENTER im
+       Nachlese-Kanal antwortet (v5.67, in-game bestaetigt). Der Autor begruendet
+       das: seine Puffer sind Empfangsfilter, daraus folgt kein Sendekanal.
+
+>>> MERGE-LAGE: PR 1-3 fusionieren sauber. Zwei Konflikte von Hand geloest, beide
+    trivial und beide Seiten behalten: `UIReaderService` Feldblock (ActionShape +
+    CharaMake), `Plugin.cs` Konstruktor (CharaMake-Ctor + Chat-Puffer-Block, ohne
+    die von PR #5 geloeschte `_chatChannel`-Zeile). Debug-Build 0 Warnungen /
+    0 Fehler, 10 Dateien nach devPlugins deployt.
+    Gegengeprueft, dass nichts aus V5.82 verloren ging: Spur-Strings,
+    NPCDialogue-Kanaele und der Doppelungs-Schutz sind im Merge vorhanden.
+    Tastenkollisionen geprueft: die vier neuen Kombis von PR #5 sind im Plugin
+    nirgends sonst belegt (`KeyReadHotbar` ist Strg+F9, nicht Umschalt+F9).
+
+>>> HOERBARE KENNUNG: Die Versionsansage beim Laden sagt "5.82 Testfassung mit
+    fuenf Beitraegen". Kommt stattdessen die blanke "5.82", laeuft die
+    veroeffentlichte Fassung - dann hat das Spiel devPlugins nicht geladen.
+
+>>> ZURUECK AUF DIE VEROEFFENTLICHTE FASSUNG: `git checkout main` und Debug neu
+    bauen, dann liegt wieder 5.82 in devPlugins. Einzelne Beitraege lassen sich
+    zurueckdrehen, weil jeder ein eigener Merge-Commit auf `test/prs` ist.
+
+>>> KEINER DER FUENF IST VOM AUTOR IM SPIEL GETESTET. Er schreibt das bei jedem
+    selbst dazu; er spielt ebenfalls blind. Alle fuenf kompilieren sauber.
+
 ## STAND JETZT (2026-08-10, V5.82 - SPUREN SELBST ABLAUFEN)
 
 >>> DAS FEATURE: Eine Luecke im Wegenetz einmal selbst ablaufen, danach kennt
@@ -48,24 +90,12 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 >>> RELEASED als v5.82 (2026-08-10, 21:15). Verifiziert: v5.82 ist "Latest",
     4 Assets dran, `releases/latest/download/latest.zip` liefert 651.549 Bytes
     (= der neue Build), repo.json auf main steht auf 5.82.0.0.
-    Getestet war zum Release-Zeitpunkt NUR der NPC-Dialog-Teil (beide Punkte, im
-    Log nachgewiesen). Die SPUR-AUFZEICHNUNG ist weiterhin in-game ungetestet -
-    sie kann aber nichts kaputtmachen, solange keine Spur aufgezeichnet wurde:
-    ohne Eintrag in `Configuration.Trails` verhaelt sich der Auto-Lauf exakt wie
-    in V5.81.
 
->>> SO WIRD ES GETESTET (Vorschlag fuer Oestliches La Noscea):
-    1. Auf dem Plateau an die Stelle laufen, wo der Auto-Lauf bisher endet.
-    2. Strg+Umschalt+F6, dann selbst hinunter zur Kueste laufen (die Gehhilfe
-       fuehrt seit V5.81 auch dort in Luftlinie weiter), unten nochmal
-       Strg+Umschalt+F6. Erwartet: "Spur gespeichert: Verbindung 1, X Meter"
-       plus die Einbahn-Warnung wegen des Hoehenunterschieds.
-    3. `/acc trails` - die Spur muss aufgelistet werden.
-    4. Wieder hinauf (per Aetheryt/zu Fuss) und den Auto-Lauf zur Sonnenkueste
-       starten. Erwartet: er laeuft bis zur Kante, sagt "ich nehme Verbindung 1",
-       faehrt die Spur ab, sagt "Spur zu Ende" und laeuft normal weiter.
-    5. Gegenprobe: In einem Gebiet ohne Spuren muss der Auto-Lauf sich genau wie
-       in V5.81 verhalten (ehrliche Absage am Netzende).
+>>> IM SPIEL BESTAETIGT (User, 2026-08-12): "das mit dem wegenetz funktioniert
+    erstmal alles". Damit ist der gesamte Wegenetz-Block dieser Version
+    abgehakt - Spur-Aufzeichnung (Strg+Umschalt+F6), `/acc trails`, das
+    Aufgreifen der Spur am Netzende und der Weiterlauf danach. Keine offenen
+    Wegenetz-Tests mehr.
 
 >>> NOCH NICHT GEBAUT, bewusst: Die GEHHILFE nutzt die Spuren nicht - sie fuehrt
     an der Kante weiter in Luftlinie. Sinnvoll waere, die Spurpunkte dort als
