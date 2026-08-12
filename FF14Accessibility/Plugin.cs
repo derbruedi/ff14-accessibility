@@ -93,8 +93,11 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    private const string PluginVersion    = "5.82";
-    private const string PluginVersionTag = "Spuren: eine Luecke im Wegenetz einmal selbst ablaufen, danach nutzt der Auto-Lauf sie";
+    // TESTZWEIG test/prs: 5.82 plus die fuenf offenen Beitraege von aussen.
+    // Der Zusatz steht in der GESPROCHENEN Ansage, damit beim Laden hoerbar ist,
+    // ob gerade die Testfassung oder die veroeffentlichte 5.82 laeuft.
+    private const string PluginVersion    = "5.82 Testfassung mit fuenf Beitraegen";
+    private const string PluginVersionTag = "PR 1 HP+Stufe, PR 2 AoE-Form, PR 3 Verbuendete+Inhalte, PR 4 Charaktererstellung, PR 5 Chat-Puffer";
 
     public Plugin()
     {
