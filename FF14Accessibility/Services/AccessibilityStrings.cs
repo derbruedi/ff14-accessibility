@@ -4,7 +4,10 @@ using Dalamud.Game.Text;
 
 namespace FF14Accessibility.Services;
 
-public static class AccessibilityStrings
+// [Chat-Puffer] `partial`, damit die Zeichenketten der Chat-Puffer und des
+// Einstellungsmenüs in AccessibilityStrings.Chat.cs stehen können: diese Datei ist
+// groß und ändert sich in fast jeder Version. Das ist die einzige Änderung an ihr.
+public static partial class AccessibilityStrings
 {
     // Language is driven by the config-backed Loc provider ("/acc lang"),
     // NOT the OS culture directly. Auto still falls back to the OS culture.
@@ -1796,19 +1799,12 @@ public static class AccessibilityStrings
     // ════════════════════════════════════════════════════════════════
     //  MessageHistoryService - Nachlese-Kanäle
     // ════════════════════════════════════════════════════════════════
-    public static string ChatCategoryName(MessageHistoryService.Category category) => category switch
-    {
-        MessageHistoryService.Category.Dialogue    => IsGerman ? "Dialoge"            : "Dialogue",
-        MessageHistoryService.Category.Say         => IsGerman ? "Sagen"              : "Say",
-        MessageHistoryService.Category.Shout        => IsGerman ? "Rufen"              : "Shout",
-        MessageHistoryService.Category.Party        => IsGerman ? "Gruppe"             : "Party",
-        MessageHistoryService.Category.Alliance     => IsGerman ? "Allianz"            : "Alliance",
-        MessageHistoryService.Category.Tell         => IsGerman ? "Flüstern"           : "Tell",
-        MessageHistoryService.Category.FreeCompany  => IsGerman ? "Freie Gesellschaft" : "Free Company",
-        MessageHistoryService.Category.System       => IsGerman ? "System"             : "System",
-        MessageHistoryService.Category.Loot         => IsGerman ? "Beute"              : "Loot",
-        _                                           => category.ToString(),
-    };
+    // [Chat-Puffer] ChatCategoryName ist entfallen. Die Puffer sind keine feste
+    // Aufzaehlung des Plugins mehr, sondern die Kanaele und Register des SPIELS, und
+    // die tragen ihre Namen selbst: eine LogFilter-Zeile ihren Zeilennamen, ein
+    // Register das, was der Spieler dort eingetippt hat. Eine uebersetzte Liste
+    // daneben wuerde Dinge umbenennen, die dem Spieler gehoeren. Die drei Puffer, die
+    // keine Register sind, stehen in AccessibilityStrings.Chat.cs.
     public static string CategoryEmpty(string category) =>
         IsGerman ? $"{category}, leer" : $"{category}, empty";
     public static string CategorySummary(string category, int count) =>

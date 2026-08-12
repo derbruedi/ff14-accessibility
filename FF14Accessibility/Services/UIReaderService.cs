@@ -1255,7 +1255,7 @@ public sealed class UIReaderService : IDisposable
         // wording, which is not the string spoken here - so file that variant
         // too, exactly what RememberSpokenVariant exists for.
         if (bareBody.Length > 0) _tolk.RememberSpokenVariant(bareBody);
-        _history.Add(MessageHistoryService.Category.Dialogue, spoken);
+        _history.Add(MessageHistoryService.DialogueKey, spoken);
     }
 
     // -- Gathering (Sammel-Fenster) -----------------------------------
@@ -1304,7 +1304,7 @@ public sealed class UIReaderService : IDisposable
         var spoken = sb.ToString();
         _log.Info($"[Gather] Sammel-Fenster gelesen: {items.Count} Gegenstände, Kopf='{header}'");
         _tolk.SpeakInterrupt(spoken);
-        _history.Add(MessageHistoryService.Category.System, spoken);
+        _history.Add(MessageHistoryService.SystemKey, spoken);
     }
 
     /// <summary>
@@ -7851,7 +7851,7 @@ public sealed class UIReaderService : IDisposable
         var spoken = isOpen ? AccessibilityStrings.RecipeNoteOpened(current) : current;
         _log.Info($"[Recipe] Klasse: {current} ({(isOpen ? "geoeffnet" : "gewechselt")})");
         _tolk.SpeakInterrupt(spoken);
-        _history.Add(MessageHistoryService.Category.System, spoken);
+        _history.Add(MessageHistoryService.SystemKey, spoken);
     }
 
     /// <summary>
@@ -7990,7 +7990,7 @@ public sealed class UIReaderService : IDisposable
         var msg = string.Join(". ", parts) + ".";
         _log.Info($"[Recipe] Details: {msg}");
         _tolk.SpeakInterrupt(msg);
-        _history.Add(MessageHistoryService.Category.System, msg);
+        _history.Add(MessageHistoryService.SystemKey, msg);
         return true;
     }
 
