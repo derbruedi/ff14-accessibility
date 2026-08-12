@@ -285,8 +285,17 @@ public static class AccessibilityStrings
         NavCategory.Npcs             => IsGerman ? "NPCs"              : "NPCs",
         NavCategory.Merchants        => IsGerman ? "Händler"           : "Merchants",
         NavCategory.Enemies          => IsGerman ? "Gegner"            : "Enemies",
+        NavCategory.Allies           => IsGerman ? "Verbündete"        : "Allies",
         NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
         NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
+        // NICHT "Dungeons": die Kategorie haelt auch Prüfungs-, Raid- und
+        // PvP-Türen, und die Ansage nennt Inhalt und Art ohnehin. Das deutsche Wort
+        // ist das des SPIELS, keine nach Gefühl gewählte Übersetzung - der Client
+        // nennt die Inhaltssuche "Inhaltssuche", den Zufallsinhalt "Zufallsinhalt",
+        // und "There are no duties available" heisst dort "Keine Inhalte vorhanden"
+        // (Addon 2500/2509, in beiden Sprachen gedumpt). Ein Duty ist also ein
+        // "Inhalt", und der Spieler hört das Wort im Spiel bereits.
+        NavCategory.Duties           => IsGerman ? "Inhalte"           : "Duties",
         NavCategory.QuestNpcs        => IsGerman ? "Quest-NPCs"        : "Quest NPCs",
         NavCategory.QuestObjects     => IsGerman ? "Quest-Objekte"     : "Quest objects",
         NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
@@ -309,6 +318,44 @@ public static class AccessibilityStrings
         ShopKind.Exchange => IsGerman ? "Tausch"  : "exchange",
         _                 => IsGerman ? "Händler" : "merchant",
     };
+
+    /// <summary>
+    /// Was hinter einer Tür liegt, gesprochen an der Stelle des generischen
+    /// "Objekt", während der Spieler die Kategorie Inhalte durchblättert. User:
+    /// *"right now they are just called entrance instead of having more useful
+    /// names like the name of the dungeon."* Deshalb trägt das hier den NAMEN und
+    /// die Stufe, nicht nur ein Kategoriewort.
+    ///
+    /// Der Objektname wird unmittelbar davor gesprochen, das Ergebnis liest sich
+    /// also als *"Eingang, Dungeon: Das Tam-Tara-Grab, Stufe 16, 12 Meter, Norden."*
+    ///
+    /// NAME UND STUFE GEHÖREN DEM SPIEL - aus ContentFinderCondition, in der
+    /// Client-Sprache; der Mod übersetzt und erfindet hier nichts. Nur das
+    /// Kategoriewort im Singular ist mod-eigen, und es ist der Singular dessen, was
+    /// der deutsche Client selbst für diese Inhaltsart schreibt (ContentType, in
+    /// beiden Sprachen gedumpt: 2 'Dungeons', 4 'Prüfungen', 5 'Raids', 6 'PvP').
+    /// Jede andere Art behält das Wort des Spiels wörtlich, statt verworfen oder
+    /// geraten zu werden.
+    /// </summary>
+    internal static string DutyEntrance(string dutyName, uint contentType, ushort level, string gameTypeName)
+    {
+        var category = contentType switch
+        {
+            2 => IsGerman ? "Dungeon" : "dungeon",
+            4 => IsGerman ? "Prüfung" : "trial",
+            5 => IsGerman ? "Raid"    : "raid",
+            6 => "PvP",
+            _ => gameTypeName,
+        };
+
+        // Ein Inhalt ohne Stufenanforderung sagt nichts über eine Stufe, statt
+        // "Stufe 0" zu sagen.
+        var withLevel = level > 0
+            ? (IsGerman ? $"{dutyName}, Stufe {level}" : $"{dutyName}, level {level}")
+            : dutyName;
+
+        return category.Length > 0 ? $"{category}: {withLevel}" : withLevel;
+    }
 
     // The word "Kategorie"/"Category" is deliberately NOT spoken in front of the
     // name (user 2026-08-04): the player just pressed the category key, so the

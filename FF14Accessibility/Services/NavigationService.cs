@@ -28,8 +28,17 @@ internal enum NavCategory
     Npcs,
     Merchants,
     Enemies,
+    // Verbuendete: alles, was auf der Seite des Spielers kaempft - Trust-Trupp,
+    // Duty-Support-NPCs, Gruppe/Allianz, Karfunkel, Fee, Begleitchocobo. Siehe
+    // CombatSide.
+    Allies,
     Players,
     Objects,
+    // Inhalte: Tueren, die in einen Dungeon, eine Pruefung, einen Raid oder eine
+    // PvP-Instanz fuehren. Eigene Kategorie und nicht nur ein Wort innerhalb von
+    // Objekte, weil eine Tuer ein ZIEL ist - nur diese aufzaehlen zu koennen ist
+    // der Punkt. Siehe DungeonSide.
+    Duties,
     QuestNpcs,
     QuestObjects,
     QuestEnemies,
@@ -226,8 +235,19 @@ public sealed class NavigationService
         // (ShopNpcService) - see GetCategoryObjects.
         (NavCategory.Merchants,       new[] { ObjectKind.EventNpc }),
         (NavCategory.Enemies,         new[] { ObjectKind.BattleNpc }),
+        // Verbuendete: dieselben Objektarten wie Gegner, plus Pc, in
+        // GetCategoryObjects von CombatSide getrennt - ein Dungeon-Trupp ist
+        // BattleNpc, solange er aus Trust/Duty-Support besteht, und Pc, sobald es
+        // echte Mitspieler sind. Der Browser muss beides unter einer Kategorie
+        // finden.
+        (NavCategory.Allies,          new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
         (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        // Inhalte: dieselbe Form wie Haendler oben - eine Objektart, eingeengt
+        // durch eine Nachschlage-Klasse, die die spieleigenen Sheets liest.
+        // Treasure fehlt mit Absicht: eine Inhalts-Tuer ist immer ein EventObj,
+        // Schatztruhen wuerden den Scan nur verbreitern.
+        (NavCategory.Duties,          new[] { ObjectKind.EventObj }),
         // Quest-only variants of the three categories above (user request
         // 2026-08-02). Same object kinds, but restricted to what the current
         // quest markers point at - see IsQuestOnlyCategory / GetCategoryObjects.
@@ -476,6 +496,17 @@ public sealed class NavigationService
             var label = $"{NpcPrefix(obj)}{_objectNames.Describe(obj)}";
             description = label + _memory.NumberSuffix(obj, label)
                         + $", {AccessibilityStrings.ShopKindWord(_shops.KindOf(obj.BaseId))}"
+                        + _memory.VisitedSuffix(obj);
+        }
+        else if (IsDutyCategory && DungeonSide.Describe(obj, _data, _log) is { } duty)
+        {
+            // Genau dieselbe Form wie beim Haendler eine Zeile hoeher: in der
+            // Kategorie Inhalte ersetzt der INHALT das nichtssagende "Objekt". Er
+            // muss es auch, denn jede dieser Tueren heisst im Spiel "Eingang" - ohne
+            // den Namen des Inhalts sind 30 Tueren im Gebiet 30 mal dasselbe Wort.
+            var label = _objectNames.Describe(obj);
+            description = label + _memory.NumberSuffix(obj, label)
+                        + $", {AccessibilityStrings.DutyEntrance(duty.Name, duty.ContentType, duty.Level, duty.TypeName)}"
                         + _memory.VisitedSuffix(obj);
         }
         else
@@ -1477,6 +1508,28 @@ public sealed class NavigationService
             return merchants;
         }
 
+        // Freund/Feind. Bis hierher ist "Gegner" schlicht ObjectKind.BattleNpc, und
+        // das ist auch der Trust-Trupp, der Karfunkel und das Begleitchocobo (User im
+        // Dungeon: *"everything in combat drops into the enemies category"*).
+        // CombatSide entscheidet das ausschliesslich an spieleigenen Feldern und nur
+        // in EINE Richtung: es nimmt etwas aus Gegner heraus, wenn das Spiel es selbst
+        // als Begleiter oder Gruppenmitglied fuehrt. Ein Mob, ueber den das Spiel
+        // nichts sagt, bleibt Gegner - ein nicht gepullter Mob kann also nicht aus der
+        // Liste fallen.
+        var cat = Categories[_categoryIndex].Cat;
+        if (cat == NavCategory.Enemies)
+            return objects.Where(CombatSide.IsEnemy).ToList();
+        if (cat == NavCategory.Allies)
+            return objects.Where(CombatSide.IsAlly).ToList();
+
+        // Inhalte: dieselbe Form wie der Haendler-Block oben. Die Verbindung Objekt ->
+        // Inhalt gehoert dem Spiel (EObj.Data -> InstanceContentGuide ->
+        // ContentFinderCondition); wir fragen sie nur ab. Ein Objekt, dessen Daten sich
+        // nicht aufloesen lassen, steht schlicht nicht in dieser Liste und behaelt
+        // seinen Platz unter Objekte - es kann also nichts verloren gehen.
+        if (cat == NavCategory.Duties)
+            return objects.Where(o => DungeonSide.Describe(o, _data, _log) != null).ToList();
+
         if (!IsQuestOnlyCategory) return objects;
 
         // Quest-only category: two independent links, both owned by the game.
@@ -1528,6 +1581,9 @@ public sealed class NavigationService
 
     /// <summary>Whether the current category shows only shop keepers.</summary>
     private bool IsMerchantCategory => Categories[_categoryIndex].Cat == NavCategory.Merchants;
+
+    /// <summary>Whether the current category shows only duty entrances.</summary>
+    private bool IsDutyCategory => Categories[_categoryIndex].Cat == NavCategory.Duties;
 
     // ── Gehhilfe: manuell laufen, geführt von Beacon + Ansagen ──
     // Seit V4.63 pfadbasiert: Beacon und Richtungsansagen verfolgen den
