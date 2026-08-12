@@ -857,6 +857,29 @@ public static class AccessibilityStrings
     public static string TargetHpSentence(uint cur, uint max) =>
         IsGerman ? $"Ziel HP: {Percent(cur, max)} Prozent." : $"Target HP: {Percent(cur, max)} percent.";
 
+    // ── Aktions-Form (ActionShapeService) ───────────────────────────
+    //  Der Tooltip nennt die Zahl ("Radius, 5y"), die FORM zeichnet das Spiel nur.
+    //  Diese Woerter sind der Text-Ersatz dafuer.
+
+    /// <summary>Kreis. Beim Kreis stimmt das Wort "Radius" des Tooltips.</summary>
+    public static string ShapeCircle => IsGerman ? "Kreis" : "circle";
+
+    /// <summary>Kegel, dessen Telegraph-Grafik keinen Winkel nennt. Sagt KEINEN
+    /// Winkel statt eines geratenen.</summary>
+    public static string ShapeCone => IsGerman ? "Kegel" : "cone";
+
+    /// <summary>Kegel mit dem vollen Winkel aus dem Grafiknamen (gl_fan090 = 90).</summary>
+    public static string ShapeConeWithAngle(float fullAngleDeg) =>
+        IsGerman ? $"Kegel, {fullAngleDeg:0.#} Grad" : $"cone, {fullAngleDeg:0.#} degrees";
+
+    /// <summary>Linie beziehungsweise Rechteck. Die halbe Breite (XAxisModifier)
+    /// ist unbestaetigt und wird deshalb nicht gesprochen.</summary>
+    public static string ShapeLine => IsGerman ? "Linie" : "line";
+
+    /// <summary>Wie die Form an die Tooltip-Ansage angehaengt wird.</summary>
+    public static string ShapeSuffix(string shape) =>
+        IsGerman ? $"Form: {shape}" : $"Shape: {shape}";
+
     /// <summary>", HP X percent" fragment appended to a target announcement.</summary>
     public static string TargetHpFragment(uint cur, uint max) =>
         IsGerman ? $", HP {Percent(cur, max)} Prozent" : $", HP {Percent(cur, max)} percent";
