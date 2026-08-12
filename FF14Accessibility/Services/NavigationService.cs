@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LuminaENpcResident = Lumina.Excel.Sheets.ENpcResident;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
@@ -78,6 +79,9 @@ public sealed class NavigationService
     private readonly ObjectMemoryService _memory;
     private readonly Configuration _config;
     private readonly IDataManager _data;
+    // Only read for the movement mode, which decides whether turning the
+    // character or turning the camera is what actually steers manual walking.
+    private readonly IGameConfig _gameConfig;
     private readonly IPluginLog _log;
 
     // Aktuell verfolgtes Ziel
@@ -101,8 +105,10 @@ public sealed class NavigationService
         ObjectMemoryService memory,
         Configuration config,
         IDataManager data,
+        IGameConfig gameConfig,
         IPluginLog log)
     {
+        _gameConfig = gameConfig;
         _clientState = clientState;
         _objectTable = objectTable;
         _targetManager = targetManager;
@@ -1924,6 +1930,87 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt($"{FormatDistance(guideDist)}, {DirectionText(relAngle)}{VerticalHint(player, guidePoint)}.");
         _log.Info($"[Nav] Gehhilfe: dist={guideDist:F1} zielDist={distance:F1} relAngle={relAngle:F0} " +
                   $"wp={_routeCursor}/{_route?.Count ?? 0} rot={player.Rotation:F2}");
+    }
+
+    /// <summary>
+    /// Turns the player to where the walk guide is steering, once per press.
+    /// Built for MANUAL walking: the guide says "24 Meter, leicht rechts", but
+    /// finding that heading by ear costs time at every corner.
+    /// <para>
+    /// BOTH the character rotation and the camera direction are set, because
+    /// which of the two steers walking depends on the movement mode - standard
+    /// walks where the CAMERA looks, legacy where the CHARACTER looks - and the
+    /// structs do not say which is active. The mode is logged so the first press
+    /// settles it and the loser can be dropped afterwards.
+    /// </para>
+    /// <para>
+    /// The character angle is exact: the blick vector is (sin, cos) in XZ, so the
+    /// target rotation is atan2(dx, dz) - the same convention
+    /// <see cref="RelativeAngle"/> is built on and that was verified in-game
+    /// 2026-07-10. The camera field <c>Camera.DirH</c> (ilspycmd 2026-08-12) is
+    /// set to the SAME angle, which ASSUMES both use one convention. That
+    /// assumption is not verified yet, which is why the log prints the camera's
+    /// own DirH next to the character rotation BEFORE anything is written: one
+    /// press with the camera behind the player shows whether the two agree.
+    /// </para>
+    /// </summary>
+    public unsafe void FaceGuideDirection()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+
+        var guidePoint = CurrentGuidePoint;
+        if (guidePoint == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.FaceNoRoute);
+            return;
+        }
+
+        var target = guidePoint.Value;
+        var dx = target.X - player.Position.X;
+        var dz = target.Z - player.Position.Z;
+        if (Math.Abs(dx) < 0.01f && Math.Abs(dz) < 0.01f)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.FaceAlreadyThere);
+            return;
+        }
+
+        var targetRotation = (float)Math.Atan2(dx, dz);
+        var distance       = Vector3.Distance(player.Position, target);
+
+        // Movement mode: 0 = standard (camera-relative), 1 = legacy - read from
+        // the game's own config rather than assumed.
+        var moveMode = _gameConfig.UiControl.TryGetUInt("MoveMode", out var mm) ? (int)mm : -1;
+
+        var camera  = CameraManager.Instance();
+        var gameCam = camera != null ? camera->Camera : null;
+        var dirHBefore = gameCam != null ? gameCam->DirH : float.NaN;
+
+        _log.Info($"[Face] vorher: rot={player.Rotation:F3} dirH={dirHBefore:F3} " +
+                  $"ziel={targetRotation:F3} dist={distance:F1} moveMode={moveMode}");
+
+        ((CSGameObject*)player.Address)->Rotation = targetRotation;
+        if (gameCam != null) gameCam->DirH = targetRotation;
+
+        _log.Info($"[Face] nachher: rot={((CSGameObject*)player.Address)->Rotation:F3} " +
+                  $"dirH={(gameCam != null ? gameCam->DirH : float.NaN):F3}");
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.FaceAligned(FormatDistance(distance)));
+    }
+
+    /// <summary>
+    /// Where the walk guide is currently steering - the active waypoint while a
+    /// route exists, the destination itself otherwise. Null when no guide runs.
+    /// </summary>
+    private Vector3? CurrentGuidePoint
+    {
+        get
+        {
+            if (!_walkGuideActive) return null;
+            return _route != null && _routeCursor < _route.Count
+                ? _route[_routeCursor]
+                : _walkDestPosition;
+        }
     }
 
     /// <summary>

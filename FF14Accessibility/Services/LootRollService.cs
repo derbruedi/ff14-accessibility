@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using LuminaItem = Lumina.Excel.Sheets.Item;
 
@@ -209,6 +210,88 @@ public sealed class LootRollService
         RollResult.Awarded => AccessibilityStrings.LootRolledWon,
         _                  => string.Empty,
     };
+
+    /// <summary>
+    /// One row of the roll window, worded for the list navigation. The rows
+    /// carry no readable text of their own: in the UI dump (2026-08-12) every
+    /// text node inside a row is empty except the roll number, which is why
+    /// stepping through the list only ever said "0".
+    /// <para>
+    /// The window keeps its own copy of what it draws - <c>AddonNeedGreed</c>
+    /// holds 16 <c>LootItemInfo</c> entries with ItemName, ItemId, IconId, Roll
+    /// and ItemCount plus NumItems and SelectedItemIndex (ilspycmd-verified
+    /// 2026-08-12) - so the row is read there instead of from the nodes.
+    /// </para>
+    /// </summary>
+    /// <param name="rowIndex">Row the cursor moved to, 0-based.</param>
+    /// <param name="dedupKey">
+    /// Identity of the row without the countdown. The caller uses it to drop
+    /// repeats while the cursor flickers on one row; the spoken text alone
+    /// would differ every second and defeat that.
+    /// </param>
+    /// <returns>Empty when the window is gone or the row is not filled.</returns>
+    public unsafe string DescribeRollRow(int rowIndex, out string dedupKey)
+    {
+        dedupKey = string.Empty;
+
+        var handle = _gameGui.GetAddonByName("NeedGreed");
+        if (handle.IsNull) return string.Empty;
+        var addon = (AddonNeedGreed*)(nint)handle;
+        if (addon == null) return string.Empty;
+        if (rowIndex < 0 || rowIndex >= addon->NumItems) return string.Empty;
+
+        var info = addon->Items[rowIndex];
+        if (info.ItemId == 0) return string.Empty;
+
+        var name  = ResolveItemName(info.ItemId);
+        var count = (int)info.ItemCount;
+        dedupKey  = $"{info.ItemId}x{count}";
+
+        // Options and countdown come from the game state, not from the window:
+        // whether need is barred is nowhere in the row (the button stays
+        // visible and only the click is refused - log 2026-08-12 20:38:07
+        // "Du besitzt diesen Gegenstand bereits").
+        var options   = string.Empty;
+        var remaining = string.Empty;
+        var slot      = FindLootSlot(rowIndex, info.ItemId);
+        if (slot >= 0)
+        {
+            var lootItem = Loot.Instance()->Items[slot];
+            options = DescribeOptions(lootItem.RollState);
+            var seconds = (int)lootItem.Time;
+            if (seconds > 0) remaining = AccessibilityStrings.LootRollRemaining(seconds);
+        }
+
+        _log.Info($"[Loot] Zeile {rowIndex} von {addon->NumItems}: item={info.ItemId} '{name}' x{count} " +
+                  $"lootSlot={slot}");
+        return AccessibilityStrings.LootRollRow(name, count, options, remaining);
+    }
+
+    /// <summary>
+    /// The <c>Loot</c> slot a window row belongs to, or -1 when none matches.
+    /// <para>
+    /// Neither struct carries a back reference to the other (LootItem has
+    /// ChestObjectId/ChestItemIndex, LootItemInfo has no slot field at all -
+    /// ilspycmd 2026-08-12), so row order cannot be PROVEN to equal slot order.
+    /// The match is therefore by item id, with the same-numbered slot preferred
+    /// so two identical drops keep their order. The row and the slot it matched
+    /// are logged, which settles the question on the next real roll.
+    /// </para>
+    /// </summary>
+    private unsafe int FindLootSlot(int rowIndex, uint itemId)
+    {
+        var loot = Loot.Instance();
+        if (loot == null) return -1;
+
+        var items = loot->Items;
+        if (rowIndex >= 0 && rowIndex < items.Length && items[rowIndex].ItemId == itemId)
+            return rowIndex;
+
+        for (var i = 0; i < items.Length; i++)
+            if (items[i].ItemId == itemId) return i;
+
+        return -1;
+    }
 
     private string ResolveItemName(uint itemId)
     {
