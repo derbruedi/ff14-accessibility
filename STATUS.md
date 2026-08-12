@@ -32,7 +32,23 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 >>> ZIEL IST DER FUEHRUNGSPUNKT DER GEHHILFE (`_route[_routeCursor]`, sonst das
     Ziel selbst). Ohne laufende Gehhilfe sagt es "Kein Weg aktiv."
 
->>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. Zweig test/prs.
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt.
+
+>>> RELEASED als v5.83 (2026-08-12, 22:23) - OHNE die fuenf PRs, wie vom User
+    angesagt. Auf main kamen die drei Features per cherry-pick vom Testzweig;
+    beim Aufloesen fielen die PR-Anteile heraus (CharaMakeReader und der
+    Chat-Puffer-Block existieren auf main nicht). Neu auf main noetig war nur der
+    PluginService `IGameConfig` - den brachte bisher PR #5 mit.
+    VERIFIZIERT: v5.83 ist "Latest", alle 4 Assets dran,
+    `releases/latest/download/latest.zip` liefert 654.430 Bytes (= der neue
+    Build), repo.json auf main steht auf 5.83.0.0. Der Installer war seit v5.82
+    unveraendert (keine Commits unter Installer/), deshalb exe + installer.json
+    unveraendert uebernommen - SHA256 gegengeprueft, stimmt ueberein.
+
+>>> IN-GAME BESTAETIGT vor dem Release: Auswahllisten und die Numpad5-Drehung.
+    Die Verlosungszeilen sind weiterhin UNGETESTET (kein Dungeon seitdem), und
+    die Kamera-Annahme aus der Numpad5-Ansage ist noch nicht ausgewertet - dafuer
+    muss einmal ein `[Face] vorher:` aus dem Log angeschaut werden.
 
 ## FRUEHER AM TAG (2026-08-12, "AUSWAHLLISTEN IN DER KONFIGURATION SAGTEN IMMER DENSELBEN WERT")
 
