@@ -288,6 +288,20 @@ public sealed class UIReaderService : IDisposable
     private static readonly HashSet<string> YesNoLabels =
         ["Ja", "Nein", "Yes", "No", "??", "???", "Oui", "Non"];
 
+    /// <summary>
+    /// Das Gewoelbe-Fenster "Charakterinfo", oder null, solange es nicht gesetzt ist.
+    /// Eine Property statt eines Konstruktor-Arguments, damit die Signatur dieser Datei
+    /// unveraendert bleibt; ohne sie verhaelt sich der Leser exakt wie zuvor.
+    /// </summary>
+    public DeepDungeonPanel? DeepDungeonPanel { get; set; }
+
+    /// <summary>
+    /// Die Ebene des Tiefen Gewoelbes, damit die geoeffneten Truhen eines Laufs neben die
+    /// Truhen-Zaehlung des Ergebnisschirms ins Log geschrieben werden koennen. Property
+    /// aus demselben Grund wie oben.
+    /// </summary>
+    public DeepDungeonFloor? DeepDungeonFloor { get; set; }
+
     // Plugin.cs pr�ft dies, um Navigationstasten nur bei aktivem Men� zu verarbeiten
     public bool HasActiveMenu
     {
@@ -365,6 +379,13 @@ public sealed class UIReaderService : IDisposable
         // read on PostUpdate with dedup (like Talk/Gathering). Suppressed in the
         // generic path via SpecialSetup/UpdateAddons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
+
+        // -- Tiefes Gewoelbe: Ergebnisschirm ---------------------------
+        // Der Schirm am Ende eines Laufs zaehlt die entdeckten Truhen nach FARBE. Er
+        // wird vollstaendig ins Log geschrieben, weil der allgemeine Text-Scanner ihn
+        // nicht melden kann: der protokolliert nur einen Knoten, dessen Text sich nach
+        // dem Zwischenspeichern GEAENDERT hat.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "DeepDungeonResult", OnDeepDungeonResultUpdate);
 
         // -- SelectYesno ------------------------------------------
         _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
@@ -2033,6 +2054,14 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
                 text = iconRow;
         }
+
+        // Das Gewoelbe-Fenster "Charakterinfo": seine Gegenstands-, Magizit- und
+        // Wirkungs-Plaetze sind Symbole ganz ohne Text-Knoten, das Blaettern darueber war
+        // also vollstaendig stumm. Bewusst als LETZTES in der Kette: es beansprucht nur
+        // einen Platz, der sonst nichts sagen wuerde - wo das Spiel seinen eigenen
+        // Tooltip bindet, gewinnen weiterhin dessen Worte. Siehe DeepDungeonPanel.
+        if (DeepDungeonPanel != null)
+            text = DeepDungeonPanel.NameSlot(node, text, FindAddonNameForNode(node));
 
         // Deferred skill description: runs BEFORE the dedup return so it keeps
         // ticking while the focus is parked on one skill (the dedup below would
@@ -5007,6 +5036,66 @@ public sealed class UIReaderService : IDisposable
     private bool   _bankAnnounced;
     private string _lastBankAmount = string.Empty;
     private string _lastBankMode   = string.Empty;
+
+    // Was der Ergebnisschirm des Tiefen Gewoelbes sagt, vollstaendig ins Log geschrieben.
+    // Er zaehlt "Entdeckte Truhen" nach Farbe, und daneben steht, welche Truhen-TYPEN im
+    // selben Lauf geoeffnet wurden (DeepDungeonFloor.LogRunTally) - zwei Zeilen im Log,
+    // die einander zuordnen, ohne dass etwas gefolgert wird.
+    //
+    // Einmal je verschiedenem Inhalt protokolliert, damit ein Fenster, das sich jeden
+    // Frame aktualisiert, EINE Zeile schreibt und nicht tausende.
+    private string _lastDeepResult = string.Empty;
+
+    private unsafe void OnDeepDungeonResultUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastDeepResult = string.Empty;
+            return;
+        }
+
+        var parts = new List<string>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null) continue;
+
+            if (n->Type == NodeType.Text)
+            {
+                AddDeepResultText(parts, n);
+                continue;
+            }
+
+            // Auch eine Ebene tiefer: dieses Fenster legt seine Zaehlungen in
+            // Komponenten, und dort hoert der oberste Durchlauf von ReadAllTexts auf.
+            if ((int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+            {
+                var child = comp->UldManager.NodeList[j];
+                if (child != null && child->Type == NodeType.Text) AddDeepResultText(parts, child);
+            }
+        }
+
+        if (parts.Count == 0) return;
+
+        var line = string.Join(" | ", parts);
+        if (line == _lastDeepResult) return;
+        _lastDeepResult = line;
+
+        _log.Info($"[DeepResult] {line}");
+        DeepDungeonFloor?.LogRunTally("Ergebnisschirm");
+    }
+
+    private unsafe void AddDeepResultText(List<string> into, AtkResNode* node)
+    {
+        if (!node->IsVisible()) return;
+        var text = AtkText.Read((AtkTextNode*)node).Trim();
+        if (text.Length == 0) return;
+        into.Add($"{node->NodeId}='{text}'");
+    }
 
     private unsafe void OnBankUpdate(AddonEvent type, AddonArgs args)
     {

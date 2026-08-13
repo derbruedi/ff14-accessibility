@@ -2306,4 +2306,138 @@ public static partial class AccessibilityStrings
     public static string CharaMakeNoPreview =>
         IsGerman ? "Vorschau-Modell nicht eindeutig, Aussehen nicht lesbar."
                  : "Preview model not identifiable, appearance cannot be read.";
+
+    // ── Tiefes Gewoelbe ─────────────────────────────────────────────
+    //
+    // Jeder NAME und jede BESCHREIBUNG, die im Gewoelbe gesprochen wird, ist die des
+    // Spiels und kommt aus dessen eigenen Sheets. Die Woerter hier sind nur der Rahmen
+    // darum: welche Art von Wirkung eine Zeile ist, wo ein Platz sitzt, ob er leer ist.
+
+    /// <summary>Ein ebenenweiter Zustand (DeepDungeonStatus).</summary>
+    public static string DeepKindFloor => IsGerman ? "Ebene" : "Floor";
+
+    /// <summary>Ein ebenenweites Verbot (DeepDungeonBan).</summary>
+    public static string DeepKindBan => IsGerman ? "Verbot" : "Restriction";
+
+    /// <summary>Eine ebenenweite Gefahr (DeepDungeonDanger).</summary>
+    public static string DeepKindDanger => IsGerman ? "Gefahr" : "Hazard";
+
+    /// <summary>Pilgerpfad: die auf dieser Ebene laufende Besonderheit.</summary>
+    public static string DeepKindGimmick => IsGerman ? "Diese Ebene" : "This floor";
+
+    /// <summary>Pilgerpfad: die fuer die naechste Ebene vorgemerkte Besonderheit.</summary>
+    public static string DeepKindGimmickNext => IsGerman ? "Nächste Ebene" : "Next floor";
+
+    /// <summary>Eine laufende Pomander-Wirkung.</summary>
+    public static string DeepKindItemEffect => IsGerman ? "Gegenstand" : "Item effect";
+
+    /// <summary>
+    /// Welches Gewoelbe und welche Ebene davon. Beide Hauptwoerter gehoeren dem SPIEL -
+    /// der Name des Gewoelbes und das Wort, mit dem der Ergebnisschirm die Zahl
+    /// beschriftet - hier kommt nur die Wortstellung dazu.
+    /// </summary>
+    public static string DeepFloorLine(string dungeon, string floorWord, int floor)
+    {
+        var number = floorWord.Length > 0 ? $"{floorWord} {floor}" : floor.ToString();
+        return dungeon.Length > 0 ? $"{dungeon}, {number}" : number;
+    }
+
+    /// <summary>
+    /// Gesagt, wenn die Ebenen-Taste ausserhalb eines Tiefen Gewoelbes gedrueckt wird.
+    ///
+    /// Sie ANTWORTET, statt still zu bleiben: Stille ist die eine Reaktion, die ein
+    /// blinder Spieler nicht von einer kaputten Taste unterscheiden kann, und diese
+    /// Taste wird aus Gewohnheit gedrueckt, sobald ein Lauf vorbei ist.
+    /// </summary>
+    public static string DeepFloorOutside =>
+        IsGerman ? "Kein Tiefes Gewölbe." : "Not in a deep dungeon.";
+
+    /// <summary>Kategorie-Bezeichnung fuer die Raumliste im Tiefen Gewoelbe.</summary>
+    public static string DeepCategoryRooms => IsGerman ? "Räume" : "Rooms";
+
+    /// <summary>Kategorie-Bezeichnung fuer die Truhen einer Ebene.</summary>
+    public static string DeepCategoryTreasure => IsGerman ? "Schätze" : "Treasure";
+
+    /// <summary>Kategorie-Bezeichnung fuer die beiden Leuchten.</summary>
+    public static string DeepCategoryCairns => IsGerman ? "Leuchten" : "Cairns";
+
+    /// <summary>Ein Raum, nach dem spieleigenen Index dafuer.</summary>
+    public static string DeepRoomName(int index) => IsGerman ? $"Raum {index}" : $"Room {index}";
+
+    /// <summary>Markiert den Raum, in dem der Spieler steht.</summary>
+    public static string DeepRoomYouAreHere => IsGerman ? "hier" : "you are here";
+
+    /// <summary>Markiert den Startraum der Ebene (RoomFlags.Home).</summary>
+    public static string DeepRoomStart => IsGerman ? "Startraum" : "starting room";
+
+    /// <summary>Wie viele Truhen der Director in einen Raum legt, im spieleigenen Wort
+    /// fuer eine Truhe.</summary>
+    public static string DeepRoomCoffers(int count, string cofferWord) =>
+        count == 1 ? $"1 {cofferWord}" : $"{count} {cofferWord}";
+
+    /// <summary>Wohin ein Raum sich oeffnet, aus seinen eigenen Verbindungs-Flags.</summary>
+    public static string DeepRoomExits(System.Collections.Generic.IEnumerable<string> directions) =>
+        (IsGerman ? "Ausgänge " : "exits ") + string.Join(", ", directions);
+
+    public static string DirNorth => IsGerman ? "Norden" : "north";
+    public static string DirEast  => IsGerman ? "Osten"  : "east";
+    public static string DirSouth => IsGerman ? "Süden"  : "south";
+    public static string DirWest  => IsGerman ? "Westen" : "west";
+
+    /// <summary>
+    /// Ein aufgedeckter Raum, fuer den es keinen begehbaren Punkt gibt.
+    ///
+    /// DIE FORMULIERUNG IST DIE KORREKTUR. Hier stand "noch nicht betreten", und das ist
+    /// eine Behauptung ueber den SPIELER, die falsch sein kann - er kann laengst
+    /// durchgelaufen sein, waehrend das Plugin neu geladen wurde. Was das Plugin
+    /// tatsaechlich weiss, ist enger und betrifft es SELBST: der Director gibt Raeumen
+    /// keine Koordinaten, der einzige begehbare Punkt ist also einer, auf dem es den
+    /// Spieler stehen gesehen hat.
+    /// </summary>
+    public static string DeepRoomNoRoute => IsGerman ? "kein Weg bekannt" : "no route known";
+
+    /// <summary>Ein Teil der Ebene, den das Spiel nicht als aufgedeckt fuehrt. Traegt ein
+    /// Ziel und NICHTS darueber, was darin ist.</summary>
+    public static string DeepRoomUnexplored(int index) =>
+        IsGerman ? $"Unerforscht {index}" : $"Unexplored {index}";
+
+    /// <summary>Gesagt, wenn die Raumliste abgefragt wird und die Ebene keine hergibt -
+    /// ausserhalb eines Gewoelbes, oder solange den Raumdaten nicht zu trauen ist.</summary>
+    public static string DeepNoRooms =>
+        IsGerman ? "Keine Raumdaten." : "No room data.";
+
+    /// <summary>
+    /// Wo ein Platz in seinem Abschnitt sitzt ("3 von 16"), oder "", wenn der Spieler
+    /// Listenpositionen abgeschaltet hat - der Aufrufer muss dann auch das Trennzeichen
+    /// weglassen, sonst endet die Zeile in einem haengenden Komma.
+    /// </summary>
+    public static string DeepSlotPosition(int index, int count) => Counter(index, count);
+
+    /// <summary>
+    /// Eine Aetherpool-Zeile mit der Staerke, die das Fenster nur im Symbol zeichnet.
+    /// Der NAME ist der des Spiels, und die Form "+N" ebenfalls - dessen eigene
+    /// Chat-Zeile lautet *"Deine Aetherpool-Waffe flackert. Ihre Stärke ist jetzt +5."*
+    /// </summary>
+    public static string DeepGearStrength(string name, int strength) => $"{name} +{strength}";
+
+    /// <summary>Ein Platz, den dieses Gewoelbe gar nicht benutzt.</summary>
+    public static string DeepSlotEmpty => IsGerman ? "leerer Platz" : "empty slot";
+
+    /// <summary>
+    /// Ein Platz, den das Gewoelbe SEHR WOHL benutzt, mit der Anzahl im Besitz -
+    /// einschliesslich keiner. Null ist hier eine echte Antwort und kein Grund zu
+    /// schweigen: das Fenster zeichnet das Symbol ausgegraut, ein sehender Spieler sieht
+    /// also, WOFUER der Platz ist, bevor er einen besitzt.
+    /// </summary>
+    public static string DeepSlotCount(string name, int count) =>
+        IsGerman ? $"{name} mal {count}" : $"{name} times {count}";
+
+    /// <summary>Ein Pomander, dessen Wirkung gerade laeuft.</summary>
+    public static string DeepEffectActive => IsGerman ? "aktiv" : "active";
+
+    /// <summary>Ein Pomander, dessen Wirkung nicht laeuft.</summary>
+    public static string DeepEffectInactive => IsGerman ? "nicht aktiv" : "not active";
+
+    /// <summary>Ein Pomander, den das Spiel gerade verweigert (Items[i].IsUsable false).</summary>
+    public static string DeepItemUnusable => IsGerman ? "nicht verwendbar" : "not usable";
 }

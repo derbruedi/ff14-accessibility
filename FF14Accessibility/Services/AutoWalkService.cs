@@ -130,6 +130,11 @@ public sealed class AutoWalkService : IDisposable
     private readonly IPluginLog _log;
     private readonly NavmeshIpc _nav;
 
+    /// <summary>Die eine Tuer zu vnavmesh, geteilt statt ein zweites Mal geoeffnet - das
+    /// Tiefe Gewoelbe braucht Nav.Rebuild bei einem Ebenenwechsel. Nur lesend; jeder
+    /// Aufruf laeuft weiterhin durch die Absicherungen von NavmeshIpc.</summary>
+    public NavmeshIpc Navmesh => _nav;
+
     private Phase _phase = Phase.Idle;
     private DateTime _startedAt;
     private DateTime _guardUntil;
@@ -192,6 +197,34 @@ public sealed class AutoWalkService : IDisposable
     }
 
     // ── Höhen auf dem Netz suchen ────────────────────────────────────
+
+    /// <summary>
+    /// Legt einen Punkt auf eine Stelle, die auf dem Netz auch wirklich ERREICHBAR ist -
+    /// nicht bloss auf die naechstgelegene Stelle darauf.
+    ///
+    /// Der aufgezeichnete Punkt eines Gewoelbe-Raumes ist der Ursprung des Raum-Moduls in
+    /// der Layout-Datei des Spiels und kann in einer Wand oder einem Pfeiler liegen.
+    /// NearestPoint gaebe bereitwillig einen Netzpunkt auf der ANDEREN Seite dieser Wand
+    /// zurueck, und der Lauf endet dann einen Raum entfernt davor. NearestPointReachable
+    /// stellt vnavmesh die staerkere Frage, der Zielpunkt liegt also dort, wo der Spieler
+    /// hinkommt, und die Wegsuche findet die Tuer von selbst.
+    ///
+    /// Faellt auf <see cref="ResolveFloorPoint"/> zurueck, das jedes andere Ziel im Plugin
+    /// benutzt - ein Netz, das die staerkere Frage nicht beantworten kann, laesst das
+    /// Verhalten also genau so, wie es war.
+    /// </summary>
+    public Vector3? ResolveReachablePoint(Vector3 approximate)
+    {
+        if (!_nav.IsReady) return null;
+
+        var reachable = _nav.NearestPointReachable(approximate, 20f, 10f);
+        if (reachable.HasValue)
+        {
+            _log.Info($"[Orte] NearestPointReachable ({Fmt(approximate)}) -> ({Fmt(reachable.Value)})");
+            return reachable;
+        }
+        return ResolveFloorPoint(approximate);
+    }
 
     /// <summary>
     /// Resolves the walkable height for a 2D map position (map markers carry

@@ -36,6 +36,12 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
     [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
     [PluginService] private IGameInteropProvider    Interop         { get; init; } = null!;
+    // IGameConfig steht weiter oben - drei Nutzer, eine Deklaration (Chat-Filter,
+    // Bewegungsmodus). PR #6 brachte eine zweite mit, die hier entfallen ist.
+    // Loest die Makros in Sheet-Texten so auf, wie das Spiel es tut. Die
+    // Pomander-Beschreibungen brauchen das: dort steckt das Wort fuer eine Ebene in
+    // einem Switch-Makro, und ExtractText() allein wirft es weg (siehe DeepDungeonText).
+    [PluginService] private ISeStringEvaluator      SeStringEval    { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -103,15 +109,22 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginsService _dalamudPlugins;
     private readonly TooltipService _tooltips;
     private readonly TripleTriadService _tripleTriad;
+    // ── Tiefes Gewoelbe ──
+    private readonly DeepDungeonText    _deepText;
+    private readonly DeepDungeonState   _deepState;
+    private readonly DeepDungeonRoomMap _deepRoomMap;
+    private readonly DeepDungeonFloor   _deepFloor;
+    private readonly DeepDungeonNav     _deepNav;
+    private readonly DeepDungeonPanel   _deepPanel;
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    // TESTZWEIG test/prs: die veroeffentlichte 5.83 plus die fuenf offenen
+    // TESTZWEIG test/prs: die veroeffentlichte 5.83 plus die sechs offenen
     // Beitraege von aussen. Der Zusatz steht in der GESPROCHENEN Ansage, damit
     // beim Laden hoerbar ist, ob gerade die Testfassung oder die
     // veroeffentlichte 5.83 laeuft.
-    private const string PluginVersion    = "5.83 Testfassung mit fuenf Beitraegen";
-    private const string PluginVersionTag = "PR 1 HP+Stufe, PR 2 AoE-Form, PR 3 Verbuendete+Inhalte, PR 4 Charaktererstellung, PR 5 Chat-Puffer";
+    private const string PluginVersion    = "5.83 Testfassung mit sechs Beitraegen";
+    private const string PluginVersionTag = "PR 1 HP+Stufe, PR 2 AoE-Form, PR 3 Verbuendete+Inhalte, PR 4 Charaktererstellung, PR 5 Chat-Puffer, PR 6 Tiefes Gewoelbe";
 
     public Plugin()
     {
@@ -371,6 +384,36 @@ public sealed class Plugin : IDalamudPlugin
         _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
                                       _tolk, Log, _heading, _chatFilters);
+
+        // ── Tiefes Gewoelbe ──────────────────────────────────────────
+        // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
+        // (darunter das Wort, das das jeweilige Gewoelbe fuer eine Ebene benutzt), die
+        // ExtractText() wegwirft - der Auswerter des Spiels loest sie auf.
+        _deepText    = new DeepDungeonText(SeStringEval, Log);
+        // Die ebenenweiten Zustaende. Ein Gewoelbe fuehrt seine Verbote und seine
+        // Pomander-Wirkungen auf dem Content-Director, NICHT in der StatusList des
+        // Spielers - dafuer braucht es einen eigenen Leser.
+        _deepState   = new DeepDungeonState(DataManager, Log, _deepText);
+        // Die Ebene selbst - ihre Raeume und ihre Truhen - aus demselben Director.
+        _deepRoomMap = new DeepDungeonRoomMap(DataManager, Log);
+        _deepFloor   = new DeepDungeonFloor(DataManager, Log, _deepState, _deepRoomMap, ClientState);
+        _deepNav     = new DeepDungeonNav(DataManager, Log, _objectNames, _deepFloor, _tolk, _config, ObjectTable);
+        // Als Property uebergeben, damit NavigationService seine Signatur behaelt.
+        _navigation.DeepDungeon = _deepNav;
+        // Der aufgezeichnete Punkt eines Raumes ist der Ursprung seines Moduls in der
+        // Layout-Datei und kann in einer Wand liegen; ResolveReachablePoint legt ihn auf
+        // eine Stelle, die auch erreichbar ist. Ohne diese Zuweisung wird der Rohpunkt
+        // benutzt, und der Lauf endet an der Wand.
+        _deepNav.Walk = _autoWalk;
+        // Damit ein Raumpunkt auf Netz gelegt werden kann, das der Spieler wirklich
+        // erreicht: der Cache-Schluessel von vnavmesh kennt die Ebene nicht, jede Ebene
+        // nach der ersten wuerde sonst auf den Waenden der vorigen laufen.
+        _deepNav.Mesh = new DeepDungeonMesh(_deepFloor, _autoWalk.Navmesh, Log);
+        _deepPanel   = new DeepDungeonPanel(DataManager, Log, _deepState, ObjectTable, _deepText);
+        // Der Fokus-Leser benennt die Plaetze, die nur Symbole sind; die Ebene liefert
+        // dem Ergebnisschirm seine Gegenprobe. Beide als Property, aus demselben Grund.
+        _uiReader.DeepDungeonPanel = _deepPanel;
+        _uiReader.DeepDungeonFloor = _deepFloor;
 
         RegisterCommands();
         Framework.Update += OnFrameworkUpdate;
@@ -962,6 +1005,21 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
+    /// Sagt, in welchem Tiefen Gewoelbe der Spieler ist und auf welcher Ebene davon -
+    /// die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur
+    /// beilaeufig nennt.
+    ///
+    /// Unterbrechend, wie jede andere Antwort auf eine gedrueckte Taste: der Spieler
+    /// wartet darauf. Ausserhalb eines Gewoelbes sagt sie das, statt still zu bleiben -
+    /// siehe AccessibilityStrings.DeepFloorOutside.
+    /// </summary>
+    private void AnnounceDeepFloor()
+    {
+        var line = _deepFloor.DescribeFloor();
+        _tolk.SpeakInterrupt(line ?? AccessibilityStrings.DeepFloorOutside);
+    }
+
+    /// <summary>
     /// Turns the turn-by-turn compass announcement on or off and speaks the new
     /// state. When switching ON, the current facing is spoken once as immediate
     /// confirmation and the service is re-baselined so it does not echo the same
@@ -1331,6 +1389,7 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeySilence))       _tolk.Silence();
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
+        if (IsJustPressed(_config.KeyDeepFloor))     AnnounceDeepFloor();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
         if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
         if (IsJustPressed(_config.KeyToggleAoeWarning)) ToggleAoeWarning();
