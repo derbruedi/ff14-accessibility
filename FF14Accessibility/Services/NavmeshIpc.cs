@@ -23,6 +23,7 @@ public sealed class NavmeshIpc
 
     private readonly ICallGateSubscriber<bool> _isReady;
     private readonly ICallGateSubscriber<float> _buildProgress;
+    private readonly ICallGateSubscriber<bool> _rebuild;
     private readonly ICallGateSubscriber<Vector3, bool, float, bool> _moveCloseTo;
     private readonly ICallGateSubscriber<List<Vector3>, bool, object> _moveAlong;
     private readonly ICallGateSubscriber<object> _stop;
@@ -45,6 +46,10 @@ public sealed class NavmeshIpc
         // Subscribing is always safe - only INVOKE throws while vnavmesh is absent.
         _isReady               = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
         _buildProgress         = pluginInterface.GetIpcSubscriber<float>("vnavmesh.Nav.BuildProgress");
+        // Nav.Rebuild = Reload(allowLoadFromCache: false). Bewusst NICHT Nav.Reload:
+        // das liest den Cache unter DEMSELBEN Schluessel erneut, und die Raumaufteilung
+        // einer Gewoelbe-Ebene ist nicht Teil dieses Schluessels - siehe DeepDungeonMesh.
+        _rebuild               = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.Rebuild");
         _moveCloseTo           = pluginInterface.GetIpcSubscriber<Vector3, bool, float, bool>("vnavmesh.SimpleMove.PathfindAndMoveCloseTo");
         _moveAlong             = pluginInterface.GetIpcSubscriber<List<Vector3>, bool, object>("vnavmesh.Path.MoveTo");
         _stop                  = pluginInterface.GetIpcSubscriber<object>("vnavmesh.Path.Stop");
@@ -79,6 +84,17 @@ public sealed class NavmeshIpc
     /// <summary>Build progress 0..1, or -1 when no build is running. Also -1 when
     /// vnavmesh is absent - callers distinguish via <see cref="LastCallFailed"/>.</summary>
     public float BuildProgress => Call(_buildProgress, -1f, "Nav.BuildProgress");
+
+    /// <summary>
+    /// Baut das Wegenetz des aktuellen Gebiets NEU AUS DER GELADENEN SZENE und ignoriert
+    /// dabei den Cache. Das ist, was <c>/vnav rebuild</c> ausfuehrt.
+    ///
+    /// Der einzige Aufrufer ist das Tiefe Gewoelbe (siehe DeepDungeonMesh): dort kann der
+    /// Cache-Schluessel eine Ebene nicht von der naechsten unterscheiden, und ein
+    /// einfaches Reload gaebe dasselbe veraltete Netz zurueck. False heisst, dass
+    /// vnavmesh ueberhaupt nicht geantwortet hat.
+    /// </summary>
+    public bool Rebuild() => Call(_rebuild, false, "Nav.Rebuild");
 
     /// <summary>Whether vnavmesh is currently steering the character
     /// (FollowPath.Waypoints.Count > 0).</summary>

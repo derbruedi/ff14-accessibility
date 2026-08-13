@@ -42,6 +42,13 @@ internal enum NavCategory
     AcceptableQuests,
     Levequests,
     Waypoints,
+    // Nur INNERHALB eines Tiefen Gewoelbes angeboten, wo sie den Weltsatz
+    // vollstaendig ersetzen - siehe DeepDungeonCategories. Fallen bekommen keine
+    // eigene Kategorie: das Spiel fuehrt eine aufgedeckte Falle als BattleNpc, sie
+    // steht also bereits unter Gegner.
+    DeepTreasure,
+    DeepCairns,
+    DeepRooms,
 }
 
 /// <summary>A world object picked in the object browser, so walking to it does
@@ -153,6 +160,27 @@ public sealed class NavigationService
 
         PollMapFlag(player);
 
+        // Das Betreten oder Verlassen eines Tiefen Gewoelbes tauscht den gesamten
+        // Kategoriensatz, also faengt der Browser von vorne an, statt auf dem Index zu
+        // landen, den der andere Satz hinterlassen hat. Hier wird ausserdem der
+        // Ebenen-Schnappschuss geholt - ein reiner Lesevorgang, der nur ins Log
+        // schreibt (siehe DeepDungeonFloor).
+        if (DeepDungeon != null)
+        {
+            var deepNow = DeepDungeon.IsActive;
+            if (deepNow != _deepCategoriesActive)
+            {
+                _deepCategoriesActive = deepNow;
+                _categoryIndex = 0;
+                _cycleIndex = -1;
+                SelectedQuestDestination  = null;
+                SelectedPlaceDestination  = null;
+                SelectedObjectDestination = null;
+                _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
+            }
+            DeepDungeon.Poll(player);
+        }
+
         // "Most recent choice wins": acquiring a game target with the game's OWN
         // keys (Tab, F1-F12, F, mouse click) drops any object-browser marker
         // still selected from earlier (a quest goal, waypoint, aetheryte or
@@ -224,7 +252,7 @@ public sealed class NavigationService
     // NOT by its spoken label, so switching announcement language (/acc lang)
     // never breaks the category logic. The label is resolved for speech only,
     // via AccessibilityStrings.CategoryLabel.
-    private static readonly (NavCategory Cat, ObjectKind[]? Kinds)[] Categories =
+    private static readonly (NavCategory Cat, ObjectKind[]? Kinds)[] WorldCategories =
     {
         (NavCategory.All,             AllBrowseKinds),
         (NavCategory.Npcs,            new[] { ObjectKind.EventNpc }),
@@ -263,8 +291,69 @@ public sealed class NavigationService
         (NavCategory.Waypoints,       null),
     };
 
+    /// <summary>
+    /// Der Kategoriensatz INNERHALB eines Tiefen Gewoelbes. Er ersetzt den Weltsatz
+    /// vollstaendig, solange der Spieler in einem Gewoelbe ist.
+    ///
+    /// Eine Ebene enthaelt genau diese Arten von Dingen; sich durch sechzehn
+    /// Weltkategorien - Angelplaetze, Freibriefe, Aetheryten - zu blaettern, um sie zu
+    /// erreichen, sind fuenfzehn Tastendruecke Rauschen.
+    ///
+    /// ALLES bleibt drin, mit Absicht: nichts darf unerreichbar werden, nur weil keine
+    /// Regel darauf gepasst hat. Was die Einordnung nicht erkennt, ist genau einen
+    /// Tastendruck entfernt - wie zuvor.
+    /// </summary>
+    private static readonly (NavCategory Cat, ObjectKind[]? Kinds)[] DeepDungeonCategories =
+    {
+        (NavCategory.All,          AllBrowseKinds),
+        // Raeume kommen vom Content-Director, nicht aus der Objekttabelle - siehe
+        // DeepDungeonFloor. Kinds == null markiert das, wie bei den Markern auch.
+        (NavCategory.DeepRooms,    null),
+        // Schaetze nehmen ObjectKind.Treasure zusaetzlich zu EventObj: jede bisher
+        // gemessene Gewoelbe-Truhe ist ein EventObj, aber eine Truhe, die das Spiel
+        // unter seiner eigenen Truhen-Art fuehrt, darf nie aus der Kategorie fallen.
+        (NavCategory.DeepTreasure, new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        (NavCategory.DeepCairns,   new[] { ObjectKind.EventObj }),
+        (NavCategory.Enemies,      new[] { ObjectKind.BattleNpc }),
+    };
+
+    /// <summary>
+    /// Der gerade gueltige Kategoriensatz. Der Wechsel zwischen beiden Saetzen wird in
+    /// <see cref="Update"/> erkannt, das jeden Frame laeuft; die Begrenzung hier ist nur
+    /// eine Absicherung, damit ein Index aus dem anderen Satz nie ausserhalb liest.
+    /// </summary>
+    private (NavCategory Cat, ObjectKind[]? Kinds)[] Categories
+    {
+        get
+        {
+            var set = DeepDungeon?.IsActive == true ? DeepDungeonCategories : WorldCategories;
+            if (_categoryIndex >= set.Length) _categoryIndex = 0;
+            return set;
+        }
+    }
+
+    /// <summary>
+    /// Der Gewoelbe-Leser, oder null, solange er nicht gesetzt ist - dann verhaelt sich
+    /// diese Datei exakt wie in der offenen Welt. Eine Property statt eines
+    /// Konstruktor-Arguments, damit die Signatur unveraendert bleibt.
+    /// </summary>
+    public DeepDungeonNav? DeepDungeon { get; set; }
+
+    /// <summary>Ob der Gewoelbe-Satz im vorigen Frame galt, damit das Betreten oder
+    /// Verlassen eines Gewoelbes den Browser zuruecksetzen kann.</summary>
+    private bool _deepCategoriesActive;
+
     /// <summary>The spoken label of the current category, in the active language.</summary>
-    private string CurrentCategoryLabel => AccessibilityStrings.CategoryLabel(Categories[_categoryIndex].Cat);
+    private string CurrentCategoryLabel => Categories[_categoryIndex].Cat switch
+    {
+        NavCategory.DeepRooms    => AccessibilityStrings.DeepCategoryRooms,
+        NavCategory.DeepTreasure => AccessibilityStrings.DeepCategoryTreasure,
+        NavCategory.DeepCairns   => AccessibilityStrings.DeepCategoryCairns,
+        var cat                  => AccessibilityStrings.CategoryLabel(cat),
+    };
+
+    /// <summary>Ob der Browser gerade auf der Raumliste steht.</summary>
+    private bool IsDeepRoomCategory => Categories[_categoryIndex].Cat == NavCategory.DeepRooms;
 
     private bool IsQuestCategory           => Categories[_categoryIndex].Cat == NavCategory.QuestGoals;
     private bool IsUnacceptedQuestCategory => Categories[_categoryIndex].Cat == NavCategory.AcceptableQuests;
@@ -381,6 +470,16 @@ public sealed class NavigationService
             return;
         }
 
+        // Die Raumliste wird aus dem Content-Director gezaehlt, nicht aus der
+        // Objekttabelle - sie antwortet also auch dort, wo nichts geladen ist, und
+        // genau dafuer gibt es sie.
+        if (IsDeepRoomCategory)
+        {
+            var rooms = DeepDungeon?.RoomRows(_objectTable.LocalPlayer?.EntityId ?? 0).Count ?? 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, rooms));
+            return;
+        }
+
         var count = GetCategoryObjects().Count;
         _tolk.SpeakInterrupt(AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, count));
     }
@@ -421,6 +520,12 @@ public sealed class NavigationService
         if (IsFateCategory)
         {
             CycleFateDestination(direction, player);
+            return;
+        }
+
+        if (IsDeepRoomCategory)
+        {
+            CycleDeepRoom(direction, player);
             return;
         }
 
@@ -498,6 +603,58 @@ public sealed class NavigationService
                    $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
                    (rejected ? AccessibilityStrings.NotTargetedSuffix : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // ── Tiefes Gewoelbe: durch die Raeume der aktuellen Ebene blaettern ──
+
+    /// <summary>
+    /// Blaettert durch die Raeume der aktuellen Ebene.
+    ///
+    /// Die Zeilen werden bei JEDEM Druck neu gelesen, weil ein Raum, den der Spieler
+    /// gerade aufgedeckt hat, in der Liste auftauchen muss, ohne dass er die Kategorie
+    /// verlassen und neu betreten muss.
+    /// </summary>
+    private void CycleDeepRoom(int direction, IGameObject player)
+    {
+        var rows = DeepDungeon?.RoomRows(player.EntityId)
+                   ?? new List<DeepDungeonNav.RoomRow>();
+        if (rows.Count == 0)
+        {
+            SelectedObjectDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.DeepNoRooms);
+            return;
+        }
+
+        var count = rows.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var row = rows[_cycleIndex];
+
+        // Ein Raum, in dem der Spieler schon war, IST ein Laufziel: die Tuer, durch die
+        // er hereingekommen ist. Der Director gibt Raeumen keine Koordinaten, der
+        // einzige begehbare Punkt ist also einer, auf dem der Spieler beobachtet wurde.
+        //
+        // DIE PLATZHALTER-ID IST TRAGEND. Der Objekt-Zweig in Plugin.cs beginnt mit
+        // `if ((Target?.GameObjectId ?? 0) == obj.ObjectId) return None;` - bei einer Id
+        // von 0 und nichts anvisiertem vergleicht das 0 mit 0, gibt den Lauf an den
+        // Ziel-Pfad zurueck, und der Raum wird stillschweigend nie angelaufen.
+        // ulong.MaxValue kann weder auf ein echtes Objekt noch auf ein leeres Ziel
+        // passen, also laeuft der Positions-Zweig, die Objektsuche geht ins Leere, und
+        // der gemerkte Punkt wird benutzt.
+        SelectedObjectDestination = row.Walkable is { } point
+            ? new ObjectDestination(ulong.MaxValue, AccessibilityStrings.DeepRoomName(row.Index), point)
+            : null;
+
+        // Entfernung und Richtung, in derselben Form und Reihenfolge wie in jeder
+        // anderen Kategorie - der Raum hat jetzt eine echte Position, es gibt also
+        // keinen Grund, ihn anders anzusagen als ein Objekt.
+        var where = row.Walkable is { } dest
+            ? $", {FormatDistance(Vector3.Distance(player.Position, dest))}"
+              + $", {CalculateDirection(player, dest)}"
+            : string.Empty;
+
+        var text = $"{row.Text}{where}, {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Nav] Raum-Auswahl: {text} (Ziel {(row.Walkable?.ToString() ?? "keins")})");
         _tolk.SpeakInterrupt(text);
     }
 
@@ -1439,7 +1596,18 @@ public sealed class NavigationService
             return node + _memory.NumberSuffix(obj, node) + _memory.VisitedSuffix(obj);
         }
 
-        var name = _objectNames.Resolve(obj);
+        // Eine Gewoelbe-Truhe nennt ihre FARBE, wo das Spiel eine gibt - im spieleigenen
+        // Wort dafuer ("Silberne Schatztruhe", Addon 10421). Die Farbe kommt aus der
+        // Daten-Id des Objekts selbst und NICHT daraus, es mit dem Truhen-Array des
+        // Directors zu paaren: dieses Array enthaelt nur die entdeckten und noch nicht
+        // geoeffneten Truhen, "jeder Eintrag ist silbern" hiess also nie "jede Truhe
+        // hier ist silbern". Eine Truhe, deren Farbe nicht belegt ist, behaelt die
+        // schlichte "Schatztruhe" des Spiels - es geht nichts verloren und es wird
+        // nichts behauptet. Siehe DeepDungeonNav.
+        var name = (DeepDungeon != null && DeepDungeon.IsActive && DeepDungeon.IsCoffer(obj)
+                        ? DeepDungeon.ColourOf(obj)
+                        : null)
+                   ?? _objectNames.Resolve(obj);
         var label = name == null
             ? $"{NpcPrefix(obj)}{AccessibilityStrings.UnnamedOfKind(obj.ObjectKind)}"
             : $"{NpcPrefix(obj)}{name}{_objectNames.Qualifier(obj)}";
@@ -1475,6 +1643,22 @@ public sealed class NavigationService
             _shops.LogMerchants(trace, objects.Count);
             return merchants;
         }
+
+        // Die beiden Objekt-Kategorien des Tiefen Gewoelbes. Beide ordnen nach den
+        // spieleigenen WORTEN fuer die Dinge ein (Addon 10113 fuer eine Truhe,
+        // 10418/10419 fuer die beiden Leuchten), gelesen aus den Sheets in der Sprache
+        // des Clients - siehe DeepDungeonNav. Jede hier verworfene Truhe wird mit ihrer
+        // Daten-Id protokolliert, denn "ist ueberhaupt je eine bronzene erschienen?"
+        // ist eine Frage, die das Log beantworten koennen muss.
+        var cat = Categories[_categoryIndex].Cat;
+        if (cat == NavCategory.DeepTreasure && DeepDungeon != null)
+        {
+            var coffers = objects.Where(DeepDungeon.IsCoffer).ToList();
+            DeepDungeon.LogCofferPass(objects, coffers);
+            return coffers;
+        }
+        if (cat == NavCategory.DeepCairns && DeepDungeon != null)
+            return objects.Where(DeepDungeon.IsCairn).ToList();
 
         if (!IsQuestOnlyCategory) return objects;
 
