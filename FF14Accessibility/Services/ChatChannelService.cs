@@ -145,7 +145,7 @@ public sealed class ChatChannelService
     /// and a false is spoken rather than swallowed - silence here would look like
     /// the target was set and send the next line to whoever was set before.
     /// </summary>
-    private unsafe void TrySwitchToTellPartner()
+    private void TrySwitchToTellPartner()
     {
         var partner = _history.CurrentTellPartner;
         if (partner == null)
@@ -154,6 +154,40 @@ public sealed class ChatChannelService
             return;
         }
 
+        SwitchToTellPartner(partner);
+    }
+
+    /// <summary>
+    /// Dasselbe fuer das NEUE Chatsystem: antwortet dem Fluester-Partner der
+    /// Nachricht, die dort gerade gelesen wird.
+    ///
+    /// PR #5 hatte die Enter-Antwort ganz gestrichen, mit dem Argument, aus
+    /// einem Empfangsfilter folge kein Sendekanal. Fuer die Kanaele stimmt das -
+    /// fuers Fluestern nicht: das Ziel wird hier nicht aus dem Puffer abgeleitet,
+    /// sondern steht als Nutzlast IN der gelesenen Nachricht (Name + Heimatwelt,
+    /// vom Spiel geliefert). Es wird also gelesen, nicht geraten, und genau
+    /// deshalb darf es auch im neuen System antworten (User-Wunsch 2026-08-13).
+    ///
+    /// OHNE PARTNER BLEIBT ES STILL. Im alten System hiess "kein Partner", dass
+    /// der Spieler in der Kategorie Fluestern stand und dort nichts fand - eine
+    /// Meldung wert. Hier kann der gelesene Puffer irgendein Kanal oder ein
+    /// ganzes Register sein, und bei jedem Enter zu sagen, dass dort kein
+    /// Fluestern steht, waere Laerm auf einer Taste, die man staendig drueckt.
+    /// </summary>
+    /// <param name="partner">Der Partner der gerade gelesenen Nachricht, oder null.</param>
+    /// <param name="lastActivity">Wann die Nachlese zuletzt benutzt wurde - dieselbe
+    /// Frist wie im alten System, damit eine vor einer Stunde gelesene Zeile nicht
+    /// unbemerkt das Ziel der naechsten Nachricht bestimmt.</param>
+    public void TryAnswerBrowsedTell(TellTarget? partner, DateTime lastActivity)
+    {
+        if (DateTime.UtcNow - lastActivity > SelectionWindow) return;
+        if (partner == null) return;
+
+        SwitchToTellPartner(partner);
+    }
+
+    private unsafe void SwitchToTellPartner(TellTarget partner)
+    {
         var ui = UIModule.Instance();
         if (ui == null) return;
         var shell = ui->GetRaptureShellModule();

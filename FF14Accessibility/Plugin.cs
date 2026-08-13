@@ -1544,8 +1544,23 @@ public sealed class Plugin : IDalamudPlugin
             //
             // Nie, waehrend die Eingabezeile schon offen ist: dort SENDET Enter, und
             // den Kanal darunter zu verschieben wuerde die Nachricht fehlleiten.
-            if (_config.UseLegacyChatSystem && !_uiReader.IsChatInputActive())
-                _chatChannel.TrySwitchToBrowsedChannel();
+            if (!_uiReader.IsChatInputActive())
+            {
+                if (_config.UseLegacyChatSystem)
+                {
+                    _chatChannel.TrySwitchToBrowsedChannel();
+                }
+                else
+                {
+                    // IM NEUEN SYSTEM NUR DAS FLUESTERN, und das aus einem Grund:
+                    // das Ziel steht als Nutzlast in der gelesenen Nachricht selbst
+                    // (Name + Heimatwelt), es wird also gelesen und nicht aus einem
+                    // Empfangsfilter abgeleitet. Fuer die uebrigen Puffer gilt der
+                    // Einwand aus PR #5 unveraendert - ein LogFilter-Eintrag sagt
+                    // nichts darueber, wohin eine Antwort gehen soll.
+                    _chatChannel.TryAnswerBrowsedTell(_history.CurrentTellPartner, _history.LastActivity);
+                }
+            }
         }
 
         // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein

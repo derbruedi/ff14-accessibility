@@ -19,6 +19,24 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     still mitschreibt. Der Umschalter macht keine doppelten Ansagen - das war
     das einzige Risiko, das ich nur am Code pruefen konnte.
 
+>>> NACHGEZOGEN (gebaut, ungetestet): ENTER ANTWORTET AUCH IM NEUEN SYSTEM, wenn
+    gerade ein Fluestern gelesen wird - der zweite Teil des User-Wunsches.
+    WARUM DAS KEIN RUECKFALL HINTER PR #5 IST: dessen Einwand lautet, aus einem
+    Empfangsfilter folge kein Sendekanal, und das gilt fuer die Kanaele
+    unveraendert. Beim Fluestern wird das Ziel aber gar nicht aus dem Puffer
+    abgeleitet - es steht als Nutzlast IN der gelesenen Nachricht (Name +
+    Heimatwelt, vom Spiel geliefert, `TellTarget`). Gelesen statt geraten,
+    deshalb zulaessig.
+    `ChatChannelService.TryAnswerBrowsedTell(partner, lastActivity)` ist der
+    gemeinsame Weg; die 30-Sekunden-Frist des alten Systems gilt unveraendert.
+    OHNE Fluester-Partner bleibt es STILL - anders als im alten System, wo "kein
+    Partner" eine Meldung wert war: dort stand der Spieler in der Kategorie
+    Fluestern, hier kann der Puffer jeder Kanal oder ein ganzes Register sein,
+    und eine Meldung bei jedem Enter waere Laerm.
+    ZU TESTEN: im neuen System eine Fluester-Nachricht lesen, Enter druecken -
+    die Eingabezeile muss mit "... zufluestern" aufgehen. Das Log zeigt es als
+    `[ChatKanal] Fluester-Ziel '<Name>@<Welt>' gesetzt: True`.
+
 
 >>> MELDUNG DES USERS: im neuen Chatsystem entsteht der Fluester-Puffer nur,
     wenn er selbst fluestert; angefluesterte Nachrichten landen nicht darin.
