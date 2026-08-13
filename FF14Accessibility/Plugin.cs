@@ -208,7 +208,7 @@ public sealed class Plugin : IDalamudPlugin
         // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
-        _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _tolk, Log);
+        _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);

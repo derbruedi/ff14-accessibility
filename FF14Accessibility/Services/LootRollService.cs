@@ -27,16 +27,18 @@ public sealed class LootRollService
     private readonly IClientState _clientState;
     private readonly IGameGui _gameGui;
     private readonly Configuration _config;
+    private readonly GearInfoService _gearInfo;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
 
     public LootRollService(IDataManager data, IClientState clientState, IGameGui gameGui,
-                           Configuration config, TolkService tolk, IPluginLog log)
+                           Configuration config, GearInfoService gearInfo, TolkService tolk, IPluginLog log)
     {
         _data = data;
         _clientState = clientState;
         _gameGui = gameGui;
         _config = config;
+        _gearInfo = gearInfo;
         _tolk = tolk;
         _log = log;
     }
@@ -262,9 +264,19 @@ public sealed class LootRollService
             if (seconds > 0) remaining = AccessibilityStrings.LootRollRemaining(seconds);
         }
 
+        // The numbers a sighted player compares the piece by before pressing
+        // Bedarf: item level, defence, attributes - the same block the gear
+        // slots and shop rows already speak (GearInfoService, user request
+        // 2026-08-13 "so wie im Ausrüstungsmenü"). Deliberately ONLY here and
+        // not in the automatic announcement or the Umschalt+F7 overview: this
+        // is the moment of the decision, those two run mid-fight and over
+        // several items at once, where the full block would not be listenable.
+        // "" for anything that is not equipment.
+        var gear = _gearInfo.DescribeGear(info.ItemId);
+
         _log.Info($"[Loot] Zeile {rowIndex} von {addon->NumItems}: item={info.ItemId} '{name}' x{count} " +
-                  $"lootSlot={slot}");
-        return AccessibilityStrings.LootRollRow(name, count, options, remaining);
+                  $"lootSlot={slot} gear='{gear}'");
+        return AccessibilityStrings.LootRollRow(name, count, gear, options, remaining);
     }
 
     /// <summary>

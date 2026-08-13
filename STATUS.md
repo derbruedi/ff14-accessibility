@@ -3,7 +3,36 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-12, "NUMPAD5: ZUR WEGRICHTUNG DREHEN" - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-08-13, "AUSRUESTUNGSWERTE IN DER VERLOSUNG" - GEBAUT, UNGETESTET)
+
+>>> WUNSCH DES USERS: Ruestungsteile in der Beute-Verlosung sollen ihre Werte
+    nennen, "so wie im Arsenal bzw. Ausruestungs-Menue".
+
+>>> KEIN NEUER CODE FUER DIE WERTE: `GearInfoService.DescribeGear` gibt es seit
+    v5.70 und liefert genau diesen Satz ("Stufe 15, tragbar, Gegenstandsstufe 20,
+    Verteidigung 31, Staerke plus 4") - alle Zahlen aus dem Item-Sheet gelesen,
+    nichts nachgerechnet. Der LootRollService bekommt den Dienst jetzt per
+    Konstruktor (Plugin.cs 211), `AccessibilityStrings.LootRollRow` hat einen
+    zusaetzlichen `gear`-Baustein direkt hinter dem Namen (DE+EN).
+
+>>> BEWUSST NUR BEIM BLAETTERN (`DescribeRollRow`), vom User so entschieden:
+    die selbsttaetige Ansage beim Aufgehen der Verlosung und die Uebersicht auf
+    Umschalt+F7 bleiben kurz. Begruendung: die beiden laufen mitten im Kampf und
+    ueber mehrere Gegenstaende auf einmal, der volle Wertesatz waere dort nicht
+    mehr anhoerbar. Die Zeile dagegen IST der Moment der Entscheidung.
+
+>>> NICHT-AUSRUESTUNG BLEIBT WIE BISHER (ebenfalls User-Entscheid): fuer Materia,
+    Bausteine usw. wird `DescribeItemBasics` NICHT angehaengt, `DescribeGear`
+    liefert dort ohnehin "". Falls das spaeter doch gewuenscht ist, ist es eine
+    Zeile an derselben Stelle.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt.
+    ZU TESTEN: eine Verlosung mit einem Ruestungsteil, Zeile ansteuern - es muss
+    Name, dann Stufe/Tragbarkeit/Gegenstandsstufe/Verteidigung/Attribute, dann
+    Optionen und Restzeit kommen. Das Log zeigt es als `gear='...'` in der
+    `[Loot] Zeile`-Zeile.
+
+## FRUEHER (2026-08-12, "NUMPAD5: ZUR WEGRICHTUNG DREHEN" - GEBAUT, UNGETESTET)
 
 >>> WUNSCH DES USERS: beim MANUELLEN Laufen per Tastendruck in die Richtung
     gedreht werden, in die man laufen muss. Ein Druck = einmal ausrichten
@@ -46,9 +75,22 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     unveraendert uebernommen - SHA256 gegengeprueft, stimmt ueberein.
 
 >>> IN-GAME BESTAETIGT vor dem Release: Auswahllisten und die Numpad5-Drehung.
-    Die Verlosungszeilen sind weiterhin UNGETESTET (kein Dungeon seitdem), und
-    die Kamera-Annahme aus der Numpad5-Ansage ist noch nicht ausgewertet - dafuer
+    Die Kamera-Annahme aus der Numpad5-Ansage ist noch nicht ausgewertet - dafuer
     muss einmal ein `[Face] vorher:` aus dem Log angeschaut werden.
+
+>>> NACHTRAG 2026-08-13: Der User meldet "die Beuteverlosung funktioniert" -
+    die Verlosungszeilen gelten damit als in-game bestaetigt. WICHTIG fuer die
+    Bewertung: getestet hat NICHT der User selbst, sondern ein anderer Spieler,
+    und ob mehrere Gegenstaende gleichzeitig zur Wahl standen, ist unsicher
+    ("ich glaube es waren mehrere").
+    EINSCHRAENKUNG, damit spaeter niemand mehr annimmt als belegt ist: im
+    aktuellen `dalamud.log` (Session bis 12.08. 23:45, danach kein Neustart)
+    steht KEINE einzige `[Loot] Zeile N von M ... lootSlot=X`-Zeile - die
+    letzten `[Loot]`-Eintraege sind vom alten 20:37-20:45-Test. Das Log ist
+    `_log.Info`, also nicht Debug-gated; es fehlt also der Papierbeleg.
+    Damit bleibt die OFFENE MESSUNG von unten (Zeilenreihenfolge im Fenster ==
+    Slot-Reihenfolge in `Loot`?) weiter offen - sie braucht eine Verlosung mit
+    MEHREREN Gegenstaenden gleichzeitig und den Log-Vergleich rowIndex/lootSlot.
 
 ## FRUEHER AM TAG (2026-08-12, "AUSWAHLLISTEN IN DER KONFIGURATION SAGTEN IMMER DENSELBEN WERT")
 
