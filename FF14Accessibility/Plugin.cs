@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -28,7 +28,10 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGamepadState           GamepadState    { get; init; } = null!;
     [PluginService] private ITargetManager          TargetManager   { get; init; } = null!;
     [PluginService] private IDataManager            DataManager     { get; init; } = null!;
-    // [Chat-Puffer] LogTabFilterN sagt, welchen Filtersatz ein Chat-Register benutzt.
+    // Zwei Nutzer, ein Dienst: [Chat-Puffer] LogTabFilterN sagt, welchen Filtersatz
+    // ein Chat-Register benutzt; NavigationService liest denselben Dienst fuer den
+    // Bewegungsmodus, der entscheidet, ob beim manuellen Laufen die Figur oder die
+    // Kamera steuert.
     [PluginService] private IGameConfig             GameConfig      { get; init; } = null!;
     [PluginService] private IGameInventory          GameInventory   { get; init; } = null!;
     [PluginService] private IToastGui               ToastGui        { get; init; } = null!;
@@ -93,10 +96,11 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    // TESTZWEIG test/prs: 5.82 plus die fuenf offenen Beitraege von aussen.
-    // Der Zusatz steht in der GESPROCHENEN Ansage, damit beim Laden hoerbar ist,
-    // ob gerade die Testfassung oder die veroeffentlichte 5.82 laeuft.
-    private const string PluginVersion    = "5.82 Testfassung mit fuenf Beitraegen";
+    // TESTZWEIG test/prs: die veroeffentlichte 5.83 plus die fuenf offenen
+    // Beitraege von aussen. Der Zusatz steht in der GESPROCHENEN Ansage, damit
+    // beim Laden hoerbar ist, ob gerade die Testfassung oder die
+    // veroeffentlichte 5.83 laeuft.
+    private const string PluginVersion    = "5.83 Testfassung mit fuenf Beitraegen";
     private const string PluginVersionTag = "PR 1 HP+Stufe, PR 2 AoE-Form, PR 3 Verbuendete+Inhalte, PR 4 Charaktererstellung, PR 5 Chat-Puffer";
 
     public Plugin()
@@ -229,7 +233,7 @@ public sealed class Plugin : IDalamudPlugin
         // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
-        _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _tolk, Log);
+        _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);

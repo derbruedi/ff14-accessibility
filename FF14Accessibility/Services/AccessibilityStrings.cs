@@ -1795,13 +1795,20 @@ public static partial class AccessibilityStrings
             ? $"{name}{(count > 1 ? $" mal {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}"
             : $"{name}{(count > 1 ? $" times {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}";
 
-    /// <summary>One row of the roll window while stepping through the list.</summary>
-    public static string LootRollRow(string name, int count, string options, string remaining) =>
+    /// <summary>
+    /// One row of the roll window while stepping through the list. The gear
+    /// block ("Stufe 15, tragbar, Gegenstandsstufe 20, Verteidigung 31") sits
+    /// right behind the name, where the game's own tooltip puts it, and is ""
+    /// for everything that is not equipment.
+    /// </summary>
+    public static string LootRollRow(string name, int count, string gear, string options, string remaining) =>
         IsGerman
             ? $"{name}{(count > 1 ? $" mal {count}" : "")}" +
+              $"{(gear.Length      > 0 ? $", {gear}"      : "")}" +
               $"{(options.Length  > 0 ? $", {options}"  : "")}" +
               $"{(remaining.Length > 0 ? $", {remaining}" : "")}"
             : $"{name}{(count > 1 ? $" times {count}" : "")}" +
+              $"{(gear.Length      > 0 ? $", {gear}"      : "")}" +
               $"{(options.Length  > 0 ? $", {options}"  : "")}" +
               $"{(remaining.Length > 0 ? $", {remaining}" : "")}";
 
