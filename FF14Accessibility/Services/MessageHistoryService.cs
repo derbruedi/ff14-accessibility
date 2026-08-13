@@ -253,13 +253,36 @@ public sealed class MessageHistoryService
         if (at < 0) _order.Add(buffer); else _order.Insert(at, buffer);
     }
 
+    /// <summary>
+    /// Schreibt eine Zeile in die ALTE Nachlese mit, gesetzt von Plugin.cs.
+    ///
+    /// Es gibt Quellen, die nicht durch einen der beiden Chat-Leser laufen und
+    /// trotzdem in der Nachlese stehen sollen: die Dialogfenster und die
+    /// System-Meldungen aus dem UIReader und die Erfahrungspunkte aus dem
+    /// CombatService. Die kennen nur DIESEN Dienst. Damit sie auch in der alten
+    /// Nachlese ankommen - die ja mitlaufen soll, damit das Umschalten keine
+    /// Luecke hinterlaesst - reichen sie ueber diesen Haken hinueber.
+    ///
+    /// Nicht gespiegelt werden die Chat-Zeilen selbst (<c>mirror: false</c>):
+    /// die archiviert der <see cref="LegacyChatReaderService"/> mit seiner
+    /// eigenen Kategorie-Zuordnung schon, und beides zusammen hiesse jede
+    /// Chat-Zeile zweimal im alten Verlauf.
+    /// </summary>
+    public Action<string, string, TellTarget?>? Mirror { get; set; }
+
     /// <summary>Adds a message to a buffer (newest last). An unknown key is ignored -
     /// every caller registers its buffer first.</summary>
     /// <param name="partner">For tells, the other side as the game delivered it -
     /// this is what makes answering from the history possible.</param>
-    public void Add(string key, string text, TellTarget? partner = null)
+    /// <param name="mirror">Whether the line also goes to the old history via
+    /// <see cref="Mirror"/>. False for the chat reader, which has its own path
+    /// there - see the property.</param>
+    public void Add(string key, string text, TellTarget? partner = null, bool mirror = true)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
+
+        if (mirror) Mirror?.Invoke(key, text, partner);
+
         if (!_byKey.TryGetValue(key, out var buffer)) return;
 
         // Nothing is dropped, so the cursor never has to be pulled along: an

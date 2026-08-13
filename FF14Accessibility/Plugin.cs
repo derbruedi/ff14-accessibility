@@ -64,6 +64,16 @@ public sealed class Plugin : IDalamudPlugin
     private readonly UIReaderService    _uiReader;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
+    // DIE BEIDEN CHATSYSTEME LAUFEN NEBENEINANDER, und der Schalter im
+    // Optionsmenue entscheidet nur, welches spricht und welches die Tasten
+    // bekommt (Configuration.UseLegacyChatSystem). Beide Nachlesen werden immer
+    // gefuellt, damit ein Umschalten mitten in der Sitzung keine Luecke
+    // hinterlaesst - der Spieler soll die zwei ja vergleichen koennen.
+    private readonly LegacyChatHistoryService _legacyHistory;
+    private readonly LegacyChatReaderService  _legacyChatReader;
+    // Gehoert zum alten System: Enter schreibt in den Kanal, dessen Nachlese
+    // gerade gelesen wurde (v5.67). PR #5 hatte das mitgeloescht.
+    private readonly ChatChannelService _chatChannel;
     // [Chat-Puffer] Die eigenen Filterzeilen und Register des Spiels. Der Chat-Leser
     // fragt sie, welche Register eine eingehende Zeile zeigen wuerden.
     private readonly GameChatFilters    _chatFilters;
@@ -255,6 +265,24 @@ public sealed class Plugin : IDalamudPlugin
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, Log);
         _history    = new MessageHistoryService(_tolk);
+        // Die alte Nachlese laeuft parallel mit. Sie wird nur von den beiden
+        // Chat-Lesern und dem Spiegel unten gefuellt, hat also keine Abhaengigkeit
+        // ausser dem Sprecher.
+        _legacyHistory = new LegacyChatHistoryService(_tolk);
+        // WAS DIE ALTE NACHLESE SONST NICHT SEHEN WUERDE: Dialogfenster und
+        // System-Meldungen kommen aus dem UIReader, die Erfahrungspunkte aus dem
+        // CombatService, und alle drei kennen nur den NEUEN Dienst. Der Spiegel
+        // reicht genau diese Zeilen hinueber. Die Chat-Zeilen selbst laufen NICHT
+        // hier durch (mirror: false im Chat-Leser) - die archiviert der alte Leser
+        // mit seiner eigenen Kategorie-Zuordnung, sonst staende jede Zeile zweimal
+        // im alten Verlauf.
+        _history.Mirror = (key, text, partner) =>
+        {
+            var category = key == MessageHistoryService.DialogueKey
+                ? LegacyChatHistoryService.Category.Dialogue
+                : LegacyChatHistoryService.Category.System;
+            _legacyHistory.Add(category, text, partner);
+        };
         // Must exist before the UI reader: that one asks it for the labels of
         // icon buttons, which carry no text of their own.
         _tooltips   = new TooltipService(Interop, Log);
@@ -307,7 +335,15 @@ public sealed class Plugin : IDalamudPlugin
                 if (MessageHistoryService.ChannelKey(channel) == key) return true;
             return false;
         };
-        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log, _chatFilters);
+        _chatReader = new ChatReaderService(ChatGui, _tolk, _config, _history, ObjectTable, Log, _chatFilters,
+                                            () => !_config.UseLegacyChatSystem);
+        // Der alte Leser haengt an derselben Chat-Quelle. Er archiviert immer und
+        // spricht nur, solange das alte System eingeschaltet ist - genau
+        // spiegelbildlich zum neuen, so dass zu jedem Zeitpunkt genau EINER von
+        // beiden redet.
+        _legacyChatReader = new LegacyChatReaderService(ChatGui, _tolk, _config, _legacyHistory, ObjectTable, Log,
+                                                        () => _config.UseLegacyChatSystem);
+        _chatChannel = new ChatChannelService(_legacyHistory, _tolk, Log);
         // [Chat-Puffer] Direkt nach dem Leser gebaut, dessen Archivweg und dessen Zaehler
         // gelaufener Nachrichten es beide braucht. Es tut nichts, solange das Log-Modul
         // und der Filterzustand nicht lesbar sind - also bis einige Sekunden nach einer
@@ -1141,6 +1177,10 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void FollowChatTab()
     {
+        // Die Registeransage gehoert dem neuen System. Im alten wuerde sie ueber
+        // Puffer reden, die dort niemand blaettert.
+        if (_config.UseLegacyChatSystem) return;
+
         _chatTabs.Poll();
 
         var index = _chatTabs.ActiveTabIndex;
@@ -1319,17 +1359,53 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
         if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
         HandleSkillMenuKeys();
-        if (IsJustPressed(_config.KeyChatCatPrev))   SwitchChatBuffer(-1); // [Chat-Puffer]
-        if (IsJustPressed(_config.KeyChatCatNext))   SwitchChatBuffer(+1); // [Chat-Puffer]
-        if (IsJustPressed(_config.KeyChatReadOlder)) _history.ReadOlder();
-        if (IsJustPressed(_config.KeyChatReadNewer)) _history.ReadNewer();
-        // [Chat-Puffer] An den Anfang / ans Ende des aktuellen Puffers springen.
-        if (IsJustPressed(_config.KeyChatReadOldest)) _history.ReadOldest();
-        if (IsJustPressed(_config.KeyChatReadNewest)) _history.ReadNewest();
+        // DIESELBEN TASTEN, ZWEI SYSTEME. Die vier gewohnten Tasten gibt es in
+        // beiden - im alten fuehren sie durch die festen Kategorien, im neuen
+        // durch die Puffer der Spielregister. Welche Bedeutung gilt, entscheidet
+        // der Schalter im Optionsmenue.
+        var legacyChat = _config.UseLegacyChatSystem;
+        if (IsJustPressed(_config.KeyChatCatPrev))
+        {
+            if (legacyChat) _legacyHistory.SwitchCategory(-1); else SwitchChatBuffer(-1);
+        }
+        if (IsJustPressed(_config.KeyChatCatNext))
+        {
+            if (legacyChat) _legacyHistory.SwitchCategory(+1); else SwitchChatBuffer(+1);
+        }
+        if (IsJustPressed(_config.KeyChatReadOlder))
+        {
+            if (legacyChat) _legacyHistory.ReadOlder(); else _history.ReadOlder();
+        }
+        if (IsJustPressed(_config.KeyChatReadNewer))
+        {
+            if (legacyChat) _legacyHistory.ReadNewer(); else _history.ReadNewer();
+        }
+        // DIESE VIER GIBT ES NUR IM NEUEN SYSTEM: Sprung an Anfang/Ende eines
+        // Puffers und die Registertasten des Spiels. Im alten sagen sie das
+        // laut, statt einfach nichts zu tun - eine Taste, die stumm bleibt,
+        // klingt fuer einen blinden Spieler wie eine kaputte Taste.
+        if (IsJustPressed(_config.KeyChatReadOldest))
+        {
+            if (legacyChat) _tolk.SpeakInterrupt(AccessibilityStrings.ChatKeyOnlyInNewSystem);
+            else            _history.ReadOldest();
+        }
+        if (IsJustPressed(_config.KeyChatReadNewest))
+        {
+            if (legacyChat) _tolk.SpeakInterrupt(AccessibilityStrings.ChatKeyOnlyInNewSystem);
+            else            _history.ReadNewest();
+        }
         // [Chat-Puffer] Register des Spiels umschalten. Die Ansage macht FollowChatTab
         // im naechsten Frame, nicht diese Zeile - siehe dort.
-        if (IsJustPressed(_config.KeyChatTabPrev))   SwitchChatTab(-1);
-        if (IsJustPressed(_config.KeyChatTabNext))   SwitchChatTab(+1);
+        if (IsJustPressed(_config.KeyChatTabPrev))
+        {
+            if (legacyChat) _tolk.SpeakInterrupt(AccessibilityStrings.ChatKeyOnlyInNewSystem);
+            else            SwitchChatTab(-1);
+        }
+        if (IsJustPressed(_config.KeyChatTabNext))
+        {
+            if (legacyChat) _tolk.SpeakInterrupt(AccessibilityStrings.ChatKeyOnlyInNewSystem);
+            else            SwitchChatTab(+1);
+        }
         // [Einstellungsmenue] Zweiter Druck schliesst wieder.
         if (IsJustPressed(_config.KeyOptionsMenu))
         {
@@ -1458,6 +1534,18 @@ public sealed class Plugin : IDalamudPlugin
             // Das Umschalten des Sendekanals hat das Spiel selbst auf belegbaren Tasten:
             // CMD_SAY, CMD_PARTY, CMD_LINKSHELL_1..8, CMD_REPLY, jeweils auch als
             // _ALWAYS-Variante.
+            //
+            // IM ALTEN CHATSYSTEM GIBT ES DIE ZUORDNUNG ABER WEITERHIN, denn dort
+            // sind die Puffer nach wie vor die feste Kategorienliste, aus der die
+            // drei gemessenen Sendekanaele (Sagen 1, Gruppe 2, Freie Gesellschaft 6)
+            // und das Fluesterziel abgeleitet werden - genau die Grundlage, die der
+            // Absatz oben dem neuen System zu Recht abspricht. Deshalb steht die
+            // Zeile hier wieder, nur eben an den Schalter gebunden.
+            //
+            // Nie, waehrend die Eingabezeile schon offen ist: dort SENDET Enter, und
+            // den Kanal darunter zu verschieben wuerde die Nachricht fehlleiten.
+            if (_config.UseLegacyChatSystem && !_uiReader.IsChatInputActive())
+                _chatChannel.TrySwitchToBrowsedChannel();
         }
 
         // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein
@@ -1707,6 +1795,7 @@ public sealed class Plugin : IDalamudPlugin
         _tooltips.Dispose();
         _toasts.Dispose();
         _chatReader.Dispose();
+        _legacyChatReader.Dispose();
         _uiReader.Dispose();
         _autoWalk.Dispose();
         _beacon.Dispose();

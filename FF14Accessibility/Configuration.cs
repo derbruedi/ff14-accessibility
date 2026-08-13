@@ -227,6 +227,22 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<int, Dictionary<int, bool>> ChatTabChannelSpeech = new();
 
+    /// <summary>
+    /// Welches der beiden Chatsysteme spricht und die Tasten bekommt: das
+    /// gewohnte mit den festen Kategorien (Dialoge, Sagen, Gruppe, ... Beute)
+    /// oder das neue aus PR #5, dessen Puffer den Registern und Filtern des
+    /// SPIELS folgen. Umschaltbar im Optionsmenue (Umschalt+F9).
+    ///
+    /// VORBELEGT AUF DAS GEWOHNTE. Der Testzweig soll das Neue hoerbar machen,
+    /// nicht heimlich einfuehren: wer nichts umstellt, hoert genau das, was er
+    /// aus v5.83 kennt, und kann von dort aus vergleichen.
+    ///
+    /// Der Schalter entscheidet NUR ueber Sprache und Tasten. Mitgeschrieben
+    /// wird immer in BEIDE Nachlesen, damit ein Umschalten keine Luecke
+    /// hinterlaesst - siehe LegacyChatReaderService.
+    /// </summary>
+    public bool UseLegacyChatSystem = true;
+
     // Chat
     public bool ReadSayChat        = true;
     public bool ReadShoutChat      = true;

@@ -1841,12 +1841,67 @@ public static partial class AccessibilityStrings
     // ════════════════════════════════════════════════════════════════
     //  MessageHistoryService - Nachlese-Kanäle
     // ════════════════════════════════════════════════════════════════
-    // [Chat-Puffer] ChatCategoryName ist entfallen. Die Puffer sind keine feste
-    // Aufzaehlung des Plugins mehr, sondern die Kanaele und Register des SPIELS, und
-    // die tragen ihre Namen selbst: eine LogFilter-Zeile ihren Zeilennamen, ein
-    // Register das, was der Spieler dort eingetippt hat. Eine uebersetzte Liste
-    // daneben wuerde Dinge umbenennen, die dem Spieler gehoeren. Die drei Puffer, die
-    // keine Register sind, stehen in AccessibilityStrings.Chat.cs.
+    // [Chat-Puffer] Fuer das NEUE Chatsystem ist ChatCategoryName entfallen. Dessen
+    // Puffer sind keine feste Aufzaehlung des Plugins mehr, sondern die Kanaele und
+    // Register des SPIELS, und die tragen ihre Namen selbst: eine LogFilter-Zeile
+    // ihren Zeilennamen, ein Register das, was der Spieler dort eingetippt hat. Eine
+    // uebersetzte Liste daneben wuerde Dinge umbenennen, die dem Spieler gehoeren.
+    // Die drei Puffer, die keine Register sind, stehen in AccessibilityStrings.Chat.cs.
+    //
+    // Das ALTE Chatsystem hat seine feste Kategorienliste weiterhin, und die braucht
+    // ihre Namen - daher LegacyChatCategoryName. Wortgleich zum frueheren
+    // ChatCategoryName, damit der Spieler beim Umschalten dieselben Woerter hoert
+    // wie vorher.
+    public static string LegacyChatCategoryName(LegacyChatHistoryService.Category category) => category switch
+    {
+        LegacyChatHistoryService.Category.Dialogue     => IsGerman ? "Dialoge"            : "Dialogue",
+        LegacyChatHistoryService.Category.Say          => IsGerman ? "Sagen"              : "Say",
+        LegacyChatHistoryService.Category.Shout        => IsGerman ? "Rufen"              : "Shout",
+        LegacyChatHistoryService.Category.Party        => IsGerman ? "Gruppe"             : "Party",
+        LegacyChatHistoryService.Category.Alliance     => IsGerman ? "Allianz"            : "Alliance",
+        LegacyChatHistoryService.Category.Tell         => IsGerman ? "Flüstern"           : "Tell",
+        LegacyChatHistoryService.Category.FreeCompany  => IsGerman ? "Freie Gesellschaft" : "Free Company",
+        LegacyChatHistoryService.Category.System       => IsGerman ? "System"             : "System",
+        LegacyChatHistoryService.Category.Loot         => IsGerman ? "Beute"              : "Loot",
+        _                                              => category.ToString(),
+    };
+
+    // ── Umschalter zwischen altem und neuem Chatsystem ──────────────
+
+    /// <summary>Menu row that switches between the two chat systems.</summary>
+    public static string OptChatSystem =>
+        IsGerman ? "Chatsystem" : "Chat system";
+
+    /// <summary>The old system's name, as the player knows it from v5.83.</summary>
+    public static string ChatSystemLegacyName =>
+        IsGerman ? "gewohnt, feste Kanäle" : "classic, fixed channels";
+
+    /// <summary>The PR #5 system's name: buffers follow the game's own tabs.</summary>
+    public static string ChatSystemNewName =>
+        IsGerman ? "neu, Register des Spiels" : "new, the game's tabs";
+
+    /// <summary>The menu row's label, naming the system in force.</summary>
+    public static string OptChatSystemRow(bool legacy) =>
+        IsGerman
+            ? $"Chatsystem: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}"
+            : $"Chat system: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}";
+
+    /// <summary>Spoken the moment the switch is flipped. Says that nothing was
+    /// lost, because that is the first thing a player wonders about a buffer
+    /// they cannot see.</summary>
+    public static string ChatSystemSwitched(bool legacy) =>
+        IsGerman
+            ? $"Chatsystem {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Beide Nachlesen laufen mit, es ist nichts verloren."
+            : $"Chat system {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Both histories keep recording, nothing was lost.";
+
+    /// <summary>Spoken when a key belonging to the OTHER system is pressed.
+    /// Silence would read as a broken key - the player cannot see that the key
+    /// simply has no counterpart in the system they switched to.</summary>
+    public static string ChatKeyOnlyInNewSystem =>
+        IsGerman
+            ? "Diese Taste gehört zum neuen Chatsystem."
+            : "That key belongs to the new chat system.";
+
     public static string CategoryEmpty(string category) =>
         IsGerman ? $"{category}, leer" : $"{category}, empty";
     public static string CategorySummary(string category, int count) =>

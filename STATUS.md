@@ -3,7 +3,75 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-13, "AUSRUESTUNGSWERTE IN DER VERLOSUNG" - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-08-13, "TESTZWEIG AKTUELL + UMSCHALTER ZWISCHEN DEN CHATSYSTEMEN" - GEBAUT, UNGETESTET)
+
+>>> ES GIBT KEINE NEUEN PRS. Der User vermutete welche; nachgesehen mit `gh pr
+    list --state all`: es sind dieselben fuenf von bladestorm360, der juengste
+    (#5) vom 2026-08-11. Der Zweig `test/prs` hatte sie schon, ihm fehlte nur
+    der Stand von main.
+
+>>> TESTZWEIG AUF STAND GEBRACHT (Merge main -> test/prs, Commit df194cb): jetzt
+    v5.83 + Verlosungswerte + die fuenf Beitraege. Fuenf Konflikte, alle daher,
+    dass die drei Features auf main als cherry-pick und hier als eigener Commit
+    liegen; aufgeloest zugunsten der Seite mit dem PR-Code. `IGameConfig` war
+    danach doppelt deklariert (PR #5 fuer LogTabFilterN, main fuer den
+    Bewegungsmodus) - jetzt eine Deklaration fuer beide.
+    Die Versionsansage sagt "5.83 Testfassung mit fuenf Beitraegen".
+
+>>> UMSCHALTER ZWISCHEN DEN CHATSYSTEMEN (Wunsch des Users, weil PR #5 seine
+    gewohnte Nachlese samt Enter-Antwort ersetzt). Im Optionsmenue (Umschalt+F9)
+    steht jetzt ganz oben "Chatsystem: gewohnt, feste Kanaele" bzw. "neu,
+    Register des Spiels".
+    - VORBELEGT AUF DAS GEWOHNTE: wer nichts umstellt, hoert v5.83.
+    - BEIDE SYSTEME LAUFEN IMMER MIT. Jede Chat-Zeile geht an beide Leser, beide
+      Nachlesen werden gefuellt; der Schalter entscheidet NUR, wer spricht und
+      wer die Tasten bekommt. Deshalb hinterlaesst Umschalten keine Luecke - die
+      Ansage sagt das auch ("Beide Nachlesen laufen mit").
+    - Zurueckgeholt als eigene Klassen, damit nichts nachgebaut werden muss:
+      `LegacyChatHistoryService`, `LegacyChatReaderService` (beide wortgleich zu
+      main, Log-Praefix `[ChatAlt]`) und `ChatChannelService` (Enter antwortet im
+      gelesenen Kanal, v5.67).
+    - DAS RISIKO WAREN DOPPELTE ANSAGEN. Beide Leser haengen an derselben Quelle.
+      Gegengeprueft: JEDE Sprechstelle beider Leser liegt hinter dem Schalter,
+      inklusive der Filterwarnung des neuen Systems und der Registeransage
+      (`FollowChatTab`). Der inaktive Leser archiviert nur und ruft insbesondere
+      KEIN `RememberSpokenVariant` - sonst wuerde er den Echo-Schutz des anderen
+      verbrauchen.
+    - Was die Chat-Leser nicht sehen (Dialogfenster, System-Meldungen, XP), geht
+      ueber `MessageHistoryService.Mirror` in die alte Nachlese. Die Chat-Zeilen
+      selbst laufen dort NICHT durch (`mirror: false` an den fuenf Add-Stellen
+      des neuen Lesers), sonst staende jede Zeile doppelt im alten Verlauf.
+    - Vier Tasten gibt es nur im neuen System (Puffer-Anfang/-Ende,
+      Registertasten). Im alten sagen sie "Diese Taste gehoert zum neuen
+      Chatsystem", statt stumm zu bleiben.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. Zweig test/prs.
+
+>>> EIGENER FEHLER, BEHOBEN, ZUR WARNUNG NOTIERT: eine Sammelersetzung per
+    PowerShell (`Get-Content -Raw` + `Set-Content -Encoding utf8`) hat in
+    ChatReaderService.cs vier Zeilen mit Umlauten/Sonderzeichen zerschossen -
+    Windows PowerShell 5.1 liest UTF-8 ohne BOM als ANSI. Gefunden durch eine
+    Mojibake-Suche ueber alle geaenderten Dateien, von Hand repariert.
+    NIE WIEDER Dateien mit Nicht-ASCII per PowerShell umschreiben.
+    (Nebenbefund: Plugin.cs traegt 11 solche Stellen schon laenger - alle in
+    KOMMENTAREN, keine gesprochene Zeichenkette betroffen, deshalb hier nur
+    vermerkt und nicht angefasst.)
+
+>>> ZU TESTEN, in dieser Reihenfolge:
+    1. Laden: die Ansage muss "5.83 Testfassung mit fuenf Beitraegen" sagen.
+       Kommt "5.83" blank, laeuft die veroeffentlichte Fassung.
+    2. Chat ohne Umstellen: muss klingen wie v5.83 (Alt+Bild-auf/-ab durch die
+       Kategorien, Umschalt+Bild blaettern, Enter antwortet im Kanal).
+    3. Umschalt+F9, oberste Zeile, umschalten - dann dieselben Tasten im neuen
+       System, und einmal zurueck.
+    4. DABEI AUF DOPPELTE ANSAGEN HOEREN. Das ist die eine Stelle, die ich nur
+       am Code pruefen konnte.
+
+>>> WARNUNG ZU PR #1, dem User schon gesagt: er macht die EIGENEN HP wieder zu
+    "X von Y". Prozent war die Entscheidung vom 2026-08-07 und ist in V5.31
+    schon einmal unbemerkt gekippt - siehe den Testzweig-Abschnitt unten.
+
+## FRUEHER AM TAG (2026-08-13, "AUSRUESTUNGSWERTE IN DER VERLOSUNG" - GEBAUT, UNGETESTET)
 
 >>> WUNSCH DES USERS: Ruestungsteile in der Beute-Verlosung sollen ihre Werte
     nennen, "so wie im Arsenal bzw. Ausruestungs-Menue".

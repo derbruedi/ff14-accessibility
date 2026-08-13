@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
@@ -83,9 +83,17 @@ public sealed class ChatReaderService : IDisposable
     /// </summary>
     public int LiveMessagesSeen { get; private set; }
 
+    /// <summary>
+    /// Ob DIESES System gerade das Gesprochene bestreitet. Archiviert wird
+    /// immer, gesprochen nur, wenn der Spieler das neue Chatsystem eingeschaltet
+    /// hat (Optionsmenue, <see cref="Configuration.UseLegacyChatSystem"/>) -
+    /// sonst redet der alte Leser, der daneben laeuft.
+    /// </summary>
+    private readonly Func<bool> _isActive;
+
     public ChatReaderService(IChatGui chatGui, TolkService tolk, Configuration config,
         MessageHistoryService history, IObjectTable objectTable, IPluginLog log,
-        GameChatFilters filters)
+        GameChatFilters filters, Func<bool> isActive)
     {
         _chatGui = chatGui;
         _tolk = tolk;
@@ -94,6 +102,7 @@ public sealed class ChatReaderService : IDisposable
         _objectTable = objectTable;
         _log = log;
         _filters = filters;
+        _isActive = isActive;
 
         _chatGui.ChatMessage += OnChatMessage;
     }
@@ -158,8 +167,11 @@ public sealed class ChatReaderService : IDisposable
             // come from the character's config and are empty until the player is in a
             // world, so chat that arrives in that window would otherwise spend a
             // spoken warning on every single login.
-            if (state == ChatFilterState.Broken) WarnFallbackOnce();
-            _history.Add(_history.EnsureFallbackBuffer(), archived, partner);
+            // Die Warnung nur, wenn dieses System auch spricht: im alten
+            // Chatsystem ist der Filterzustand ohne Bedeutung, und eine Warnung
+            // ueber ein System, das der Spieler gar nicht benutzt, waere Laerm.
+            if (state == ChatFilterState.Broken && _isActive()) WarnFallbackOnce();
+            _history.Add(_history.EnsureFallbackBuffer(), archived, partner, mirror: false);
             speak = !battleLog && ChatTabSpeech.IsOn(_config, ChatTabSpeech.FallbackIndex, true);
         }
         else
@@ -186,6 +198,13 @@ public sealed class ChatReaderService : IDisposable
         }
 
         if (!speak) return;
+
+        // DAS ANDERE CHATSYSTEM REDET GERADE. Ab hier stehen nur noch
+        // Nebenwirkungen ausserhalb dieser Klasse - Sprache und die beiden
+        // Echo-Speicher -, und die duerfen dem alten Leser nicht in die Quere
+        // kommen. Das Archivieren oben ist da schon passiert, die Puffer dieses
+        // Systems bleiben also vollstaendig.
+        if (!_isActive()) return;
 
         // NPC-Rede erreicht den Spieler ZWEIMAL: das Talk/_BattleTalk-Fenster zeigt
         // sie, und der Chatlog wiederholt sie Sekunden spaeter. Das ist die bisherige
@@ -263,7 +282,7 @@ public sealed class ChatReaderService : IDisposable
         {
             var channel = _filters.Channel(key);
             if (channel == null) continue;
-            _history.Add(_history.EnsureChannelBuffer(channel), archived, partner);
+            _history.Add(_history.EnsureChannelBuffer(channel), archived, partner, mirror: false);
         }
 
         // AND ONCE MORE INTO EACH SHOWING TAB'S "ALL"
@@ -277,7 +296,7 @@ public sealed class ChatReaderService : IDisposable
         // union of a tab's channels is not the same set as the tab's own lines, and
         // merging by timestamp would need a clock the archive does not keep.
         foreach (var index in _showingTabs)
-            _history.Add(_history.EnsureTabBuffer(index), archived, partner);
+            _history.Add(_history.EnsureTabBuffer(index), archived, partner, mirror: false);
 
         // SPEAK PER ROUTE. The tab's master decides whether
         // the tab says anything at all; under it sits one switch per channel, and
@@ -328,12 +347,12 @@ public sealed class ChatReaderService : IDisposable
     private bool ArchiveUnfilterable(string archived, TellTarget? partner, bool battleLog)
     {
         foreach (var tab in _filters.Tabs)
-            _history.Add(_history.EnsureTabBuffer(tab.Index), archived, partner);
+            _history.Add(_history.EnsureTabBuffer(tab.Index), archived, partner, mirror: false);
 
         // No tab at all - possible for one frame while the tab list is rebuilding. The
         // line still must not vanish, so it goes where the mod's own notices go.
         if (_filters.Tabs.Count == 0)
-            _history.Add(MessageHistoryService.SystemKey, archived, partner);
+            _history.Add(MessageHistoryService.SystemKey, archived, partner, mirror: false);
 
         // THE BATTLE LOG IS THE ONE EXEMPTION, and it is the same one the degraded path
         // makes for the same reason: several lines a second mid-rotation would bury the
@@ -426,7 +445,7 @@ public sealed class ChatReaderService : IDisposable
         return true;
     }
 
-    // ── Wording ───────────────────────────────────────────────────────────
+    // ── Wording ───────────────────────────────────────────────────
     //
     // The game hands over a chat kind, two relation kinds and a text. It does NOT
     // hand over a spoken form, so how a line is worded is genuinely the mod's job -

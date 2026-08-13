@@ -71,6 +71,43 @@ public sealed class OptionsMenu
             new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements },
 
             new MenuEntry { Label = AccessibilityStrings.OptionsChatTabs,      Submenu = BuildChatTabs },
+
+            ChatSystemRow(),
+        },
+    };
+
+    // ── Welches Chatsystem ────────────────────────────────────────
+
+    /// <summary>
+    /// Schaltet zwischen dem gewohnten Chatsystem (feste Kategorien, Enter
+    /// antwortet im gelesenen Kanal) und dem neuen aus PR #5 (die Puffer folgen
+    /// den Registern und Filtern des Spiels) um.
+    ///
+    /// KEINE Toggle-Zeile, obwohl technisch ein bool dahinter steht: "an/aus"
+    /// wuerde bedeuten, dass eines der beiden das Normale und das andere dessen
+    /// Abwesenheit ist. Es sind zwei gleichrangige Systeme, also nennt die Zeile
+    /// beim Vorlesen das, was gerade gilt, und der Druck sagt, was jetzt gilt.
+    ///
+    /// Die Zeile steht ganz oben auf dieser Ebene und nicht unter "Chat-Register":
+    /// jener Abschnitt gehoert dem NEUEN System und ist im alten wirkungslos -
+    /// den Umschalter dort hinein zu legen hiesse, ihn in dem Zustand zu
+    /// verstecken, aus dem heraus man ihn am ehesten sucht.
+    ///
+    /// Sie wirkt SOFORT: beide Chat-Leser laufen dauernd mit und fragen diesen
+    /// Wert bei jeder Zeile, beide Nachlesen werden dauernd gefuellt. Deshalb
+    /// darf die Ansage auch versprechen, dass nichts verloren ist.
+    /// </summary>
+    private MenuEntry ChatSystemRow() => new()
+    {
+        Label    = AccessibilityStrings.OptChatSystemRow(_config.UseLegacyChatSystem),
+        StayOpen = true,
+        Activate = () =>
+        {
+            var legacy = !_config.UseLegacyChatSystem;
+            _config.UseLegacyChatSystem = legacy;
+            Persist();
+            _tolk.SpeakInterrupt(AccessibilityStrings.ChatSystemSwitched(legacy));
+            _log.Info($"[Einstellungen] Chatsystem -> {(legacy ? "alt (feste Kategorien)" : "neu (Register des Spiels)")}");
         },
     };
 
