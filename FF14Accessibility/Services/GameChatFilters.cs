@@ -538,6 +538,28 @@ public sealed unsafe class GameChatFilters
         _channelByKey.TryGetValue(key, out var channel) ? channel : null;
 
     /// <summary>
+    /// Der Kanal, den die Filterzeilen EINER Chat-Art speisen, oder null, wenn
+    /// das Sheet fuer diese Art keine Zeile fuehrt.
+    ///
+    /// Gebraucht wird das fuer die Gegenrichtung einer Unterhaltung: eingehendes
+    /// Fluestern hat keinen eigenen Schalter, ausgehendes schon, und beide
+    /// gehoeren in denselben Puffer (siehe
+    /// <c>ChatReaderService.SameConversationAs</c>). Der Schluessel wird HIER
+    /// nachgeschlagen und nirgends aufgeschrieben - eine feste Zahl im Code
+    /// waere genau die Art Annahme, die ein Patch still umlegt.
+    ///
+    /// Fuehren mehrere Zeilen einer Art auf verschiedene Kanaele, kommt der
+    /// erste zurueck; fuer die adressierten Kanaele gibt es je Art nur eine.
+    /// </summary>
+    public GameChatChannel? ChannelOfKind(XivChatType kind)
+    {
+        var raw = (int)kind;
+        if (raw is < 0 or > byte.MaxValue) return null;
+        if (!_rowsByKind.TryGetValue((byte)raw, out var rows) || rows.Count == 0) return null;
+        return Channel(rows[0].ChannelKey);
+    }
+
+    /// <summary>
     /// Where this message belongs and who would say it.
     ///
     /// Both answers come from the same row match, which is the point: a channel is

@@ -189,7 +189,7 @@ public sealed class ChatReaderService : IDisposable
             if (_channels.Count == 0)
             {
                 if (coverage == ChatCoverage.SwitchedOff) return;
-                speak = ArchiveUnfilterable(archived, partner, battleLog);
+                speak = ArchiveUnfilterable(msg.LogKind, archived, partner, battleLog);
             }
             else
             {
@@ -332,7 +332,8 @@ public sealed class ChatReaderService : IDisposable
     /// lines whose switches it has on; a line with no switch cannot be excluded by any
     /// tab's filter set, so every tab shows it — which is why it goes into each tab's
     /// "all" buffer, the buffer defined as the tab exactly as a sighted player sees it.
-    /// It gets no CHANNEL buffer because it has no channel: the game never grouped it.
+    /// It gets no CHANNEL buffer because it has no channel: the game never grouped it -
+    /// EXCEPT wenn die Gegenrichtung einen hat, siehe <see cref="SameConversationAs"/>.
     /// If a line ever turns up in a tab a sighted player does not see it in, this
     /// paragraph is the assumption to revisit.
     ///
@@ -344,10 +345,37 @@ public sealed class ChatReaderService : IDisposable
     /// either.
     /// </summary>
     /// <returns>Whether the line should be read out loud.</returns>
-    private bool ArchiveUnfilterable(string archived, TellTarget? partner, bool battleLog)
+    private bool ArchiveUnfilterable(XivChatType kind, string archived, TellTarget? partner, bool battleLog)
     {
         foreach (var tab in _filters.Tabs)
             _history.Add(_history.EnsureTabBuffer(tab.Index), archived, partner, mirror: false);
+
+        // DIE GEGENRICHTUNG EINER UNTERHALTUNG. Gemessene Lage (Log 2026-08-13
+        // 20:58:42 und 20:59:59): ein eingehendes Fluestern kommt als
+        // "kanal=keine" hier an, ein ausgehendes als "kanal=Fluestern". Das Sheet
+        // fuehrt fuer Kind 13 keine Zeile, fuer Kind 12 schon - der Puffer
+        // "Fluestern" entstand also erst, wenn der Spieler selbst schrieb, und
+        // enthielt nie die Antworten (User-Meldung 2026-08-13).
+        //
+        // Beide Richtungen gehoeren in denselben Puffer: eine Unterhaltung ist
+        // eine Unterhaltung, und ein Verlauf, der nur die eigene Haelfte fuehrt,
+        // ist als Nachlese wertlos. Der Kanal wird dafuer NICHT erfunden, sondern
+        // ueber die Gegenrichtung im Sheet nachgeschlagen
+        // (GameChatFilters.ChannelOfKind) - gibt es ihn dort nicht, bleibt es
+        // beim bisherigen Verhalten.
+        //
+        // NUR DAS ARCHIV, NICHT DAS SPRECHEN: die Sprech-Entscheidung faellt
+        // weiter unten ueber den Unfiltered-Schalter. Wuerde die Zeile ab hier
+        // dem Register-Schalter ihres neuen Kanals folgen, koennte ein
+        // ausgeschaltetes Register eingehende Fluester verstummen lassen - und
+        // dagegen hat der Spieler im Spiel selbst keinen Schalter.
+        if (SameConversationAs(kind) is { } counterpart &&
+            _filters.ChannelOfKind(counterpart) is { } channel)
+        {
+            _history.Add(_history.EnsureChannelBuffer(channel), archived, partner, mirror: false);
+            _log.Info($"[Chat] {kind} hat keinen eigenen Schalter - zusaetzlich in den Kanal "
+                      + $"'{channel.Name}' von {counterpart} archiviert.");
+        }
 
         // No tab at all - possible for one frame while the tab list is rebuilding. The
         // line still must not vanish, so it goes where the mod's own notices go.
@@ -364,6 +392,24 @@ public sealed class ChatReaderService : IDisposable
 
         return ChatTabSpeech.IsOn(_config, ChatTabSpeech.UnfilteredIndex, true);
     }
+
+    /// <summary>
+    /// Die Chat-Art, die dieselbe Unterhaltung von der anderen Seite fuehrt, oder
+    /// null. Absichtlich eine winzige, benannte Liste statt einer Regel: es ist
+    /// eine Aussage darueber, was fuer den SPIELER dasselbe Gespraech ist, und die
+    /// steht nirgends in den Spieldaten.
+    ///
+    /// Nur die Fluester-Kanaele stehen drin, und nur, weil beide Richtungen
+    /// dieselben zwei Personen betreffen. Nicht dabei ist zum Beispiel /sagen und
+    /// /rufen: die haben je einen eigenen Schalter, brauchen das hier also gar
+    /// nicht.
+    /// </summary>
+    private static XivChatType? SameConversationAs(XivChatType kind) => kind switch
+    {
+        XivChatType.TellIncoming => XivChatType.TellOutgoing,
+        XivChatType.TellOutgoing => XivChatType.TellIncoming,
+        _                        => null,
+    };
 
     /// <summary>
     /// Files a message the GAME had stored before the plugin

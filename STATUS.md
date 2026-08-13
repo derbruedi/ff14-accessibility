@@ -3,7 +3,52 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-13, "TESTZWEIG AKTUELL + UMSCHALTER ZWISCHEN DEN CHATSYSTEMEN" - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-08-13 ABENDS, "EINGEHENDES FLUESTERN FEHLTE IM NEUEN PUFFER" - GEBAUT, UNGETESTET)
+
+>>> MELDUNG DES USERS: im neuen Chatsystem entsteht der Fluester-Puffer nur,
+    wenn er selbst fluestert; angefluesterte Nachrichten landen nicht darin.
+
+>>> URSACHE, AUS DEM LOG BELEGT (2026-08-13 20:58:42 / 20:59:59, beide Zeilen
+    stehen woertlich im dalamud.log):
+    - `kind=TellIncoming (13) ... register=keins kanal=keine`
+    - `kind=TellOutgoing (12) ... register=0 kanal=Fluestern`
+    Das LogFilter-Sheet fuehrt fuer Kind 13 KEINE Zeile (der Code meldet das als
+    "kein LogFilter-Schalter fuer diese Art"), fuer Kind 12 schon. Eingehende
+    Fluester laufen deshalb durch `ArchiveUnfilterable` und landen nur in den
+    "Alles"-Puffern der Register, nie in einem Kanal-Puffer. Der PR-Autor hat
+    diesen Fall im Kommentar sogar benannt - TellIncoming steht in seiner Liste
+    der 21 Arten ohne Schalter -, nur die Folge fuer die Nachlese nicht gezogen.
+
+>>> NICHT BETROFFEN WAR DAS SPRECHEN: "Fluestert von Elonea Mondfeder: ..." kam
+    im selben Moment sauber (Log 20:58:42.007). Es fehlte ausschliesslich die
+    Nachlese.
+
+>>> GEBAUT: `GameChatFilters.ChannelOfKind(kind)` schlaegt den Kanal einer
+    Chat-Art im Sheet nach, und `ChatReaderService.SameConversationAs` sagt, dass
+    eingehendes und ausgehendes Fluestern dieselbe Unterhaltung sind. Eine Zeile
+    ohne eigenen Schalter wird zusaetzlich in den Kanal der Gegenrichtung
+    archiviert. Der Kanalschluessel wird nachgeschlagen, NICHT als Zahl
+    hingeschrieben - eine feste Id waere genau das, was ein Patch still umlegt.
+
+>>> BEWUSST NUR DAS ARCHIV, NICHT DIE SPRECH-ENTSCHEIDUNG. Die bleibt beim
+    Unfiltered-Schalter. Wuerde die Zeile ab jetzt dem Register-Schalter ihres
+    neuen Kanals folgen, koennte ein ausgeschaltetes Register eingehende
+    Fluester verstummen lassen - und dagegen hat der Spieler im Spiel selbst
+    keinen Schalter.
+
+>>> NEBENBEFUND, UND ER ENTKRAEFTET DAS EINZIGE OFFENE RISIKO DES UMSCHALTERS:
+    im Log laufen beide Chat-Leser nebeneinander (`[Chat]` und `[ChatAlt]`), und
+    pro Nachricht steht dort GENAU EIN `[Speak]`. Die befuerchteten doppelten
+    Ansagen treten also nicht auf - das war bis eben nur am Code geprueft.
+    Gesprochen hat das neue System, der alte Leser hat still mitarchiviert.
+
+>>> Build Debug 0 Warnungen / 0 Fehler, nach devPlugins deployt. Zweig test/prs.
+    ZU TESTEN: einmal angefluestert werden, ohne vorher selbst zu fluestern -
+    der Puffer "Fluestern" muss die eingehende Nachricht fuehren. Das Log zeigt
+    es als "TellIncoming hat keinen eigenen Schalter - zusaetzlich in den Kanal
+    'Fluestern' von TellOutgoing archiviert."
+
+## FRUEHER AM TAG (2026-08-13, "TESTZWEIG AKTUELL + UMSCHALTER ZWISCHEN DEN CHATSYSTEMEN")
 
 >>> ES GIBT KEINE NEUEN PRS. Der User vermutete welche; nachgesehen mit `gh pr
     list --state all`: es sind dieselben fuenf von bladestorm360, der juengste
