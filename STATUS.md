@@ -3,7 +3,22 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-13 ABENDS, "EINGEHENDES FLUESTERN FEHLTE IM NEUEN PUFFER" - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-08-13 ABENDS, "EINGEHENDES FLUESTERN FEHLTE IM NEUEN PUFFER" - IN-GAME BESTAETIGT)
+
+>>> BESTAETIGT AM LOG, Test des Users 21:24 (die DLL lag um 21:05:14 vor, der
+    Tell um 21:04:43 lief noch ohne - der Unterschied ist im Log sichtbar):
+    - 21:24:07.050 "TellIncoming hat keinen eigenen Schalter - zusaetzlich in
+      den Kanal 'Fluestern' von TellOutgoing archiviert."
+    - 21:24:10.845 geblaettert: "Elonea Mondfeder: was kommt dann ? hab nix
+      verstanden, 3 von 3" - die EINGEHENDE Nachricht im Puffer.
+    - 21:24:14.895 eine Zeile weiter die eigene: "Perrox Torran an Elonea
+      Mondfeder: bald gibts ein update ...".
+    Beide Richtungen stehen also in einem Puffer, in Ankunftsreihenfolge.
+
+>>> EBENFALLS BESTAETIGT: pro Nachricht genau EIN `[Speak]`, waehrend `[ChatAlt]`
+    still mitschreibt. Der Umschalter macht keine doppelten Ansagen - das war
+    das einzige Risiko, das ich nur am Code pruefen konnte.
+
 
 >>> MELDUNG DES USERS: im neuen Chatsystem entsteht der Fluester-Puffer nur,
     wenn er selbst fluestert; angefluesterte Nachrichten landen nicht darin.
