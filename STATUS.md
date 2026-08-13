@@ -3,7 +3,40 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-13 ABENDS, "EINGEHENDES FLUESTERN FEHLTE IM NEUEN PUFFER" - IN-GAME BESTAETIGT)
+## NAECHSTER SCHRITT (2026-08-13, "TUTORIAL-FENSTER HowTo IST STUMM" - ANALYSIERT, NICHT GEBAUT)
+
+>>> MELDUNG DES USERS mit Dump (C:\Users\brued\Desktop\FFXIV_UI_Dump.txt,
+    21:45:06, enthaelt BEIDE Fenster) - "die Sachen sind nicht auslesbar".
+
+>>> GENAUER BEFUND, das ist nicht ein Fenster sondern zwei:
+    - `HowToList` (die Themenliste) GEHT BEREITS: Log 21:45
+      "[Focus] addon='HowToList' id=5 Text='Ruhebereiche'" -> "[Speak]
+      'Ruhebereiche'". Auch "Alle" (der Kategorie-Reiter) kommt.
+    - `HowTo` (der Tutorialtext selbst) ist stumm bzw. sagt das Falsche:
+      beim Oeffnen wird die FUSSNOTE gesprochen ("* Tutorial-Fenster unter
+      Charakterkonfiguration im Untermenue "UI" de-/reaktivierbar", Knoten
+      id=14) - der einzige Text, den der allgemeine Leser greifen konnte.
+      Beim Blaettern: "[Focus] STUMM addon='HowTo' id=4 typ=8 Text=''".
+
+>>> WAS DER DUMP AN VERWERTBAREN KNOTEN ZEIGT (Zeilen 394-458):
+    - id=5  Text = die UEBERSCHRIFT ("Ruhebereiche")
+    - id=11 Text = der TUTORIALTEXT ("Sobald du einen ...Ruhebereich...
+      betrittst, erscheint ein..."). Enthaelt Item-Verweis-Bytes, braucht also
+      AtkText.ReadClean wie das Sammel-Fenster.
+    - id=17..21 = fuenf RadioButton(4) mit den Beschriftungen "1".."5" - das
+      sind die SEITEN. Im Dump ist id=17 (Seite 1) aktiv; welche gilt, sauber
+      ueber RadioButton.IsChecked lesen, nicht ueber die Sichtbarkeit des
+      Image-Knotens (so macht es schon der Grand-Company-Shop).
+    - id=22 und id=16 Comp(1008) Button = vermutlich die beiden Blaetterpfeile,
+      NICHT verifiziert.
+    - id=14 Text = die Fussnote, die faelschlich gesprochen wird.
+
+>>> ZU BAUEN: beim Oeffnen und bei JEDEM Seitenwechsel Ueberschrift, "Seite X
+    von 5" und den Text sprechen. Der Fokus springt beim Blaettern zwischen den
+    RadioButtons (Log: eltern=[17:1009 ...] dann [18:1009 ...]), Numpad 4/6 ist
+    also der Weg des Spielers - daran haengt die Ansage.
+
+## FRUEHER (2026-08-13 ABENDS, "EINGEHENDES FLUESTERN FEHLTE IM NEUEN PUFFER" - IN-GAME BESTAETIGT)
 
 >>> BESTAETIGT AM LOG, Test des Users 21:24 (die DLL lag um 21:05:14 vor, der
     Tell um 21:04:43 lief noch ohne - der Unterschied ist im Log sichtbar):
