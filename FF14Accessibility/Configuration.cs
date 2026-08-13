@@ -105,7 +105,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
     public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
     public string KeyRecordTrail    = "Strg+Umschalt+F6"; // Spur aufzeichnen an/aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. Strg+Umschalt+F6 ist frei (F1-F5 dieses Clusters sind Goto/Copy-Coords, AoE-Toggle und Kartenspiel).
-    public string KeyDeepFloor      = "Strg+F";           // Tiefes Gewoelbe: welches Gewoelbe und welche Ebene. Die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur beilaeufig nennt.
+    public string KeyDeepFloor      = "Strg+F";           // [Tiefes Gewoelbe] welches Gewoelbe und welche Ebene. Die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur beilaeufig nennt.
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
@@ -192,7 +192,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool AnnounceTargetChanges = true;   // Zielwechsel (Tab/F1-F12) ansagen
     public bool AnnounceMapFlag = true;         // neu gesetzte Karten-Markierung ansagen
     public bool AnnounceHeading = true;         // beim Drehen die Himmelsrichtung ansagen, in die man schaut (nur nach Dreh-Ende + Sektorwechsel, siehe HeadingService). Umschaltbar mit KeyToggleHeading
-    public bool AnnounceDeepRoomChange = true;  // Tiefes Gewoelbe: beim Betreten eines anderen Raumes ansagen, welcher es ist. Ein sehender Spieler liest seine Position fortlaufend von der Gewoelbe-Karte ab; eine Liste, die man abfragen muss, ist nicht dieselbe Information.
+    public bool AnnounceDeepRoomChange = true;  // [Tiefes Gewoelbe] beim Betreten eines anderen Raumes ansagen, welcher es ist. Ein sehender Spieler liest seine Position fortlaufend von der Gewoelbe-Karte ab; eine Liste, die man abfragen muss, ist nicht dieselbe Information.
     public float BeaconVolume = 0.35f;          // Gehhilfe-Ton: 0 = stumm, 1 = volle Lautstärke
 
     // Auto-Lauf: "Noch X Meter" erst nach so vielen zurückgelegten Metern

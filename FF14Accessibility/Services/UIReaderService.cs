@@ -280,14 +280,14 @@ public sealed class UIReaderService : IDisposable
         ["Ja", "Nein", "Yes", "No", "??", "???", "Oui", "Non"];
 
     /// <summary>
-    /// Das Gewoelbe-Fenster "Charakterinfo", oder null, solange es nicht gesetzt ist.
+    /// [Tiefes Gewoelbe] Das Fenster "Charakterinfo", oder null, solange es nicht gesetzt ist.
     /// Eine Property statt eines Konstruktor-Arguments, damit die Signatur dieser Datei
     /// unveraendert bleibt; ohne sie verhaelt sich der Leser exakt wie zuvor.
     /// </summary>
     public DeepDungeonPanel? DeepDungeonPanel { get; set; }
 
     /// <summary>
-    /// Die Ebene des Tiefen Gewoelbes, damit die geoeffneten Truhen eines Laufs neben die
+    /// [Tiefes Gewoelbe] Die Ebene, damit die geoeffneten Truhen eines Laufs neben die
     /// Truhen-Zaehlung des Ergebnisschirms ins Log geschrieben werden koennen. Property
     /// aus demselben Grund wie oben.
     /// </summary>
@@ -369,7 +369,7 @@ public sealed class UIReaderService : IDisposable
         // generic path via SpecialSetup/UpdateAddons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
 
-        // -- Tiefes Gewoelbe: Ergebnisschirm ---------------------------
+        // -- [Tiefes Gewoelbe] Ergebnisschirm --------------------------
         // Der Schirm am Ende eines Laufs zaehlt die entdeckten Truhen nach FARBE. Er
         // wird vollstaendig ins Log geschrieben, weil der allgemeine Text-Scanner ihn
         // nicht melden kann: der protokolliert nur einen Knoten, dessen Text sich nach
@@ -2044,7 +2044,7 @@ public sealed class UIReaderService : IDisposable
                 text = iconRow;
         }
 
-        // Das Gewoelbe-Fenster "Charakterinfo": seine Gegenstands-, Magizit- und
+        // [Tiefes Gewoelbe] Das Fenster "Charakterinfo": seine Gegenstands-, Magizit- und
         // Wirkungs-Plaetze sind Symbole ganz ohne Text-Knoten, das Blaettern darueber war
         // also vollstaendig stumm. Bewusst als LETZTES in der Kette: es beansprucht nur
         // einen Platz, der sonst nichts sagen wuerde - wo das Spiel seinen eigenen
@@ -5013,7 +5013,7 @@ public sealed class UIReaderService : IDisposable
     private string _lastBankAmount = string.Empty;
     private string _lastBankMode   = string.Empty;
 
-    // Was der Ergebnisschirm des Tiefen Gewoelbes sagt, vollstaendig ins Log geschrieben.
+    // [Tiefes Gewoelbe] Was der Ergebnisschirm sagt, vollstaendig ins Log geschrieben.
     // Er zaehlt "Entdeckte Truhen" nach Farbe, und daneben steht, welche Truhen-TYPEN im
     // selben Lauf geoeffnet wurden (DeepDungeonFloor.LogRunTally) - zwei Zeilen im Log,
     // die einander zuordnen, ohne dass etwas gefolgert wird.
@@ -6431,6 +6431,43 @@ public sealed class UIReaderService : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// [Tiefes Gewoelbe] Der Platz der Charakterinfo, auf dem der Fokus steht, mit der
+    /// spieleigenen Beschreibung dazu - oder false, wenn der Fokus woanders ist.
+    ///
+    /// GENAU EIN PLATZ, NICHT DAS FENSTER. Das ganze Fenster vorzulesen ist, was der
+    /// allgemeine Leser ohnehin taete; die Detailtaste beschreibt ueberall sonst im
+    /// Plugin das, was FOKUSSIERT ist, und das gilt hier auch.
+    ///
+    /// DER KNOTEN WIRD LIVE GEHOLT, aus
+    /// <c>AtkStage.Instance()-&gt;AtkInputManager-&gt;FocusedNode</c> - derselben Quelle,
+    /// aus der der Fokus-Leser weiter oben ihn nimmt. NICHT aus dem gemerkten
+    /// <c>_lastFocusedNodePtr</c>: den vergleicht diese Datei ueberall nur, sie
+    /// dereferenziert ihn nie, und das aus gutem Grund - nach dem Schliessen des
+    /// Fensters zeigt er auf freigegebenen Speicher, und ein Lesevorgang darauf wuerde
+    /// das Spiel abstuerzen lassen statt eine Ausnahme zu werfen.
+    /// </summary>
+    private unsafe bool TryReadDeepPanelDetail()
+    {
+        if (DeepDungeonPanel == null || !IsAddonVisible(DeepDungeonPanel.AddonName)) return false;
+
+        var stage = AtkStage.Instance();
+        if (stage == null) return false;
+        var input = stage->AtkInputManager;
+        if (input == null) return false;
+
+        var node = input->FocusedNode;
+        if (node == null || FindAddonNameForNode(node) != DeepDungeonPanel.AddonName) return false;
+
+        var lines = DeepDungeonPanel.DescribeFocused(node);
+        if (lines.Count == 0) return false;
+
+        var msg = string.Join(" ", lines);
+        _log.Info($"[DeepPanel] Detail: {msg}");
+        _tolk.SpeakInterrupt(msg);
+        return true;
+    }
+
     public unsafe void ReadCurrentFocus()
     {
         // Quest-Journal offen? Dann will der User die QUEST lesen, nicht die Liste.
@@ -6445,6 +6482,15 @@ public sealed class UIReaderService : IDisposable
         // Gegenstands-Tooltip offen? Dann will der User den GEGENSTAND lesen -
         // dieselbe Logik wie beim Journal eine Zeile darueber.
         if (TryReadItemDetail()) return;
+
+        // [Tiefes Gewoelbe] Charakterinfo offen und der Fokus auf einem Platz? Dann
+        // will der User DIESEN Platz beschrieben haben.
+        //
+        // NACH TryReadItemDetail, und das ist kein Zufall: bindet das Spiel an einen
+        // dieser Plaetze seinen eigenen Tooltip, gewinnen dessen Worte. Dieselbe
+        // Rangfolge gilt eine Ebene tiefer in DeepDungeonPanel.NameSlot, das als
+        // LETZTES in der Fokus-Kette laeuft.
+        if (TryReadDeepPanelDetail()) return;
 
         // Aktives Men� aus dem Stack
         if (_menuStack.Count > 0)

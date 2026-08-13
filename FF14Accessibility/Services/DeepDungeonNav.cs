@@ -1,3 +1,42 @@
+// ══ ANSCHLUSSPUNKTE DES TIEFEN GEWOELBES — Landkarte fuer den naechsten Merge ══
+//
+// Sieben neue Dateien (Services/DeepDungeon*.cs) haengen an sieben vorhandenen. JEDER
+// Eingriff in eine vorhandene Datei ist mit `[Tiefes Gewoelbe]` markiert, ein
+// `grep -rn "\[Tiefes Gewoelbe\]" FF14Accessibility/` findet sie also alle. Jeder ist
+// ADDITIV: es wurde keine bestehende Zeile umgeschrieben, und keine Signatur hat sich
+// geaendert.
+//
+//   NavigationService  drei NavCategory-Werte; WorldCategories (nur UMBENANNT von
+//                      Categories, damit die neue Property Categories zwischen dem
+//                      Welt- und dem Gewoelbe-Satz waehlen kann); die Property
+//                      DeepDungeon; je ein Zweig in Update, AnnounceCategoryCount,
+//                      CycleObject, DescribeObject und GetCategoryObjects; die Methode
+//                      CycleDeepRoom.
+//   UIReaderService    die Properties DeepDungeonPanel und DeepDungeonFloor; eine Zeile
+//                      in der Fokus-Kette; ein Listener auf DeepDungeonResult;
+//                      TryReadDeepPanelDetail in der Kette von ReadCurrentFocus.
+//   AutoWalkService    die Property Navmesh (gibt die vorhandene NavmeshIpc-Instanz
+//                      heraus, statt eine zweite zu oeffnen) und ResolveReachablePoint.
+//   NavmeshIpc         Nav.Rebuild.
+//   Configuration      KeyDeepFloor, AnnounceDeepRoomChange.
+//   Plugin             der PluginService ISeStringEvaluator, sechs Felder, der Aufbau
+//                      samt Verdrahtung, die Ebenen-Taste, AnnounceDeepFloor.
+//   AccessibilityStrings  der Abschnitt "Tiefes Gewoelbe" am Ende.
+//
+// WORAUF BEIM MERGE ZU ACHTEN IST:
+//
+//   1. `Categories` in NavigationService ist jetzt eine PROPERTY und nicht mehr das
+//      statische Feld. Wer das Feld anfasst, muss WorldCategories anfassen; wer die
+//      gerade gueltige Liste braucht, nimmt weiter Categories. Alle vorhandenen
+//      Leser (IsQuestCategory und die anderen) sind unveraendert geblieben.
+//   2. Alles ist null-vertraeglich verdrahtet. Wird eine der Properties nicht gesetzt,
+//      verhaelt sich die Datei exakt wie vorher - es gibt keinen Pfad, der eine
+//      Gewoelbe-Klasse voraussetzt.
+//   3. Ausserhalb eines Tiefen Gewoelbes ist jeder neue Zweig durch
+//      `DeepDungeon?.IsActive != true` bzw. einen null-Director stillgelegt.
+//   4. Nav.Rebuild wird ausschliesslich bei einem EBENENWECHSEL innerhalb eines
+//      Gewoelbes gerufen - siehe den Kopf von DeepDungeonMesh.cs fuer den Grund und
+//      fuer die Aufstellung, was dadurch nicht kaputtgehen kann.
 using System;
 using System.Collections.Generic;
 using System.Linq;

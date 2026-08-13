@@ -46,7 +46,7 @@ public sealed class NavmeshIpc
         // Subscribing is always safe - only INVOKE throws while vnavmesh is absent.
         _isReady               = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
         _buildProgress         = pluginInterface.GetIpcSubscriber<float>("vnavmesh.Nav.BuildProgress");
-        // Nav.Rebuild = Reload(allowLoadFromCache: false). Bewusst NICHT Nav.Reload:
+        // [Tiefes Gewoelbe] Nav.Rebuild = Reload(allowLoadFromCache: false). Bewusst NICHT Nav.Reload:
         // das liest den Cache unter DEMSELBEN Schluessel erneut, und die Raumaufteilung
         // einer Gewoelbe-Ebene ist nicht Teil dieses Schluessels - siehe DeepDungeonMesh.
         _rebuild               = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.Rebuild");
@@ -86,7 +86,7 @@ public sealed class NavmeshIpc
     public float BuildProgress => Call(_buildProgress, -1f, "Nav.BuildProgress");
 
     /// <summary>
-    /// Baut das Wegenetz des aktuellen Gebiets NEU AUS DER GELADENEN SZENE und ignoriert
+    /// [Tiefes Gewoelbe] Baut das Wegenetz des aktuellen Gebiets NEU AUS DER GELADENEN SZENE und ignoriert
     /// dabei den Cache. Das ist, was <c>/vnav rebuild</c> ausfuehrt.
     ///
     /// Der einzige Aufrufer ist das Tiefe Gewoelbe (siehe DeepDungeonMesh): dort kann der
