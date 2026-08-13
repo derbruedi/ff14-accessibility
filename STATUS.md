@@ -3,6 +3,36 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-08-13 SPAET, "PR #6 TIEFES GEWOELBE IM TESTZWEIG" - GEBAUT, UNGETESTET)
+
+>>> ES GIBT JETZT DOCH EINEN NEUEN: PR #6 "Tiefes Gewoelbe: Raeume, Truhen und
+    die Charakterinfo werden sprechend", eingegangen 2026-08-13 21:25, wieder
+    von bladestorm360. 3293 Zeilen, sieben neue Dateien (DeepDungeonFloor, -Mesh,
+    -Nav, -Panel, -RoomMap, -State, -Text), neue Objekt-Kategorien "Schaetze" und
+    "Leuchten", neue Taste Strg+F fuer "welches Gewoelbe, welche Ebene".
+    Gemergt in test/prs, Build Debug 0 Warnungen / 0 Fehler.
+    Die Versionsansage sagt jetzt "5.83 Testfassung mit SECHS Beitraegen".
+
+>>> VIER KONFLIKTE, alle "beide Seiten behalten". Einer war mehr als Formsache:
+    PR #6 bringt eine ZWEITE `IGameConfig`-Deklaration mit (der Autor kennt den
+    Zweig nicht, auf dem sie schon steht). Uebernommen wurde nur der neue
+    `ISeStringEvaluator`; sonst waere derselbe Doppel-Fehler wie beim
+    main-Merge entstanden. In NavigationService liegen die Kategorien aus PR #3
+    (Verbuendete/Inhalte) und PR #6 (Schaetze/Leuchten) in derselben Methode -
+    beide Bloecke bleiben, die doppelte `var cat`-Zeile ist entfallen.
+
+>>> ZU PRUEFEN BEIM TESTEN - MOEGLICHE TASTENFALLE, NICHT GEMESSEN: PR #6 legt
+    seine Ebenen-Ansage auf `Strg+F`. Der Keybind-Dump (Desktop, 21:40) zeigt
+    Strg+F als frei, ABER bare F ist `FACE` (344). Genau diese Lage hat in
+    V5.25 (Strg+H trotz Modifier -> MENU_CRAFT) und V5.49 (Strg+, / Strg+. ->
+    MENU_MOUNT) schon zweimal zugeschlagen: das Spiel feuert auf die BASISTASTE,
+    obwohl Strg gehalten wird. Ob es hier passiert, sagt nur der Test - wenn
+    beim Druck auf Strg+F zusaetzlich die Spielfunktion FACE ausloest, ist das
+    diese Falle und kein Zufall.
+
+>>> KEINER DER SECHS IST VOM AUTOR IM SPIEL GETESTET, er schreibt das selbst
+    dazu. Fuer PR #6 heisst das: die ganze Gewoelbe-Mechanik ist ungeprueft.
+
 ## NAECHSTER SCHRITT (2026-08-13, "TUTORIAL-FENSTER HowTo IST STUMM" - ANALYSIERT, NICHT GEBAUT)
 
 >>> MELDUNG DES USERS mit Dump (C:\Users\brued\Desktop\FFXIV_UI_Dump.txt,
