@@ -1887,6 +1887,11 @@ public sealed class UIReaderService : IDisposable
     private bool _shopRowItemActive;
     private uint _shopRowPrice;
 
+    // Zuletzt angesagter Bestand, damit die Zahl nur bei echter Aenderung kommt
+    // (neue Waehrung oder nach einem Tausch) und nicht bei jedem Blaettern.
+    private uint _spokenCurrencyId;
+    private int  _spokenCurrencyCount = -1;
+
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
         // While the HUD builds after login the game moves focus across freshly
@@ -2770,7 +2775,23 @@ public sealed class UIReaderService : IDisposable
         if (!_shopRowItemActive || _shopRowPrice == 0 || string.IsNullOrEmpty(text)) return text;
 
         var currency = _specialShops.CurrencyFor(_lastFocusedItemId, _shopRowPrice);
-        return text + AccessibilityStrings.ShopPrice(_shopRowPrice, currency);
+        text += AccessibilityStrings.ShopPrice(_shopRowPrice, currency.Name);
+
+        // WIE VIELE MARKEN MAN HAT. Ein sehender Spieler liest das dauerhaft im
+        // Fenster ab, deshalb darf es nicht an einer Taste haengen - aber an JEDER
+        // Zeile waere es Geplapper, denn beim Blaettern aendert es sich nicht.
+        // Gesagt wird es also, sobald sich etwas daran AENDERT: beim ersten
+        // Eintrag einer Waehrung, und wieder nach einem Tausch, wenn der Bestand
+        // gesunken ist. Genau dann ist die Zahl auch neu.
+        if (currency.Id == 0) return text;
+        var owned = _inventory.CountOf(currency.Id);
+        if (owned < 0) return text;
+
+        if (currency.Id == _spokenCurrencyId && owned == _spokenCurrencyCount) return text;
+        _spokenCurrencyId    = currency.Id;
+        _spokenCurrencyCount = owned;
+        _log.Info($"[Shop] Bestand Währung {currency.Id}: {owned}.");
+        return text + AccessibilityStrings.ShopOwned(owned);
     }
 
     /// <summary>Appends "Stufe X, tragbar/nicht tragbar" to a spoken text while a

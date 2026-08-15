@@ -32,8 +32,9 @@ public sealed class SpecialShopService
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
 
-    // (Ware, Kosten) -> Währungsname; "" markiert ein mehrdeutiges Paar.
-    private Dictionary<(uint Item, uint Cost), string>? _index;
+    // (Ware, Kosten) -> Währung. Ein leerer Name markiert ein mehrdeutiges Paar;
+    // die Id kommt mit, weil der Aufrufer damit den eigenen Bestand abfragt.
+    private Dictionary<(uint Item, uint Cost), (uint Id, string Name)>? _index;
 
     public SpecialShopService(IDataManager data, IPluginLog log)
     {
@@ -42,19 +43,20 @@ public sealed class SpecialShopService
     }
 
     /// <summary>
-    /// The currency name for "this item at this price", or "" when the sheets do
-    /// not answer it unambiguously.
+    /// The currency for "this item at this price": its item id and its name,
+    /// already inflected for the given count. (0, "") when the sheets do not
+    /// answer it unambiguously.
     /// </summary>
-    public string CurrencyFor(uint receiveItemId, uint cost)
+    public (uint Id, string Name) CurrencyFor(uint receiveItemId, uint cost)
     {
-        if (receiveItemId == 0 || cost == 0) return string.Empty;
+        if (receiveItemId == 0 || cost == 0) return (0, string.Empty);
         _index ??= BuildIndex();
-        return _index.TryGetValue((receiveItemId, cost), out var name) ? name : string.Empty;
+        return _index.TryGetValue((receiveItemId, cost), out var currency) ? currency : (0, string.Empty);
     }
 
-    private Dictionary<(uint, uint), string> BuildIndex()
+    private Dictionary<(uint, uint), (uint, string)> BuildIndex()
     {
-        var map = new Dictionary<(uint, uint), string>();
+        var map = new Dictionary<(uint, uint), (uint Id, string Name)>();
         var ambiguous = 0;
 
         foreach (var shop in _data.GetExcelSheet<SpecialShop>())
@@ -64,12 +66,14 @@ public sealed class SpecialShopService
                 // Cost first: an entry without a currency cost (collectability,
                 // quest-gated barter) has nothing to announce here.
                 var costCount    = 0u;
+                var currencyId   = 0u;
                 var currencyName = string.Empty;
                 foreach (var itemCost in entry.ItemCosts)
                 {
                     if (itemCost.CurrencyCost == 0 || itemCost.ItemCost.RowId == 0) continue;
                     if (!itemCost.ItemCost.IsValid) continue;
-                    costCount = itemCost.CurrencyCost;
+                    costCount  = itemCost.CurrencyCost;
+                    currencyId = itemCost.ItemCost.RowId;
                     // The game inflects this itself, and the sheet carries both
                     // forms - "2 Errungenschaftszertifikate" is the game's own
                     // wording (confirmed in its confirmation prompt, log
@@ -94,14 +98,14 @@ public sealed class SpecialShopService
                         // Same pair, different currency -> the pair no longer
                         // identifies one price. Blank it out rather than keep
                         // whichever row happened to come first.
-                        if (known.Length > 0 && known != currencyName)
+                        if (known.Id != 0 && known.Id != currencyId)
                         {
-                            map[key] = string.Empty;
+                            map[key] = (0, string.Empty);
                             ambiguous++;
                         }
                         continue;
                     }
-                    map[key] = currencyName;
+                    map[key] = (currencyId, currencyName);
                 }
             }
         }

@@ -129,6 +129,37 @@ public sealed class InventoryService
     }
 
     /// <summary>
+    /// How many of an item the player holds, or -1 when the inventory is not
+    /// readable yet.
+    ///
+    /// Uses the GAME'S OWN count (<c>InventoryManager.GetInventoryItemCount</c>),
+    /// not a sum over containers: a currency like an achievement certificate
+    /// (item 21172) does not live in the bags, and rebuilding "which containers
+    /// count" would drift the moment the game adds one. Armoury and equipped
+    /// pieces are included for the same reason the game includes them when it
+    /// decides whether a trade is affordable.
+    /// </summary>
+    public unsafe int CountOf(uint itemId)
+    {
+        if (itemId == 0) return -1;
+
+        var manager = InventoryManager.Instance();
+        if (manager == null) return -1;
+
+        // External game call, resolved by signature - the one case where
+        // try-catch is the right tool (same reasoning as the gearset check below).
+        try
+        {
+            return manager->GetInventoryItemCount(itemId);
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Inventory] Bestandsabfrage für Item {itemId} fehlgeschlagen: {ex.Message}");
+            return -1;
+        }
+    }
+
+    /// <summary>
     /// Whether this item carries the game's gearset mark - the small symbol a
     /// sighted player sees on the inventory icon, telling them the piece belongs
     /// to a saved set of another class and should not be sold.

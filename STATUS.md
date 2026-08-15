@@ -47,13 +47,26 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     dieselbe Zahl, die die UI-Sonde gemessen hat, und dieselbe Formulierung wie
     im Bestaetigungsdialog. Drei unabhaengige Quellen, ein Ergebnis.
 
+>>> IN-GAME BESTAETIGT (User 2026-08-16): Preis und Beschreibung kommen.
+
+>>> NACHGELEGT AUF WUNSCH ("wieviele marken habe ich"): der eigene Bestand.
+    Waehrung ist Item 21172 "Errungenschaftszertifikat" (offline bestimmt, Plural
+    "Errungenschaftszertifikate", Kategorie 100). Gezaehlt wird mit der
+    spieleigenen Funktion `InventoryManager.GetInventoryItemCount` - NICHT ueber
+    eine Summe der Container: eine Waehrung liegt gar nicht in den Taschen, und
+    eine nachgebaute Container-Liste driftet beim naechsten Patch.
+    ANSAGE-REGEL: nicht an jeder Zeile (beim Blaettern aendert sich der Bestand
+    nicht, das waere Geplapper) und nicht auf einer Taste (ein Sehender liest die
+    Zahl dauerhaft im Fenster). Gesagt wird sie, sobald sie sich AENDERT - beim
+    ersten Eintrag einer Waehrung und wieder nach einem Tausch.
+
 >>> ZU TESTEN (Debug gebaut + deployt):
-    1. Zum Errungenschafts-NPC, blaettern: kommt "Zeigerhaendchen, fuer 2
-       Errungenschaftszertifikate"?
-    2. Eine Sekunde stehen bleiben: kommt "Beschreibung: Den Elfenbeinhandschuhen
-       von Oschon nachempfunden ..."?
-    3. Gegenprobe bei einem Ausruestungsteil: Preis UND Stufe/Werte, in dieser
+    1. Gegenprobe bei einem Ausruestungsteil: Preis UND Stufe/Werte, in dieser
        Reihenfolge?
+    2. Erste Zeile im Tauschfenster: kommt ", du hast N" hinter dem Preis?
+    3. Etwas eintauschen und weiterblaettern: kommt die NEUE Zahl von selbst?
+    4. Gegenprobe auf Geplapper: beim Blaettern ohne Kauf darf sie NICHT wiederholt
+       werden.
     Danach faellt [ShopProbe] raus.
 
 >>> OFFEN, NICHT ANGEFASST: der Knoten id=7 liest die GANZE Liste als eine Zeile

@@ -894,6 +894,11 @@ public static partial class AccessibilityStrings
             ? (IsGerman ? $", für {count} {currency}" : $", for {count} {currency}")
             : (IsGerman ? $", Preis {count}"          : $", price {count}");
 
+    /// <summary>How many of the currency the player holds, appended after the
+    /// price. Only spoken when the number actually changed - see the caller.</summary>
+    public static string ShopOwned(int owned) =>
+        IsGerman ? $", du hast {owned}" : $", you have {owned}";
+
     // ── Inventar-Reiter (Inventory) ──────────────────────────────────
     /// <summary>The active inventory bag tab, announced on switch. The label is
     /// the game's own tab number ("1".."4").</summary>
