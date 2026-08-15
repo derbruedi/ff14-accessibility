@@ -3,6 +3,9 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using LuminaAction = Lumina.Excel.Sheets.Action;
 
 namespace FF14Accessibility.Services;
@@ -11,6 +14,7 @@ public sealed class CombatService
 {
     private readonly IObjectTable          _objectTable;
     private readonly ITargetManager        _targetManager;
+    private readonly IGameGui              _gameGui;
     private readonly IDataManager          _data;
     private readonly TolkService           _tolk;
     private readonly Configuration         _config;
@@ -29,6 +33,17 @@ public sealed class CombatService
     // value without any XP actually being earned); -1 = not yet baselined.
     private long _lastExp = -1;
     private byte _lastExpJobId;
+
+    // Rested-area tracking. null = not baselined yet (login, or the EP bar not
+    // built), so the first reading only sets the state instead of announcing a
+    // "you entered" for a place the player was already standing in.
+    private bool? _wasInRestedArea;
+
+#if DEBUG
+    // Audit probe state, see RestedProbe: last logged tuple, so the log carries
+    // one line per CHANGE instead of one per frame.
+    private string _lastRestedProbe = string.Empty;
+#endif
 
     // Current-target tracking for HP thresholds.
     private ulong _targetId;
@@ -51,6 +66,7 @@ public sealed class CombatService
     public CombatService(
         IObjectTable objectTable,
         ITargetManager targetManager,
+        IGameGui gameGui,
         IDataManager data,
         TolkService tolk,
         Configuration config,
@@ -60,6 +76,7 @@ public sealed class CombatService
     {
         _objectTable   = objectTable;
         _targetManager = targetManager;
+        _gameGui       = gameGui;
         _data          = data;
         _tolk          = tolk;
         _config        = config;
@@ -76,6 +93,10 @@ public sealed class CombatService
 
         TrackLevelUp();
         TrackXpGain();
+        TrackRestedArea();
+#if DEBUG
+        RestedProbe();
+#endif
 
         // AoE danger tone. Runs regardless of the InCombat flag: a cast telegraph can
         // appear the instant before combat officially starts, and the flag lags.
@@ -267,6 +288,131 @@ public sealed class CombatService
     }
 
     /// <summary>
+    /// Announces entering and leaving a rested area (inn, city districts), where
+    /// the rested bonus accumulates - the tutorial "Ruhebereiche" describes it as
+    /// a crescent-moon icon appearing under the EXP bar, and that icon is exactly
+    /// what is read here: <c>AddonExp.MoonIconNode</c> (ilspycmd 2026-08-13,
+    /// AddonExp is the "_Exp" addon, field offset 632). Reading the game's own
+    /// indicator keeps the announcement in step with what a sighted player sees,
+    /// instead of second-guessing which zones count as rested.
+    ///
+    /// NOT ANNOUNCED YET: how much bonus has piled up. The amount is available
+    /// (AgentHUD.ExpRestedExperience / AddonExp.RestedExp), but the unit that
+    /// value counts in is not documented in the struct - RestedProbe measures it
+    /// first, then the number gets a sentence.
+    /// </summary>
+    private unsafe void TrackRestedArea()
+    {
+        if (!_config.AnnounceRestedArea) return;
+
+        var rested = ReadRestedAreaIndicator();
+        // The EP bar is not built (loading screen, HUD element hidden): keep the
+        // last known state instead of faking a "left the rested area".
+        if (rested == null) return;
+
+        // First reading after login or after the bar appears: remember silently.
+        if (_wasInRestedArea == null)
+        {
+            _wasInRestedArea = rested;
+            _log.Info($"[Rested] Ausgangszustand: imRuhebereich={rested}");
+            return;
+        }
+
+        if (rested == _wasInRestedArea) return;
+
+        _wasInRestedArea = rested;
+        // Non-interrupting: entering an inn or a city usually comes with a burst
+        // of other announcements, and this one is never urgent.
+        _tolk.Speak(rested == true
+            ? AccessibilityStrings.RestedAreaEntered
+            : AccessibilityStrings.RestedAreaLeft);
+        _log.Info($"[Rested] {(rested == true ? "betreten" : "verlassen")}");
+    }
+
+    /// <summary>
+    /// Whether the crescent-moon indicator on the EXP bar is showing: true = in a
+    /// rested area, false = not, null = no reading available because the "_Exp"
+    /// addon or its icon node is not there right now (loading, HUD hidden, max
+    /// level). Null is deliberately NOT folded into false - "I cannot see the bar"
+    /// and "the moon is off" are different answers, and treating them alike would
+    /// announce leaving a rested area on every loading screen.
+    /// </summary>
+    private unsafe bool? ReadRestedAreaIndicator()
+    {
+        var handle = _gameGui.GetAddonByName("_Exp");
+        if (handle.IsNull) return null;
+
+        var addon = (AddonExp*)(nint)handle;
+        if (!addon->AtkUnitBase.IsVisible) return null;
+
+        var moon = addon->MoonIconNode;
+        if (moon == null) return null;
+
+        return ((AtkResNode*)moon)->IsVisible();
+    }
+
+#if DEBUG
+    /// <summary>
+    /// Debug audit probe for the rested bonus: logs the moon indicator together
+    /// with every rested-related value the client offers, one line per change.
+    /// The structs name the fields but say nothing about the UNIT
+    /// (AgentHUD.ExpRestedExperience and AddonExp.RestedExp are plain uints), so
+    /// the sentence for the amount cannot be written from source alone. Walk into
+    /// an inn and out again with this build, and the log shows how the numbers
+    /// move relative to the level's needed EXP. Delete once the unit is pinned.
+    /// </summary>
+    private unsafe void RestedProbe()
+    {
+        var moon = ReadRestedAreaIndicator();
+
+        uint addonRested = 0;
+        var handle = _gameGui.GetAddonByName("_Exp");
+        if (!handle.IsNull) addonRested = ((AddonExp*)(nint)handle)->RestedExp;
+
+        var hud = AgentHUD.Instance();
+        var hudRested = hud == null ? 0 : hud->ExpRestedExperience;
+        var hudCur    = hud == null ? 0 : hud->ExpCurrentExperience;
+        var hudNeeded = hud == null ? 0 : hud->ExpNeededExperience;
+        var hudLevel  = hud == null ? 0 : hud->ExpLevel;
+
+        var ps = PlayerState.Instance();
+        var baseRested = ps == null ? 0 : ps->BaseRestedExperience;
+
+        // The EXP bar draws the rested part as its own node (AtkComponentGaugeBar
+        // .RestedExpNode @376, ilspycmd 2026-08-14) - that node IS what a sighted
+        // player sees. Its width against the filled bar's scale settles the unit
+        // question without needing a fight: if the game paints the rested stretch
+        // at the same fraction that hudRested/hudNeeded gives, the field counts EXP.
+        var bar = "kein Balken";
+        if (!handle.IsNull)
+        {
+            var gauge = ((AddonExp*)(nint)handle)->ExperienceBarComponent;
+            if (gauge != null)
+            {
+                var rest = (AtkResNode*)gauge->RestedExpNode;
+                var fill = (AtkResNode*)gauge->PrimaryFill.MainFillNode;
+                var back = (AtkResNode*)gauge->BackdropImageNode;
+                var root = gauge->AtkComponentBase.OwnerNode;
+                var vals = gauge->Values;
+                bar = $"balkenWert={(vals.Length > 0 ? vals[0].ValueInt : -1)}/{(vals.Length > 1 ? vals[1].ValueInt : -1)} "
+                    + $"skala={gauge->MinValue}..{gauge->MaxValue} "
+                    + $"ruheNode={(rest == null ? "null" : $"b={rest->Width} x={rest->X} sx={rest->ScaleX} sichtbar={rest->IsVisible()}")} "
+                    + $"fuellNode={(fill == null ? "null" : $"b={fill->Width} x={fill->X} sx={fill->ScaleX}")} "
+                    + $"grund={(back == null ? "null" : $"b={back->Width} x={back->X}")} "
+                    + $"wurzel={(root == null ? "null" : $"b={((AtkResNode*)root)->Width}")}";
+            }
+        }
+
+        var line = $"mond={moon} addonRested={addonRested} hudRested={hudRested} "
+                 + $"hudExp={hudCur}/{hudNeeded} stufe={hudLevel} basisRested={baseRested} {bar}";
+        if (line == _lastRestedProbe) return;
+
+        _lastRestedProbe = line;
+        _log.Info($"[RestedProbe] {line}");
+    }
+#endif
+
+    /// <summary>
     /// On key press: the active job's level and how much experience is left to the
     /// next level. Level, current and needed EXP come from PlayerState
     /// (ilspycmd-verified: CurrentLevel, GetCurrentClassJobExp,
@@ -300,6 +446,77 @@ public sealed class CombatService
         var left = needed > cur ? needed - cur : 0;
         _tolk.SpeakInterrupt(AccessibilityStrings.LevelExpLeft(level, (int)left));
         _log.Info($"[Level] Stufe={level} exp={cur}/{needed} left={left}");
+    }
+
+    /// <summary>
+    /// On key press: whether the player is standing in a rested area right now, and
+    /// how much rested bonus is stored. The stored amount comes from
+    /// AgentHUD.ExpRestedExperience rather than AddonExp.RestedExp, because the
+    /// agent still holds the value while the "_Exp" addon is not built - measured
+    /// 2026-08-14 19:22, where hudRested read 97638 with the addon absent.
+    ///
+    /// The amount is stated as a percentage of ONE LEVEL, which is the unit the
+    /// game itself paints the value in. Nothing in the struct says what the uint
+    /// counts (AddonExp has no text node and no formatting method for it, and the
+    /// sheets carry no "rested bonus: x" line - only the entering/leaving messages
+    /// 732/733), so the unit was measured against the bar the sighted player sees,
+    /// AtkComponentGaugeBar.RestedExpNode (log 2026-08-14 19:36, level 41):
+    ///   bar width 482, fill node 91 at 27523/163000 = 16.89%, rested node 375.
+    /// Both nodes follow width = 471 * fraction + 11.5, and the check on that fit
+    /// holds - fraction 1 gives 482.5, the full bar. The rested node therefore sits
+    /// at 77.2%, which is exactly (27523 + 98283) / 163000. So RestedExp counts EXP
+    /// points on the same scale as CurrentExp, and rested/needed is a percentage of
+    /// a level. RestedProbe stays in until a second reading at a different EXP
+    /// value confirms the fit.
+    /// </summary>
+    public unsafe void AnnounceRestedStatus()
+    {
+        if (_objectTable.LocalPlayer == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
+            return;
+        }
+
+        var moon = ReadRestedAreaIndicator();
+        // null means the EP bar is not there (loading, HUD hidden), not that the
+        // player left - in that case the area part is left unsaid rather than guessed.
+        var text = moon switch
+        {
+            true  => AccessibilityStrings.RestedAreaNow,
+            false => AccessibilityStrings.RestedAreaNot,
+            _     => string.Empty,
+        };
+
+        var hud = AgentHUD.Instance();
+        var ps  = PlayerState.Instance();
+        var needed = ps == null ? 0 : ps->GetCurrentClassJobNeededExp();
+        if (hud != null && needed > 0)
+        {
+            var stored  = hud->ExpRestedExperience;
+            var percent = (int)Math.Round(stored * 100.0 / needed);
+            // A bonus too small to round up to a full percent is still a bonus, so
+            // it must not read as "none": only an empty pool says empty.
+            text += stored > 0
+                ? AccessibilityStrings.RestedBonusPercent(Math.Max(percent, 1))
+                : AccessibilityStrings.RestedBonusEmpty;
+            _log.Info($"[Rested] Abfrage: mond={moon} hudRested={stored}/{needed} = {percent}%");
+        }
+        else
+        {
+            // At max level there is no "next level" to express the pool against,
+            // and without the agent there is no pool to read at all.
+            _log.Info($"[Rested] Abfrage: mond={moon} hud={(hud != null)} needed={needed} - keine Bonus-Angabe");
+        }
+
+        if (text.Length == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.RestedNotAvailable);
+            return;
+        }
+
+        // The parts carry a leading space from the level announcement they used to
+        // append to; as a sentence of its own that space has to go.
+        _tolk.SpeakInterrupt(text.TrimStart());
     }
 
     // Auf Tastendruck: aktueller HP/MP-Status (eigen + Ziel)

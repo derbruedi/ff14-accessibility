@@ -52,6 +52,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadInventory = "Strg+F3";         // Inventar vorlesen (Tasche + Schlüsselgegenstände)
     public string KeyReadGil       = "Umschalt+F3";     // Nur den Gil-Stand ansagen (Umschalt+F1..F12 laut Keybind-Dump frei)
     public string KeyLevelExp      = "Strg+L";          // Stufe + fehlende EXP ansagen (L=Level; bare L ist im Spiel Linkshell)
+    public string KeyRestedStatus  = "Umschalt+L";      // Ruhebereich + Erholungsbonus ansagen (neben der Stufe auf L; Umschalt+L steht nicht in der Belegt-Liste des Keybind-Dumps)
     public string KeyEmoteNext     = "Umschalt+F5";     // Emote-Browser: nächstes Emote ansagen
     public string KeyEmotePrev     = "Umschalt+F4";     // Emote-Browser: vorheriges Emote ansagen
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
@@ -158,6 +159,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyReadInventory = defaults.KeyReadInventory;
         KeyReadGil       = defaults.KeyReadGil;
         KeyLevelExp      = defaults.KeyLevelExp;
+        KeyRestedStatus  = defaults.KeyRestedStatus;
         KeyEmoteNext     = defaults.KeyEmoteNext;
         KeyEmotePrev     = defaults.KeyEmotePrev;
         KeyEmoteDo       = defaults.KeyEmoteDo;
@@ -342,6 +344,11 @@ public sealed class Configuration : IPluginConfiguration
     // Level-Up-Ansage), kein UI-Scraping. Jeder Gewinn wird zusaetzlich in den
     // Nachlese-Kanal "Beute" geschrieben (User-Wunsch 2026-07-25).
     public bool AnnounceXpGain = true;
+    // Betreten/Verlassen eines Ruhebereichs ansagen (Gasthaus, Stadt: dort
+    // sammelt sich der Erholungsbonus an). Quelle ist der Sichelmond an der
+    // EP-Leiste - AddonExp.MoonIconNode, also genau das Zeichen, das ein
+    // sehender Spieler sieht. Siehe CombatService.TrackRestedArea.
+    public bool AnnounceRestedArea = true;
     // Eingesammelte Gegenstaende/Waehrung (Loot) live ansagen + in den Beute-
     // Kanal schreiben. Kanal = XivChatType.LootNotice (62), verifiziert aus
     // einem Live-[Chat]-Log 2026-07-25 ("Du hast ein Lammfilet erhalten."),

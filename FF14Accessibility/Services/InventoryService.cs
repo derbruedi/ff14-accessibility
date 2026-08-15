@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Inventory;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using LuminaEventItem = Lumina.Excel.Sheets.EventItem;
 using LuminaItem = Lumina.Excel.Sheets.Item;
 
@@ -115,12 +117,92 @@ public sealed class InventoryService
 
                 var name = ResolveItemName(item.BaseItemId);
                 var hq = item.IsHq ? AccessibilityStrings.HighQuality : string.Empty;
+                var set = IsRegisteredToGearset(item) ? AccessibilityStrings.InGearsetShort : string.Empty;
                 _log.Info($"[Inventory] {page} slot={item.InventorySlot} id={item.ItemId} " +
-                          $"qty={item.Quantity} hq={item.IsHq} name='{name}'");
-                result.Add(item.Quantity > 1 ? AccessibilityStrings.ItemStack(name, item.Quantity, hq) : $"{name}{hq}");
+                          $"qty={item.Quantity} hq={item.IsHq} set={set.Length > 0} name='{name}'");
+                result.Add((item.Quantity > 1
+                    ? AccessibilityStrings.ItemStack(name, item.Quantity, hq)
+                    : $"{name}{hq}") + set);
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Whether this item carries the game's gearset mark - the small symbol a
+    /// sighted player sees on the inventory icon, telling them the piece belongs
+    /// to a saved set of another class and should not be sold.
+    ///
+    /// The answer is the GAME'S OWN, not a rebuilt one: RaptureGearsetModule
+    /// .IsItemRegisteredToGearset, whose ClientStructs doc says outright "Used for
+    /// the gearset mark on inventory item icons" (ilspycmd 2026-08-14). Passing
+    /// equipSlotIndex 14 makes the game resolve the slot from the item's own
+    /// EquipSlotCategory, so no slot mapping is duplicated here.
+    ///
+    /// <paramref name="item"/>.Address is Dalamud's pointer INTO the live
+    /// container (it looks the slot up in the real inventory span), so the check
+    /// sees the actual item instance rather than a copy - which matters, because
+    /// two identical pieces can differ in whether they are registered.
+    /// </summary>
+    public unsafe bool IsRegisteredToGearset(in GameInventoryItem item)
+    {
+        var module = RaptureGearsetModule.Instance();
+        if (module == null) return false;
+
+        // Without a single saved set nothing can carry the mark - worth one log
+        // line, because "no warning" then means "nothing to warn about" rather
+        // than a broken check (RaptureGearsetModule.NumGearsets).
+        if (module->NumGearsets == 0)
+        {
+            _log.Info("[Inventory] Keine Ausrüstungssets angelegt - keine Markierung möglich.");
+            return false;
+        }
+
+        var address = item.Address;
+        if (address == 0) return false;
+
+        // External game call: the function is resolved by signature and throws if
+        // a patch moved it. Failing loud in the log beats a silent wrong "no".
+        try
+        {
+            return module->IsItemRegisteredToGearset((InventoryItem*)address);
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Inventory] IsItemRegisteredToGearset fehlgeschlagen: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether ANY carried or stored copy of this item id sits in a gearset -
+    /// for callers that only know the id, such as the item tooltip. Scans the bag
+    /// pages and the armoury, which is where the mark can appear at all.
+    /// Deliberately errs towards warning: with two identical pieces of which only
+    /// one is registered, this says yes for both. Missing a "do not sell" warning
+    /// is the costlier mistake.
+    /// </summary>
+    public bool IsAnyCopyRegisteredToGearset(uint baseItemId)
+    {
+        if (baseItemId == 0) return false;
+
+        // Only equipment can ever carry the mark. Checking the sheet first keeps
+        // the common case - a bag full of materials - from scanning every
+        // container, since this runs on each focus change in the item grid.
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return false;
+        if (row.EquipSlotCategory.RowId == 0) return false;
+
+        foreach (var page in BagPages)
+            foreach (var item in _inventory.GetInventoryItems(page))
+                if (!item.IsEmpty && item.BaseItemId == baseItemId && IsRegisteredToGearset(item))
+                    return true;
+
+        foreach (var container in GearContainers)
+            foreach (var item in _inventory.GetInventoryItems(container))
+                if (!item.IsEmpty && item.BaseItemId == baseItemId && IsRegisteredToGearset(item))
+                    return true;
+
+        return false;
     }
 
     /// <summary>

@@ -3,7 +3,382 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-13 SPAET, "PR #6 TIEFES GEWOELBE IM TESTZWEIG" - GEBAUT, UNGETESTET)
+## STAND JETZT (2026-08-15, "UNBEKANNTE OBJEKTE IM WOHNGEBIET" - GEBAUT, ZU TESTEN)
+
+>>> ANLASS: Spielermeldung "in den wohngebieten gibt es unbekannte objekte".
+    Log 2026-08-15 14:44 (terr 339 = Dorf des Nebels): bis zu acht Eintraege
+    "Objekt ohne Namen" / "Objekt ohne Namen 2" AUF EINEM PUNKT (alle dx=13,84
+    dz=-3,06, 14 m), daneben ganz normal "Informationstafel" und "Eingang".
+
+>>> GEMESSEN mit /acc objprobe (15:58, dieselbe Stelle). WICHTIG FUER DAS
+    NAECHSTE MAL: Strg+F5 taugt dafuer NICHT - der Menue-Dump gewinnt dort
+    immer (Plugin.cs:536 sagt das auch so), der erste Testversuch ging deshalb
+    ins Leere. Der Chat-Befehl ist der einzige verlaessliche Weg.
+    Ergebnis: EventObj, DataId 2003757, zielbar=True, name=''.
+
+>>> WAS ES IST (offline gegen die Sheets aufgeloest, Lumina):
+    - U+E034 ist ein Private-Use-Glyph = Dalamud `SeIconChar.BotanistSprout`.
+      Das Spiel beschriftet diese Objekte also mit einem SYMBOL statt mit einem
+      Wort - ein sehender Spieler sieht ein Sprossen-Icon.
+    - `EObj[2003757].Data` -> `CustomTalk 721047 "CmnDefHousingGardeningPlant_00151"`.
+      Skript-Schluessel: PLANT_TITLE, FC_AUTHORITY_SEEDING, GARDENING_ERR_NO_SEED,
+      ITEM_CATEGORY_SEED/SOIL/FERTILIZER, HOWTO_HARVEST -> GARTENBEETE.
+
+>>> UMFANG GEMESSEN, NICHT GESCHAETZT: von 7571 namenlosen EObj-Zeilen haengen
+    GENAU ZWEI an einem CustomTalk, beide mit der generischen MainOption
+    "Plaudern". Ein allgemeiner Mechanismus haette also nichts geholfen; die
+    Tabelle mit zwei Eintraegen ist das ganze Problem, keine Anzahlung.
+    Der zweite Fall: EObj 2000032 -> CustomTalk 720898 "CmnDefMogLetter_00002"
+    (LETTER_BOX_USAGE, HOWTO_MOGLETTER) = der Postkasten.
+
+>>> DIE WOERTER SIND DIE DES SPIELS, nicht unsere Erfindung:
+    - PLANT_TITLE zeigt auf `Addon 6420` = "Beet , Furche " (DE) bzw.
+      " Bed,  Patch" (EN) - die Vorlage aus dem Aussaeen-Fenster.
+    - Gegenprobe auf derselben Sheet-Zeile: EObjName 2003757 traegt das Glyph
+      nur in DE und EN; die FRANZOESISCHE Fassung sagt "emplacement", die
+      JAPANISCHE U+755D (Furche). Die Bedeutung ist also belegt, nicht geraten.
+    - Postkasten: LogMessage 3902/3903 nennen ihn "Postkasten" / "mailbox".
+
+>>> GEBAUT: `ObjectNameService.IconNamed` (2003757 -> "Beet"/"Garden bed",
+    2000032 -> "Postkasten"/"Mailbox"), gezogen NACH dem Sheet-Versuch, also
+    ohne Einfluss auf alles andere. Strings bilingual in AccessibilityStrings.
+
+>>> ZWEITER FEHLER IM SELBEN LOG, MITGEFIXT: der Auto-Lauf sagte "Laufe zu ."
+    - ganz ohne Objekt. `AutoWalkService.Toggle` nahm `target.Name.TextValue`
+    ROH, also das Glyph, das der Sprecher wegputzt. Jetzt `Describe`. Dieselbe
+    Klasse Fehler beim Folgen (Taste +): dort stand `IsNullOrWhiteSpace`, was
+    Glyphen und "?" durchlaesst - auch auf `Describe` umgestellt.
+
+>>> ZU TESTEN (Debug gebaut + deployt, Hot-Reload):
+    1. In Mist an die Stelle: sagt der Browser jetzt "Beet", "Beet 2", ...?
+    2. Numpad3 auf so ein Beet: kommt "Laufe zu Beet." statt "Laufe zu ."?
+    3. Taste + auf ein namenloses Objekt: kommt ein Name statt einer Luecke?
+
+## NACHTRAG 2026-08-15 ("CHOCOBO-STALL FEHLTE GANZ" + EINGAENGE GEMESSEN)
+
+>>> IN-GAME BESTAETIGT: die Beete heissen jetzt "Beet". Zwei Rueckfragen kamen
+    dazu: "kann man die eingaenge benennen?" und "irgendwo muss da auch ein
+    chocobostall sein".
+
+>>> CHOCOBO-STALL - EIGENER FEHLER, GEFUNDEN IM SCHON VORHANDENEN DUMP:
+    Er stand die ganze Zeit 12,5 m neben dem Spieler, mit Namen und
+    zielbar=True. Der Browser konnte ihn nur nicht sehen, weil
+    `ObjectKind.HousingEventObject` (12) in KEINER Kategorie stand -
+    AllBrowseKinds und NavCategory.Objects kannten nur EventObj + Treasure.
+    Betroffen war die ganze Klasse: "Chocobo-Stall" (131129), "Mogry-Briefkasten"
+    (131076), "Dodo-Diarium-Pult" (131257) - alle vom Spiel benannt, alle
+    zielbar, alle unsichtbar fuer den Browser.
+    GEBAUT: HousingEventObject in AllBrowseKinds + NavCategory.Objects (NICHT in
+    die Quest-Varianten - Moebel sind nie ein Questziel). Dazu in
+    ObjectMemoryService.IsLandmark, damit die Nummerierung greift: im Dump
+    stehen zwei "Mogry-Briefkasten" und zwei "Mogul Mog-Briefkasten" in 60 m.
+    Artname: "Einrichtung" / "Furnishing".
+
+>>> ZAEUNE: WARUM DER AUTO-LAUF IM WOHNGEBIET FESTSITZT - BEWIESEN, NICHT
+    VERMUTET. Der User kam weder zu den Beeten noch zum Chocobo-Stall (12,6 m,
+    Stillstand ueber 4 s, Position wandert 13 cm, vnavmesh queued im
+    Sekundentakt neu). Es ist das Grundstueck SEINER Freien Gesellschaft, er hat
+    dort also Zutritt - kein "fremde Parzelle"-Fall.
+    ERSTE HYPOTHESE WAR FALSCH und wurde verworfen: "Pfad aus 2 identischen
+    Wegpunkten" ist KEIN Fehlersignal. Dieselbe Zeile steht in der vorigen
+    Sitzung bei Laeufen, die ANKAMEN (Eingang ueber 17 m, Gebrauchtwarenhaendler,
+    Eingang zu anderen Zimmern). Sie heisst nur "freie Bahn, geradeaus".
+    ERSTER SCHLUSS WAR FALSCH - HIER STEHEN GELASSEN, WEIL DER IRRWEG LEHRREICH
+    IST: die beiden Cache-Netze fuer Mist,
+    `ffxiv_sea_s1_hou_s1h1_level_s1h1__14C0A__AE__0.navmesh` (15.08. 14:44) und
+    `...__14C0A____0.navmesh` (2. August), waren BYTE-IDENTISCH (SHA256
+    16CF2384..., beide 543568 Bytes). Daraus hatte ich geschlossen, ein
+    Wohngebiets-Netz enthalte grundsaetzlich keine spielergesetzten Strukturen
+    und ein Rebuild koenne nicht helfen. BEIDES FALSCH.
+
+>>> WIDERLEGT DURCH DIE MESSUNG (17:04, `/vnav rebuild` auf Ansage des Users):
+    - die Datei wuchs von 543568 auf 652058 Bytes, neuer Hash 1FEFDE75... Das
+      sind 108490 Bytes = rund ein Fuenftel MEHR Geometrie.
+    - der Auto-Lauf, der vorher stur in den Zaun lief, lieferte danach
+      "Pfad steht (6 Wegpunkte)" mit einer echten Route mit Kurven
+      ((-650,8|-696,0) -> (-651,5|-697,8) -> (-652,0|-702,8) -> (-651,0|-704,0)
+      -> (-650,5|-704,0)) und "beendet (angekommen, dist=3,9)".
+    DIE HAEUSER SIND ALSO IM NETZ - sie kamen nur zu spaet fuer den Bau.
+
+>>> DIE ECHTE URSACHE (Hypothese, passt auf jede Messung, nicht direkt
+    beobachtet): vnavmesh baut beim Laden der Zone. Im Log steht der
+    Zonenwechsel um 14:43:47 und die Netzdatei wurde 14:44:04 geschrieben - 17
+    Sekunden spaeter, waehrend das Spiel die Haeuser noch nachlaedt. Ergebnis
+    ist ein Netz des LEEREN Wohngebiets, und danach korrigiert es nie jemand:
+    `NavmeshManager.GetCacheKey` ist {bg}__{filter}__{festivals}__{zoneSGs}
+    (dekompiliert) und enthaelt nichts ueber Parzellen. Der veraltete Stand
+    bleibt also fuer immer gueltig.
+    NEBENBEFUND: vnavmesh hat KEINE Einstellung fuer dynamische Objekte; die
+    Config kennt nur Bau- und Laufparameter (BuildMaxCores, StopOnStuck, ...).
+
+>>> DARAUS GEBAUT (drei Sachen):
+    1. `MonitorHousingMesh` (NEU, User-Entscheidung "automatisch beim
+       Betreten"): baut das Netz einmal pro Zonenbesuch neu, sobald
+       `HousingManager.CurrentTerritory->IsLoaded()` true meldet. AUSLOESER IST
+       DAS SPIELEIGENE SIGNAL, kein geratener Timer - ein Timer muesste auf eine
+       fremde Leitung geeicht werden. Sagt dabei an, WARUM gewartet wird.
+       ZU PRUEFEN: ob IsLoaded nicht doch zu frueh true wird. Das zeigt sich
+       daran, dass der Neubau nichts aendert; die Log-Zeile haelt den Moment
+       fest.
+    2. `TryTakeTrail` wird beim Stillstand jetzt IMMER versucht, nicht nur bei
+       Netzende (restWp<=1). Vorher lief bei restWp=2 - also genau in diesem
+       Fall - die Spur-Suche gar nicht an, und ein Spieler, der den Weg schon
+       aufgezeichnet hatte, bekam trotzdem "Ich stecke fest".
+    3. `TrailHint` sagt jetzt das Richtige: "Das Wegenetz ist hier aelter als
+       die Haeuser. Mit dem Befehl vnav rebuild neu bauen lassen." (vorher der
+       falsche Rat, eine Spur aufzuzeichnen).
+
+>>> IN-GAME 16:51: STALL ERREICHT, ABER NICHT UEBER EINE SPUR. Der Hinweistext
+    ist bestaetigt (kam zweimal woertlich). Der erfolgreiche Lauf
+    ("gestartet zu Chocobo-Stall dist=15,2 -> angekommen, dist=4,0") startete
+    aber von einer ANDEREN Stelle: der User war ueber "Eingang" im Haus
+    (Kraemerin, Ausgang) und stand danach innerhalb des Zauns. Vom alten
+    Standpunkt steckte es erneut fest (12,5 m, gleiche Meldung).
+    HEISST: Punkt 1 des Fixes (TryTakeTrail auch beim Festsitzen) ist WEITER
+    UNGETESTET - es liegt schlicht noch keine Spur dort. Zu pruefen, sobald der
+    User einmal von der Strasse durchs Tor aufzeichnet.
+
+>>> EINGAENGE - NOCH NICHT GEBAUT, ERST GEMESSEN. Vier Tueren in 50 m teilen
+    sich DataId 2002737 und das eine Wort "Eingang", zwei davon zielbar. Der
+    Name unterscheidet also nichts; was ein sehender Spieler dort liest, ist die
+    PARZELLE.
+    WAS DIE QUELLE HERGIBT (ilspycmd auf FFXIVClientStructs.dll, 2026-08-15):
+    `HousingManager` hat GetCurrentWard / GetCurrentPlot / GetCurrentDivision /
+    GetCurrentRoom / GetCurrentHouseId - jede einzelne davon heisst CURRENT,
+    zielt also auf die Stelle, wo der SPIELER steht, nicht auf ein Objekt, auf
+    das man zeigt. Ein "zu welcher Parzelle gehoert diese Tuer" gibt es nicht.
+    DESHALB SONDE STATT VERMUTUNG: `[PlotProbe]` haengt an /acc objprobe und
+    loggt genau diese Werte. Zwei moegliche Ausgaenge:
+     - die Werte AENDERN sich beim Betreten einer Parzelle -> die Nummer ist
+       echter Spielzustand, und der Eingang kann benannt werden, sobald man
+       draufsteht ("Eingang, Parzelle 23").
+     - sie bleiben draussen stehen -> das Spiel fuehrt es dort nicht, und eine
+       Benennung aus der Ferne waere Nachbau. Dann bleibt es, wie es ist.
+    ZU MESSEN: /acc objprobe einmal auf freier Strasse, einmal direkt vor einem
+    Haus, einmal auf der eigenen Parzelle - und die drei [PlotProbe]-Zeilen
+    vergleichen.
+
+>>> DAS FESTSITZEN IST JETZT AUFGEKLAERT - siehe Abschnitt "ZAEUNE" unten.
+
+## FRUEHER (2026-08-14, "ERHOLUNGSBONUS / RUHEBEREICH" - GEBAUT, ZU MESSEN)
+
+>>> ANLASS: Der User hat beim Lesen des Tutorials "Ruhebereiche" gemerkt, dass
+    das Plugin den Erholungsbonus ueberhaupt nicht kennt. Wunsch: Sonde bauen und
+    die Ansage AUTOMATISCH beim Betreten.
+
+>>> QUELLEN (ilspycmd auf FFXIVClientStructs.dll, 2026-08-14):
+    - `AddonExp` (Addon "_Exp"): `MoonIconNode` @632, `CurrentExp` @656,
+      `RequiredExp` @660, `RestedExp` @664.
+    - `AgentHUD`: `ExpCurrentExperience` @13856, `ExpNeededExperience` @13860,
+      `ExpRestedExperience` @13864, `ExpLevel` @13888.
+    - `PlayerState.BaseRestedExperience` @744.
+    - `AgentHudExpFlag` hat KEIN Ruhebereich-Flag (nur Synced/ExpLocked/MaxLevel/
+      InEureka/InOccultCrescent) - deshalb laeuft die Erkennung ueber den Mond.
+
+>>> GEBAUT in CombatService (dort laufen Level- und XP-Verfolgung schon):
+    - `TrackRestedArea`: sagt "Ruhebereich. Erholungsbonus sammelt sich." bzw.
+      "Ruhebereich verlassen." beim Wechsel des Sichelmonds an der EP-Leiste -
+      also genau an dem Zeichen, das der Tutorialtext beschreibt und das ein
+      sehender Spieler sieht. Nicht unterbrechend.
+    - "Kein Messwert" (Ladebildschirm, HUD-Element weg, Addon nicht da) ist
+      BEWUSST von "Mond aus" getrennt, sonst kaeme bei jedem Ladebildschirm ein
+      falsches "Ruhebereich verlassen".
+    - Erster Messwert nach dem Anmelden setzt nur den Ausgangszustand (kein
+      "betreten" fuer einen Ort, in dem man schon stand).
+    - Abschaltbar ueber `Configuration.AnnounceRestedArea` (Standard an).
+
+>>> NOCH NICHT ANGESAGT: die HOEHE des Bonus. Die Werte gibt es, aber die
+    Struktur sagt nichts ueber die EINHEIT (beides nackte uint). Dafuer laeuft
+    die Sonde `RestedProbe` (#if DEBUG, eine Zeile pro AENDERUNG):
+    `[RestedProbe] mond=True addonRested=... hudRested=... hudExp=.../... stufe=...
+    basisRested=...`
+
+>>> ZU MESSEN: mit dieser Debug-Fassung in ein Gasthaus/eine Stadt gehen und
+    wieder heraus. Erwartet: die Ansage beim Wechsel, und im Log die
+    RestedProbe-Zeilen. Aus dem Verhaeltnis hudRested zu hudExp-Nenner wird dann
+    der Satz fuer die Bonus-Hoehe gebaut; danach faellt die Sonde raus.
+
+## NACHTRAG 2026-08-14 ABENDS ("ABFRAGE AUF STRG+L" + ERSTE MESSWERTE)
+
+>>> ERSTE MESSREIHE LIEGT VOR (dalamud.log 19:22-19:25, Stufe 41, im Ruhebereich
+    stehend). Was sie zeigt:
+    - `basisRested` (PlayerState.BaseRestedExperience) waechst EXAKT 1 pro Sekunde
+      (120761 -> 120941 in 180 s). Das ist ein Zaehltakt, keine EXP-Zahl.
+    - `hudRested` waechst 0,8 pro Sekunde (97638 -> 97782 in 180 s). Der
+      Zusammenhang ist im Messfenster affin: hudRested = 0,8 * basisRested + 1029,2
+      trifft alle Stichproben auf die Einheit genau (Probe: basis=120851 ->
+      erwartet 97710, geloggt 97710).
+    - `addonRested` == `hudRested`, sobald das "_Exp"-Addon gebaut ist; vorher 0,
+      waehrend der Agent den Wert schon fuehrt. Deshalb liest die Abfrage AgentHUD.
+    - Der Mond stand ueber die ganze Reihe auf True bzw. war nicht ablesbar
+      (Ladephase) - ein WECHSEL wurde noch nicht gemessen, im Log steht nur
+      `[Rested] Ausgangszustand: imRuhebereich=True`.
+
+>>> EINHEIT GEKLAERT (19:36, ohne Kampf-Test): ueber den Balken, den der sehende
+    Spieler sieht - `AtkComponentGaugeBar.RestedExpNode` @376. Messung bei Stufe 41:
+    Balkenbreite 482, Fuellknoten 91 bei 27523/163000 = 16,89 %, Ruheknoten 375.
+    Beide Knoten folgen `Breite = 471 * Anteil + 11,5`; die PROBE auf diese
+    Anpassung haelt (Anteil 1 ergibt 482,5 = volle Breite), sie war also nicht
+    bloss hineingerechnet. Der Ruheknoten steht damit bei 77,2 %, und das ist
+    exakt (27523 + 98283) / 163000. Also zaehlt RestedExp EXP-PUNKTE auf derselben
+    Skala wie CurrentExp -> hudRested / needed ist ein Prozentsatz EINER STUFE.
+    Nebenbefund: die Leiste rechnet in Promille (`skala=0..10000`,
+    `balkenWert=1689` = exakt der EXP-Stand).
+
+>>> EIGENE TASTE UMSCHALT+L (`KeyRestedStatus`, auf Wunsch des Users): die Abfrage
+    haengt NICHT mehr an Strg+L, die Stufen-Ansage ist wieder wie vorher. Umschalt+L
+    steht nicht in der Belegt-Liste des Keybind-Dumps (dort nur Umschalt+Tab/T/F/M/V)
+    und war im Plugin frei. Als eigenstaendiger Satz sagt sie jetzt auch das Nein:
+    "Kein Ruhebereich." Bei nicht ablesbarer Leiste (Ladebildschirm, HUD aus) faellt
+    der Ortsteil weg statt geraten zu werden; bleibt gar nichts zu sagen, kommt
+    "Erholungsbonus nicht verfügbar." Steht als "Erholungsbonus" in der Tastenhilfe.
+
+>>> ANSAGE HAT JETZT DIE ZAHL: " Erholungsbonus für N Prozent einer Stufe."
+    Ein Pool > 0, der auf unter 1 % rundet, sagt "1 Prozent" statt
+    "kein Erholungsbonus" - vorhanden und leer duerfen nicht gleich klingen.
+    ZU BESTAETIGEN: eine zweite Messung bei ANDEREM EXP-Stand (also nach etwas
+    Kampf) gegen die Formel; solange bleibt RestedProbe drin.
+
+>>> WAS DIE QUELLE NICHT HERGAB (heute geprueft):
+    AddonExp hat KEINEN Textknoten und keine Formatiermethode fuer RestedExp
+    (ilspycmd: Felder enden bei CurrentExp/RequiredExp/RestedExp), und in den
+    Sheets steht keine Zeile "Erholungsbonus: x". Gefunden wurden nur
+    LogMessage 732 "Du hast einen Ruhebereich betreten." und 733 "Du hast den
+    Ruhebereich verlassen." -> DAS SPIEL MELDET DEN WECHSEL SELBST. Ob unser
+    Chat-Leser diese Systemzeile ohnehin schon spricht, ist die zweite offene
+    Frage; wenn ja, ist TrackRestedArea eine Dopplung und faellt weg.
+
+>>> GEBAUT: die Abfrage haengt jetzt an der vorhandenen Stufen-Taste STRG+L
+    (`CombatService.DescribeRestedState`), nicht auf einer neuen Taste - es ist
+    dieselbe Anzeige (EP-Leiste) und spart eine Tastenkollision. Sie sagt
+    " Im Ruhebereich." nur, wenn der Mond wirklich ablesbar ist, und
+    " Erholungsbonus vorhanden." / " Kein Erholungsbonus." nach hudRested > 0.
+    BEWUSST OHNE ZAHL, solange die Einheit nicht gemessen ist. Build Debug
+    0 Warnungen / 0 Fehler, liegt in devPlugins.
+
+>>> TESTSTAND:
+    1. ERLEDIGT: die Ansage kommt (User 19:33 an Strg+L bestaetigt, Anlass fuer
+       die Zahl war genau, dass die Hoehe fehlte). Sie liegt jetzt auf Umschalt+L
+       und ist dort noch nicht gedrueckt worden.
+    2. OFFEN: Ruhebereich verlassen -> kommt die Ansage EIN- oder ZWEIMAL?
+       Zweimal hiesse: das Spiel meldet 732/733 schon selbst ueber den Chat, dann
+       ist TrackRestedArea eine Dopplung und faellt weg.
+    3. OFFEN (nur noch Gegenprobe): Strg+L nach etwas Kampf. Erwartet bei Stufe 41
+       und ~98400 Bonus: "Erholungsbonus für 60 Prozent einer Stufe". Sinkt der
+       Prozentsatz mit dem Verbrauch und passen `[RestedProbe]`-Knotenbreiten
+       weiter zur Formel, faellt die Sonde raus.
+
+## AUCH NEU 2026-08-14 ("AUSRUESTUNGSSET-MARKE HOERBAR" - GEBAUT, ZU TESTEN)
+
+>>> SPIELERWUNSCH (ueber den User): ein Sehender sieht am Inventar-Symbol, dass
+    ein Ausruestungsteil zu einem gespeicherten Set einer ANDEREN Klasse gehoert -
+    "stop, nicht verkaufen". Diese Marke soll hoerbar werden.
+
+>>> QUELLE, und zwar eine ausdrueckliche: `RaptureGearsetModule
+    .IsItemRegisteredToGearset(InventoryItem*, itemRow=null, equipSlotIndex=14)`.
+    Die ClientStructs-Doku sagt woertlich "Used for the gearset mark on inventory
+    item icons" - es ist also GENAU die Pruefung, mit der das Spiel das Symbol
+    zeichnet, keine nachgebaute. equipSlotIndex 14 laesst das Spiel den Slot aus
+    der EquipSlotCategory des Gegenstands selbst aufloesen.
+    Die Funktion wird per Signatur aufgeloest und WIRFT bei Fehlschlag
+    (ThrowNullAddress) - daher try-catch mit Log, kein stiller Fehlschlag.
+
+>>> WORTWAHL AUS DEM SPIEL (Sheet-Dump 2026-08-14): der Begriff ist
+    "Ausrüstungsset" (Addon 756), und fuer genau diesen Fall gibt es
+    Addon 11993 "Dieser Gegenstand ist in einem Ausrüstungsset gespeichert."
+    sowie Addon 8895/4649 als Warnungen beim Fortfahren/Abliefern. Die Ansage
+    spricht also die Sprache der Oberflaeche.
+
+>>> GEBAUT, zwei Stellen:
+    - Inventar vorlesen (Strg+F3): markierte Teile haengen ", im Ausrüstungsset"
+      an. Kurzform, weil sie hinter jedem Gegenstand der Liste stehen kann.
+    - Gegenstands-Tooltip (Strg+F10): " Achtung: in einem Ausrüstungsset
+      gespeichert, nicht verkaufen." Der Tooltip selbst enthaelt die Tatsache
+      NICHT - das Spiel malt sie nur als Symbol aufs Icon, ein Textleser kann sie
+      also nie aufsammeln.
+
+>>> EINE BEWUSSTE UNSCHAERFE: der Tooltip kennt nur die Id (AgentItemDetail.ItemId
+    @312), nicht den Slot, auf den gezeigt wird. Bei ZWEI gleichen Teilen, von
+    denen nur eines registriert ist, warnt er darum fuer beide. Die fehlende
+    Warnung waere der teurere Fehler. Im Inventar-Durchlauf ist die Pruefung
+    exakt, dort liegt pro Slot der echte Zeiger vor (Dalamud
+    GameInventoryItem.Address zeigt IN den lebenden Container, nicht auf eine
+    Kopie - ilspycmd geprueft).
+
+>>> NACHGESCHAERFT nach Rueckfrage des Users ("es geht ums ARSENAL beim
+    VERKAUFEN"): die Marke kommt jetzt AUTOMATISCH beim Durchgehen, nicht erst auf
+    Strg+F10. Angehaengt wird sie im Fokus-Pfad (`ResolveFocusedItemName`), also
+    genau dort, wo beim Wandern durchs Gitter ohnehin schon "Name, Stufe, tragbar"
+    entsteht. KEIN neuer ItemDetail-Listener: der Tooltip ist seit 2026-07-19
+    bewusst aus dem generischen Scanner ausgesperrt, weil dieser seine 7-8
+    Text-Knoten einzeln mit SpeakInterrupt sprach und sich selbst uebertoente.
+    Der Fokus-Pfad rechnet nur bei FOKUSWECHSEL (Zeile ~1961), nicht pro Frame -
+    darum ist der Container-Scan hier tragbar; zusaetzlich steigt er sofort aus,
+    wenn der Gegenstand gar keine Ausruestung ist.
+
+>>> AUSSERDEM: KLASSEN-ANSAGE (`GearInfoService.DescribeOwnClasses`), auf Wunsch
+    des Users. Genannt werden NUR die EIGENEN Klassen mit vollem Namen
+    ("für deine Klassen Ritter, Gladiator"). Grund steht im Sheet-Dump: der
+    ClassJobCategory-NAME ist eine Abkuerzungsliste - haeufigster Wert nach
+    "Alle Klassen" ist "GLA MAR PLD KRG DKR REV" auf 1912 Teilen, was ein
+    Screenreader als Buchstabensalat vorliest; sechs volle Namen pro Gegenstand
+    wuerden die Ansage begraben. Eigene Klasse = ClassJobLevels > 0, Index ist
+    ExpArrayIndex aus dem ClassJob-Sheet (die Struktur dokumentiert genau diesen
+    Index). ACHTUNG, noch offen: die BESTEHENDE Ansage "nur für ..." bei nicht
+    tragbaren Teilen spricht weiterhin die rohen Abkuerzungen - bewusst nicht
+    angefasst, waere der naechste Schritt.
+
+>>> NICHT angefasst: die zweite Fokus-Stelle im Quest-Belohnungsfenster
+    (JournalResult). Dort besitzt man das Teil noch gar nicht, eine
+    Verkaufswarnung waere dort sinnlos.
+
+>>> ZU TESTEN: 1. Im Arsenal/Verkaufsfenster durch die Teile gehen - kommt
+    ", für deine Klasse X" und bei Set-Teilen ", im Ausrüstungsset"?
+    2. Strg+F10 auf so einem Teil - kommt die lange Warnung "nicht verkaufen"?
+    3. Strg+F3 (Taschen) - Marke an markierten Teilen?
+    WICHTIG fuer die Deutung: ohne angelegte Ausruestungssets kann nichts markiert
+    sein. Genau dafuer steht die Log-Zeile "Keine Ausrüstungssets angelegt -
+    keine Markierung möglich." (RaptureGearsetModule.NumGearsets == 0).
+    OFFEN: verkauft man ein Set-Teil, sollte das Spiel selbst nachfragen
+    (Addon 8895 "...als Teil eines Ausrüstungssets registriert. Trotzdem
+    fortfahren?"); SelectYesno liest das Plugin bereits - ungeprueft, ob dieser
+    Dialog beim Verkaufen wirklich kommt.
+
+## FRUEHER (2026-08-13 NACHTS, "TUTORIAL-FENSTER HowTo SPRICHT" - IN-GAME BESTAETIGT)
+
+>>> VOM USER IM SPIEL BESTAETIGT: Ueberschrift, Seite UND Text kommen. Damit ist
+    auch die offene Frage beantwortet - das Spiel setzt `IsChecked` auf den
+    Seiten-RadioButtons, die Seitenangabe kommt also aus dem Spielzustand und
+    nicht aus einer Ersatzquelle.
+
+>>> GEBAUT nach der Analyse von 21:45 (Abschnitt weiter unten). Neuer dedizierter
+    Leser `OnHowToUpdate` in UIReaderService: sagt bei JEDER Aenderung des Inhalts
+    Ueberschrift, "Seite X von Y" und den Tutorialtext an - also beim Oeffnen und
+    bei jedem Blaettern. Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins.
+
+>>> WIE ES LIEST (alles am Dump 21:45 belegt):
+    - Ueberschrift id=5 und Text id=11 ueber `AtkText.ReadClean`, weil der Text
+      Item-Verweis-Bytes traegt ("...H??I??RuhebereichIH...").
+    - Seiten aus den RadioButtons id=17..21: die ANZAHL ist die Zahl der
+      SICHTBAREN davon (im Dump ist id=21 unsichtbar, das Thema hat also vier,
+      nicht fuenf Seiten - die feste "von 5" aus der Analyse waere falsch
+      gewesen), die AKTUELLE ist die mit `IsChecked` (wie der Staatstaler-Shop).
+    - Ist kein Knopf checked, faellt die Seitenangabe WEG statt geraten zu
+      werden; die Log-Zeile `[HowTo] Seite 0/4: ...` zeigt genau diesen Fall.
+    - Die Blaetterpfeile (id=22/16) bleiben unangetastet - sie sind nicht
+      verifiziert, und die Ansage haengt ohnehin nur am geaenderten Inhalt,
+      funktioniert also mit Numpad 4/6 genauso wie mit Maus oder Controller.
+
+>>> AUSGESPERRT: "HowTo" steht jetzt in SpecialSetupAddons UND
+    SpecialUpdateAddons, damit der generische Leser nicht weiter die Fussnote
+    (id=14) spricht. Die THEMENLISTE "HowToList" ist NICHT eingetragen - die
+    funktioniert und bleibt im generischen Pfad.
+
+>>> GETESTET UND IN ORDNUNG: Tutorial-Fenster oeffnen (Themenliste -> Thema
+    waehlen) spricht "Ueberschrift. Seite X von Y. Text", Blaettern spricht die
+    neue Seite. Log-Zeile zum Nachsehen: `[HowTo] Seite X/Y: '...'`.
+
+## FRUEHER (2026-08-13 SPAET, "PR #6 TIEFES GEWOELBE IM TESTZWEIG" - GEBAUT, UNGETESTET)
 
 >>> ES GIBT JETZT DOCH EINEN NEUEN: PR #6 "Tiefes Gewoelbe: Raeume, Truhen und
     die Charakterinfo werden sprechend", eingegangen 2026-08-13 21:25, wieder
@@ -33,7 +408,7 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 >>> KEINER DER SECHS IST VOM AUTOR IM SPIEL GETESTET, er schreibt das selbst
     dazu. Fuer PR #6 heisst das: die ganze Gewoelbe-Mechanik ist ungeprueft.
 
-## NAECHSTER SCHRITT (2026-08-13, "TUTORIAL-FENSTER HowTo IST STUMM" - ANALYSIERT, NICHT GEBAUT)
+## FRUEHER (2026-08-13, "TUTORIAL-FENSTER HowTo IST STUMM" - ANALYSE, INZWISCHEN GEBAUT)
 
 >>> MELDUNG DES USERS mit Dump (C:\Users\brued\Desktop\FFXIV_UI_Dump.txt,
     21:45:06, enthaelt BEIDE Fenster) - "die Sachen sind nicht auslesbar".

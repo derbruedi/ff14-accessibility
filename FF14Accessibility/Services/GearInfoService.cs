@@ -206,6 +206,51 @@ public sealed class GearInfoService
         return (true, string.Empty);
     }
 
+    /// <summary>
+    /// Which of the player's OWN classes can use this piece, by full name:
+    /// "Ritter, Gladiator". "" when the item is not equipment, when no class of
+    /// theirs qualifies, or when the player state is unavailable.
+    ///
+    /// Only the player's own classes are listed, and that is the point: the
+    /// ClassJobCategory name is an ABBREVIATION LIST ("GLA MAR PLD KRG DKR REV" -
+    /// offline sheet dump 2026-08-14, the second most common category on 1912
+    /// pieces), which a screen reader would spell out as letter salad, and six
+    /// full names on every item would bury the announcement. Classes the player
+    /// does not have answer a question they did not ask; the ones they do have
+    /// answer "am I still using this?", which is what the seller wants to know.
+    ///
+    /// A class counts as owned at level 1 or higher: PlayerState.ClassJobLevels,
+    /// indexed by the ClassJob sheet's ExpArrayIndex (the struct documents that
+    /// index outright, so nothing is guessed). Unlocked-but-unlevelled classes
+    /// sit at 0 and are left out.
+    /// </summary>
+    public unsafe string DescribeOwnClasses(uint baseItemId)
+    {
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return string.Empty;
+        if (row.EquipSlotCategory.RowId == 0) return string.Empty;
+        if (row.ClassJobCategory.ValueNullable is not { } cat) return string.Empty;
+
+        var ps = PlayerState.Instance();
+        if (ps == null) return string.Empty;
+
+        var levels = ps->ClassJobLevels;
+        var names = new List<string>();
+        foreach (var job in _data.GetExcelSheet<ClassJob>())
+        {
+            if (job.RowId == 0) continue;                       // "Abenteurer" is no class
+            var index = job.ExpArrayIndex;
+            if (index < 0 || index >= levels.Length) continue;
+            if (levels[index] <= 0) continue;                   // not one of the player's
+            if (AllowsJob(cat, (byte)job.RowId) != true) continue;
+
+            var name = job.Name.ExtractText().Trim();
+            if (name.Length > 0) names.Add(name);
+        }
+
+        if (names.Count == 0) return string.Empty;
+        return AccessibilityStrings.ForYourClasses(string.Join(", ", names), names.Count);
+    }
+
     // One resolved column per job id; null means "column not found - stay silent".
     private readonly Dictionary<byte, PropertyInfo?> _jobColumns = new();
 

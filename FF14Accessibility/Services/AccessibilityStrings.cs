@@ -525,6 +525,11 @@ public static partial class AccessibilityStrings
         ObjectKind.Aetheryte      => IsGerman ? "Ätheryt"     : "Aetheryte",
         ObjectKind.GatheringPoint => IsGerman ? "Sammelpunkt" : "Gathering node",
         ObjectKind.EventObj       => IsGerman ? "Objekt"      : "Object",
+        // The game's own class for usable housing furniture (Chocobo-Stall,
+        // Briefkasten, Diarium-Pult). "Einrichtung" rather than "Möbel": it also
+        // covers the stable and the mailbox, which are not furniture in the
+        // everyday sense but are exactly this kind to the game.
+        ObjectKind.HousingEventObject => IsGerman ? "Einrichtung" : "Furnishing",
         ObjectKind.Companion      => IsGerman ? "Begleiter"   : "Companion",
         ObjectKind.Retainer       => IsGerman ? "Gehilfe"     : "Retainer",
         ObjectKind.Mount          => IsGerman ? "Reittier"    : "Mount",
@@ -541,6 +546,14 @@ public static partial class AccessibilityStrings
     public static string UnnamedOfKind(ObjectKind kind) => IsGerman
         ? $"{ObjectKindName(kind)} ohne Namen"
         : $"{ObjectKindName(kind)} with no name";
+
+    /// <summary>
+    /// The two objects the game names with an ICON instead of a word. Both words
+    /// are the game's own vocabulary, not an invention of this mod - see
+    /// ObjectNameService.IconNamed for where each one is quoted from.
+    /// </summary>
+    public static string GardenBed => IsGerman ? "Beet"        : "Garden bed";
+    public static string MailBox   => IsGerman ? "Postkasten"  : "Mailbox";
 
     /// <summary>
     /// Appended to an object's name to say which quest it serves: "Zielort für
@@ -1008,6 +1021,45 @@ public static partial class AccessibilityStrings
     public static string XpGained(int amount) =>
         IsGerman ? $"{amount} Erfahrung." : $"{amount} experience.";
 
+    // Ruhebereich (Sichelmond an der EP-Leiste): dort sammelt sich der
+    // Erholungsbonus an, auch offline.
+    public static string RestedAreaEntered =>
+        IsGerman ? "Ruhebereich. Erholungsbonus sammelt sich." : "Rested area. Rested bonus is accumulating.";
+    public static string RestedAreaLeft =>
+        IsGerman ? "Ruhebereich verlassen." : "Left the rested area.";
+    // Zusatz zur Stufen-Ansage (Strg+L). Fuehrendes Leerzeichen, weil die Teile
+    // an den Stufen-Satz angehaengt werden.
+    public static string RestedAreaNow =>
+        IsGerman ? " Im Ruhebereich." : " In a rested area.";
+    public static string RestedAreaNot =>
+        IsGerman ? " Kein Ruhebereich." : " Not in a rested area.";
+    public static string RestedBonusPercent(int percent) =>
+        IsGerman
+            ? $" Erholungsbonus für {percent} Prozent einer Stufe."
+            : $" Rested bonus for {percent} percent of a level.";
+    public static string RestedBonusEmpty =>
+        IsGerman ? " Kein Erholungsbonus." : " No rested bonus.";
+    public static string RestedNotAvailable =>
+        IsGerman ? "Erholungsbonus nicht verfügbar." : "Rested bonus not available.";
+
+    // ── Ausruestungsset-Markierung ───────────────────────────────────
+    // Das Symbol, das dem sehenden Spieler sagt "steckt in einem gespeicherten
+    // Set" - also NICHT verkaufen. Wortwahl wie im Spiel (Addon 756/11993).
+    // Kurzform fuer Listen, in denen sie hinter jedem Gegenstand stehen kann.
+    public static string InGearsetShort =>
+        IsGerman ? ", im Ausrüstungsset" : ", in a gear set";
+    // Welche EIGENEN Klassen das Teil tragen koennen - die Frage vorm Verkaufen.
+    // Ein- und Mehrzahl getrennt, sonst stolpert die Ansage bei einer Klasse.
+    public static string ForYourClasses(string classes, int count) =>
+        IsGerman
+            ? (count == 1 ? $", für deine Klasse {classes}" : $", für deine Klassen {classes}")
+            : (count == 1 ? $", for your {classes}" : $", for your classes {classes}");
+    // Langform fuer den einzelnen Gegenstand, wo Platz fuer die Warnung ist.
+    public static string InGearsetWarning =>
+        IsGerman
+            ? " Achtung: in einem Ausrüstungsset gespeichert, nicht verkaufen."
+            : " Careful: saved in a gear set, do not sell.";
+
     // ════════════════════════════════════════════════════════════════
     //  EquipmentService - Ausruestung
     // ════════════════════════════════════════════════════════════════
@@ -1303,6 +1355,25 @@ public static partial class AccessibilityStrings
                  : $"I'm stuck, {MetersRemaining(distance)} remaining. Auto-walk ended.";
     public static string NoPathTo(string name, string hint) =>
         IsGerman ? $"Kein Weg zu {name} gefunden.{hint}" : $"No path to {name} found.{hint}";
+    /// <summary>
+    /// Appended to the stuck message in a housing ward. Names the cause AND the
+    /// one-line remedy, because neither is the player's doing: the mesh vnavmesh
+    /// built on entering the zone predates the houses (see
+    /// AutoWalkService.TrailHint for the measurement), and rebuilding it fixes
+    /// the walk outright.
+    /// </summary>
+    /// <summary>
+    /// Spoken once on entering a housing ward, when the mesh gets rebuilt so it
+    /// knows the houses. Says WHY the wait happens - a build starting by itself
+    /// would otherwise be an unexplained ten seconds of progress numbers.
+    /// </summary>
+    public static string HousingMeshRebuilding => IsGerman
+        ? "Wohngebiet. Wegenetz wird neu gebaut, damit die Häuser darin stehen."
+        : "Housing ward. Rebuilding the navigation mesh so it includes the houses.";
+
+    public static string HousingFenceHint => IsGerman
+        ? " Das Wegenetz ist hier älter als die Häuser. Mit dem Befehl vnav rebuild neu bauen lassen."
+        : " The navigation mesh here is older than the houses. Rebuild it with the vnav rebuild command.";
     /// <summary>The walk ran as far as the walkable mesh goes. Says the direction
     /// too, because "still 454 metres" without a bearing leaves the player with
     /// nothing to do next.</summary>

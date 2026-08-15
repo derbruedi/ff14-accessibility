@@ -150,6 +150,7 @@ public sealed class UIReaderService : IDisposable
         "BeginnersMansionProblem", // Anfänger-Arena: eigener Handler (OnBeginnersArenaUpdate)
         "Bank",               // Gil-Depot beim Gehilfen: eigener Handler (OnBankUpdate)
         "RecipeNote",         // Handwerker-Notizbuch: eigener Handler (OnRecipeNoteUpdate)
+        "HowTo",              // Tutorial-Text: eigener Handler (OnHowToUpdate)
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -202,6 +203,13 @@ public sealed class UIReaderService : IDisposable
         // Liste, "0/40" vom Suchfeld) und nie Klasse, Rezept oder Werte. Der
         // eigene Leser (OnRecipeNoteUpdate) uebernimmt beides.
         "RecipeNote",
+        // Tutorial-Text: der generische Pfad sprach beim Oeffnen nur die
+        // Fussnote (id=14, "* Tutorial-Fenster unter Charakterkonfiguration
+        // ...") und beim Blaettern gar nichts, weil der Fokus auf leeren
+        // Knoten sitzt (Log 2026-08-13 21:45). OnHowToUpdate liest
+        // Ueberschrift, Seite und Text. Die THEMENLISTE "HowToList" ist NICHT
+        // betroffen und bleibt im generischen Pfad - die funktioniert.
+        "HowTo",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -367,6 +375,13 @@ public sealed class UIReaderService : IDisposable
         // turns, so read on PostUpdate with per-window dedup (like the quest
         // reader). Muted in the generic path via SpecialSetup/UpdateAddons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ContentsTutorial", OnContentsTutorialUpdate);
+
+        // -- HowTo (Tutorial-Fenster zum Thema aus der HowToList) -------
+        // Heading, page and body live in plain nodes that the game refills on
+        // every page turn, so read on PostUpdate with dedup (like the tutorial
+        // popup above). Muted in the generic path via SpecialSetup/UpdateAddons:
+        // that path spoke the FOOTNOTE (id=14) on open and nothing afterwards.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "HowTo", OnHowToUpdate);
 
         // -- Anfänger-Arena (Übungsauswahl "BeginnersMansionProblem") ---
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
@@ -2674,12 +2689,20 @@ public sealed class UIReaderService : IDisposable
                 // browsing gear slots or shop wares. "" for non-equipment.
                 var gear = _gearInfo.DescribeGear(itemId);
 
+                // Which of the player's own classes use the piece, and whether it
+                // carries the gearset mark - the two facts that stop a piece from
+                // being sold by accident while browsing the armoury or a shop.
+                var owners = _gearInfo.DescribeOwnClasses(itemId);
+                var set    = _inventory.IsAnyCopyRegisteredToGearset(itemId)
+                    ? AccessibilityStrings.InGearsetShort : string.Empty;
+
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
-                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}'");
+                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}' klassen='{owners}' set={set.Length > 0}");
                 var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
                 if (basics.Length > 0) spoken = $"{spoken}, {basics}";
-                return gear.Length > 0 ? $"{spoken}, {gear}" : spoken;
+                if (gear.Length > 0)   spoken = $"{spoken}, {gear}";
+                return spoken + owners + set;
             }
             cur = cur->ParentNode;
         }
@@ -4927,6 +4950,109 @@ public sealed class UIReaderService : IDisposable
             _tolk.SpeakInterrupt(AccessibilityStrings.NextButtonNotResponding);
     }
 
+    // -- HowTo (Tutorial-Text zum Thema aus der Themenliste) ----------
+    //
+    // Struktur (Dump 2026-08-13 21:45, Thema "Ruhebereiche"):
+    //   id=5  Text  = Ueberschrift ("Ruhebereiche")
+    //   id=11 Text  = der Tutorialtext. Enthaelt Item-Verweis-Bytes
+    //                 ("...H??I??RuhebereichIH..."), braucht also ReadClean.
+    //   id=17..21   = Comp(1009)/RadioButton mit Text-Kind id=2 "1".."5" = die
+    //                 SEITEN. Wie viele es GIBT, sagt ihre Sichtbarkeit: im Dump
+    //                 ist id=21 (Seite 5) unsichtbar, das Thema hat also vier
+    //                 Seiten. Welche gilt, sagt IsChecked (wie beim
+    //                 Staatstaler-Shop) - NICHT die Sichtbarkeit des
+    //                 Image-Kindes, das ist nur die Optik.
+    //   id=14 Text  = Fussnote, die der generische Leser faelschlich sprach.
+    //   id=22/16 Comp(1008) Button = vermutlich die Blaetterpfeile, NICHT
+    //                 verifiziert und deshalb hier nicht angefasst - der Spieler
+    //                 blaettert mit den Spieltasten, die Ansage haengt allein am
+    //                 geaenderten Inhalt und ist damit eingabe-agnostisch.
+    //
+    // Die Themenliste "HowToList" laeuft weiter ueber den generischen Leser; die
+    // war nie stumm (Log 21:45: "[Focus] addon='HowToList' ... 'Ruhebereiche'").
+    private string _lastHowToText = string.Empty;
+
+    /// <summary>
+    /// Speaks heading, page and body of the tutorial window whenever they change
+    /// - on open and on every page turn. Dedup via <see cref="_lastHowToText"/>,
+    /// reset when the window closes so reopening reads again.
+    /// </summary>
+    private unsafe void OnHowToUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastHowToText = string.Empty; // reset so it re-reads on reopen
+            return;
+        }
+
+        var heading = ReadHowToText(addon, 5);
+        var body    = ReadHowToText(addon, 11);
+        // Both empty means the game has not filled the page yet - say nothing
+        // now, the next frame carries the content.
+        if (string.IsNullOrWhiteSpace(heading) && string.IsNullOrWhiteSpace(body)) return;
+
+        var (page, total) = ReadHowToPage(addon);
+
+        var sb = new StringBuilder();
+        if (heading.Length > 0) sb.Append(heading).Append('.');
+        // Only worth saying when the topic really has several pages.
+        if (page > 0 && total > 1) sb.Append(AccessibilityStrings.PageOf(page, total));
+        if (body.Length > 0)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(body);
+        }
+
+        var text = sb.ToString().Trim();
+        if (text.Length == 0 || text == _lastHowToText) return;
+
+        _lastHowToText = text;
+        _log.Info($"[HowTo] Seite {page}/{total}: '{text}'");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
+    /// Reads a text node of the tutorial window by id. Uses ReadClean because the
+    /// body carries item-link payloads whose raw marker bytes would otherwise be
+    /// spoken as garbage.
+    /// </summary>
+    private unsafe string ReadHowToText(AtkUnitBase* addon, uint id)
+    {
+        var node = addon->GetNodeById(id);
+        if (node == null || node->Type != NodeType.Text) return string.Empty;
+        return AtkText.ReadClean((AtkTextNode*)node).Trim();
+    }
+
+    /// <summary>
+    /// Current page and page count of the tutorial window, read from the page
+    /// RadioButtons: the count is how many of them are visible, the current one
+    /// is the checked one (IsChecked = AtkComponentButton flags bit 18, same as
+    /// the seal shop's category tabs). Returns (0, count) when the game has no
+    /// button checked - the caller then leaves the page out instead of guessing,
+    /// and the log line shows it.
+    /// </summary>
+    private unsafe (int Page, int Total) ReadHowToPage(AtkUnitBase* addon)
+    {
+        var page = 0;
+        var total = 0;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000) continue;
+            if (!node->IsVisible()) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.RadioButton) continue;
+
+            var label = TolkService.Sanitize(ReadComponentTextById(comp, 2)).Trim();
+            if (!int.TryParse(label, out var number)) continue; // not a page button
+
+            total++;
+            if (((AtkComponentButton*)comp)->IsChecked) page = number;
+        }
+        return (page, total);
+    }
+
     // -- BeginnersMansionProblem (Anfänger-Arena: Übungsauswahl) ------
     //
     // Struktur (Dump 2026-07-23):
@@ -6449,10 +6575,39 @@ public sealed class UIReaderService : IDisposable
 
         if (parts.Count == 0) return false;
 
-        var msg = string.Join(", ", parts);
+        var msg = string.Join(", ", parts) + DescribeGearsetMark();
         _log.Info($"[Item] Tooltip: {parts.Count} Teile - {msg}");
         _tolk.SpeakInterrupt(msg);
         return true;
+    }
+
+    /// <summary>
+    /// The "do not sell, another class uses this" warning for the item the tooltip
+    /// is currently showing, or "" when it carries no gearset mark. The tooltip
+    /// itself does NOT contain this fact - the game draws it as a symbol on the
+    /// inventory icon, so a text reader can never pick it up.
+    ///
+    /// Which item the tooltip is about comes from AgentItemDetail.ItemId
+    /// (ilspycmd 2026-08-14, offset 312); the mark itself is then the game's own
+    /// answer via InventoryService.IsRegisteredToGearset. Going through the id
+    /// rather than the hovered slot means two identical pieces cannot be told
+    /// apart - see IsAnyCopyRegisteredToGearset for why that errs towards warning.
+    /// </summary>
+    private unsafe string DescribeGearsetMark()
+    {
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentItemDetail.Instance();
+        if (agent == null) return string.Empty;
+
+        // The agent keeps the id with the HQ/collectible offset applied; the
+        // inventory comparison runs on the base id. Dalamud's ItemUtil.GetBaseId
+        // owns that mapping - hardcoding the offset here would duplicate it.
+        var baseId = Dalamud.Utility.ItemUtil.GetBaseId(agent->ItemId).ItemId;
+        if (baseId == 0) return string.Empty;
+
+        var owners = _gearInfo.DescribeOwnClasses(baseId);
+        var marked = _inventory.IsAnyCopyRegisteredToGearset(baseId);
+        _log.Info($"[Item] Ausrüstungsset-Marke: id={agent->ItemId} basis={baseId} markiert={marked} klassen='{owners}'");
+        return owners + (marked ? AccessibilityStrings.InGearsetWarning : string.Empty);
     }
 
     public unsafe void ReadCurrentFocus()
@@ -9394,6 +9549,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsTutorial", OnContentsTutorialUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "HowTo", OnHowToUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);

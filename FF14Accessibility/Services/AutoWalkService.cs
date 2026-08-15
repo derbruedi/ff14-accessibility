@@ -127,6 +127,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly PlacesService _places;
     private readonly RouteService _routes;
     private readonly TrailService _trails;
+    private readonly ObjectNameService _objectNames;
     private readonly IPluginLog _log;
     private readonly NavmeshIpc _nav;
 
@@ -182,6 +183,7 @@ public sealed class AutoWalkService : IDisposable
         PlacesService places,
         RouteService routes,
         TrailService trails,
+        ObjectNameService objectNames,
         IPluginLog log)
     {
         _objectTable = objectTable;
@@ -192,6 +194,7 @@ public sealed class AutoWalkService : IDisposable
         _places = places;
         _routes = routes;
         _trails = trails;
+        _objectNames = objectNames;
         _log = log;
         _nav = new NavmeshIpc(pluginInterface, log);
     }
@@ -304,7 +307,13 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        Begin(target.Position, target.Name.TextValue, StopRange, target.GameObjectId);
+        // Describe, not Name.TextValue. The raw name is empty for a whole class
+        // of objects and is sometimes a bare icon glyph, which the speaker
+        // sanitizes away - in the housing wards that produced "Laufe zu ." with
+        // no object at all in it (log 2026-08-15 15:56, garden bed 40000591).
+        // Describe is the one place that knows the sheet names, the icon-named
+        // objects and the honest "Objekt ohne Namen" stand-in.
+        Begin(target.Position, _objectNames.Describe(target), StopRange, target.GameObjectId);
     }
 
     /// <summary>
@@ -439,6 +448,7 @@ public sealed class AutoWalkService : IDisposable
         // Runs even when no walk is active: the player wants to know when the
         // navmesh finishes loading, precisely BECAUSE they cannot walk yet.
         MonitorMeshBuild();
+        MonitorHousingMesh();
 
         if (_following) { FollowUpdate(); return; }
 
@@ -556,11 +566,17 @@ public sealed class AutoWalkService : IDisposable
             var meshEnds = remaining <= 1;
             _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit {StallS:F0} s, dist={distance:F1}, " +
                       $"restWp={remaining}, Netzende={meshEnds}");
-            if (meshEnds && TryTakeTrail(player.Position)) return;
+            // A trail is tried for BOTH stall causes now, not just for the mesh
+            // edge. Being wedged on geometry is precisely the case a recorded
+            // trail exists for, and skipping the lookup here meant a player who
+            // had already walked the way once still got "Ich stecke fest"
+            // (user 2026-08-15, FC plot in Mist: the walk stalled 12,6 m short
+            // with restWp=2, so the mesh-edge branch never ran).
+            if (TryTakeTrail(player.Position)) return;
             var direction = RouteService.CompassWord(player.Position, _destPosition);
             Finish(meshEnds
                     ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
-                    : AccessibilityStrings.StuckRemaining(distance),
+                    : AccessibilityStrings.StuckRemaining(distance) + TrailHint(),
                 meshEnds ? "Netz endet hier" : "festgesteckt");
             return;
         }
@@ -604,6 +620,43 @@ public sealed class AutoWalkService : IDisposable
     /// walk resumes, and if THAT one ends at the mesh edge again, offering the
     /// same crossing would just loop.
     /// </summary>
+    /// <summary>
+    /// Appended to the stuck message inside a housing ward, where being wedged
+    /// has a known cause and a known remedy - but only when no trail of ours has
+    /// been recorded here yet, otherwise it would nag someone who already did it.
+    ///
+    /// MEASURED (2026-08-15), and the first reading of it was WRONG - kept here
+    /// because the wrong turn is instructive. The two cached meshes for Mist,
+    /// built thirteen days apart, were byte-identical (same SHA256, 543568
+    /// bytes), which looked like proof that player-placed structures never enter
+    /// the mesh at all. A forced `/vnav rebuild` disproved it on the spot: the
+    /// file grew to 652058 bytes, a fifth more geometry, and the walk that had
+    /// been shoving the character into an FC fence returned a five-waypoint
+    /// route around it. Houses DO enter the mesh.
+    ///
+    /// What actually happens (hypothesis, marked as such - it fits every
+    /// measurement but was not observed directly): vnavmesh builds on entering
+    /// the zone, and the log has the zone change at 14:43:47 with the mesh file
+    /// written at 14:44:04 - seventeen seconds later, while the game is still
+    /// streaming the houses in. The result is a mesh of the empty ward, and
+    /// NavmeshManager.GetCacheKey is
+    /// {bg}__{filter}__{festivals}__{zoneSGs} (decompiled), which carries
+    /// nothing about plots - so nothing ever invalidates that stale mesh again.
+    /// Hence the advice is to rebuild, not to record a trail.
+    /// </summary>
+    private string TrailHint()
+    {
+        unsafe
+        {
+            if (FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance() == null)
+                return string.Empty;
+        }
+
+        return _trails.FindUsableTrail(_lastPosition, _destPosition, out _) != null
+            ? string.Empty
+            : AccessibilityStrings.HousingFenceHint;
+    }
+
     private bool TryTakeTrail(Vector3 position)
     {
         var points = _trails.FindUsableTrail(position, _destPosition, out var name);
@@ -795,6 +848,71 @@ public sealed class AutoWalkService : IDisposable
     /// an early failed read used to disable the announcement for the whole session
     /// (log 2026-08-09 21:31).
     /// </summary>
+    /// <summary>
+    /// Rebuilds the zone's navmesh once per visit to a housing ward, as soon as
+    /// the game reports the ward loaded.
+    ///
+    /// WHY THIS IS NEEDED (measured 2026-08-15, Mist). vnavmesh builds its mesh
+    /// when the zone loads: the log has the zone change at 14:43:47 and the mesh
+    /// file written at 14:44:04. The houses are still streaming in at that point,
+    /// so the mesh describes an EMPTY ward - and nothing ever corrects it,
+    /// because NavmeshManager.GetCacheKey is
+    /// {bg}__{filter}__{festivals}__{zoneSGs} (decompiled) and carries nothing
+    /// about plots. The player then gets walked straight into fences: the path
+    /// to a chocobo stable came back as a single waypoint on the destination
+    /// (i.e. a straight line) and the character stood still for four seconds.
+    /// After a forced rebuild the same walk returned a five-waypoint route
+    /// around the obstacles and arrived, and the cached file grew from 543568 to
+    /// 652058 bytes. The houses are in the mesh - they were just too late for it.
+    ///
+    /// THE TRIGGER IS THE GAME'S OWN SIGNAL, not a guessed delay:
+    /// <c>HousingManager.CurrentTerritory->IsLoaded()</c>. A timer would have to
+    /// be tuned to a stranger's connection; this asks the client whether the ward
+    /// is up. Should it ever turn true too early - which would show as a rebuild
+    /// that changes nothing - the log line below records the moment it fired, so
+    /// the next measurement starts from a fact rather than from a suspicion.
+    ///
+    /// Once per zone visit. A rebuild costs real time (~10 s here, with the
+    /// progress announcements the player hears anyway), so repeating it while
+    /// someone walks around their own ward would be worse than the problem.
+    /// </summary>
+    private unsafe void MonitorHousingMesh()
+    {
+        var territory = (ushort)_clientState.TerritoryType;
+        if (territory != _housingMeshTerritory)
+        {
+            _housingMeshTerritory = territory;
+            _housingMeshRebuilt = false;
+        }
+
+        if (_housingMeshRebuilt) return;
+
+        var housing = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();
+        if (housing == null) return;                       // not a housing zone at all
+
+        var ward = housing->CurrentTerritory;
+        if (ward == null || !ward->IsLoaded()) return;     // houses not up yet
+
+        // Do not cut into a build that is already running - vnavmesh would only
+        // cancel and restart it, and the player would hear the progress twice.
+        if (_nav.BuildProgress >= 0f) return;
+
+        _housingMeshRebuilt = true;
+
+        if (!_nav.Rebuild())
+        {
+            _log.Warning("[Nav] Wohngebiet: Neubau angefordert, aber vnavmesh antwortet nicht.");
+            return;
+        }
+
+        _log.Info($"[Nav] Wohngebiet {territory}: Netz wird neu gebaut, sobald die Haeuser stehen " +
+                  "(HousingTerritory.IsLoaded=True).");
+        _tolk.SpeakInterrupt(AccessibilityStrings.HousingMeshRebuilding);
+    }
+
+    private ushort _housingMeshTerritory;
+    private bool _housingMeshRebuilt;
+
     private void MonitorMeshBuild()
     {
         if (!_config.AnnounceMeshProgress) return;
@@ -897,9 +1015,10 @@ public sealed class AutoWalkService : IDisposable
 
         _following = true;
         _followTargetId = target.GameObjectId;
-        _followName = string.IsNullOrWhiteSpace(target.Name.TextValue)
-            ? AccessibilityStrings.UnnamedOfKind(target.ObjectKind)
-            : target.Name.TextValue;
+        // Same reason as in Toggle: an emptiness check waves through names that
+        // hold nothing speakable (icon glyphs, "?"), and it never reaches the
+        // sheets. Describe already covers the empty case with UnnamedOfKind.
+        _followName = _objectNames.Describe(target);
         _followStartTerritory = (ushort)_clientState.TerritoryType;
         _lastFollowDest = default;         // force the first path immediately
         _lastFollowPathAt = DateTime.MinValue;

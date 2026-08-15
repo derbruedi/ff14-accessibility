@@ -276,7 +276,7 @@ public sealed class Plugin : IDalamudPlugin
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, _objectNames, Log);
         _history    = new MessageHistoryService(_tolk);
         // Die alte Nachlese laeuft parallel mit. Sie wird nur von den beiden
         // Chat-Lesern und dem Spiegel unten gefuellt, hat also keine Abhaengigkeit
@@ -365,7 +365,7 @@ public sealed class Plugin : IDalamudPlugin
         _chatBackfill = new ChatBackfill(_chatReader, _history, _chatFilters, Log);
         _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, DataManager, _tolk, _config, _history, _aoeWarn, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, Log);
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
@@ -544,6 +544,11 @@ public sealed class Plugin : IDalamudPlugin
             case "hotbarprobe":
                 _hotbar.ProbeItemAssignment();
                 break;
+            // Beantwortet "komme ich schon ins Tiefe Gewoelbe?" aus dem Spiel
+            // selbst, statt es aus Quest-Wissen zu raten.
+            case "deepdungeon":
+                ProbeDeepDungeonUnlock();
+                break;
 #endif
             case "cooldowns":
             case "cd":
@@ -557,6 +562,53 @@ public sealed class Plugin : IDalamudPlugin
                 break;
         }
     }
+
+#if DEBUG
+    /// <summary>
+    /// Answers "can I enter a deep dungeon yet?" from the game's own unlock state
+    /// (UIState.IsInstanceContentUnlocked, ilspycmd 2026-08-14) instead of guessing
+    /// from quest knowledge. The four entry contents and their names come from the
+    /// offline sheet dump of the same day (ContentFinderCondition, ContentType
+    /// "Tiefe Gewölbe"); only the FIRST tier of each dungeon is asked, since that
+    /// is the one an entry requires.
+    /// </summary>
+    private unsafe void ProbeDeepDungeonUnlock()
+    {
+        (uint Id, string Name)[] entries =
+        {
+            (60001, "Palast der Toten"),
+            (60021, "Himmelssäule"),
+            (60031, "Eureka Orthos"),
+            (60041, "Pilgers Pfad"),
+        };
+
+        var parts = new List<string>();
+        foreach (var (id, name) in entries)
+        {
+            bool open;
+            // External game call resolved by signature: report the failure instead
+            // of turning it into a silent "locked".
+            try
+            {
+                open = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.IsInstanceContentUnlocked(id);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[DeepDungeon] Abfrage für {name} ({id}) fehlgeschlagen: {ex.Message}");
+                continue;
+            }
+
+            Log.Info($"[DeepDungeon] {name} (Inhalt {id}): freigeschaltet={open}");
+            if (open) parts.Add(name);
+        }
+
+        var msg = parts.Count > 0
+            ? $"Freigeschaltet: {string.Join(", ", parts)}."
+            : "Kein Tiefes Gewölbe freigeschaltet.";
+        Log.Info($"[DeepDungeon] {msg}");
+        _tolk.SpeakInterrupt(msg);
+    }
+#endif
 
     /// <summary>
     /// Handles "/acc lang &lt;de|en|auto&gt;": switches the announcement language,
@@ -617,6 +669,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Inventar",       _config.KeyReadInventory),
             ("Gil",            _config.KeyReadGil),
             ("Stufe",          _config.KeyLevelExp),
+            ("Erholungsbonus", _config.KeyRestedStatus),
             ("Emote weiter",   _config.KeyEmoteNext),
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
@@ -1402,6 +1455,7 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeyReadGil))       _inventoryReader.AnnounceGil();
         if (IsJustPressed(_config.KeyLevelExp))      _combat.AnnounceLevelExp();
+        if (IsJustPressed(_config.KeyRestedStatus))  _combat.AnnounceRestedStatus();
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();

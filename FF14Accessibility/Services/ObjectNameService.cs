@@ -79,8 +79,56 @@ public sealed class ObjectNameService
         if (IsSpeakable(raw)) return raw;
 
         var fromSheet = FromSheet(obj.BaseId, obj.ObjectKind);
-        return IsSpeakable(fromSheet) ? fromSheet : null;
+        if (IsSpeakable(fromSheet)) return fromSheet;
+
+        return IconNamed(obj.BaseId, obj.ObjectKind);
     }
+
+    /// <summary>
+    /// The handful of objects the game labels with an ICON instead of a word.
+    /// Returns the game's own word for them, or <c>null</c> for everything else.
+    ///
+    /// User report 2026-08-15: the housing wards are full of targetable things
+    /// the browser could only call "Objekt ohne Namen" - up to eight of them
+    /// stacked on one spot, so the numbering ("Objekt ohne Namen 2") was the only
+    /// thing telling them apart. Measured with /acc objprobe in Mist (terr 339):
+    /// EventObj, DataId 2003757, targetable, and the name the game hands out is
+    /// the single character U+E034 - a Private-Use glyph, Dalamud's
+    /// SeIconChar.BotanistSprout. A sighted player sees a sprout ICON there; a
+    /// screen reader gets nothing, which is why IsSpeakable rejects it.
+    ///
+    /// THE SCOPE IS MEASURED, NOT ASSUMED. Of the 7571 nameless EObj rows in the
+    /// game exactly TWO carry an EObj.Data link to a CustomTalk, and both have
+    /// the generic MainOption "Plaudern" - so no general mechanism could resolve
+    /// them and a table of two is the whole problem, not a first instalment:
+    ///
+    ///  - 2003757 -> CustomTalk 721047 "CmnDefHousingGardeningPlant_00151".
+    ///    Its script keys settle what the thing IS: PLANT_TITLE,
+    ///    FC_AUTHORITY_SEEDING, GARDENING_ERR_NO_SEED, ITEM_CATEGORY_SEED/SOIL/
+    ///    FERTILIZER, HOWTO_HARVEST. A garden bed.
+    ///  - 2000032 -> CustomTalk 720898 "CmnDefMogLetter_00002", with
+    ///    LETTER_BOX_USAGE and HOWTO_MOGLETTER. The moogle mailbox.
+    ///
+    /// THE WORDS ARE THE GAME'S, not ours. PLANT_TITLE points at Addon 6420,
+    /// which reads "Beet , Furche " in German and " Bed,  Patch" in English -
+    /// the template the game fills in its own sowing window. Cross-check on the
+    /// same sheet row: EObjName 2003757 holds the glyph only in German and
+    /// English; the French client says "emplacement" and the Japanese one the
+    /// single character U+755D (a furrow). For the mailbox the vocabulary comes
+    /// from LogMessage 3902/3903, which call it "Postkasten" / "mailbox".
+    ///
+    /// Kind is part of the key for the same reason FromSheet takes it: data ids
+    /// are only unique within an object kind.
+    /// </summary>
+    private static string? IconNamed(uint baseId, ObjectKind kind)
+        => kind == ObjectKind.EventObj
+            ? baseId switch
+            {
+                2003757 => AccessibilityStrings.GardenBed,
+                2000032 => AccessibilityStrings.MailBox,
+                _       => null,
+            }
+            : null;
 
     /// <summary>
     /// The object's name, or an honest stand-in naming its kind ("Objekt ohne

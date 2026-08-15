@@ -111,9 +111,13 @@ public sealed class ObjectMemoryService
     /// wander off, so a number would name a different creature minutes later,
     /// and "schon besucht" says nothing useful about either.
     /// </summary>
+    /// HousingEventObject joined the browser in 2026-08-15 and belongs here for
+    /// exactly the reason this class exists: the wards hold several identically
+    /// named pieces (two "Mogry-Briefkasten" and two "Mogul Mog-Briefkasten"
+    /// within 60 m in the measured dump), and furniture stays put.
     private static bool IsLandmark(ObjectKind kind) =>
         kind is ObjectKind.EventObj or ObjectKind.Treasure or ObjectKind.GatheringPoint
-             or ObjectKind.Aetheryte or ObjectKind.EventNpc;
+             or ObjectKind.Aetheryte or ObjectKind.EventNpc or ObjectKind.HousingEventObject;
 
     /// <summary>
     /// Called every frame from the plugin's framework update. Records every

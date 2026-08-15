@@ -253,6 +253,14 @@ public sealed class NavigationService
         ObjectKind.EventNpc, ObjectKind.BattleNpc, ObjectKind.Pc,
         ObjectKind.EventObj, ObjectKind.Treasure,
         ObjectKind.GatheringPoint, ObjectKind.Aetheryte,
+        // HousingEventObject (kind 12) is the game's own class for the usable
+        // furniture in the housing wards. Without it the browser was blind to
+        // things standing in plain sight and fully targetable - measured with
+        // /acc objprobe in Mist (2026-08-15): "Chocobo-Stall" 12,5 m away,
+        // "Mogry-Briefkasten" 11 m, "Dodo-Diarium-Pult" 36 m, all named by the
+        // game itself and all zielbar=True. The user went looking for the
+        // chocobo stable and the browser did not have it.
+        ObjectKind.HousingEventObject,
     };
 
     // Kinds == null marks the marker categories (quest objectives and map
@@ -276,7 +284,10 @@ public sealed class NavigationService
         // finden.
         (NavCategory.Allies,          new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
         (NavCategory.Players,         new[] { ObjectKind.Pc }),
-        (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
+        // HousingEventObject only here and in "Alles", not in the quest variants:
+        // furniture is never what a quest marker points at, and adding it there
+        // would only widen a scan that exists to narrow one.
+        (NavCategory.Objects,         new[] { ObjectKind.EventObj, ObjectKind.Treasure, ObjectKind.HousingEventObject }),
         // Inhalte: dieselbe Form wie Haendler oben - eine Objektart, eingeengt
         // durch eine Nachschlage-Klasse, die die spieleigenen Sheets liest.
         // Treasure fehlt mit Absicht: eine Inhalts-Tuer ist immer ein EventObj,
@@ -1398,7 +1409,50 @@ public sealed class NavigationService
 
         _tolk.SpeakInterrupt($"Objekt-Sonde: {near.Count} Objekte im Log.");
 
+        DumpHousingPlot();
         DumpMapMarkers();
+    }
+
+    /// <summary>
+    /// Debug probe for the open question behind "kann man die Eingänge
+    /// benennen?" (user 2026-08-15). A housing ward holds several doors that all
+    /// share DataId 2002737 and the single word "Eingang" - four of them within
+    /// 50 m in the measured dump - so the name identifies nothing. What a
+    /// sighted player reads there is the PLOT, and the plot is what has to come
+    /// from somewhere.
+    ///
+    /// What the game offers is asked here rather than assumed. HousingManager
+    /// (ilspycmd on the installed FFXIVClientStructs.dll, 2026-08-15) exposes
+    /// GetCurrentWard / GetCurrentPlot / GetCurrentDivision / GetCurrentRoom /
+    /// GetCurrentHouseId - every one of them phrased as CURRENT, i.e. about
+    /// where the PLAYER stands, not about an object one can point at. There is
+    /// no "which plot does this door belong to".
+    ///
+    /// So the probe logs those values continuously while the player walks. Two
+    /// outcomes, and they lead to different features:
+    ///  - the values change as one crosses onto a plot: then the plot number is
+    ///    real, live game state, and the door can be named the moment the player
+    ///    is on the plot ("Eingang, Parzelle 23").
+    ///  - they stay put outside: then the game genuinely does not track plots
+    ///    per position out there, and naming individual doors from a distance
+    ///    would have to be reconstructed - which is exactly what this project
+    ///    does not do.
+    /// Either way the answer is measured before anything is built on it.
+    /// </summary>
+    private unsafe void DumpHousingPlot()
+    {
+        var housing = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();
+        if (housing == null)
+        {
+            _log.Info("[PlotProbe] HousingManager.Instance() ist null - keine Wohngebiets-Zone.");
+            return;
+        }
+
+        _log.Info($"[PlotProbe] ward={housing->GetCurrentWard()} plot={housing->GetCurrentPlot()} " +
+                  $"division={housing->GetCurrentDivision()} room={housing->GetCurrentRoom()} " +
+                  $"hausId={housing->GetCurrentHouseId().Id} " +
+                  $"draussen={housing->IsOutside()} drinnen={housing->IsInside()} " +
+                  $"art={housing->GetCurrentHousingTerritoryType()}");
     }
 
     /// <summary>
