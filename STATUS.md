@@ -3,7 +3,54 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-15, "UNBEKANNTE OBJEKTE IM WOHNGEBIET" - GEBAUT, ZU TESTEN)
+## STAND JETZT (2026-08-15 ABENDS, "V5.84 RELEASED - MIT DEN SECHS BEITRAEGEN")
+
+>>> AUF ANSAGE DES USERS: alles gemerged, Release geschnitten, beide READMEs
+    nachgezogen. test/prs ging als FAST-FORWARD nach main (main war vollstaendig
+    darin enthalten, kein Merge-Commit, keine Konflikte). Tag v5.84 steht,
+    4 Assets haengen dran, `releases/latest/download/latest.zip` liefert die
+    neuen 939109 Bytes - ein Spieler zieht also wirklich die neue Fassung.
+    Installer unveraendert (1.1.0.0), exe+installer.json vom v5.83-Release
+    uebernommen, SHA gegengeprueft (5787445B...).
+
+>>> VERSIONS-SYNC an allen drei Stellen: csproj 5.84.0/5.84.0.0, repo.json
+    5.84.0.0, Plugin.cs PluginVersion "5.84" (der Testfassungs-Zusatz ist raus).
+    Das gebaute Manifest FF14Accessibility.json zeigt 5.84.0.0.
+
+>>> ZWEI FALSCHANGABEN IN DEN READMES GEFUNDEN UND KORRIGIERT - beide waren
+    Beschreibungen von Code, den es nicht mehr gibt:
+    1. "Endet der Weg kurz vor dem Ziel, werden die letzten Meter mitgefahren"
+       - diese Umleitung ist in V5.78 zurueckgebaut worden (kein NearMiss-Code
+       mehr in AutoWalkService). An ihrer Stelle stehen jetzt die Spuren.
+    2. "wird beim Anmelden als 3 Tastenkonflikte gemeldet" - stimmt nicht mehr,
+       Numpad5 (CAMERA_FOCUS) kam dazu. Jetzt ohne feste Zahl.
+    Ausserdem fehlten SIEBEN aktive Tasten in der Uebersicht: Umschalt+L,
+    Strg+F, Umschalt+F7/F8, Strg+Umschalt+F6, Umschalt+F9, Alt+Pos1/Ende,
+    Umschalt+Pos1/Ende, Numpad5.
+
+>>> ENTSCHEIDUNG DES USERS ZUR HP-ANSAGE, GEGEN DIE EIGENE FRUEHERE REGEL:
+    PR 1 dreht `HpSentence`/`VitalStatus` von Prozent auf "HP 4523 von 5100"
+    zurueck. Das widerspricht der Festlegung vom 2026-08-07 (nur Prozent), und
+    genau dieses Format war in V5.31 schon einmal unbemerkt gekippt - deshalb
+    wurde gefragt statt stillschweigend gemerged. Der User hat sich fuer die
+    ZAHL entschieden (Argument des PR-Autors: das Spiel zeigt die eigenen HP
+    selbst als Zahl, "87 Prozent" beantwortet nicht, ob ein Trank reicht).
+    MP und Ziel-HP bleiben prozentual. Memory ist entsprechend umgeschrieben.
+
+>>> WAS DAMIT ERSTMALS OEFFENTLICH IST, ALLES IN-GAME UNGEPRUEFT: PR 1 (Stufe+HP
+    beim Blaettern), PR 2 (Form der Wirkflaeche), PR 3 (Verbuendete/Inhalte),
+    PR 4 (Aussehen in der Charaktererstellung), PR 5 (Chat-Puffer an den
+    Spielregistern), PR 6 (Tiefes Gewoelbe). Der Umschalter fuer das Chatsystem
+    steht bewusst auf DEM GEWOHNTEN - wer nichts umstellt, hoert v5.83.
+    Die Release-Notes sagen das offen, samt Rat, bei v5.83 zu bleiben.
+
+>>> OFFENE PRUEFPUNKTE UNVERAENDERT (die Liste unten gilt weiter):
+    Strg+F gegen die Spielfunktion FACE, MonitorHousingMesh (ob IsLoaded zu
+    frueh true meldet), TryTakeTrail beim Festsitzen, [PlotProbe] fuer die
+    Eingaenge, zweite Messung des Erholungsbonus, Ausruestungsset-Marke im
+    Arsenal - und jetzt zusaetzlich die gesamte Mechanik der sechs Beitraege.
+
+## FRUEHER (2026-08-15, "UNBEKANNTE OBJEKTE IM WOHNGEBIET" - GEBAUT, ZU TESTEN)
 
 >>> ANLASS: Spielermeldung "in den wohngebieten gibt es unbekannte objekte".
     Log 2026-08-15 14:44 (terr 339 = Dorf des Nebels): bis zu acht Eintraege
