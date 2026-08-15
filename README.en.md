@@ -13,6 +13,10 @@ cues — including braille display output and automatic walking.
 
 - Title screen, character selection and the complete character creation
   (race, gender, clan, name) are announced.
+- Character creation, the **appearance** step: its roughly twenty pickers
+  (face, hairstyle, colours, build …) are announced one by one, and Ctrl+F10
+  reads the whole appearance back in one go. None of those pickers is text
+  in the game — a screen reader finds nothing there otherwise.
 - List navigation with arrow keys: system menu, journal, selection
   dialogues, context menus — every row is spoken as it gains focus.
 - Ok/Cancel dialogues: left/right announces the focused button.
@@ -38,14 +42,34 @@ cues — including braille display output and automatic walking.
 - **Catching up**: a history browser with eight separate categories
   (dialogues, say, shout, party, alliance, tell, free company, system),
   with no message limit — the whole session is kept. This lets you review
-  what you missed at your own pace without disturbing the live chat.
+  what you missed at your own pace without disturbing the live chat. Inside
+  a category one key jumps to the start or the end, because a combat log
+  runs into thousands of lines.
+- **Replying**: Enter in the history browser answers the message you just
+  heard in the right channel — a tell you read is answered directly, without
+  typing the name.
+- **A second chat system to choose from**: besides the familiar history
+  there is a second one whose buffers follow the **game's own tabs and
+  filters** — that is, whatever a sighted player set up in their chat tabs.
+  The tabs can be switched by key (the game itself has none for that).
+  Switch systems in the settings menu (Shift+F9); the **familiar one is the
+  default**. Both histories always record, so switching mid-session leaves
+  no gap.
 
 ### Navigation and walking
 
 - **Object browser**: cycle through nearby objects with a single key
-  (NPCs, enemies, players, gathering points, aetherytes, quest
-  objectives, map waypoints such as zone exits). Announces name, kind,
+  (NPCs, merchants, enemies, **allies**, players, objects, **duties**,
+  quest objectives, levequests, FATEs, gathering points, fishing spots,
+  aetherytes, map waypoints such as zone exits). Announces name, kind,
   distance and direction; the object is targeted at the same time.
+- The **allies** category collects everything fighting on your side: trust
+  and duty-support NPCs, party and alliance, carbuncle, fairy, companion
+  chocobo. **Duties** lists only the doors leading into a dungeon, trial,
+  raid or PvP instance — such a door is a destination, not furniture.
+- **Housing furnishings** can be found too: chocobo stable, mailbox, garden
+  beds. Objects the game labels with an icon instead of a word are given the
+  word its own interface uses for them.
 - **Audio beacon**: a stereo tone indicates the direction to the target
   (panning and pitch), the volume follows the distance.
 - **Walk guide**: guided manual walking along the navigation mesh, around
@@ -53,9 +77,14 @@ cues — including braille display output and automatic walking.
   where you are facing, and an arrival tone.
 - **Auto-walk**: walk to the target automatically (requires the
   third-party plugin vnavmesh), with route preview, progress
-  announcements and an honest message when no path exists. When the
-  route stops just short of the destination, the last few metres are
-  walked as well, provided there is solid ground all the way.
+  announcements and an honest message when no path exists.
+- **Recorded trails**: places the navigation mesh does not know can be
+  walked once by hand and recorded. If auto-walk gets stuck there later, it
+  uses your own trail instead of giving up.
+- **Housing districts**: there the mesh is often older than the houses,
+  because it is built while the game is still loading the plots — auto-walk
+  then ran into fences. The mesh is now rebuilt once per visit, as soon as
+  the game reports the district fully loaded; the wait is announced.
 - **Follow**: trail your current target continuously — stops when the
   target stops, ends on a zone change or when the target disappears
   (also requires vnavmesh).
@@ -70,9 +99,17 @@ cues — including braille display output and automatic walking.
 
 ### Combat
 
-- Combat status on demand: your own HP and MP as a percentage — exactly what
-  a sighted player reads off the bar.
-- Target HP in steps, a short tone when you target an enemy.
+- Combat status on demand: your own HP as a number ("HP 4523 of 5100") —
+  the way the game itself shows it in the party list, and the way you can
+  tell whether a potion will be enough. MP stays a percentage, because its
+  maximum has been 10000 for every job since patch 5.0.
+- Target HP in steps (a percentage — the game never shows a number for
+  enemies), a short tone when you target an enemy.
+- Cycling through enemies now announces their **level and HP** as well; a
+  sighted player reads the level off the target bar too.
+- **Area of effect in the tooltip**: an action's description now also names
+  the **shape** of its effect area (circle, cone, line …) — the game's text
+  only gives the range and draws the shape.
 - **Cast warning**: when an enemy casts a spell **at you** it is announced
   — from any nearby enemy, not just the one you have targeted. If it is
   someone other than your target, their name is included. Spells cast at
@@ -86,7 +123,13 @@ cues — including braille display output and automatic walking.
 - HP and MP also as stereo tones (at every 10-percent step the stereo
   position reflects how full the bar is).
 - Experience gains and loot are announced and archived in the review log.
+- **Loot rolls**: read out the party's open rolls (including the item's
+  stats, so need or greed can actually be decided) and jump into the roll
+  window with a key to choose there with the numpad.
+- **Rested bonus**: "Rested area. Rested bonus is accumulating." when you
+  enter one, and its size as a percentage of a level on demand.
 - Gathering points (GP) for gatherers on demand.
+- Level and missing experience on demand.
 
 ### Inventory and gear
 
@@ -94,6 +137,13 @@ cues — including braille display output and automatic walking.
   with name, level and wearability ("Bronze gladius, level 5, equippable"
   / "not equippable, requires level 26"); empty slots say "Empty".
 - Shops: level and wearability are appended to every listed item.
+- **Stats, not just names**: item level, defence and attributes are part of
+  the announcement, and which jobs a piece is for is spoken with **your
+  own** classes ("for your classes Paladin, Gladiator") instead of the
+  game's list of abbreviations.
+- **Warning before selling**: if a piece belongs to a gear set, the
+  announcement adds ", in a gear set" as you cycle past it. The game only
+  paints that hint as a symbol onto the icon — a text reader never gets it.
 - Read all equipped gear at once; equip recommended gear using the game's
   own optimizer.
 - Inventory and gil on demand.
@@ -106,6 +156,32 @@ cues — including braille display output and automatic walking.
   Announcements use the actually bound key (e.g. "bar 2, key Ctrl+3").
 - The same menu also places **items**: potions, elixirs and food from your
   bag, with the stack size in the announcement ("Potion, 12").
+
+### Deep dungeons (Palace of the Dead and friends)
+
+A deep dungeon is self-contained, and the object browser adapts to it:
+instead of sixteen world categories there are four answers.
+
+- **Categories inside**: enemies (revealed traps included — the game itself
+  lists them as enemies), treasure, the two cairns and the rooms.
+- **Rooms instead of objects**: the contents of a floor are read from the
+  game's content director, not from the object table. So a destination no
+  longer disappears once you walk far enough away for the game to unload it —
+  and rooms can be walked to, not merely named.
+- **Room changes** are announced as you enter; a sighted player reads their
+  position off the dungeon map continuously.
+- **Which dungeon, which floor** on demand (Ctrl+F) — the one number the
+  whole run is measured in, and one the game only mentions in passing.
+- **Character info**: the window now names its slots with name, description
+  and count. It consists almost entirely of icons without text, which is why
+  it used to announce nothing but its own title.
+- **Floor-wide effects** (cairn effects, traps, the ring bonus) are tracked.
+  They are not statuses on your character but live on the director — the
+  existing effect tracker could not see them at all.
+
+> The deep dungeon features come from an outside contribution and have
+> **not been verified in-game** yet. Should Ctrl+F also trigger the game's
+> "face target" for you, the key can be changed in the settings.
 
 ### Miscellaneous
 
@@ -196,7 +272,7 @@ and carries on normally.
 
 This list is checked against the actual key bindings in the code — every
 key listed here is live. The keys were chosen to be mostly free according
-to the game's keybind table; three deliberately sit on purely visual camera
+to the game's keybind table; a few deliberately sit on purely visual camera
 functions (see below). Ctrl+F1 announces the current help at any time.
 Every key can be changed in the settings.
 
@@ -208,8 +284,9 @@ navigation keys above the arrow block.
 - **Page Down** — announce and target the next nearby object
 - **Page Up** — previous object
 - **Ctrl+Page Down** — next object category (NPCs, merchants, enemies,
-  quest objectives, levequests, FATEs, gathering points, aetherytes,
-  waypoints)
+  allies, players, objects, duties, quest objectives, levequests, FATEs,
+  gathering points, fishing spots, aetherytes, waypoints; inside a deep
+  dungeon: treasure, cairns, rooms instead)
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance
@@ -224,6 +301,9 @@ navigation keys above the arrow block.
 - **Ctrl+Shift+F1** — walk to coordinates from the clipboard (e.g. copy
   "24.1 21.0", then press the key)
 - **Ctrl+Shift+F2** — copy your own map coordinates to the clipboard
+- **Numpad 5** — turn once towards where the walk guide is pointing
+- **Ctrl+Shift+F6** — record a trail on/off (walk a place the navigation
+  mesh does not know once by hand)
 - **N** — toggle the facing-direction announcement while turning
 - **F** — face the target (game key), **W** — walk (game key)
 
@@ -237,6 +317,9 @@ navigation keys above the arrow block.
 - **Ctrl+Delete** — combat status: your HP and MP
 - **Ctrl+End** — gathering points (GP) for gatherers
 - **Ctrl+L** — level and missing experience
+- **Shift+L** — rested area and rested bonus
+- **Ctrl+F** — deep dungeon: which dungeon, which floor
+- **Shift+F9** — open the settings menu (spoken and keyboard-operable)
 - **Ctrl+F3** — read the inventory (bag and key items)
 - **Shift+F3** — gil
 - **Ctrl+F4** — read the hunting log
@@ -247,6 +330,10 @@ navigation keys above the arrow block.
 - **Ctrl+Shift+F3** — danger tone for area attacks on/off. **Off by
   default**, because the shape detection has not been fully confirmed
   in-game yet — a wrong warning during combat would be worse than none
+- **Shift+F7** — read the open loot rolls
+- **Shift+F8** — jump into the roll window (the numpad then picks need,
+  greed or pass there). Deliberately a separate key: a window grabbing
+  focus mid-fight would swallow the numpad while you still need to move
 
 ### Gear
 
@@ -276,6 +363,10 @@ kept away from the game so your character does not run off:
   loot); announced with the category name and its message count
 - **Shift+Page Up** / **Shift+Page Down** — step to the older / newer
   message inside the selected category ("3 of 12: …")
+- **Shift+Home** / **Shift+End** — jump to the start / end of the category
+- **Alt+Home** / **Alt+End** — switch the game's chat tab (the game has no
+  key for this — a sighted player clicks the tab)
+- **Enter** — reply to the message you just heard, in its own channel
 
 ### Emotes
 
@@ -300,16 +391,21 @@ kept away from the game so your character does not run off:
 
 ### Overlaps with game keys
 
-Three plugin keys sit on functions the game also binds. This is
-intentional, and it is reported as "3 key conflicts" when you log in:
+A few plugin keys sit on functions the game also binds. This is
+intentional; the number of overlaps is announced when you log in:
 
 - **Page Up / Page Down** are also camera zoom
 - **Ctrl+End** is also "save camera preset"
+- **Numpad 5** is also "focus camera on target"; the plugin keeps this key
+  away from the game so the camera does not jump as well
 
-All three are purely visual and therefore have no consequence for blind
-play. If the plugin reports a number **other** than three, check
-`FFXIV_Keybinds.txt` on your desktop: in that case a plugin key overlaps
-with a real game function.
+Those functions are purely visual and therefore have no consequence for
+blind play. If the announced number goes up compared to what you are used
+to, check `FFXIV_Keybinds.txt` on your desktop: in that case a plugin key
+overlaps with a real game function. The one open question there is
+**Ctrl+F** (deep dungeon): the keybind dump lists Ctrl+F as free, but bare
+**F** is "face target" — whether the game turns you anyway on Ctrl+F has
+not been measured in-game yet.
 
 ## Chat commands
 
@@ -329,6 +425,7 @@ Many functions are also available as commands:
 - `/acc fishhere` — remember your current spot as a casting position
 - `/acc gather` — announce gathering nodes in this zone
 - `/acc gathergo` — walk to the nearest gathering node
+- `/acc trails` — list the trails recorded in this zone
 - `/acc cd` (or `/acc cooldowns`) — toggle the "ability ready" announcement
 - `/acc soundtest` — play the plugin's tones for reference
 - `/acc lang de|en|auto` — switch the language of the plugin's announcements

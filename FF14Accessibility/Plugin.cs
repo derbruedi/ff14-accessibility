@@ -119,12 +119,10 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    // TESTZWEIG test/prs: die veroeffentlichte 5.83 plus die sechs offenen
-    // Beitraege von aussen. Der Zusatz steht in der GESPROCHENEN Ansage, damit
-    // beim Laden hoerbar ist, ob gerade die Testfassung oder die
-    // veroeffentlichte 5.83 laeuft.
-    private const string PluginVersion    = "5.83 Testfassung mit sechs Beitraegen";
-    private const string PluginVersionTag = "PR 1 HP+Stufe, PR 2 AoE-Form, PR 3 Verbuendete+Inhalte, PR 4 Charaktererstellung, PR 5 Chat-Puffer, PR 6 Tiefes Gewoelbe";
+    // 5.84 ist die erste veroeffentlichte Fassung MIT den sechs Beitraegen von
+    // aussen (vorher lagen sie nur im Testzweig test/prs).
+    private const string PluginVersion    = "5.84";
+    private const string PluginVersionTag = "Tiefes Gewoelbe, Chat-Puffer, Charaktererstellung, Verbuendete+Inhalte, Wohngebiet, Erholungsbonus";
 
     public Plugin()
     {

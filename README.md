@@ -13,6 +13,10 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 - Titelbildschirm, Charakterauswahl und komplette Charaktererstellung
   (Volk, Geschlecht, Volksstamm, Name) werden angesagt.
+- Charaktererstellung, Schritt **Aussehen**: die rund zwanzig Wähler
+  (Gesicht, Frisur, Farben, Statur …) werden einzeln angesagt; Strg+F10
+  liest das gesamte Aussehen am Stück zurück. Keiner dieser Wähler ist im
+  Spiel Text — ein Screenreader findet dort sonst nichts vor.
 - Listen-Navigation mit Pfeiltasten: Systemmenü, Journal, Auswahl-Dialoge,
   Kontextmenüs — jede Zeile wird beim Fokussieren gesprochen.
 - Ok/Abbrechen-Dialoge: Links/Rechts sagt den fokussierten Knopf an.
@@ -39,13 +43,35 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   (Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
   System) — ohne Mengenbegrenzung, die ganze Sitzung bleibt erhalten. So
   lässt sich Verpasstes in Ruhe nachhören, ohne den laufenden Chat zu stören.
+  Innerhalb einer Kategorie springt man mit einer Taste an den Anfang oder
+  ans Ende, weil ein Kampf-Verlauf in die Tausende Zeilen geht.
+- **Antworten**: Enter im Nachlese-Browser beantwortet die gerade gelesene
+  Nachricht im richtigen Kanal — ein gelesenes Flüstern wird direkt
+  beantwortet, ohne den Namen abtippen zu müssen.
+- **Zweites Chatsystem zur Wahl**: neben dem gewohnten Verlauf gibt es einen
+  zweiten, dessen Puffer den **Registerkarten und Filtern des Spiels**
+  folgen — also dem, was ein sehender Spieler in seinen Chat-Reitern
+  eingerichtet hat. Die Reiter lassen sich per Taste umschalten (das Spiel
+  selbst hat dafür keine). Umschaltbar im Einstellungsmenü (Umschalt+F9);
+  **voreingestellt ist das gewohnte System**. Mitgeschrieben wird immer in
+  beide Verläufe, ein Wechsel mitten in der Sitzung reißt also keine Lücke.
 
 ### Navigation und Laufen
 
 - **Objekt-Browser**: mit einer Taste durch Objekte in der Nähe blättern
-  (NPCs, Gegner, Spieler, Sammelpunkte, Ätheryten, Quest-Ziele,
+  (NPCs, Händler, Gegner, **Verbündete**, Spieler, Objekte, **Inhalte**,
+  Quest-Ziele, Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten,
   Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit Name, Art, Entfernung
   und Richtung; das Objekt wird gleichzeitig anvisiert.
+- Die Kategorie **Verbündete** sammelt alles, was auf deiner Seite kämpft:
+  Trupp-NPCs, Gruppe und Allianz, Karfunkel, Fee, Begleitchocobo.
+  **Inhalte** listet nur die Türen, die in einen Dungeon, eine Prüfung,
+  einen Raid oder eine PvP-Instanz führen — eine solche Tür ist ein Ziel,
+  kein Möbelstück.
+- Auch **Einrichtung** in Wohngebieten ist auffindbar: Chocobo-Stall,
+  Briefkasten, Beete. Objekte, die das Spiel nur mit einem Symbol statt mit
+  einem Wort beschriftet, bekommen das Wort, das die Oberfläche dafür
+  benutzt.
 - **Audio-Beacon**: Stereo-Ton zeigt die Richtung zum Ziel (Seite und
   Tonhöhe), die Lautstärke folgt der Entfernung.
 - **Gehhilfe**: geführtes manuelles Laufen entlang des Wegenetzes, um
@@ -53,8 +79,15 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Blickrichtung und Ankunftston.
 - **Auto-Lauf**: automatisch zum Ziel laufen (benötigt das Fremd-Plugin
   vnavmesh), mit Routen-Vorschau, Fortschrittsansagen und ehrlicher
-  Meldung, wenn kein Weg gefunden wird. Endet der Weg kurz vor dem Ziel,
-  werden die letzten Meter mitgefahren, sofern dort durchgehend Boden ist.
+  Meldung, wenn kein Weg gefunden wird.
+- **Aufgezeichnete Spuren**: Stellen, die das Wegenetz nicht kennt, lassen
+  sich einmal selbst ablaufen und aufzeichnen. Bleibt der Auto-Lauf dort
+  später hängen, benutzt er die eigene Spur, statt aufzugeben.
+- **Wohngebiete**: dort ist das Wegenetz oft älter als die Häuser, weil es
+  gebaut wird, während das Spiel die Grundstücke noch nachlädt — der
+  Auto-Lauf lief dann in Zäune. Das Netz wird jetzt einmal je Besuch neu
+  gebaut, sobald das Spiel meldet, dass das Wohngebiet vollständig geladen
+  ist; das Warten wird angesagt.
 - **Folgen**: dem anvisierten Ziel dauerhaft hinterherlaufen — hält an,
   wenn das Ziel stehen bleibt, und endet bei Zonenwechsel oder wenn das
   Ziel verschwindet (benötigt ebenfalls vnavmesh).
@@ -69,9 +102,17 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 ### Kampf
 
-- Kampfstatus auf Tastendruck: eigene HP und MP in Prozent — genau das, was
-  ein sehender Spieler am Balken abliest.
-- Ziel-HP in Stufen, kurzer Ton beim Anvisieren eines Gegners.
+- Kampfstatus auf Tastendruck: eigene HP als Zahl („HP 4523 von 5100") —
+  so, wie das Spiel sie selbst im Partyfenster anzeigt und wie sich
+  entscheiden lässt, ob ein Trank reicht. MP bleibt prozentual, weil das
+  Maximum seit Patch 5.0 für jede Klasse 10000 ist.
+- Ziel-HP in Stufen (Prozent — eine Zahl zeigt das Spiel für Gegner nie),
+  kurzer Ton beim Anvisieren eines Gegners.
+- Beim Blättern durch Gegner werden **Stufe und HP** mitgesagt; die Stufe
+  steht auf der Ziel-Leiste eines sehenden Spielers ebenfalls.
+- **Wirkfläche im Tooltip**: die Beschreibung einer Aktion nennt jetzt auch
+  die **Form** des Wirkbereichs (Kreis, Kegel, Linie …) — das Spiel nennt
+  im Text nur die Reichweite und zeichnet die Form.
 - **Zauber-Warnung**: wirkt ein Gegner einen Zauber **auf dich**, wird er
   angesagt — von jedem Gegner in der Nähe, nicht nur vom anvisierten. Ist
   es ein anderer als dein Ziel, fällt sein Name mit. Zauber auf andere
@@ -85,7 +126,14 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
   die Stereo-Position den Füllstand an).
 - Erfahrungsgewinn und Beute werden angesagt und in der Nachlese archiviert.
+- **Beute-Verlosungen**: offene Würfe der Gruppe vorlesen (mit den
+  Ausrüstungswerten des Gegenstands, damit sich Bedarf oder Gier überhaupt
+  entscheiden lässt) und per Taste in das Verlosungs-Fenster springen, um
+  dort mit dem Nummernblock zu wählen.
+- **Erholungsbonus**: „Ruhebereich. Erholungsbonus sammelt sich." beim
+  Betreten, und auf Tastendruck die Höhe in Prozent einer Stufe.
 - SP-Stand für Sammler (Sammelpunkte/GP) auf Tastendruck.
+- Stufe und fehlende Erfahrung auf Tastendruck.
 
 ### Inventar und Ausrüstung
 
@@ -93,6 +141,14 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Stufe und Tragbarkeit angesagt („Bronzegladius, Stufe 5, tragbar" /
   „nicht tragbar, ab Stufe 26"); leere Felder sagen „Leer".
 - Läden: an jede Ware wird Stufe und Tragbarkeit angehängt.
+- **Werte statt bloßer Namen**: Gegenstandsstufe, Verteidigung und
+  Attribute stehen in der Ansage; zu welchen Klassen ein Teil passt, wird
+  mit **deinen eigenen** Klassen ausgesprochen („für deine Klassen Ritter,
+  Gladiator") statt mit der Abkürzungsliste des Spiels.
+- **Warnung vor dem Verkaufen**: gehört ein Teil zu einem Ausrüstungsset,
+  sagt die Ansage beim Durchgehen „, im Ausrüstungsset" mit. Das Spiel
+  malt diesen Hinweis sonst nur als Symbol auf das Icon — ein Textleser
+  bekommt ihn nie zu sehen.
 - Angelegte Ausrüstung komplett vorlesen; empfohlene Ausrüstung mit dem
   Spiel-eigenen Optimierer anlegen.
 - Inventar und Gil auf Tastendruck.
@@ -107,6 +163,33 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 - Im selben Menü lassen sich auch **Gegenstände** ablegen: Tränke,
   Elixiere und Essen aus der Tasche, mit Bestand in der Ansage
   („Heiltrank, 12 Stück").
+
+### Tiefe Gewölbe (Palast der Toten und Verwandte)
+
+Ein Tiefes Gewölbe ist in sich geschlossen, und der Objekt-Browser stellt
+sich darin um: statt sechzehn Weltkategorien gibt es vier Antworten.
+
+- **Kategorien drinnen**: Gegner (aufgedeckte Fallen zählen mit — das Spiel
+  führt sie selbst als Gegner), Truhen, die beiden Leuchten und die Räume.
+- **Räume statt Objekte**: Der Inhalt einer Ebene wird beim Content-Director
+  des Spiels abgefragt, nicht in der Objekttabelle. Deshalb verschwindet ein
+  Ziel nicht mehr, sobald du weit genug weggehst, dass das Spiel es entlädt —
+  und Räume lassen sich anlaufen, nicht nur benennen.
+- **Raumwechsel** wird beim Betreten angesagt; ein sehender Spieler liest
+  seine Position fortlaufend von der Gewölbe-Karte ab.
+- **Welches Gewölbe, welche Ebene** auf Tastendruck (Strg+F) — die Zahl, in
+  der der ganze Lauf gemessen wird und die das Spiel nur beiläufig nennt.
+- **Charakterinfo**: das Fenster nennt seine Plätze mit Namen, Beschreibung
+  und Anzahl. Es besteht fast nur aus Symbolen ohne Text, sagte deshalb
+  bisher nur seinen eigenen Titel an.
+- **Ebenenweite Wirkungen** (Leuchten-Effekte, Fallen, Ring-Bonus) werden
+  erfasst. Sie liegen nicht in der Statusliste der Figur, sondern auf dem
+  Director — der bisherige Effekt-Puffer konnte sie gar nicht sehen.
+
+> Die Gewölbe-Funktionen stammen aus einem Beitrag von außen und sind noch
+> **nicht im Spiel gegengeprüft**. Falls Strg+F bei dir zusätzlich die
+> Spielfunktion „zum Ziel drehen" auslöst, lässt sich die Taste in den
+> Einstellungen ändern.
 
 ### Sonstiges
 
@@ -199,7 +282,7 @@ sagt er das und macht trotzdem normal weiter.
 
 Diese Liste ist gegen die tatsächliche Tastenbelegung im Code abgeglichen —
 alle aufgeführten Tasten sind aktiv. Die Tasten sind so gewählt, dass sie
-laut Spiel-Tastenbelegung überwiegend frei sind; drei liegen bewusst auf
+laut Spiel-Tastenbelegung überwiegend frei sind; einige liegen bewusst auf
 rein visuellen Kamera-Funktionen (siehe unten). Strg+F1 sagt jederzeit die
 aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 
@@ -208,7 +291,9 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Bild-ab** — nächstes Objekt ansagen und anvisieren
 - **Bild-auf** — vorheriges Objekt
 - **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
-  Quest-Ziele, Freibriefe, FATEs, Sammelpunkte, Ätheryten, Wegpunkte)
+  Verbündete, Spieler, Objekte, Inhalte, Quest-Ziele, Freibriefe, FATEs,
+  Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im Tiefen Gewölbe
+  stattdessen Truhen, Leuchten, Räume)
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung
@@ -223,6 +308,10 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
   (z. B. „24.1 21.0" kopieren, dann Taste)
 - **Strg+Umschalt+F2** — eigene Karten-Koordinaten in die Zwischenablage
   kopieren
+- **Nummernblock 5** — einmal in die Richtung drehen, in die die Gehhilfe
+  weist
+- **Strg+Umschalt+F6** — Spur aufzeichnen an/aus (eine Stelle, die das
+  Wegenetz nicht kennt, einmal selbst ablaufen)
 - **N** — Himmelsrichtungs-Ansage beim Drehen an/aus
 - **F** — zum Ziel hindrehen (Spiel-Taste), **W** — laufen (Spiel-Taste)
 
@@ -235,6 +324,9 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+Entf** — Kampfstatus: eigene HP und MP
 - **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
 - **Strg+L** — Stufe und fehlende Erfahrung
+- **Umschalt+L** — Ruhebereich und Erholungsbonus
+- **Strg+F** — Tiefes Gewölbe: welches Gewölbe, welche Ebene
+- **Umschalt+F9** — Einstellungsmenü öffnen (gesprochen bedienbar)
 - **Strg+F3** — Inventar vorlesen (Tasche und Schlüsselgegenstände)
 - **Umschalt+F3** — Gil-Stand
 - **Strg+F4** — Bestiarium (Jagdtagebuch) vorlesen
@@ -246,6 +338,11 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
   **Standardmäßig aus**, weil die Formerkennung im Spiel noch nicht
   abschließend bestätigt ist — ein falscher Warnton im Kampf wäre
   schlimmer als keiner
+- **Umschalt+F7** — offene Beute-Verlosungen vorlesen
+- **Umschalt+F8** — in das Verlosungs-Fenster springen (dort wählt der
+  Nummernblock Bedarf, Gier oder Passen). Bewusst eine eigene Taste: ein
+  Fenster, das sich mitten im Kampf den Fokus greift, würde den
+  Nummernblock schlucken, während man noch laufen muss
 
 ### Ausrüstung
 
@@ -275,6 +372,12 @@ so lange vom Spiel ferngehalten, damit die Figur nicht losläuft:
   Beute); angesagt wird der Name mit der Anzahl der Nachrichten
 - **Umschalt+Bild-auf** / **Umschalt+Bild-ab** — in der gewählten Kategorie
   zur älteren / neueren Nachricht blättern („3 von 12: …")
+- **Umschalt+Pos1** / **Umschalt+Ende** — an den Anfang / ans Ende der
+  Kategorie springen
+- **Alt+Pos1** / **Alt+Ende** — Chat-Registerkarte des Spiels umschalten
+  (das Spiel selbst hat dafür keine Taste — ein Sehender klickt das
+  Register an)
+- **Enter** — die gerade gelesene Nachricht im richtigen Kanal beantworten
 
 ### Emotes
 
@@ -299,16 +402,23 @@ so lange vom Spiel ferngehalten, damit die Figur nicht losläuft:
 
 ### Überschneidungen mit Spiel-Tasten
 
-Drei Plugin-Tasten liegen auf Funktionen, die das Spiel ebenfalls belegt.
-Das ist bewusst so und wird beim Anmelden als „3 Tastenkonflikte" gemeldet:
+Einige Plugin-Tasten liegen auf Funktionen, die das Spiel ebenfalls belegt.
+Das ist bewusst so; beim Anmelden wird die Zahl der Überschneidungen
+angesagt:
 
 - **Bild-auf / Bild-ab** sind zusätzlich Kamera-Zoom
 - **Strg+Ende** ist zusätzlich „Kamera-Einstellung speichern"
+- **Nummernblock 5** ist zusätzlich „Kamera auf das Ziel richten"; diese
+  Taste hält das Plugin vom Spiel fern, damit die Kamera nicht zusätzlich
+  springt
 
-Alle drei sind rein visuelle Funktionen und damit für blindes Spiel
-folgenlos. Meldet das Plugin beim Anmelden eine **andere** Zahl als drei,
-lohnt ein Blick in die Datei `FFXIV_Keybinds.txt` auf dem Desktop: dann
-überschneidet sich eine Plugin-Taste mit einer echten Spielfunktion.
+Diese Funktionen sind rein visuell und damit für blindes Spiel folgenlos.
+Steigt die angesagte Zahl gegenüber dem, was du kennst, lohnt ein Blick in
+die Datei `FFXIV_Keybinds.txt` auf dem Desktop: dann überschneidet sich eine
+Plugin-Taste mit einer echten Spielfunktion. Der eine Punkt, der dort noch
+offen ist, ist **Strg+F** (Tiefes Gewölbe): der Tastendump führt Strg+F als
+frei, das bloße **F** ist aber „zum Ziel drehen" — ob das Spiel bei Strg+F
+trotzdem mitdreht, ist noch nicht im Spiel gemessen.
 
 ## Chat-Befehle
 
@@ -328,6 +438,7 @@ Viele Funktionen gibt es auch als Befehl:
 - `/acc fishhere` — aktuellen Standort als Auswurfstelle merken
 - `/acc gather` — Sammelpunkte im Gebiet ansagen
 - `/acc gathergo` — zum nächsten Sammelpunkt laufen
+- `/acc trails` — aufgezeichnete Spuren im Gebiet auflisten
 - `/acc cd` (auch `/acc cooldowns`) — Ansage „Fähigkeit bereit" an/aus
 - `/acc soundtest` — die Töne des Plugins zur Probe abspielen
 - `/acc lang de|en|auto` — Sprache der Plugin-Ansagen umstellen
