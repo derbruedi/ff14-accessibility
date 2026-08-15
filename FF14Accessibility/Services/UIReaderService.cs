@@ -47,6 +47,9 @@ public sealed class UIReaderService : IDisposable
     /// Aktions-Tooltip, das das Spiel ausschliesslich zeichnet.</summary>
     private readonly ActionShapeService _actionShape;
 
+    /// <summary>Nennt die Einheit zu der nackten Preiszahl einer Tausch-Zeile.</summary>
+    private readonly SpecialShopService _specialShops;
+
     /// <summary>Charaktererstellung, Schritt Aussehen. Der globale Fokus-Leser
     /// reicht ihm an genau EINER Stelle den Text durch, den er sonst sprechen
     /// wuerde - siehe CharaMakeReader.DescribeFocus.</summary>
@@ -344,6 +347,7 @@ public sealed class UIReaderService : IDisposable
         _config         = config;
         _data           = data;
         _actionShape    = new ActionShapeService(data, log);
+        _specialShops   = new SpecialShopService(data, log);
         RegisterHooks();
     }
 
@@ -1877,6 +1881,12 @@ public sealed class UIReaderService : IDisposable
     // because the dwell fires ~0.4 s later, long after a tapped key was released.
     private bool _itemDwellArmed;
 
+    // Set while the focus stands on a resolved shop row. Kept as fields, not
+    // locals: the dwell runs on later frames, long after the focus-change frame
+    // that read the row.
+    private bool _shopRowItemActive;
+    private uint _shopRowPrice;
+
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
         // While the HUD builds after login the game moves focus across freshly
@@ -1959,7 +1969,33 @@ public sealed class UIReaderService : IDisposable
         // Resolve only when the focused node changes (bag/sheet lookup is not a
         // per-frame operation); cache it so same-node frames reuse the name.
         if ((nint)node != _lastFocusedNodePtr)
+        {
             _lastFocusedItemName = ResolveFocusedItemName(node);
+            // Tausch-Zeilen haben KEINEN Icon-Slot unter dem Fokus, aus dem die
+            // Item-Id sonst kommt - deshalb blieb _lastFocusedItemId dort 0, und
+            // die Beschreibung, die im Inventar laengst kommt, fiel ersatzlos aus
+            // (Log 2026-08-16 00:30: "Schwarzes Chocobo-Kueken" - Name allein,
+            // dabei sagt bei einem Begleiter erst die Beschreibung, WAS man da
+            // fuer seine Zertifikate bekommt).
+            _shopRowItemActive = false;
+            _shopRowPrice      = 0;
+            if (_lastFocusedItemId == 0)
+            {
+                var linked = ResolveShopRowItemId(node);
+                if (linked != 0)
+                {
+                    _lastFocusedItemId = linked;
+                    _shopRowItemActive = true;
+                    _log.Info($"[Shop] Zeile verknuepft mit Gegenstand {linked}.");
+                }
+#if DEBUG
+                // Was in der Zeile SONST noch steht - der Preis eines Tauschladens
+                // ist bisher in keiner Ansage enthalten, und wo er im Knotenbaum
+                // liegt, ist nicht gemessen. Eine Zeile pro Fokuswechsel.
+                ProbeShopRow(node);
+#endif
+            }
+        }
 
         string text;
         var itemBranchActive = false; // set true only when the item name is what gets announced
@@ -2090,7 +2126,7 @@ public sealed class UIReaderService : IDisposable
         // announcement must not trigger an item description underneath it, and
         // _itemDwellArmed additionally requires that the name was not swallowed by
         // one of the suppressions further down (quest-reward auto-cycling).
-        HandleItemDescriptionDwell(itemBranchActive && _itemDwellArmed);
+        HandleItemDescriptionDwell((itemBranchActive || _shopRowItemActive) && _itemDwellArmed);
 
         if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
         _lastFocusedNodePtr  = (nint)node;
@@ -2211,11 +2247,17 @@ public sealed class UIReaderService : IDisposable
             // faltet er Anzahl, aktuellen Wert und Position in DIESELBE Ansage, statt
             // eine zweite hinterherzuschicken, die die erste abschneiden wuerde.
             text = _charaMake.DescribeFocus(node, text);
+            // Was die Ware kostet, direkt hinter ihrem Namen - vor der Gear-Info,
+            // weil in einem Tauschfenster der Preis die Entscheidung traegt und
+            // die Werte nur die Zugabe sind.
+            text = AppendShopPrice(text);
             // Item-Slot-Texte tragen die Gear-Info schon (ResolveFocusedItemName);
             // rohe Fokus-Texte (Laden-Zeilen) bekommen sie hier angehaengt.
             if (string.IsNullOrEmpty(_lastFocusedItemName)) text = AppendShopGearInfo(text);
             // The name is going out now, so the description dwell may follow it.
-            _itemDwellArmed = itemBranchActive;
+            // A shop row counts as well: its name comes from the row text, not
+            // from an icon slot, but it is just as much an item name.
+            _itemDwellArmed = itemBranchActive || _shopRowItemActive;
             _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
         }
     }
@@ -2604,6 +2646,132 @@ public sealed class UIReaderService : IDisposable
     {
         "Shop", "ShopExchangeItem", "ShopExchangeCurrency", "InclusionShop",
     };
+
+    /// <summary>
+    /// The item a focused exchange ROW stands for, or 0 when the focus is not on
+    /// one. Also reads that row's price into <c>_shopRowPrice</c>.
+    ///
+    /// AN ITEM LINK WAS THE FIRST TRY AND IS REFUTED. The row text looked like a
+    /// link in the log ("H?%I?&amp;ZeigerhändchenIH"), but the probe reported
+    /// link=0 for every text in every row (2026-08-16 00:30/00:31) - Dalamud's
+    /// parser finds no ItemPayload there. The name is therefore resolved through
+    /// the item sheet by name, over ALL items: the existing shop enrichment uses
+    /// an equipment-only map (<c>BuildGearNameCache</c> skips every row without
+    /// an equip slot), which is exactly why a minion or a mount voucher stayed a
+    /// bare name while a hat got its full stat line.
+    ///
+    /// THE ROW MUST BE A LIST ROW. Climbing is capped at three levels AND at the
+    /// nearest ListItemRenderer, so a button or the window frame can never adopt
+    /// the first item of the list. That failure is not hypothetical - the log has
+    /// the whole list read out as one line with the FIRST item's stats appended
+    /// (00:16:30, focus on node id=7: "Goblin-Kappe, Chocomoppel-Maske, Bunte
+    /// Haarschleife, Stufe 1, ...").
+    /// </summary>
+    private unsafe uint ResolveShopRowItemId(AtkResNode* node)
+    {
+        if (node == null) return 0;
+
+        var shopOpen = false;
+        foreach (var addon in ShopAddons)
+        {
+            if (IsAddonVisible(addon)) { shopOpen = true; break; }
+        }
+        if (!shopOpen) return 0;
+
+        // MEASURED, NOT ASSUMED (probe 2026-08-16 00:30/00:31, exchange window at
+        // the achievement NPC). The focus sits on a collision node whose PARENT is
+        // the row: "[0] id=12 typ=8 komp=- [1] id=41005 typ=1019
+        // komp=ListItemRenderer [2] id=20 komp=TreeList". Inside the row exactly
+        // three texts carry anything: id=3 the name, id=6 the price, id=8 a second
+        // number. The item-link route this used to take is REFUTED for this window
+        // - every text probed there reported link=0.
+        var row = FindShopRow(node);
+        if (row == null) return 0;
+
+        var name = ReadRowText(row, RowNameNodeId);
+        if (name.Length == 0) return 0;
+
+        // The price is read here as well, so the announcement and the description
+        // come from the same row read - and are never mixed up between rows.
+        var priceText = ReadRowText(row, RowPriceNodeId);
+        _shopRowPrice = uint.TryParse(priceText, out var price) ? price : 0;
+
+        return _inventory.ResolveItemIdByName(name);
+    }
+
+    // Row node ids of the currency exchange window, from the probe named above.
+    // id=8 carries a second number ("0" on every row measured) whose meaning is
+    // NOT established - most likely the amount already owned - so it stays unspoken.
+    private const uint RowNameNodeId  = 3;
+    private const uint RowPriceNodeId = 6;
+
+    /// <summary>Text of one node inside a row, by node id. Cleaned, so payload
+    /// markers never reach the caller.</summary>
+    private unsafe string ReadRowText(AtkResNode* row, uint nodeId)
+    {
+        var comp = ((AtkComponentNode*)row)->Component;
+        if (comp == null || !IsReadable(comp)) return string.Empty;
+
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var child = comp->UldManager.NodeList[i];
+            if (child == null || child->NodeId != nodeId || child->Type != NodeType.Text) continue;
+            return AtkText.ReadClean((AtkTextNode*)child).Trim();
+        }
+        return string.Empty;
+    }
+
+    /// <summary>The list row (ListItemRenderer) the focus sits in, or null.</summary>
+    private unsafe AtkResNode* FindShopRow(AtkResNode* node)
+    {
+        var cur = node == null ? null : node->ParentNode;
+        for (var up = 0; up < 3 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)cur)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+            if (comp->GetComponentType() == ComponentType.ListItemRenderer) return cur;
+        }
+        return null;
+    }
+
+#if DEBUG
+    /// <summary>
+    /// SONDE: every text node of the focused shop row, with its id, its raw text
+    /// and the item it links to. Answers the one open question this window still
+    /// has - WHERE the price stands. A currency exchange charges tokens, and no
+    /// announcement carries that number today (log 2026-08-16 00:16: names only).
+    /// Falls raus, sobald der Preis gebaut ist (siehe debug_probe_convention).
+    /// </summary>
+    private unsafe void ProbeShopRow(AtkResNode* node)
+    {
+        var row = FindShopRow(node);
+        if (row == null) return;
+        var comp = ((AtkComponentNode*)row)->Component;
+        if (comp == null || !IsReadable(comp)) return;
+
+        var parts = new List<string>();
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var child = comp->UldManager.NodeList[i];
+            if (child == null || child->Type != NodeType.Text) continue;
+            parts.Add($"id={child->NodeId} '{AtkText.ReadClean((AtkTextNode*)child).Trim()}'");
+        }
+        _log.Info($"[ShopProbe] Zeile {row->NodeId}: {string.Join(" | ", parts)}");
+    }
+#endif
+
+
+    /// <summary>Appends ", für 2 Errungenschaftszertifikate" to a resolved
+    /// exchange row. Silent for every other focus, and silent when the row
+    /// carried no price.</summary>
+    private string AppendShopPrice(string text)
+    {
+        if (!_shopRowItemActive || _shopRowPrice == 0 || string.IsNullOrEmpty(text)) return text;
+
+        var currency = _specialShops.CurrencyFor(_lastFocusedItemId, _shopRowPrice);
+        return text + AccessibilityStrings.ShopPrice(_shopRowPrice, currency);
+    }
 
     /// <summary>Appends "Stufe X, tragbar/nicht tragbar" to a spoken text while a
     /// shop is open and one of its comma-parts is an equipment name. The text

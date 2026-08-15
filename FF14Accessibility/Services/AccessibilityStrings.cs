@@ -880,6 +880,20 @@ public static partial class AccessibilityStrings
     public static string ItemDescription(string description) =>
         IsGerman ? $"Beschreibung: {description}" : $"Description: {description}";
 
+    /// <summary>
+    /// What a row in an exchange window costs, appended to the item name. The
+    /// currency is already inflected by the caller from the game's own Singular /
+    /// Plural sheet columns, so it is inserted verbatim.
+    ///
+    /// Without a resolved currency only the bare number is spoken: an invented
+    /// unit ("2 Marken") would be worse than none, because the same window trades
+    /// certificates, seals, tokens and coins.
+    /// </summary>
+    public static string ShopPrice(uint count, string currency) =>
+        currency.Length > 0
+            ? (IsGerman ? $", für {count} {currency}" : $", for {count} {currency}")
+            : (IsGerman ? $", Preis {count}"          : $", price {count}");
+
     // ── Inventar-Reiter (Inventory) ──────────────────────────────────
     /// <summary>The active inventory bag tab, announced on switch. The label is
     /// the game's own tab number ("1".."4").</summary>

@@ -496,6 +496,39 @@ public sealed class InventoryService
         return _iconSheetCache.TryGetValue(iconId, out var sheet) ? sheet : (string.Empty, 0);
     }
 
+    // Name -> Item row, over the WHOLE sheet. GearInfoService has a name map too,
+    // but it deliberately holds equipment only, so a minion, a mount voucher or a
+    // hairstyle book resolves to nothing there - which is exactly why shop rows
+    // for those stayed a bare name (log 2026-08-16 00:30).
+    private Dictionary<string, uint>? _itemNames;
+
+    /// <summary>The item row a display name belongs to, or 0. Names that occur on
+    /// more than one row are dropped from the map: an ambiguous name must not
+    /// silently resolve to whichever row was read first.</summary>
+    public uint ResolveItemIdByName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return 0;
+        _itemNames ??= BuildItemNameCache();
+        return _itemNames.TryGetValue(name.Trim().ToLowerInvariant(), out var id) ? id : 0;
+    }
+
+    private Dictionary<string, uint> BuildItemNameCache()
+    {
+        var map       = new Dictionary<string, uint>();
+        var duplicate = new HashSet<string>();
+        foreach (var row in _data.GetExcelSheet<LuminaItem>())
+        {
+            var name = row.Name.ExtractText();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            var key = name.Trim().ToLowerInvariant();
+            if (!map.TryAdd(key, row.RowId)) duplicate.Add(key);
+        }
+        foreach (var key in duplicate) map.Remove(key);
+
+        _log.Info($"[Item] Namens-Cache gebaut: {map.Count} Namen, {duplicate.Count} mehrdeutig verworfen.");
+        return map;
+    }
+
     /// <summary>The tooltip description of an Item sheet row, or "" when there is
     /// none (itemId 0, key items, or a row without a description). Raw sheet text -
     /// the caller flattens line breaks for speech.</summary>

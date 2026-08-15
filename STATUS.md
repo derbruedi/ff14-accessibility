@@ -3,7 +3,64 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-15 ABENDS, "V5.84 RELEASED - MIT DEN SECHS BEITRAEGEN")
+## STAND JETZT (2026-08-16, "TAUSCHFENSTER: PREIS UND BESCHREIBUNG" - GEBAUT, ZU TESTEN)
+
+>>> ANLASS: Der Errungenschafts-NPC. Fenster ist `ShopExchangeCurrency`. Der
+    Spieler hoerte dort NUR den Namen ("Schwarzes Chocobo-Kueken", Log 00:30),
+    brauchte aber beides: was es an Marken kostet und was das Ding ueberhaupt
+    ist. Bei Ausruestung kamen Werte, bei allem anderen nichts - Ursache:
+    `AppendShopGearInfo` gleicht gegen `BuildGearNameCache` ab, und der enthaelt
+    NUR Ausruestung (jede Zeile ohne EquipSlotCategory faellt raus).
+
+>>> ERSTER ANSATZ WIDERLEGT - hier festgehalten, damit ihn niemand nochmal geht:
+    Der Fokus-Text sieht im Log wie ein Item-Link aus ("H?%I?&ZeigerhaendchenIH"),
+    also sollte die Item-Id aus dem SeString-Payload kommen. Die Sonde sagt fuer
+    JEDEN Text JEDER Zeile `link=0` (00:30/00:31) - Dalamuds Parser findet dort
+    keinen ItemPayload. `AtkText.LinkedItemId` wurde wieder ausgebaut.
+
+>>> GEMESSEN STATT GERATEN (Sonde [ShopProbe], 2026-08-16):
+    - Fokus sitzt auf einem Collision-Knoten, dessen ELTERN die Zeile ist:
+      "[0] id=12 typ=8 [1] id=41005 typ=1019 komp=ListItemRenderer [2] id=20
+      komp=TreeList".
+    - In der Zeile tragen genau drei Texte etwas: id=3 der NAME, id=6 der PREIS,
+      id=8 eine zweite Zahl (auf jeder gemessenen Zeile "0").
+    - BEWEIS fuer id=6: um 00:30:10 fragte das Spiel selbst "Den folgenden
+      Gegenstand gegen 2 Errungenschaftszertifikate tauschen?" - und id=6 stand
+      auf "2".
+    - id=8 bleibt UNGESPROCHEN: die Bedeutung ist nicht belegt (vermutlich der
+      eigene Bestand, aber alle Messungen zeigten 0, also ohne Varianz).
+
+>>> GEBAUT: `SpecialShopService` (neu) + `InventoryService.ResolveItemIdByName`
+    (Namens-Cache ueber ALLE Items, nicht nur Ausruestung) + Zeilenlesen im
+    Fokus-Pfad. Die Waehrung kommt aus dem Sheet `SpecialShop` ueber das PAAR
+    (Ware, Kostenzahl) - die Shop-Id fuehrt das Spiel in keiner benannten
+    Struktur (FFXIVClientStructs hat nur `AgentShop` fuer AgentId.Shop, den
+    Gil-Laden). Mehrdeutige Paare liefern LEER, dann kommt nur die Zahl: eine
+    erfundene Einheit ("2 Marken") waere schlimmer als keine.
+    Plural aus den spieleigenen Sheet-Spalten Singular/Plural, nicht selbst gebeugt.
+
+>>> OFFLINE GEGENGEPRUEFT (Lumina-Werkzeug im Scratchpad, siehe
+    offline_sheet_dump_tool - der User musste dafuer NICHTS nachspielen):
+    Namens-Cache 50174 eindeutige Namen (203 mehrdeutige verworfen), Preis-Index
+    15016 Paare (306 mehrdeutig). Alle SIEBEN Waren aus dem Log loesen eindeutig
+    auf und liefern "2 Errungenschaftszertifikate" plus eine Beschreibung -
+    dieselbe Zahl, die die UI-Sonde gemessen hat, und dieselbe Formulierung wie
+    im Bestaetigungsdialog. Drei unabhaengige Quellen, ein Ergebnis.
+
+>>> ZU TESTEN (Debug gebaut + deployt):
+    1. Zum Errungenschafts-NPC, blaettern: kommt "Zeigerhaendchen, fuer 2
+       Errungenschaftszertifikate"?
+    2. Eine Sekunde stehen bleiben: kommt "Beschreibung: Den Elfenbeinhandschuhen
+       von Oschon nachempfunden ..."?
+    3. Gegenprobe bei einem Ausruestungsteil: Preis UND Stufe/Werte, in dieser
+       Reihenfolge?
+    Danach faellt [ShopProbe] raus.
+
+>>> OFFEN, NICHT ANGEFASST: der Knoten id=7 liest die GANZE Liste als eine Zeile
+    vor ("Goblin-Kappe, Chocomoppel-Maske, Bunte Haarschleife, Stufe 1, ...",
+    Log 00:16:30). Gemeldet, auf Antwort des Users wartend.
+
+## FRUEHER (2026-08-15 ABENDS, "V5.84 RELEASED - MIT DEN SECHS BEITRAEGEN")
 
 >>> AUF ANSAGE DES USERS: alles gemerged, Release geschnitten, beide READMEs
     nachgezogen. test/prs ging als FAST-FORWARD nach main (main war vollstaendig
