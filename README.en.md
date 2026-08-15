@@ -17,6 +17,7 @@ cues — including braille display output and automatic walking.
   (face, hairstyle, colours, build …) are announced one by one, and Ctrl+F10
   reads the whole appearance back in one go. None of those pickers is text
   in the game — a screen reader finds nothing there otherwise.
+  (Contributed by [bladestorm360](https://github.com/bladestorm360), PR #4)
 - List navigation with arrow keys: system menu, journal, selection
   dialogues, context menus — every row is spoken as it gains focus.
 - Ok/Cancel dialogues: left/right announces the focused button.
@@ -54,7 +55,8 @@ cues — including braille display output and automatic walking.
   The tabs can be switched by key (the game itself has none for that).
   Switch systems in the settings menu (Shift+F9); the **familiar one is the
   default**. Both histories always record, so switching mid-session leaves
-  no gap.
+  no gap. (Contributed by
+  [bladestorm360](https://github.com/bladestorm360), PR #5)
 
 ### Navigation and walking
 
@@ -67,6 +69,7 @@ cues — including braille display output and automatic walking.
   and duty-support NPCs, party and alliance, carbuncle, fairy, companion
   chocobo. **Duties** lists only the doors leading into a dungeon, trial,
   raid or PvP instance — such a door is a destination, not furniture.
+  (Contributed by [bladestorm360](https://github.com/bladestorm360), PR #3)
 - **Housing furnishings** can be found too: chocobo stable, mailbox, garden
   beds. Objects the game labels with an icon instead of a word are given the
   word its own interface uses for them.
@@ -106,10 +109,13 @@ cues — including braille display output and automatic walking.
 - Target HP in steps (a percentage — the game never shows a number for
   enemies), a short tone when you target an enemy.
 - Cycling through enemies now announces their **level and HP** as well; a
-  sighted player reads the level off the target bar too.
+  sighted player reads the level off the target bar too. That announcement
+  and the HP format come from PR #1 by
+  [bladestorm360](https://github.com/bladestorm360).
 - **Area of effect in the tooltip**: an action's description now also names
   the **shape** of its effect area (circle, cone, line …) — the game's text
-  only gives the range and draws the shape.
+  only gives the range and draws the shape. (Contributed by
+  [bladestorm360](https://github.com/bladestorm360), PR #2)
 - **Cast warning**: when an enemy casts a spell **at you** it is announced
   — from any nearby enemy, not just the one you have targeted. If it is
   someone other than your target, their name is included. Spells cast at
@@ -159,6 +165,9 @@ cues — including braille display output and automatic walking.
 
 ### Deep dungeons (Palace of the Dead and friends)
 
+This entire section was contributed by
+[bladestorm360](https://github.com/bladestorm360) (PR #6).
+
 A deep dungeon is self-contained, and the object browser adapts to it:
 instead of sixteen world categories there are four answers.
 
@@ -179,9 +188,9 @@ instead of sixteen world categories there are four answers.
   They are not statuses on your character but live on the director — the
   existing effect tracker could not see them at all.
 
-> The deep dungeon features come from an outside contribution and have
-> **not been verified in-game** yet. Should Ctrl+F also trigger the game's
-> "face target" for you, the key can be changed in the settings.
+> The deep dungeon features have **not been verified in-game** yet. Should
+> Ctrl+F also trigger the game's "face target" for you, the key can be
+> changed in the settings.
 
 ### Miscellaneous
 
@@ -439,6 +448,24 @@ Without a setting the language follows Windows; `/acc lang en`,
 (dialogues, menus, item names) are always read in whatever language your
 game client uses. Development and testing happen primarily with the German
 client.
+
+## Contributors
+
+Six of this plugin's larger features come from
+**[bladestorm360](https://github.com/bladestorm360)**:
+
+- **PR #1** — level and HP while cycling through enemies; your own HP back
+  as a number instead of a percentage
+- **PR #2** — the shape of an action's effect area in its tooltip (circle,
+  cone, line …)
+- **PR #3** — the object categories **allies** and **duties**
+- **PR #4** — the **appearance** step of character creation
+- **PR #5** — the second chat system whose buffers follow the game's own
+  tabs and filters
+- **PR #6** — the **deep dungeons** (rooms, treasure, cairns, character
+  info, floor-wide effects)
+
+Thank you.
 
 ## Notes
 

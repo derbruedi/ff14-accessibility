@@ -17,6 +17,7 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   (Gesicht, Frisur, Farben, Statur …) werden einzeln angesagt; Strg+F10
   liest das gesamte Aussehen am Stück zurück. Keiner dieser Wähler ist im
   Spiel Text — ein Screenreader findet dort sonst nichts vor.
+  (Beitrag von [bladestorm360](https://github.com/bladestorm360), PR #4)
 - Listen-Navigation mit Pfeiltasten: Systemmenü, Journal, Auswahl-Dialoge,
   Kontextmenüs — jede Zeile wird beim Fokussieren gesprochen.
 - Ok/Abbrechen-Dialoge: Links/Rechts sagt den fokussierten Knopf an.
@@ -55,6 +56,7 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   selbst hat dafür keine). Umschaltbar im Einstellungsmenü (Umschalt+F9);
   **voreingestellt ist das gewohnte System**. Mitgeschrieben wird immer in
   beide Verläufe, ein Wechsel mitten in der Sitzung reißt also keine Lücke.
+  (Beitrag von [bladestorm360](https://github.com/bladestorm360), PR #5)
 
 ### Navigation und Laufen
 
@@ -67,7 +69,8 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Trupp-NPCs, Gruppe und Allianz, Karfunkel, Fee, Begleitchocobo.
   **Inhalte** listet nur die Türen, die in einen Dungeon, eine Prüfung,
   einen Raid oder eine PvP-Instanz führen — eine solche Tür ist ein Ziel,
-  kein Möbelstück.
+  kein Möbelstück. (Beitrag von
+  [bladestorm360](https://github.com/bladestorm360), PR #3)
 - Auch **Einrichtung** in Wohngebieten ist auffindbar: Chocobo-Stall,
   Briefkasten, Beete. Objekte, die das Spiel nur mit einem Symbol statt mit
   einem Wort beschriftet, bekommen das Wort, das die Oberfläche dafür
@@ -109,10 +112,13 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 - Ziel-HP in Stufen (Prozent — eine Zahl zeigt das Spiel für Gegner nie),
   kurzer Ton beim Anvisieren eines Gegners.
 - Beim Blättern durch Gegner werden **Stufe und HP** mitgesagt; die Stufe
-  steht auf der Ziel-Leiste eines sehenden Spielers ebenfalls.
+  steht auf der Ziel-Leiste eines sehenden Spielers ebenfalls. Das HP-Format
+  und diese Ansage stammen aus PR #1 von
+  [bladestorm360](https://github.com/bladestorm360).
 - **Wirkfläche im Tooltip**: die Beschreibung einer Aktion nennt jetzt auch
   die **Form** des Wirkbereichs (Kreis, Kegel, Linie …) — das Spiel nennt
-  im Text nur die Reichweite und zeichnet die Form.
+  im Text nur die Reichweite und zeichnet die Form. (Beitrag von
+  [bladestorm360](https://github.com/bladestorm360), PR #2)
 - **Zauber-Warnung**: wirkt ein Gegner einen Zauber **auf dich**, wird er
   angesagt — von jedem Gegner in der Nähe, nicht nur vom anvisierten. Ist
   es ein anderer als dein Ziel, fällt sein Name mit. Zauber auf andere
@@ -166,6 +172,9 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 ### Tiefe Gewölbe (Palast der Toten und Verwandte)
 
+Dieser ganze Abschnitt ist ein Beitrag von
+[bladestorm360](https://github.com/bladestorm360) (PR #6).
+
 Ein Tiefes Gewölbe ist in sich geschlossen, und der Objekt-Browser stellt
 sich darin um: statt sechzehn Weltkategorien gibt es vier Antworten.
 
@@ -186,10 +195,9 @@ sich darin um: statt sechzehn Weltkategorien gibt es vier Antworten.
   erfasst. Sie liegen nicht in der Statusliste der Figur, sondern auf dem
   Director — der bisherige Effekt-Puffer konnte sie gar nicht sehen.
 
-> Die Gewölbe-Funktionen stammen aus einem Beitrag von außen und sind noch
-> **nicht im Spiel gegengeprüft**. Falls Strg+F bei dir zusätzlich die
-> Spielfunktion „zum Ziel drehen" auslöst, lässt sich die Taste in den
-> Einstellungen ändern.
+> Die Gewölbe-Funktionen sind noch **nicht im Spiel gegengeprüft**. Falls
+> Strg+F bei dir zusätzlich die Spielfunktion „zum Ziel drehen" auslöst,
+> lässt sich die Taste in den Einstellungen ändern.
 
 ### Sonstiges
 
@@ -452,6 +460,24 @@ Einstellung richtet sich die Sprache nach Windows; mit `/acc lang de`,
 Spieltexte (Dialoge, Menüs, Gegenstandsnamen) werden immer in der Sprache
 des Spiel-Clients vorgelesen. Entwickelt und getestet wird vorrangig mit dem
 deutschen Client.
+
+## Mitwirkende
+
+Sechs größere Funktionen dieses Plugins stammen von
+**[bladestorm360](https://github.com/bladestorm360)**:
+
+- **PR #1** — Stufe und HP beim Blättern durch Gegner; eigene HP wieder als
+  Zahl statt als Prozentwert
+- **PR #2** — die Form der Wirkfläche im Aktions-Tooltip (Kreis, Kegel,
+  Linie …)
+- **PR #3** — die Objekt-Kategorien **Verbündete** und **Inhalte**
+- **PR #4** — der Schritt **Aussehen** in der Charaktererstellung
+- **PR #5** — das zweite Chatsystem, dessen Puffer den Registerkarten und
+  Filtern des Spiels folgen
+- **PR #6** — die **Tiefen Gewölbe** (Räume, Truhen, Leuchten, Charakterinfo,
+  ebenenweite Wirkungen)
+
+Vielen Dank dafür.
 
 ## Hinweise
 
