@@ -1,29 +1,29 @@
-# Konzept: Manuelle Navigation entlang des vnavmesh-Pfads
+# Concept: Manual navigation along the vnavmesh path
 
-Stand: Recherche 2026-07-15, Bezug FF14Accessibility V4.61. Reine
-Machbarkeitsanalyse, keine Code-Änderung.
+Status: research 2026-07-15, referring to FF14Accessibility V4.61. Pure
+feasibility analysis, no code change.
 
-## Kurzfassung / Machbarkeits-Aussage
+## Summary / feasibility statement
 
-Geht, mit Einschränkungen. vnavmesh liefert bereits heute genau die
-Wegpunktliste, die für eine manuell geführte Navigation gebraucht wird
-(`Nav.Pathfind`), OHNE dass eine Bewegung ausgelöst wird. Das Plugin hat
-mit BeaconService, CueService und der bestehenden Gehhilfe (NavigationService)
-schon alle Audio-Bausteine, die für die Wegpunkt-Führung nötig sind. Die
-Umsetzung ist im Kern eine Erweiterung der bestehenden Gehhilfe um eine
-Wegpunktliste statt eines einzelnen Zielvektors - kein Neubau.
+Feasible, with limitations. vnavmesh already delivers exactly the waypoint
+list that a manually guided navigation needs (`Nav.Pathfind`), WITHOUT
+triggering any movement. With BeaconService, CueService and the existing walk
+guide (NavigationService), the plugin already has all the audio building
+blocks needed for waypoint guidance. At its core the implementation is an
+extension of the existing walk guide from a single target vector to a
+waypoint list - not a rebuild.
 
-Einschränkungen: Dynamische Hindernisse (andere Spieler, Monster) kennt das
-Navmesh nicht, nur die feste Geländeform. Echte Sprünge über Lücken
-(Jump-Puzzles) bildet vnavmesh in der Regel nicht ab. Beides wird unten
-genauer bewertet.
+Limitations: the navmesh does not know about dynamic obstacles (other
+players, monsters), only the fixed terrain shape. Real jumps across gaps
+(jump puzzles) are generally not represented by vnavmesh. Both are assessed
+in more detail below.
 
-## 1. vnavmesh-IPC: Pfadberechnung ohne Auto-Bewegung
+## 1. vnavmesh IPC: path calculation without auto-movement
 
-### Was das Projekt schon nutzt
+### What the project already uses
 
-`AutoWalkService.cs` nutzt aktuell nur bewegungsauslösende und
-Status-Endpunkte:
+`AutoWalkService.cs` currently only uses movement-triggering and status
+endpoints:
 
 ```73:110:H:\ff14\FF14Accessibility\Services\AutoWalkService.cs
         _navIsReady         = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
@@ -34,13 +34,13 @@ Status-Endpunkte:
         _pathfindInProgress = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.SimpleMove.PathfindInProgress");
 ```
 
-`SimpleMove.PathfindAndMoveCloseTo` berechnet den Pfad UND lässt vnavmesh
-den Charakter automatisch laufen (`OverrideMovement`/`OverrideCamera` intern,
-siehe `FollowPath.cs`). Das ist für unseren Zweck der falsche Endpunkt - er
-nimmt dem Spieler die Tasten aus der Hand.
+`SimpleMove.PathfindAndMoveCloseTo` calculates the path AND lets vnavmesh
+walk the character automatically (`OverrideMovement`/`OverrideCamera`
+internally, see `FollowPath.cs`). For our purpose that is the wrong endpoint -
+it takes the keys out of the player's hands.
 
-`Path.ListWaypoints` wird bereits abonniert, aber nur diagnostisch (Logging),
-nicht für eine eigene Führung:
+`Path.ListWaypoints` is already subscribed to, but only for diagnostics
+(logging), not for guidance of our own:
 
 ```41:45:H:\ff14\FF14Accessibility\Services\AutoWalkService.cs
     // DIAGNOSTIC (temporary): the waypoints of the path vnavmesh is actually
@@ -48,11 +48,10 @@ nicht für eine eigene Führung:
     private readonly ICallGateSubscriber<List<Vector3>> _pathListWaypoints;
 ```
 
-### Der entscheidende Fund: `Nav.Pathfind`
+### The decisive find: `Nav.Pathfind`
 
-Quellcode-Abgleich gegen `awgil/ffxiv_navmesh` (IPCProvider.cs, aktueller
-`master`-Stand) zeigt einen reinen Query-Endpunkt, der KEINE Bewegung
-auslöst:
+Comparing against the source of `awgil/ffxiv_navmesh` (IPCProvider.cs,
+current `master`) reveals a pure query endpoint that triggers NO movement:
 
 ```
 RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly)
@@ -64,14 +63,13 @@ RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequ
 RegisterAction("Nav.PathfindCancelAll", () => navmeshManager.Reload(true));
 ```
 
-`QueryPathBasic` (in `NavmeshManager.cs`) läuft asynchron über den
-NavMesh-Query-Layer (`Query.PathfindMesh`/`PathfindVolume`,
-String-Pulling optional aktiv) und gibt eine reine
-`List<Vector3>` zurück - exakt die Wegpunktliste, die für eine
-Audio-Führung gebraucht wird. Es wird an keiner Stelle `FollowPath.Move()`
-aufgerufen, also bleibt die Bewegung vollständig beim Spieler.
+`QueryPathBasic` (in `NavmeshManager.cs`) runs asynchronously through the
+navmesh query layer (`Query.PathfindMesh`/`PathfindVolume`, string pulling
+optionally active) and returns a plain `List<Vector3>` - exactly the waypoint
+list needed for audio guidance. `FollowPath.Move()` is not called anywhere, so
+movement stays entirely with the player.
 
-Signatur für den Dalamud-Subscriber (analog zu den bestehenden Mustern in
+Signature for the Dalamud subscriber (following the existing patterns in
 `AutoWalkService.cs`):
 
 ```csharp
@@ -79,30 +77,30 @@ ICallGateSubscriber<Vector3, Vector3, bool, List<Vector3>> navPathfind =
     pluginInterface.GetIpcSubscriber<Vector3, Vector3, bool, List<Vector3>>("vnavmesh.Nav.Pathfind");
 ```
 
-`docs/game-api.md` hat diesen Endpunkt bereits als offenen Punkt notiert
-("`Nav.Pathfind(from, to, fly) -> List<Vector3>` (Wegpunktliste!)"), aber
-noch nicht produktiv verdrahtet - dieser Auftrag bestätigt ihn per
-Quellcode und zeigt den konkreten Weg zur Nutzung.
+`docs/game-api.md` has already noted this endpoint as an open item
+("`Nav.Pathfind(from, to, fly) -> List<Vector3>` (waypoint list!)"), but has
+not wired it up productively yet - this piece of work confirms it against the
+source and shows the concrete way to use it.
 
-Wichtig für Re-Routing (Abschnitt 2): `Nav.Pathfind` läuft asynchron
-(`PathfindInProgress`/`PathfindNumQueued` zum Abfragen, ob eine neue
-Anfrage schon fertig ist) - ein erneuter Aufruf während eine Anfrage noch
-läuft muss abgefangen werden, genau wie es `TryStartPath` heute schon für
-`SimpleMove` macht.
+Important for re-routing (section 2): `Nav.Pathfind` runs asynchronously
+(query `PathfindInProgress`/`PathfindNumQueued` to find out whether a new
+request has finished) - calling it again while a request is still running has
+to be caught, exactly as `TryStartPath` already does today for `SimpleMove`.
 
-### Fazit zu Punkt 1
+### Conclusion on point 1
 
-Geht direkt. Kein Umweg über Reflection oder undokumentierte Strukturen
-nötig - `Nav.Pathfind` ist ein offiziell registrierter IPC-Gate im
-Fremdplugin, mit derselben Subscriber-Technik, die das Projekt bereits für
-sechs andere vnavmesh-Endpunkte einsetzt.
+Directly feasible. No detour through reflection or undocumented structures is
+needed - `Nav.Pathfind` is an officially registered IPC gate in the third-party
+plugin, using the same subscriber technique the project already applies to six
+other vnavmesh endpoints.
 
-## 2. Führungs-Konzept: Wegpunkte statt Luftlinie
+## 2. Guidance concept: waypoints instead of a straight line
 
-### Was heute schon existiert (Gehhilfe / "Walk Guide")
+### What already exists today (walk guide)
 
-Die bestehende Gehhilfe in `NavigationService.cs` macht bereits fast alles
-Nötige - nur mit einem einzigen Zielpunkt statt einer Wegpunktliste:
+The existing walk guide in `NavigationService.cs` already does almost
+everything needed - just with a single target point instead of a waypoint
+list:
 
 ```504:537:H:\ff14\FF14Accessibility\Services\NavigationService.cs
     private void WalkGuideFrame(IGameObject player)
@@ -124,252 +122,237 @@ Nötige - nur mit einem einzigen Zielpunkt statt einer Wegpunktliste:
     }
 ```
 
-Das ist heute eine reine Luftlinien-Führung: Der Ton zeigt immer direkt zum
-Endziel, auch wenn dazwischen eine Wand, ein Abhang oder ein Gewässer
-liegt. Genau das soll die Wegpunkt-Führung beheben.
+Today this is pure straight-line guidance: the tone always points directly at
+the final destination, even when a wall, a cliff or a body of water lies in
+between. That is exactly what waypoint guidance is meant to fix.
 
-### Konzept: Wegpunkt-Zustandsmaschine
+### Concept: waypoint state machine
 
-Kernidee: `WalkGuideFrame` bekommt statt eines einzelnen Zielpunkts eine
-Liste `List<Vector3> _pathWaypoints` plus einen Index `_pathIndex`. Ablauf:
+Core idea: instead of a single target point, `WalkGuideFrame` gets a list
+`List<Vector3> _pathWaypoints` plus an index `_pathIndex`. Sequence:
 
-1. Beim Start der Gehhilfe (`ToggleWalkGuide`): `Nav.Pathfind(spielerPos,
-   zielPos, fly:false)` aufrufen (asynchron, `PathfindInProgress`
-   abwarten wie bei `SimpleMove` heute schon üblich).
-2. Jeden Frame: Beacon zeigt auf `_pathWaypoints[_pathIndex]` (nicht mehr
-   aufs Endziel), über dieselbe `BeaconService.Update(relAngle, distance)`-
-   Methode wie heute.
-3. Ist der Spieler näher als ein Ankunftsradius (z. B. 2-3 m, analog zur
-   bestehenden `ArrivalDistance = 3f`) am aktuellen Wegpunkt: Index um
-   eins erhöhen. Beim letzten Wegpunkt gilt der bestehende
-   "Ziel erreicht"-Pfad.
-4. Sprachansage weiterhin alle 2 Sekunden, aber jetzt bezogen auf den
-   Gesamt-Fortschritt ("noch 3 Abschnitte, 45 Meter gesamt" oder einfacher
-   nur Richtung/Distanz zum aktuellen Wegpunkt, siehe Abschnitt 5).
+1. When the walk guide starts (`ToggleWalkGuide`): call
+   `Nav.Pathfind(playerPos, targetPos, fly:false)` (asynchronously, waiting on
+   `PathfindInProgress` as is already customary for `SimpleMove`).
+2. Every frame: the beacon points at `_pathWaypoints[_pathIndex]` (no longer at
+   the final destination), through the same
+   `BeaconService.Update(relAngle, distance)` method as today.
+3. If the player is closer to the current waypoint than an arrival radius
+   (e.g. 2-3 m, analogous to the existing `ArrivalDistance = 3f`): increase the
+   index by one. At the last waypoint the existing "destination reached" path
+   applies.
+4. Speech announcement still every 2 seconds, but now relative to the overall
+   progress ("3 sections left, 45 metres total", or more simply just
+   direction/distance to the current waypoint, see section 5).
 
-Das ist strukturell sehr nah an dem, was vnavmeshs eigener `FollowPath.cs`
-intern tut (Wegpunkt abarbeiten, `Tolerance` für "erreicht", nächster
-Wegpunkt) - nur dass statt `OverrideMovement` unser bestehender
-Beacon/Tolk-Mechanismus die Wegpunkte an den Menschen weitergibt.
+Structurally this is very close to what vnavmesh's own `FollowPath.cs` does
+internally (work through a waypoint, `Tolerance` for "reached", next waypoint) -
+except that instead of `OverrideMovement`, our existing Beacon/Tolk mechanism
+passes the waypoints on to the human.
 
-### Abweichung vom Pfad / Re-Routing
+### Deviation from the path / re-routing
 
-Wenn der Spieler seitlich vom vorgegebenen Pfad abkommt (z. B. weil er der
-Ansage nicht exakt folgt oder ausweicht), zeigt der reine
-"nächster-Wegpunkt-erreicht"-Test irgendwann falsch: Der Spieler kann
-neben dem Pfad an einem Wegpunkt "vorbeischrammen", ohne dass eine
-Ankunft erkannt wird, oder er entfernt sich strukturell vom berechneten
-Weg.
+If the player drifts sideways off the given path (e.g. because they do not
+follow the announcement exactly, or dodge), the plain "next waypoint reached"
+test eventually goes wrong: the player can scrape past a waypoint alongside the
+path without an arrival being detected, or they move structurally away from the
+calculated route.
 
-Zwei ergänzende Prüfungen (beide mit vorhandenen Mitteln umsetzbar, ohne
-neue IPC-Endpunkte):
+Two supplementary checks (both implementable with existing means, without new
+IPC endpoints):
 
-- Lot-Abstand zur aktuellen Wegpunkt-Strecke: Analog zu vnavmeshs eigener
-  `DistanceToLineSegment`-Prüfung in `FollowPath.cs` kann geprüft werden,
-  wie weit der Spieler seitlich von der Linie (vorheriger Wegpunkt →
-  aktueller Wegpunkt) abweicht. Überschreitet das einen Schwellwert
-  (z. B. 5-8 m), gilt der Pfad als "verlassen".
-- Bewegungs-Stillstand wie im bestehenden Auto-Lauf-Wächter
-  (`AutoWalkService.Update`, Positions-Delta < 0,5 m für mehrere Sekunden)
-  kann eine Verkeilung/Blockade erkennen.
+- Perpendicular distance to the current waypoint segment: analogous to
+  vnavmesh's own `DistanceToLineSegment` check in `FollowPath.cs`, one can
+  check how far the player deviates sideways from the line (previous waypoint →
+  current waypoint). If that exceeds a threshold (e.g. 5-8 m), the path counts
+  as "left".
+- Movement standstill as in the existing auto-walk watchdog
+  (`AutoWalkService.Update`, position delta < 0.5 m for several seconds) can
+  detect a snag/blockage.
 
-Bei "Pfad verlassen" wird einfach `Nav.Pathfind` erneut von der aktuellen
-Spielerposition zum unveränderten Endziel aufgerufen und die
-Wegpunktliste ersetzt - kein Sonderfall, dieselbe Funktion wie beim Start.
-Das entspricht genau dem, was der User unter "Re-Routing" meint, und ist
-mit der bereits vorhandenen Async-Best-Practice (`PathfindInProgress`
-prüfen, keine Doppel-Anfrage) machbar.
+On "path left", `Nav.Pathfind` is simply called again from the current player
+position to the unchanged final destination and the waypoint list is replaced -
+no special case, the same function as at the start. That matches exactly what
+the user means by "re-routing", and is feasible with the async best practice
+already present (check `PathfindInProgress`, no duplicate request).
 
-### Fazit zu Punkt 2
+### Conclusion on point 2
 
-Geht, als Erweiterung der bestehenden Gehhilfe (kein neues Feature von
-Grund auf). Größter Umbau: `WalkGuideFrame` von "ein Zielpunkt" auf "Liste
-+ Index" umstellen: Das ist überschaubarer Zustandsmaschinen-Code, keine
-neue Audio- oder IPC-Technik.
+Feasible, as an extension of the existing walk guide (not a new feature from
+scratch). Biggest rework: converting `WalkGuideFrame` from "one target point"
+to "list + index". That is manageable state machine code, no new audio or IPC
+technology.
 
-## 3. Hindernisse: Reicht Wegpunkt-Führung aus?
+## 3. Obstacles: is waypoint guidance enough?
 
-### Statische Hindernisse: ja, das übernimmt das Navmesh schon
+### Static obstacles: yes, the navmesh already handles that
 
-Das Navmesh wird pro Zone einmal aus der Level-Geometrie gebaut
-(`NavmeshBuilder`, gecacht in `NavmeshManager.BuildNavmesh`) und bildet nur
-begehbare Flächen ab. Wände, Klippen, Gebäude, Wasser (je nach
-Zonen-Customization) sind darin schon "ausgespart" - ein Pfad von
-`Nav.Pathfind` führt niemals gegen eine feste Wand. Für stehende
-Umgebungsgeometrie ist die Wegpunkt-Führung daher tatsächlich eine
-vollwertige Hindernis-Umgehung, ohne dass das Plugin selbst irgendetwas
-über Geometrie wissen muss.
+The navmesh is built once per zone from the level geometry (`NavmeshBuilder`,
+cached in `NavmeshManager.BuildNavmesh`) and only represents walkable surfaces.
+Walls, cliffs, buildings, water (depending on zone customisation) are already
+cut out of it - a path from `Nav.Pathfind` never leads into a solid wall. For
+standing environment geometry, waypoint guidance is therefore genuinely a
+full-fledged obstacle avoidance, without the plugin itself having to know
+anything about geometry.
 
-### Dynamische Hindernisse: nein, das kennt das Navmesh nicht
+### Dynamic obstacles: no, the navmesh does not know about those
 
-Das Mesh wird einmal beim Zonenbetreten gebaut und ändert sich danach
-nicht mehr live. Andere Spieler, Monster, NPCs, die gerade im Weg stehen,
-sind für `Nav.Pathfind` unsichtbar - der berechnete Pfad kann mitten durch
-eine Gruppe Monster oder einen anderen Spieler führen. Das ist keine
-Einschränkung, die sich durch bessere Nutzung von vnavmesh beheben lässt;
-sie liegt am Funktionsprinzip des Werkzeugs.
+The mesh is built once on entering the zone and does not change live
+afterwards. Other players, monsters and NPCs currently standing in the way are
+invisible to `Nav.Pathfind` - the calculated path can lead straight through a
+group of monsters or another player. This is not a limitation that better use
+of vnavmesh could fix; it follows from how the tool works.
 
-Realistische Einordnung: Das ist kein neues Problem gegenüber dem
-heutigen Auto-Lauf - der stolpert an genau denselben Stellen (deshalb
-existiert der Stillstands-Wächter in `AutoWalkService`). Beim manuellen
-Laufen ist die Situation für einen blinden Spieler eher LEICHTER als beim
-Auto-Lauf: Er merkt den Bump/Stopp durch die Kollision sofort über die
-normale Spielsteuerung (Charakter bleibt stehen, Bewegungstasten wirken
-nicht mehr weiter) und kann reagieren - er braucht keine Umweg-Erkennung
-per Diagnose-Log wie beim Auto-Lauf.
+Realistic assessment: this is not a new problem compared to today's auto-walk -
+that stumbles in exactly the same places (which is why the standstill watchdog
+exists in `AutoWalkService`). When walking manually the situation is if anything
+EASIER for a blind player than with auto-walk: they notice the bump/stop from
+the collision immediately through the normal game controls (the character stops,
+the movement keys stop taking effect) and can react - they need no detour
+detection via diagnostic log as with auto-walk.
 
-### Sinnvolle Zusatz-Option (kein Navmesh-Thema, sondern ObjectTable)
+### Sensible additional option (not a navmesh topic, but ObjectTable)
 
-Eine echte Nahbereichs-Warnung ("Monster 2 Meter voraus") wäre technisch
-NICHT über vnavmesh lösbar, sondern nur über einen zusätzlichen Scan der
-`ObjectTable` in Blickrichtung (Distanz + Winkel-Kegel vor dem Spieler,
-ähnlich der bereits vorhandenen `CalculateDirection`-Logik). Das ist
-machbar, aber ein eigenständiges Feature losgelöst von der
-Wegpunkt-Führung - siehe Aufwandsschätzung, Komfort-Stufe. Es deckt sich
-mit dem in `docs/verbesserungsvorschlaege.md` bereits skizzierten
-"Objekt-Radar"-Gedanken und sollte nicht mit der eigentlichen
-Pfad-Wegpunkt-Führung vermischt werden.
+A genuine proximity warning ("monster 2 metres ahead") would technically NOT be
+solvable via vnavmesh, but only via an additional scan of the `ObjectTable` in
+the viewing direction (distance + angle cone in front of the player, similar to
+the existing `CalculateDirection` logic). That is feasible, but a standalone
+feature detached from waypoint guidance - see the effort estimate, comfort
+tier. It coincides with the "object radar" idea already sketched in
+`docs/verbesserungsvorschlaege.md` and should not be mixed up with the actual
+path waypoint guidance.
 
-### Fazit zu Punkt 3
+### Conclusion on point 3
 
-Wegpunkt-Führung allein reicht für statische Hindernisse voll aus. Für
-dynamische Hindernisse ist sie prinzipbedingt blind - das ist eine reale,
-aber im Vergleich zum heutigen Auto-Lauf nicht neue Einschränkung, und für
-den MVP tragbar.
+Waypoint guidance alone is fully sufficient for static obstacles. For dynamic
+obstacles it is blind by design - a real limitation, but not a new one compared
+to today's auto-walk, and bearable for the MVP.
 
-## 4. Vertikalität: Sprünge, Erhöhungen, enge Passagen
+## 4. Verticality: jumps, elevations, narrow passages
 
-### Granularität der Wegpunkte
+### Granularity of the waypoints
 
-`Nav.Pathfind` läuft mit aktiviertem String-Pulling
-(`NavmeshManager.UseStringPulling = true`), das heißt: Wegpunkte liegen
-NICHT in festen Abständen, sondern nur dort, wo sich die Richtung ändert
-(Ecken, Kurven, Treppenabsätze). Eine lange gerade Strecke ergibt einen
-einzigen Wegpunkt über zig Meter, eine Treppe oder ein verwinkelter Gang
-erzeugt entsprechend mehr Punkte. Das passt gut zur bestehenden
-Beacon-Logik: Zwischen zwei Wegpunkten übernimmt der kontinuierliche
-Ton/Richtungshinweis die Feinführung, genau wie heute schon bei einem
-einzelnen Fernziel.
+`Nav.Pathfind` runs with string pulling enabled
+(`NavmeshManager.UseStringPulling = true`), which means: waypoints are NOT
+placed at fixed intervals, but only where the direction changes (corners,
+bends, stair landings). A long straight stretch yields a single waypoint across
+dozens of metres, while a staircase or a winding corridor produces
+correspondingly more points. That fits the existing beacon logic well: between
+two waypoints the continuous tone/direction hint takes over the fine guidance,
+exactly as it already does today for a single distant target.
 
-### Höhenunterschiede
+### Height differences
 
-Jeder Wegpunkt ist ein vollständiger `Vector3` (X, Y, Z) - Höhenänderungen
-zwischen zwei aufeinanderfolgenden Wegpunkten lassen sich direkt aus der
-Differenz der Y-Werte ablesen. Konzept: Überschreitet die Y-Differenz
-zwischen aktuellem und nächstem Wegpunkt einen Schwellwert (z. B. ±1,5 m),
-zusätzlich zur Richtungsansage ein kurzes "aufwärts" / "abwärts" bzw.
-"Stufen" einblenden. Das ist reine Vektor-Arithmetik auf bereits
-vorhandenen Daten, kein neuer IPC-Bedarf.
+Every waypoint is a complete `Vector3` (X, Y, Z) - height changes between two
+consecutive waypoints can be read directly from the difference in Y values.
+Concept: if the Y difference between the current and next waypoint exceeds a
+threshold (e.g. ±1.5 m), add a short "upwards" / "downwards" or "steps" on top
+of the direction announcement. That is pure vector arithmetic on data already
+present, no new IPC needed.
 
-### Echte Sprünge (Lücken, Jump-Puzzles)
+### Real jumps (gaps, jump puzzles)
 
-Hier liegt die eigentliche Grenze: vnavmesh bildet nur BEGEHBARE Flächen
-ab. Eine Lücke, die nur per Sprung überwunden werden kann (z. B. manche
-Schatzkarten-Spots, Jump-Puzzles), ist im Mesh in aller Regel NICHT
-verbunden - `Nav.Pathfind` findet dafür schlicht keinen Weg (genau das im
-Auto-Lauf bekannte "kein Weg gefunden", siehe
-`AutoWalkService.BuildNoPathHint`). Eine Sonderbehandlung dafür existiert
-bereits intern in vnavmesh nur für automatisch generierte Sprung-Pfade in
-Dungeons (`Navmesh.AreaId.ClientPath`/`Warp` in `FollowPath.CheckCondition`,
-dort mit automatischer Sprung-Taste für die AUTO-Bewegung) - das gilt
-nicht für frei begehbare Open-World-Lücken und ist für die manuelle
-Führung ohnehin irrelevant, weil der Mensch selbst springt.
+Here lies the actual limit: vnavmesh only represents WALKABLE surfaces. A gap
+that can only be crossed by jumping (e.g. some treasure map spots, jump
+puzzles) is as a rule NOT connected in the mesh - `Nav.Pathfind` simply finds
+no route for it (exactly the "no path found" familiar from auto-walk, see
+`AutoWalkService.BuildNoPathHint`). Special handling for that already exists
+internally in vnavmesh only for automatically generated jump paths in dungeons
+(`Navmesh.AreaId.ClientPath`/`Warp` in `FollowPath.CheckCondition`, there with
+an automatic jump key for AUTO movement) - that does not apply to freely
+walkable open-world gaps and is irrelevant for manual guidance anyway, because
+the human jumps themselves.
 
-### Fazit zu Punkt 4
+### Conclusion on point 4
 
-Geht mit Einschränkung: Normale Geländestufen, Treppen, Rampen sind über
-die Y-Differenz zwischen Wegpunkten gut ansagbar. Echte Sprung-Lücken
-bleiben wie beim heutigen Auto-Lauf unerreichbar - das ist eine Grenze von
-vnavmesh selbst, keine Lücke in unserer Umsetzung.
+Feasible with a limitation: normal terrain steps, stairs and ramps are readily
+announceable via the Y difference between waypoints. Real jump gaps remain
+unreachable just as with today's auto-walk - that is a limit of vnavmesh
+itself, not a gap in our implementation.
 
-## 5. UX-Skizze
+## 5. UX sketch
 
-### Tastenbelegung: keine neue Taste nötig
+### Key bindings: no new key needed
 
-Der Umschalter zwischen Auto-Lauf und manuell geführtem Laufen existiert
-bereits: `Numpad3` (Auto-Lauf, `AutoWalkService.Toggle`) und
-`Umschalt+Numpad3` (Gehhilfe, `NavigationService.ToggleWalkGuide`). Die
-Wegpunkt-Führung ist konzeptionell eine Erweiterung der bestehenden
-Gehhilfe (nicht ein dritter Modus), daher bleibt die Tastenbelegung aus
-`Configuration.cs` unverändert:
+The toggle between auto-walk and manually guided walking already exists:
+`Numpad3` (auto-walk, `AutoWalkService.Toggle`) and `Shift+Numpad3` (walk
+guide, `NavigationService.ToggleWalkGuide`). Waypoint guidance is conceptually
+an extension of the existing walk guide (not a third mode), so the key bindings
+from `Configuration.cs` stay unchanged:
 
-- `N` / `Umschalt+N`: Objekt bzw. Wegpunkt/Questziel auswählen (wie
-  bisher).
-- `Numpad3`: Auto-Lauf (Spiel bewegt sich selbst).
-- `Umschalt+Numpad3`: Gehhilfe an/aus - ab jetzt pfadbasiert statt
-  Luftlinie.
-- `F`: zum aktuellen (Zwischen-)Ziel hindrehen (bestehende Spieltaste,
-  unverändert nutzbar).
-- `W`/`R`: manuell laufen/rennen (bestehende Spieltasten, unverändert).
+- `N` / `Shift+N`: select an object or waypoint/quest target (as before).
+- `Numpad3`: auto-walk (the game moves by itself).
+- `Shift+Numpad3`: walk guide on/off - from now on path-based instead of
+  straight-line.
+- `F`: turn towards the current (intermediate) target (existing game key, still
+  usable unchanged).
+- `W`/`R`: walk/run manually (existing game keys, unchanged).
 
-Optional könnte man später eine zusätzliche Taste für "harte Luftlinie
-statt Pfad erzwingen" anbieten (Debug-/Fallback-Fall), das ist aber kein
-MVP-Bestandteil.
+Optionally one could later offer an additional key for "force a hard straight
+line instead of the path" (debug/fallback case), but that is not part of the
+MVP.
 
-### Was der Nutzer Schritt für Schritt hört
+### What the user hears, step by step
 
-1. `N` mehrfach: Ziel wählen (NPC, Wegpunkt, Questziel - wie heute).
-2. `Umschalt+Numpad3`: Gehhilfe an. Ansage z. B. "Gehhilfe an: Aetheryt
-   Limsa Lominsa, Weg wird berechnet." Kurze Pause während
-   `Nav.Pathfind` asynchron rechnet (typischerweise deutlich unter einer
-   Sekunde für normale Zonen-Distanzen).
-3. Beacon-Ton startet, gerichtet auf den ERSTEN Wegpunkt (nicht das
-   Endziel) - Tonhöhe/Pan wie gewohnt aus `BeaconService`.
-4. Der Nutzer dreht sich per `F` oder Gehör zum Ton hin, läuft mit `W`.
-5. Alle 2 Sekunden Sprachansage zum aktuellen Wegpunkt: "12 Meter,
-   geradeaus." (identisch zum heutigen Format, nur bezogen auf den
-   Zwischenpunkt statt das Endziel.)
-6. Bei größerem Höhenunterschied zum nächsten Wegpunkt zusätzlich:
-   "Weg geht jetzt aufwärts."
-7. Erreicht der Nutzer den aktuellen Wegpunkt (Ankunftsradius), wechselt
-   der Beacon automatisch, leise/ohne Sprachunterbrechung, auf den
-   nächsten Wegpunkt - idealerweise mit einem kurzen, unaufdringlichen
-   Übergangston aus `CueService` (analog zum bestehenden Ziel-Ton), damit
-   der Nutzer den Wechsel bemerkt, ohne dass eine ganze Ansage
-   dazwischenfunkt.
-8. Weicht der Nutzer merklich vom Pfad ab: kurze Ansage "Weg wird neu
-   berechnet" und stiller Wechsel auf die neue Wegpunktliste (Beacon
-   zeigt sofort auf den neuen ersten Punkt).
-9. Am letzten Wegpunkt: bestehende Ankunfts-Ansage "Ziel erreicht:
-   <Name>." (unverändert aus `WalkGuideFrame`).
+1. `N` repeatedly: choose a target (NPC, waypoint, quest target - as today).
+2. `Shift+Numpad3`: walk guide on. Announcement e.g. "Walk guide on: Aetheryte
+   Limsa Lominsa, calculating route." Short pause while `Nav.Pathfind`
+   calculates asynchronously (typically well under a second for normal
+   in-zone distances).
+3. The beacon tone starts, directed at the FIRST waypoint (not the final
+   destination) - pitch/pan as usual from `BeaconService`.
+4. The user turns towards the tone with `F` or by ear, and walks with `W`.
+5. Every 2 seconds a speech announcement about the current waypoint: "12 metres,
+   straight ahead." (identical to today's format, only relative to the
+   intermediate point instead of the final destination.)
+6. On a larger height difference to the next waypoint, additionally:
+   "The path now goes upwards."
+7. When the user reaches the current waypoint (arrival radius), the beacon
+   switches automatically, quietly and without interrupting speech, to the next
+   waypoint - ideally with a short, unobtrusive transition tone from
+   `CueService` (analogous to the existing destination tone), so the user
+   notices the switch without a whole announcement cutting in.
+8. If the user deviates noticeably from the path: a short announcement
+   "recalculating route" and a silent switch to the new waypoint list (the
+   beacon points at the new first point immediately).
+9. At the last waypoint: the existing arrival announcement "destination
+   reached: <name>." (unchanged from `WalkGuideFrame`).
 
-## 6. Aufwandsschätzung
+## 6. Effort estimate
 
-### MVP (Kernfunktion, spielbar)
+### MVP (core function, playable)
 
-- IPC-Subscriber für `Nav.Pathfind` (und `Nav.PathfindInProgress`) analog
-  zu den sechs bestehenden vnavmesh-Subscribern ergänzen.
-- `NavigationService.WalkGuideFrame` von Einzelziel auf Wegpunktliste +
-  Index umbauen (Ankunftsradius pro Wegpunkt, Weiterschalten,
-  Endziel-Erkennung wie gehabt).
-- Re-Pathfind-Auslöser: Lot-Abstand zur aktuellen Strecke (einfache
-  Vektor-Formel, analog zu vnavmeshs eigener `DistanceToLineSegment`) plus
-  Wiederverwendung der bestehenden Stillstands-Erkennung.
-- Bestehende Sprach-/Ton-Bausteine (`BeaconService`, `TolkService`)
-  unverändert weiterverwenden, nur mit neuem Zielpunkt pro Frame gefüttert.
-- Test an mehreren bekannten Strecken (gerade, um die Ecke, Treppe,
-  bekannte Bridge-Trap-Stelle aus dem Auto-Lauf-Log).
+- Add IPC subscribers for `Nav.Pathfind` (and `Nav.PathfindInProgress`)
+  analogous to the six existing vnavmesh subscribers.
+- Rework `NavigationService.WalkGuideFrame` from a single target to a waypoint
+  list + index (arrival radius per waypoint, advancing, final-destination
+  detection as before).
+- Re-pathfind trigger: perpendicular distance to the current segment (simple
+  vector formula, analogous to vnavmesh's own `DistanceToLineSegment`) plus
+  reuse of the existing standstill detection.
+- Keep reusing the existing speech/tone building blocks (`BeaconService`,
+  `TolkService`) unchanged, just fed with a new target point per frame.
+- Test on several known routes (straight, around a corner, stairs, the known
+  bridge-trap spot from the auto-walk log).
 
-Einschätzung: kleiner bis mittlerer Aufwand - die Async-IPC-Handhabung,
-die Beacon-Logik und die Stillstands-Erkennung existieren bereits im
-Projekt und müssen "nur" umverdrahtet werden, nicht neu erfunden.
+Assessment: small to medium effort - the async IPC handling, the beacon logic
+and the standstill detection already exist in the project and "only" need
+rewiring, not reinventing.
 
-### Komfort (Ausbaustufen danach)
+### Comfort (later expansion tiers)
 
-- Höhenansage bei Wegpunkt-Übergängen ("aufwärts"/"abwärts"/"Stufen") aus
-  der Y-Differenz zwischen Wegpunkten.
-- Kurzer Übergangston beim Wegpunktwechsel über `CueService` statt reiner
-  Sprachansage (weniger Sprach-Unterbrechungen unterwegs).
-- Fortschrittsansage auf Wunsch ("noch 3 Abschnitte / 80 Meter gesamt").
-- Konfigurierbare Ankunftsradien je nach Zielart (analog zu den
-  bestehenden `AutoWalkPlaceStopRange`/`AutoWalkTransitionStopRange` in
-  `Configuration.cs`).
-- Eigenständiges, separates Feature (nicht Teil der Pfad-Führung selbst):
-  Nahbereichs-Warnung vor Personen/Monstern in Blickrichtung über
-  `ObjectTable`-Scan - mittlerer Aufwand, siehe auch der verwandte
-  Vorschlag in `docs/verbesserungsvorschlaege.md`
-  ("Mehrere gleichzeitige Signaturtöne").
-- Wärmer/Kälter-Zusatzsignal zur Pfadtreue (kontinuierliches Feedback,
-  wie nah der Spieler an der berechneten Linie bleibt, nicht nur am
-  Wegpunkt) - eher ein Feinschliff als eine Notwendigkeit, da der
-  Lot-Abstand-Check aus dem MVP bereits die Grundsicherung übernimmt.
+- Height announcement at waypoint transitions ("upwards"/"downwards"/"steps")
+  from the Y difference between waypoints.
+- A short transition tone on waypoint change via `CueService` instead of a plain
+  speech announcement (fewer speech interruptions along the way).
+- Progress announcement on request ("3 sections / 80 metres total left").
+- Configurable arrival radii by target type (analogous to the existing
+  `AutoWalkPlaceStopRange`/`AutoWalkTransitionStopRange` in `Configuration.cs`).
+- A standalone, separate feature (not part of the path guidance itself):
+  proximity warning about people/monsters in the viewing direction via an
+  `ObjectTable` scan - medium effort, see also the related suggestion in
+  `docs/verbesserungsvorschlaege.md` ("Several simultaneous signature tones").
+- A warmer/colder supplementary signal for path fidelity (continuous feedback
+  on how close the player stays to the calculated line, not just to the
+  waypoint) - more of a polish item than a necessity, since the perpendicular
+  distance check from the MVP already provides the basic safeguard.

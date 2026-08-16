@@ -1,415 +1,400 @@
-# Architektur-Konzept: Grafischer Installer für FF14Accessibility
+# Architecture concept: graphical installer for FF14Accessibility
 
-Status: Konzept, keine Implementierung. Grundlage für die Entscheidung, was als
-Nächstes gebaut wird.
+Status: concept, no implementation. Basis for deciding what gets built next.
 
-## 0. Ausgangslage (Ist-Zustand geprüft)
+## 0. Starting point (current state verified)
 
-Der bestehende `Installer/` (`FF14AccessibilityInstaller.csproj`, `Program.cs`)
-ist eine **reine Konsolenanwendung** (.NET 8, self-contained single-file
-win-x64 EXE, ca. 68 MB inkl. Runtime). Kein WPF/WinForms-Code vorhanden.
+The existing `Installer/` (`FF14AccessibilityInstaller.csproj`, `Program.cs`)
+is a **pure console application** (.NET 8, self-contained single-file win-x64
+EXE, about 68 MB including the runtime). No WPF/WinForms code present.
 
-Was er heute schon kann (wiederverwendbar):
-- Erkennt, ob `%AppData%\XIVLauncher` existiert; bietet sonst den Download
-  des offiziellen XIVLauncher-Setups an (`Process.Start`, `UseShellExecute`).
-- Kopiert mitgelieferte Plugin-Dateien aus einem `plugin`-Unterordner neben
-  der EXE nach `%AppData%\XIVLauncher\devPlugins\FF14Accessibility`.
-- Bietet vnavmesh-Download an (aktuell **hart auf Version 1.2.3.8 gepinnt**,
+What it can already do today (reusable):
+- Detects whether `%AppData%\XIVLauncher` exists; otherwise offers to download
+  the official XIVLauncher setup (`Process.Start`, `UseShellExecute`).
+- Copies bundled plugin files from a `plugin` subfolder next to the EXE into
+  `%AppData%\XIVLauncher\devPlugins\FF14Accessibility`.
+- Offers a vnavmesh download (currently **hard-pinned to version 1.2.3.8**,
   URL `https://puni.sh/api/plugins/download/48/vnavmesh/versions/1.2.3.8/...`)
-  und entpackt es nach `devPlugins\vnavmesh`.
-- Patcht `dalamudConfig.json` direkt: trägt DLL-Pfade in
-  `DevPluginLoadLocations` ein und setzt `IsEnabled=true` in den
-  `DefaultProfile.Plugins`-Einträgen. Macht vorher ein `.bak-installer`-Backup,
-  schreibt BOM-frei (wichtig, siehe unten).
-- Nutzt `Newtonsoft.Json` mit `JObject`, weil Dalamud selbst
-  `TypeNameHandling.All` verwendet (`$type`-Felder) — das muss beim
-  Round-Trip erhalten bleiben.
-- Kein Update-Check gegen GitHub Releases eingebaut (Plugin-Dateien müssen
-  bereits im `plugin`-Ordner neben der EXE liegen — der Installer selbst lädt
-  aktuell **nichts** vom eigenen Repo).
-- Kein Selbst-Update.
+  and unpacks it into `devPlugins\vnavmesh`.
+- Patches `dalamudConfig.json` directly: enters DLL paths into
+  `DevPluginLoadLocations` and sets `IsEnabled=true` in the
+  `DefaultProfile.Plugins` entries. Makes a `.bak-installer` backup
+  beforehand, writes without a BOM (important, see below).
+- Uses `Newtonsoft.Json` with `JObject`, because Dalamud itself uses
+  `TypeNameHandling.All` (`$type` fields) — that has to survive the round trip.
+- No update check against GitHub releases built in (plugin files must already
+  be in the `plugin` folder next to the EXE — the installer itself currently
+  downloads **nothing** from its own repo).
+- No self-update.
 
-Das ist eine solide Funktionsbasis (devPlugins-Kopie + Config-Patch +
-XIVLauncher-Erkennung funktionieren erwiesenermaßen). Was fehlt: echte GUI,
-Update-Check gegen GitHub Releases für **beide** Plugins, robustere
-vnavmesh-Anbindung.
+That is a solid functional base (devPlugins copy + config patch + XIVLauncher
+detection demonstrably work). What is missing: a real GUI, an update check
+against GitHub releases for **both** plugins, and a more robust vnavmesh
+connection.
 
-Verifiziert: `https://puni.sh/api/repository/veyn` liefert aktuell ein
-gültiges JSON-Array mit vnavmesh drin (`InternalName: "vnavmesh"`,
-`DownloadLinkInstall`/`DownloadLinkUpdate` zeigen auf
-`puni.sh/api/plugins/download/48/vnavmesh/versions/<version>/...`). Das ist
-die offizielle veyn/xan_0-Distribution, kein Fake.
-
----
-
-## 1. Framework-Wahl: WinForms statt WPF
-
-**Empfehlung: WinForms**, self-contained single-file .NET 8 EXE.
-
-Begründung:
-- WinForms-Standardcontrols (`Label`, `Button`, `ProgressBar`, `ListBox`)
-  setzen automatisch die klassischen Win32/UIA-Properties (Name, Role,
-  LabelledBy). NVDA/JAWS lesen sie ohne Zusatzaufwand korrekt vor — das ist
-  seit Jahrzehnten ausgereift.
-- WPF hat zwar ebenfalls UIA-Unterstützung, aber deutlich mehr Stellen, an
-  denen man es kaputt machen kann (Custom-Templates, Styles ohne
-  `AutomationProperties.Name`, eigene Controls ohne `AutomationPeer`). Für ein
-  kleines, funktionales Tool ist der Zusatzaufwand nicht gerechtfertigt.
-- Tab-Reihenfolge (`TabIndex`), Fokus-Handling und Standard-Dialoge
-  (`MessageBox`) sind in WinForms trivial korrekt zu bekommen.
-- Team-Kontext: Das bestehende Projekt ist schon .NET/C#, kein UI-Vorwissen
-  in WPF/XAML nötig — WinForms-Code-behind ist näher am bisherigen
-  Konsolen-Stil (imperativ, wenig Boilerplate).
-
-Alternative WPF: nur sinnvoll, wenn später umfangreichere/optisch anspruchsvollere
-UI gewünscht ist. Für "ein Fenster mit Fortschrittsanzeige, Log-Liste, ein paar
-Buttons" ist das Overkill und erhöht das Risiko screenreader-unfreundlicher
-Stellen.
-
-**Self-contained Single-File EXE:** ja, beibehalten wie im bestehenden
-Installer. Zielgruppe hat keine Techniknkenntnisse — "lade EXE, doppelklick"
-muss ohne .NET-Runtime-Installation funktionieren. Größe (~65-70 MB) ist
-unkritisch, das ist ein einmaliger Download für ein Barrierefreiheits-Tool,
-kein wiederholter Prozess. `PublishTrimmed` würde die Größe drücken, aber
-Trimming ist riskant bei Reflection-nutzenden Bibliotheken (Newtonsoft.Json)
-— nicht empfohlen ohne ausgiebige Tests.
-
-### Screenreader-Anforderungen konkret (WinForms)
-
-- Jedes Eingabe-/Button-Control braucht `Text` oder `AccessibleName` gesetzt.
-- `TabIndex` durchgängig und logisch (0, 1, 2, … in Lesereihenfolge).
-- Fortschritt: **kein** reines `ProgressBar`-Prozent-Update ohne Text-Pendant.
-  Ein begleitendes `Label` mit `AccessibleRole = StatusText` und
-  Live-Text-Update ("Lade Plugin herunter... 40 %") — WinForms-Labels lösen
-  bei Textänderung automatisch `LiveRegion`-ähnliches Verhalten über die
-  Standard-Automation aus, wenn der Fokus dort liegt oder man
-  `Label.AccessibleName` aktiv nachzieht. Sicherer: zusätzlich dieselben
-  Meldungen in eine fokussierbare `ListBox`/`TextBox` (read-only, Mehrzeilig)
-  schreiben, die der Nutzer mit Pfeiltasten durchgehen kann — das ist die
-  robusteste Lösung, weil sie nicht von Live-Region-Timing abhängt.
-- Keine Owner-Draw-Controls, keine reinen GDI+-Zeichnungen ohne
-  Text-Alternative.
-- Reihenfolge: Fenster öffnet mit Fokus auf dem ersten sinnvollen Element
-  (z. B. "Installieren"-Button oder Status-Liste), nicht auf dem Fenster
-  selbst.
-- Modale Dialoge (`MessageBox.Show`) sind bereits gut screenreader-tauglich
-  (Standard-Win32) — für Ja/Nein-Abfragen (z. B. "vnavmesh jetzt
-  einrichten?") genügt das, kein Custom-Dialog nötig.
+Verified: `https://puni.sh/api/repository/veyn` currently returns a valid JSON
+array with vnavmesh in it (`InternalName: "vnavmesh"`,
+`DownloadLinkInstall`/`DownloadLinkUpdate` point at
+`puni.sh/api/plugins/download/48/vnavmesh/versions/<version>/...`). That is the
+official veyn/xan_0 distribution, not a fake.
 
 ---
 
-## 2. "Alles Nötige" – XIVLauncher, Dalamud, vnavmesh
+## 1. Framework choice: WinForms instead of WPF
 
-### 2.1 XIVLauncher/Dalamud-Erkennung
+**Recommendation: WinForms**, self-contained single-file .NET 8 EXE.
 
-Wie im bestehenden Installer: Prüfung auf
-`%AppData%\XIVLauncher` (Ordner) bzw. genauer auf
-`%AppData%\XIVLauncher\dalamudConfig.json` als Nachweis, dass Dalamud
-mindestens einmal gelaufen ist.
+Reasoning:
+- WinForms standard controls (`Label`, `Button`, `ProgressBar`, `ListBox`)
+  automatically set the classic Win32/UIA properties (Name, Role, LabelledBy).
+  NVDA/JAWS read them correctly with no extra effort — that has been mature for
+  decades.
+- WPF does have UIA support too, but considerably more places where you can
+  break it (custom templates, styles without `AutomationProperties.Name`,
+  custom controls without an `AutomationPeer`). For a small, functional tool the
+  extra effort is not justified.
+- Tab order (`TabIndex`), focus handling and standard dialogs (`MessageBox`)
+  are trivial to get right in WinForms.
+- Team context: the existing project is already .NET/C#, no prior UI knowledge
+  of WPF/XAML needed — WinForms code-behind is closer to the existing console
+  style (imperative, little boilerplate).
 
-**Fehlt XIVLauncher komplett:** Hinweis + Download-Link anbieten
+WPF as an alternative: only worthwhile if a more extensive/visually demanding
+UI is wanted later. For "one window with a progress display, a log list and a
+few buttons" it is overkill and increases the risk of screen-reader-unfriendly
+spots.
+
+**Self-contained single-file EXE:** yes, keep it as in the existing installer.
+The target audience has no technical knowledge — "download the EXE,
+double-click" has to work without installing a .NET runtime. The size
+(~65-70 MB) is uncritical; this is a one-off download for an accessibility
+tool, not a repeated process. `PublishTrimmed` would cut the size, but trimming
+is risky with libraries that use reflection (Newtonsoft.Json) — not recommended
+without extensive testing.
+
+### Screen reader requirements in concrete terms (WinForms)
+
+- Every input/button control needs `Text` or `AccessibleName` set.
+- `TabIndex` set consistently and logically (0, 1, 2, … in reading order).
+- Progress: **no** bare `ProgressBar` percentage update without a text
+  counterpart. An accompanying `Label` with `AccessibleRole = StatusText` and a
+  live text update ("Downloading plugin... 40 %") — on a text change WinForms
+  labels automatically trigger `LiveRegion`-like behaviour through the standard
+  automation, if focus is there or you actively update `Label.AccessibleName`.
+  Safer: additionally write the same messages into a focusable
+  `ListBox`/`TextBox` (read-only, multiline) that the user can step through with
+  the arrow keys — that is the most robust solution, because it does not depend
+  on live-region timing.
+- No owner-draw controls, no bare GDI+ drawing without a text alternative.
+- Order: the window opens with focus on the first meaningful element (e.g. the
+  "Install" button or the status list), not on the window itself.
+- Modal dialogs (`MessageBox.Show`) are already screen-reader-friendly
+  (standard Win32) — for yes/no questions (e.g. "set up vnavmesh now?") that is
+  enough, no custom dialog needed.
+
+---
+
+## 2. "Everything needed" – XIVLauncher, Dalamud, vnavmesh
+
+### 2.1 XIVLauncher/Dalamud detection
+
+As in the existing installer: check for `%AppData%\XIVLauncher` (folder), or
+more precisely for `%AppData%\XIVLauncher\dalamudConfig.json` as proof that
+Dalamud has run at least once.
+
+**XIVLauncher missing entirely:** show a note and offer a download link
 (`https://github.com/goatcorp/FFXIVQuickLauncher/releases/latest/download/Setup.exe`),
-NICHT automatisch mitinstallieren/silent ausführen. Begründung:
-- XIVLauncher-Setup ist ein interaktiver Wizard (Login, Spielpfad-Wahl,
-  Dalamud-Opt-in) — das lässt sich nicht sinnvoll unattended durchführen,
-  ohne Login-Daten des Nutzers zu verarbeiten (Sicherheits-/Vertrauensrisiko,
-  das ein Drittanbieter-Tool nicht tragen sollte).
-- Der bestehende Ansatz (Setup herunterladen, GUI-Setup starten, Nutzer bittet
-  danach erneut auszuführen) ist der richtige, pragmatische Mittelweg.
-- Wichtig für die GUI-Version: klare Ansage, dass der Nutzer nach dem
-  XIVLauncher-Setup **einmal einloggen, Dalamud aktivieren und das Spiel
-  einmal starten** muss, bevor der Installer weitermachen kann (weil
-  `dalamudConfig.json` erst dann entsteht bzw. die Plugin-Profile darin
-  angelegt werden).
+do NOT install it automatically/run it silently. Reasoning:
+- The XIVLauncher setup is an interactive wizard (login, game path selection,
+  Dalamud opt-in) — that cannot sensibly be run unattended without processing
+  the user's login data (a security/trust risk a third-party tool should not
+  take on).
+- The existing approach (download the setup, launch the GUI setup, ask the user
+  to run it again afterwards) is the right, pragmatic middle ground.
+- Important for the GUI version: state clearly that after the XIVLauncher setup
+  the user has to **log in once, enable Dalamud, and start the game once**
+  before the installer can continue (because `dalamudConfig.json` is only
+  created then, and the plugin profiles inside it are only laid down then).
 
-**Dalamud noch nie gestartet** (XIVLauncher da, aber `dalamudConfig.json`
-fehlt): dasselbe Problem, gleiche Lösung — Text-Hinweis, kein automatisches
-Eingreifen.
+**Dalamud never started** (XIVLauncher present, but `dalamudConfig.json`
+missing): same problem, same solution — a text note, no automatic
+intervention.
 
-### 2.2 vnavmesh-Distribution und Robustheit
+### 2.2 vnavmesh distribution and robustness
 
-Verifiziert über `puni.sh/api/repository/veyn`: vnavmesh wird offiziell über
-das **puni.sh Third-Party-Repo** von veyn/xan_0 verteilt, mit versionierten
-Download-Links (`.../versions/<version>/install/latest.zip`).
+Verified via `puni.sh/api/repository/veyn`: vnavmesh is officially distributed
+through veyn/xan_0's **puni.sh third-party repo**, with versioned download
+links (`.../versions/<version>/install/latest.zip`).
 
-**Zwei Wege, wie der Installer vnavmesh "automatisch einrichtet":**
+**Two ways for the installer to "set up vnavmesh automatically":**
 
-**Weg A — DevPlugin-Kopie (wie jetzt im bestehenden Installer):**
-Direkter Download der ZIP von puni.sh, Entpacken nach
-`devPlugins\vnavmesh`, Eintrag in `DevPluginLoadLocations` +
-`IsEnabled=true` im Profil.
-- Vorteil: funktioniert genauso robust/direkt wie beim eigenen Plugin,
-  keine Abhängigkeit von Dalamuds interner Update-Logik für Drittrepos.
-- Nachteil: Der Installer muss selbst wissen, welche vnavmesh-Version aktuell
-  ist (aktuell im Code hart gepinnt auf `1.2.3.8`) — sonst bekommt der Nutzer
-  nie automatisch vnavmesh-Updates, außer er startet den FF14Accessibility-
-  Installer erneut UND der Installer prüft dabei aktiv gegen puni.sh nach der
-  neuesten Version.
-- Wird vnavmesh nie über Dalamuds eigenen Mechanismus verwaltet, sieht der
-  Nutzer es auch nicht im normalen `/xlplugins`-Fenster als "verwaltetes"
-  Plugin — kosmetisch, aber erwähnenswert.
+**Route A — devPlugin copy (as in the existing installer today):**
+Direct download of the ZIP from puni.sh, unpack into `devPlugins\vnavmesh`,
+entry in `DevPluginLoadLocations` + `IsEnabled=true` in the profile.
+- Advantage: works just as robustly/directly as for our own plugin, no
+  dependency on Dalamud's internal update logic for third-party repos.
+- Disadvantage: the installer has to know for itself which vnavmesh version is
+  current (currently hard-pinned in code to `1.2.3.8`) — otherwise the user
+  never gets vnavmesh updates automatically, unless they run the
+  FF14Accessibility installer again AND the installer actively checks puni.sh
+  for the latest version while doing so.
+- If vnavmesh is never managed through Dalamud's own mechanism, the user also
+  does not see it as a "managed" plugin in the normal `/xlplugins` window —
+  cosmetic, but worth mentioning.
 
-**Weg B — Third-Party-Repo-Eintrag (`ThirdRepoList` in dalamudConfig.json) +
-Dalamud lädt/aktualisiert vnavmesh selbst:**
-Eintrag `https://puni.sh/api/repository/veyn` in
-`config.ThirdRepoList` (Liste von Objekten
+**Route B — third-party repo entry (`ThirdRepoList` in dalamudConfig.json) +
+Dalamud downloads/updates vnavmesh itself:**
+Entry `https://puni.sh/api/repository/veyn` in `config.ThirdRepoList` (a list
+of objects
 `{"$type": "Dalamud.Configuration.ThirdPartyRepoSettings, Dalamud", "Url": "...", "IsEnabled": true}`
-— verifiziert per Dalamud-Quellcode, dort `List<ThirdPartyRepoSettings> ThirdRepoList`).
-Dalamud zieht darüber künftig alle Updates für vnavmesh selbst.
-- Vorteil: Für vnavmesh-Updates ist danach kein extra Installer-Lauf mehr
-  nötig — Dalamuds eigener Auto-Update-Mechanismus (`AutoUpdateBehavior`,
-  standardmäßig "nur benachrichtigen", kann Dalamud-seitig auf "alle
-  aktualisieren" gestellt werden) übernimmt.
-- Nachteil: Die eigentliche Installation eines Plugins aus einem Third-Repo
-  muss regulär trotzdem einmal im Dalamud-Plugin-Installer (ImGui-Fenster,
-  `/xlplugins`) angeklickt werden — dafür gibt es **keinen** dokumentierten,
-  offiziellen Weg, das programmatisch von außen (aus dem Installer-Prozess)
-  auszulösen. Genau das war der ursprüngliche Grund, warum das bestehende
-  Projekt den DevPlugin-Weg gewählt hat (ImGui ist für blinde Nutzer nicht
-  bedienbar).
-- `ThirdRepoSpeedbumpDismissed` (ein Bool in der Config) muss ebenfalls auf
-  `true` gesetzt werden, sonst zeigt Dalamud beim ersten Öffnen der
-  Experimental-Tab einen Warndialog (wieder ImGui, wieder nicht
-  screenreader-bedienbar) — ließe sich vom Installer mitsetzen, ändert aber
-  nichts daran, dass die Erstinstallation selbst weiter ein ImGui-Klick wäre.
+— verified against the Dalamud source, where it is
+`List<ThirdPartyRepoSettings> ThirdRepoList`). Dalamud then pulls all future
+updates for vnavmesh itself.
+- Advantage: after that, no extra installer run is needed for vnavmesh updates
+  — Dalamud's own auto-update mechanism (`AutoUpdateBehavior`, "notify only" by
+  default, can be set to "update all" on the Dalamud side) takes over.
+- Disadvantage: the actual installation of a plugin from a third-party repo
+  still has to be clicked once in the Dalamud plugin installer (ImGui window,
+  `/xlplugins`) — and there is **no** documented, official way to trigger that
+  programmatically from outside (from the installer process). That was exactly
+  the original reason the existing project chose the devPlugin route (ImGui is
+  not operable for blind users).
+- `ThirdRepoSpeedbumpDismissed` (a bool in the config) also has to be set to
+  `true`, otherwise Dalamud shows a warning dialog the first time the
+  experimental tab is opened (again ImGui, again not screen-reader operable) —
+  the installer could set that too, but it does not change the fact that the
+  initial installation itself would still be an ImGui click.
 
-**Empfehlung: Weg A (DevPlugin-Kopie) für vnavmesh beibehalten, aber
-versionsdynamisch statt hart gepinnt.** Begründung: Es passt zur
-Kernanforderung "kein ImGui-Klick nötig". Der Installer ruft dazu
-`https://puni.sh/api/repository/veyn` ab (funktioniert wie o.g. verifiziert),
-sucht den Eintrag mit `InternalName == "vnavmesh"`, liest
-`DownloadLinkInstall`/`DownloadLinkUpdate` und `AssemblyVersion` heraus und
-lädt darüber die jeweils neueste Version — dieselbe Update-Logik wie beim
-eigenen Plugin, nur eine andere Quelle. Damit verschwindet die
-hartkodierte Versionsnummer.
+**Recommendation: keep route A (devPlugin copy) for vnavmesh, but
+version-dynamic instead of hard-pinned.** Reasoning: it fits the core
+requirement "no ImGui click needed". For that the installer fetches
+`https://puni.sh/api/repository/veyn` (works as verified above), looks for the
+entry with `InternalName == "vnavmesh"`, reads out
+`DownloadLinkInstall`/`DownloadLinkUpdate` and `AssemblyVersion` and downloads
+whichever version is newest through that — the same update logic as for our own
+plugin, just a different source. That gets rid of the hard-coded version number.
 
-**Zusätzlich** kann der Installer optional (nicht Pflicht, aber sinnvolle
-Ergänzung) den Third-Repo-Eintrag in `ThirdRepoList` mitsetzen, damit
-sehende Helfer/fortgeschrittene Nutzer vnavmesh auch regulär über
-`/xlplugins` sehen und verwalten können — das ist ein reiner Zusatznutzen,
-ersetzt aber nicht Weg A als primären, barrierefrei nutzbaren Pfad.
+**Additionally** the installer can optionally (not mandatory, but a sensible
+supplement) also set the third-party repo entry in `ThirdRepoList`, so that
+sighted helpers/advanced users can see and manage vnavmesh through `/xlplugins`
+in the normal way — that is purely a bonus, and does not replace route A as the
+primary, accessibly usable path.
 
 ---
 
-## 3. Eigenes Plugin: DevPlugin-Kopie vs. Custom-Repo
+## 3. Our own plugin: devPlugin copy vs. custom repo
 
-Aktuell: `repo.json` (im Projekt-Root) existiert bereits als Custom-Repo-
-Manifest, zeigt per `DownloadLinkInstall`/`DownloadLinkUpdate` auf
-`.../releases/latest/download/latest.zip`. DalamudPackager erzeugt beim
-Release-Build (Verifiziert über README des Pakets) selbst schon einen
-Manifest+`latest.zip` im Output — das für ein PR in ein offizielles Repo
-gedacht ist, aber genauso als eigenes Custom-Repo-JSON weiterverwendbar ist.
+Currently: `repo.json` (in the project root) already exists as a custom repo
+manifest, pointing via `DownloadLinkInstall`/`DownloadLinkUpdate` at
+`.../releases/latest/download/latest.zip`. On a release build DalamudPackager
+already produces a manifest + `latest.zip` in the output itself (verified via
+the package README) — that is intended for a PR into an official repo, but is
+equally reusable as our own custom repo JSON.
 
-**Analyse:**
-- Ein Custom-Repo (Weg B, wie oben für vnavmesh beschrieben) hätte für das
-  **eigene** Plugin denselben Showstopper: Die Erstinstallation eines neuen
-  Plugins aus einem Third-Repo verlangt einen Klick im ImGui-Plugin-
-  Installer. Für die Zielgruppe (blinde Erstnutzer ohne Technikkenntnisse)
-  ist das nicht akzeptabel — genau deshalb existiert der DevPlugin-Ansatz
-  im Projekt schon.
-- Für **Updates** eines bereits registrierten Custom-Repo-Plugins ist
-  Dalamuds Auto-Update dagegen unauffällig und robust, sofern
-  `AutoUpdateBehavior` entsprechend steht — aber die Erstinstallation bleibt
-  das Problem.
+**Analysis:**
+- A custom repo (route B, as described above for vnavmesh) would have the same
+  showstopper for our **own** plugin: the initial installation of a new plugin
+  from a third-party repo requires a click in the ImGui plugin installer. For
+  the target audience (blind first-time users with no technical knowledge) that
+  is not acceptable — which is exactly why the devPlugin approach already
+  exists in the project.
+- For **updates** of an already registered custom-repo plugin, on the other
+  hand, Dalamud's auto-update is unobtrusive and robust, provided
+  `AutoUpdateBehavior` is set accordingly — but the initial installation remains
+  the problem.
 
-**Empfehlung: DevPlugin-Kopie bleibt der primäre, vom Installer gesteuerte
-Weg — für Erst- UND Update-Installation, konsistent zu vnavmesh (Weg A).**
-Das `repo.json` im Projekt-Root wird **zusätzlich** weiter gepflegt und aktuell
-gehalten (es kostet nichts, DalamudPackager erzeugt das Manifest ohnehin
-automatisch mit) — als Option für sehende Helfer/Poweruser, die es lieber
-regulär über `/xlplugins` einbinden wollen, und als Fallback/Dokumentation.
-Der Installer selbst braucht dieses Repo-JSON nicht zwingend zu lesen — er
-nutzt stattdessen direkt die GitHub-Releases-API (siehe Abschnitt 4), was
-unabhängig von Dalamuds Ladezyklus ist und mit derselben Logik für eigenes
-Plugin UND vnavmesh (über puni.sh) funktioniert.
+**Recommendation: the devPlugin copy remains the primary route driven by the
+installer — for both first-time AND update installation, consistent with
+vnavmesh (route A).** The `repo.json` in the project root is **additionally**
+maintained and kept current (it costs nothing, DalamudPackager generates the
+manifest automatically anyway) — as an option for sighted helpers/power users
+who would rather add it through `/xlplugins` in the normal way, and as a
+fallback/documentation. The installer itself does not necessarily need to read
+this repo JSON — it uses the GitHub releases API directly instead (see section
+4), which is independent of Dalamud's load cycle and works with the same logic
+for our own plugin AND vnavmesh (via puni.sh).
 
 ---
 
-## 4. Update-Mechanik des Installers
+## 4. The installer's update mechanics
 
-### 4.1 Versionsprüfung
+### 4.1 Version check
 
-- **Eigenes Plugin:** GitHub Releases API,
+- **Our own plugin:** GitHub releases API,
   `GET https://api.github.com/repos/derbruedi/ff14-accessibility/releases/latest`
-  (verifiziert per Live-Abruf: liefert `tag_name` "v4.61" und Asset
-  `FF14Accessibility-v4.61.0.zip` mit `browser_download_url`). Kein Auth-Token
-  nötig für öffentliche Repos (Rate-Limit ohne Token: 60 Requests/Stunde je
-  IP — für ein Tool, das man gelegentlich startet, ausreichend).
-- **vnavmesh:** `GET https://puni.sh/api/repository/veyn`, Eintrag mit
-  `InternalName == "vnavmesh"` filtern, `AssemblyVersion` +
-  `DownloadLinkInstall`/`DownloadLinkUpdate` verwenden.
+  (verified by a live call: returns `tag_name` "v4.61" and the asset
+  `FF14Accessibility-v4.61.0.zip` with a `browser_download_url`). No auth token
+  needed for public repos (rate limit without a token: 60 requests/hour per IP —
+  enough for a tool you start occasionally).
+- **vnavmesh:** `GET https://puni.sh/api/repository/veyn`, filter for the entry
+  with `InternalName == "vnavmesh"`, use `AssemblyVersion` +
+  `DownloadLinkInstall`/`DownloadLinkUpdate`.
 
-Versionsvergleich: Für das eigene Plugin reicht ein einfacher
-String-/`Version`-Vergleich zwischen der lokal installierten
-`AssemblyVersion` (aus der bereits kopierten `FF14Accessibility.json` in
-devPlugins, falls vorhanden) und dem `tag_name`/Asset-Namen des Releases.
-Für vnavmesh entsprechend mit der `AssemblyVersion` aus dem Repository-JSON.
-Bei Erstinstallation (keine lokale Version vorhanden) wird ohne Vergleich
-direkt die neueste Version installiert — **das deckt automatisch auch
-Punkt 4 aus dem Auftrag ab** ("Erstinstallation lädt immer das neueste
-Release, ein Codepfad"): Der Ablauf ist in beiden Fällen identisch
-("hole neueste Version, vergleiche mit lokal installierter (falls
-vorhanden), installiere bei Unterschied oder Fehlen") — es gibt keinen
-separaten Erstinstall-Codepfad, nur eine Bedingung "lokale Version
-existiert nicht oder ist älter".
+Version comparison: for our own plugin a simple string/`Version` comparison
+between the locally installed `AssemblyVersion` (from the already copied
+`FF14Accessibility.json` in devPlugins, if present) and the release's
+`tag_name`/asset name is enough. For vnavmesh, correspondingly with the
+`AssemblyVersion` from the repository JSON. On a first installation (no local
+version present) the newest version is installed directly without a comparison
+— **that automatically also covers point 4 of the brief** ("a first
+installation always downloads the newest release, one code path"): the sequence
+is identical in both cases ("fetch newest version, compare with the locally
+installed one (if present), install on a difference or if missing") — there is
+no separate first-install code path, only a condition "local version does not
+exist or is older".
 
-### 4.2 Download + Entpacken
+### 4.2 Download + unpack
 
-Analog zum bestehenden `TryDownload`/`ZipFile.ExtractToDirectory`-Pattern:
-ZIP von `browser_download_url` (GitHub) bzw. `DownloadLinkInstall`
-(puni.sh) laden, in einen Temp-Ordner entpacken, dann gezielt die relevanten
-Dateien (DLL, `.json`-Manifest, `Tolk.dll`, `nvdaControllerClient64.dll`,
-`NAudio*.dll`) nach `devPlugins\FF14Accessibility` bzw. `devPlugins\vnavmesh`
-kopieren (überschreiben) — nicht den ganzen ZIP-Inhalt blind in devPlugins
-entpacken, um keine Altlasten (z. B. entfernte Dateien einer Vorversion)
-liegen zu lassen. Vorher bestehenden Zielordner-Inhalt der bekannten
-Dateitypen (`*.dll`, `*.json`, `*.pdb`) löschen oder gezielt überschreiben.
+Analogous to the existing `TryDownload`/`ZipFile.ExtractToDirectory` pattern:
+download the ZIP from `browser_download_url` (GitHub) or `DownloadLinkInstall`
+(puni.sh), unpack into a temp folder, then copy (overwrite) the relevant files
+specifically (DLL, `.json` manifest, `Tolk.dll`, `nvdaControllerClient64.dll`,
+`NAudio*.dll`) into `devPlugins\FF14Accessibility` or `devPlugins\vnavmesh` —
+do not blindly unpack the whole ZIP content into devPlugins, so that no legacy
+cruft (e.g. files removed in a previous version) is left lying around. First
+delete or specifically overwrite the existing target folder content of the known
+file types (`*.dll`, `*.json`, `*.pdb`).
 
-### 4.3 Selbst-Update des Installers
+### 4.3 Self-update of the installer
 
-> **NACHTRAG 2026-07-18 (Installer 1.1.0): umgesetzt.** Der Nutzer wollte
-> den Handgriff "neue EXE selbst herunterladen" loswerden. Der unten
-> empfohlene Hinweistext war zudem toter Code: `CheckInstallerUpdateHint`
-> las die Version per Regex aus dem Asset-NAMEN, und das Asset heißt
-> versionslos `FF14AccessibilityInstaller.exe` — der Regex traf nie.
+> **ADDENDUM 2026-07-18 (installer 1.1.0): implemented.** The user wanted to
+> get rid of the manual step "download the new EXE yourself". The note text
+> recommended below was also dead code: `CheckInstallerUpdateHint` read the
+> version out of the asset NAME by regex, and the asset is called
+> `FF14AccessibilityInstaller.exe` with no version in it — the regex never
+> matched.
 >
-> Umgesetzter Ablauf (`InstallerService.TrySelfUpdateAsync` + `SelfUpdate.cs`):
-> 1. Beim Start Release-Asset `installer.json` lesen
->    (`{ InstallerVersion, AssetName, Sha256 }`). Fehlt es (ältere Releases),
->    wird die Prüfung still übersprungen. Versionsquelle ist bewusst dieses
->    Manifest und NICHT der Dateiname, damit der Download-Link und die
->    Anleitung in der README stabil bleiben.
-> 2. Ist die Version höher: Rückfrage per MessageBox inkl. Downloadgröße.
->    Bei "Nein" läuft alles normal weiter.
-> 3. Download nach `%TEMP%`, SHA256-Abgleich gegen das Manifest (fehlt der
->    Hash, wird nur geloggt), Start der neuen EXE mit
->    `--apply-update "<Zielpfad>" <PID>`, dann beendet sich die alte Instanz.
-> 4. Phase 2 (neue EXE aus `%TEMP%`): wartet auf das Ende der alten PID,
->    kopiert sich über die Original-EXE (20 Versuche à 500 ms, weil Windows
->    die Datei kurz gesperrt hält) und startet diese mit `--updated`.
-> 5. Die neu gestartete Original-EXE überspringt den Sprachdialog, meldet
->    das Update per Dialog und führt die Installation automatisch aus.
->    Beim Start räumt sie außerdem alte `FF14AccInstaller_*.exe` aus `%TEMP%`
->    (je ~160 MB).
+> Implemented sequence (`InstallerService.TrySelfUpdateAsync` +
+> `SelfUpdate.cs`):
+> 1. On startup, read the release asset `installer.json`
+>    (`{ InstallerVersion, AssetName, Sha256 }`). If it is missing (older
+>    releases), the check is skipped silently. The version source is
+>    deliberately this manifest and NOT the file name, so that the download link
+>    and the instructions in the README stay stable.
+> 2. If the version is higher: ask via MessageBox, including the download size.
+>    On "No" everything continues as normal.
+> 3. Download into `%TEMP%`, SHA256 comparison against the manifest (if the hash
+>    is missing, it is only logged), start the new EXE with
+>    `--apply-update "<target path>" <PID>`, then the old instance exits.
+> 4. Phase 2 (the new EXE from `%TEMP%`): waits for the old PID to end, copies
+>    itself over the original EXE (20 attempts at 500 ms each, because Windows
+>    keeps the file locked briefly) and starts it with `--updated`.
+> 5. The newly started original EXE skips the language dialog, reports the
+>    update via a dialog and runs the installation automatically. On startup it
+>    also clears out old `FF14AccInstaller_*.exe` files from `%TEMP%` (about
+>    160 MB each).
 >
-> Scheitert das Ersetzen (Schreibschutz, fehlende Rechte), meldet Phase 2 das
-> ehrlich und arbeitet aus `%TEMP%` weiter — die Installation gelingt dann
-> trotzdem, nur die Datei des Nutzers bleibt alt.
+> If the replacement fails (write protection, missing rights), phase 2 reports
+> that honestly and carries on from `%TEMP%` — the installation then still
+> succeeds, only the user's file stays old.
 >
-> Fallstrick, abgesichert in `ParseVersionLoose`: `Version` behandelt nicht
-> gesetzte Stellen als -1, "1.1.0" gilt also als KLEINER als "1.1.0.0". Eine
-> dreistellige Angabe in `installer.json` hätte das Update still nie
-> ausgelöst; deshalb füllt der Parser jetzt immer auf vier Stellen auf.
+> A pitfall, guarded against in `ParseVersionLoose`: `Version` treats unset
+> components as -1, so "1.1.0" counts as SMALLER than "1.1.0.0". A three-part
+> value in `installer.json` would have silently prevented the update from ever
+> triggering; that is why the parser now always pads to four components.
 >
-> End-to-End verifiziert am 2026-07-18 mit einem künstlichen 1.0.0-Build
-> gegen das echte Release v4.91: Erkennung, Dialog, Download (~20 s),
-> Hash-Prüfung, Ersetzen der Originaldatei, Neustart, Auto-Installation und
-> "Der Installer ist aktuell" beim Folgelauf (keine Endlosschleife).
+> Verified end to end on 2026-07-18 with an artificial 1.0.0 build against the
+> real release v4.91: detection, dialog, download (~20 s), hash check,
+> replacement of the original file, restart, auto-installation, and "the
+> installer is up to date" on the following run (no endless loop).
 >
-> Der ursprüngliche Abschnitt bleibt als Entscheidungshistorie stehen:
+> The original section stays below as decision history:
 
-**Empfehlung (überholt): kein separates Selbst-Update-Feature für die erste Version.**
-Begründung:
-- Der Installer ändert sich viel seltener als das Plugin (reine
-  Infrastruktur: Download+Kopieren+Config-Patch). Ein Update ist nur nötig,
-  wenn sich z. B. das Dalamud-Config-Format ändert oder eine neue
-  Sicherheitslücke im Installer selbst gefunden wird — beides seltene
-  Ereignisse.
-- Ein Installer, der sich selbst überschreibt (laufende EXE ersetzen), ist
-  auf Windows nicht trivial (Datei ist zur Laufzeit gesperrt) und bräuchte
-  einen Neustart-Trick (z. B. Kopie in Temp starten, die Original-EXE
-  ersetzt) — deutlich mehr Komplexität für einen seltenen Fall.
-- Alternative, einfache Lösung: Der Installer prüft beim Start zusätzlich
-  die eigene Version gegen die neueste Installer-Version im Repo (eigenes
-  Release-Asset oder Tag-Konvention) und zeigt bei Bedarf nur einen
-  Text-Hinweis mit Link ("Eine neuere Installer-Version ist verfügbar:
-  <Link>. Bitte lade sie bei Gelegenheit herunter."), OHNE automatisch zu
-  aktualisieren. Das deckt den Bedarf ("Nutzer soll es erfahren") ohne die
-  Komplexität eines echten Self-Updaters. Kann bei Bedarf später ergänzt
-  werden.
+**Recommendation (superseded): no separate self-update feature for the first
+version.** Reasoning:
+- The installer changes far less often than the plugin (pure infrastructure:
+  download + copy + config patch). An update is only needed if, say, the Dalamud
+  config format changes or a new security hole is found in the installer itself
+  — both rare events.
+- An installer that overwrites itself (replacing the running EXE) is not
+  trivial on Windows (the file is locked at runtime) and would need a restart
+  trick (e.g. start a copy in temp that replaces the original EXE) —
+  considerably more complexity for a rare case.
+- A simple alternative: on startup the installer additionally checks its own
+  version against the newest installer version in the repo (a dedicated release
+  asset or a tag convention) and, if needed, only shows a text note with a link
+  ("A newer installer version is available: <link>. Please download it when you
+  get a chance."), WITHOUT updating automatically. That covers the need ("the
+  user should find out") without the complexity of a real self-updater. Can be
+  added later if needed.
 
 ---
 
-## 5. Ablauf-Skizze
+## 5. Flow sketch
 
-### 5.1 Erstinstallation (Nutzer hat noch nichts)
+### 5.1 First installation (the user has nothing yet)
 
-1. Installer startet, Fenster öffnet mit Fokus auf Status-Bereich.
-   Ansage/Text: "FF14 Accessibility Installer. Prüfe XIVLauncher..."
-2. XIVLauncher nicht gefunden → Text + Dialog: "XIVLauncher wurde nicht
-   gefunden. Jetzt herunterladen und Setup starten?" (Ja/Nein-Button, klar
-   beschriftet, Standard-`MessageBox` oder eigene beschriftete Buttons).
-3. Bei "Ja": Download-Fortschritt als Text ("Lade XIVLauncher-Setup...
-   40 %"), Setup wird gestartet, Installer zeigt Abschlusstext: "Bitte folge
-   dem XIVLauncher-Assistenten, melde dich an, aktiviere Dalamud in den
-   Einstellungen und starte das Spiel einmal. Führe diesen Installer danach
-   erneut aus." Fenster bleibt offen bis Nutzer schließt (kein
-   automatisches Beenden ohne Ansage).
-4. **Zweiter Lauf** (nach Spielstart): XIVLauncher + `dalamudConfig.json`
-   gefunden. Text: "XIVLauncher gefunden. Prüfe neueste Version von FF14
-   Accessibility..."
-5. GitHub-API-Abfrage, keine lokale Version vorhanden → direkter Download
-   der neuesten Version. Fortschrittstext mit Prozent.
-6. Entpacken, Kopieren nach devPlugins. Text: "Plugin installiert (Version
-   4.61)."
-7. vnavmesh-Abfrage (puni.sh) → keine lokale Version vorhanden →
-   Ja/Nein-Dialog "vnavmesh für Auto-Lauf jetzt einrichten?" → bei Ja:
-   Download+Kopieren analog, Fortschrittstext.
-8. `dalamudConfig.json` patchen (ein Lauf genügt, dekompiliert verifiziert
-   gegen Dalamud 15.0.2.2): `DevMode=true` (ohne das scannt Dalamud die
-   DevPluginLoadLocations überhaupt nicht), DevPluginLoadLocations-Einträge,
-   pro Plugin ein `DevPluginSettings`-Eintrag (Schlüssel = DLL-Pfad,
-   `StartOnBoot=true`, feste `WorkingPluginId`) plus ein DefaultProfile-
-   Eintrag mit derselben `WorkingPluginId` und `IsEnabled=true`. Dalamud
-   erzeugt nur dann eine eigene GUID, wenn der `DevPluginSettings`-Eintrag
-   fehlt — vorbefüllte Einträge werden unverändert übernommen. Backup wird
-   angelegt. Abschlusstext: "Fertig. Starte FINAL FANTASY XIV über
-   XIVLauncher — das Plugin meldet sich beim Login mit einer Sprachansage."
-   Fenster hat einen fokussierbaren "Schließen"-Button (kein reiner
-   Enter-Zwang wie in der Konsolen-Version).
-   (Historie: Bis Juli 2026 setzte der Installer nur vorhandene
-   Profil-Einträge auf `IsEnabled=true` und verlangte dafür einen zweiten
-   Lauf nach einem Spielstart. Das konnte nie funktionieren, weil ohne
-   `DevMode=true` nie Profil-Einträge entstanden.)
+1. The installer starts, the window opens with focus on the status area.
+   Announcement/text: "FF14 Accessibility Installer. Checking XIVLauncher..."
+2. XIVLauncher not found → text + dialog: "XIVLauncher was not found. Download
+   it and start the setup now?" (yes/no buttons, clearly labelled, a standard
+   `MessageBox` or custom labelled buttons).
+3. On "Yes": download progress as text ("Downloading XIVLauncher setup...
+   40 %"), the setup is started, the installer shows a closing text: "Please
+   follow the XIVLauncher wizard, log in, enable Dalamud in the settings and
+   start the game once. Then run this installer again." The window stays open
+   until the user closes it (no automatic exit without an announcement).
+4. **Second run** (after starting the game): XIVLauncher +
+   `dalamudConfig.json` found. Text: "XIVLauncher found. Checking the newest
+   version of FF14 Accessibility..."
+5. GitHub API query, no local version present → direct download of the newest
+   version. Progress text with a percentage.
+6. Unpack, copy into devPlugins. Text: "Plugin installed (version 4.61)."
+7. vnavmesh query (puni.sh) → no local version present → yes/no dialog "Set up
+   vnavmesh for auto-walk now?" → on yes: download + copy in the same way,
+   progress text.
+8. Patch `dalamudConfig.json` (one run is enough, verified by decompilation
+   against Dalamud 15.0.2.2): `DevMode=true` (without it Dalamud does not scan
+   the DevPluginLoadLocations at all), DevPluginLoadLocations entries, one
+   `DevPluginSettings` entry per plugin (key = DLL path, `StartOnBoot=true`,
+   fixed `WorkingPluginId`), plus a DefaultProfile entry with the same
+   `WorkingPluginId` and `IsEnabled=true`. Dalamud only generates a GUID of its
+   own when the `DevPluginSettings` entry is missing — pre-filled entries are
+   taken over unchanged. A backup is created. Closing text: "Done. Start FINAL
+   FANTASY XIV through XIVLauncher — the plugin announces itself at login with a
+   spoken message." The window has a focusable "Close" button (not the bare
+   press-Enter requirement of the console version).
+   (History: until July 2026 the installer only set existing profile entries to
+   `IsEnabled=true` and required a second run after a game start for that. That
+   could never work, because without `DevMode=true` no profile entries were ever
+   created.)
 
-### 5.2 Update-Lauf (alles schon installiert, Routinefall)
+### 5.2 Update run (everything already installed, the routine case)
 
-1. Installer startet. Text: "Prüfe auf Updates..."
-2. GitHub-API: lokale Version (aus devPlugins-Manifest) mit `latest`
-   verglichen.
-3. Kein Update nötig → Text: "FF14 Accessibility ist aktuell (Version
-   4.61)." — vnavmesh ebenso geprüft, ebenfalls aktuell.
-4. Ist ein Update vorhanden → automatischer Download+Installation ohne
-   Rückfrage (Plugin-Updates sind risikoarm, entsprechen dem
-   Nutzerwunsch "immer aktuell halten"; nur bei vnavmesh, falls es beim
-   letzten Mal abgelehnt wurde, weiterhin fragen statt aufzudrängen).
-   Fortschrittstext je Schritt.
-5. Abschlusstext mit Versionsnummer(n) und Hinweis "Starte das Spiel neu,
-   falls es gerade läuft, damit die neue Version geladen wird."
+1. The installer starts. Text: "Checking for updates..."
+2. GitHub API: the local version (from the devPlugins manifest) compared with
+   `latest`.
+3. No update needed → text: "FF14 Accessibility is up to date (version 4.61)."
+   — vnavmesh checked likewise, also up to date.
+4. If an update is available → automatic download + installation without asking
+   (plugin updates are low-risk and match the user's wish to "always keep it
+   current"; only for vnavmesh, if it was declined last time, keep asking rather
+   than forcing it). Progress text per step.
+5. Closing text with the version number(s) and the note "Restart the game if it
+   is currently running, so that the new version gets loaded."
 
-Alle Texte erscheinen zusätzlich in der fokussierbaren Log-Liste (Pfeiltasten-
-navigierbar), damit der Nutzer frühere Meldungen erneut nachlesen/anhören
-kann, falls der Screenreader eine Zeile verpasst hat.
+All texts additionally appear in the focusable log list (navigable with the
+arrow keys), so the user can read/hear earlier messages again if the screen
+reader missed a line.
 
 ---
 
-## 6. Offene Punkte / Empfehlungen zusammengefasst
+## 6. Open points / recommendations summarised
 
-| Thema | Empfehlung |
+| Topic | Recommendation |
 |---|---|
-| UI-Framework | WinForms (nicht WPF) — bester UIA-Support out of the box |
-| Deployment | .NET 8 self-contained single-file EXE, wie bisher |
-| XIVLauncher fehlt | Hinweis + offizieller Setup-Download, kein Silent-Install |
-| vnavmesh-Einrichtung | DevPlugin-Kopie (Weg A), Version dynamisch von puni.sh statt hart gepinnt; optional zusätzlich ThirdRepoList-Eintrag als Komfort für sehende Helfer |
-| Eigenes Plugin | DevPlugin-Kopie bleibt primärer Weg (Erst+Update); `repo.json`/Custom-Repo weiter gepflegt als Zusatzoption, nicht als Installer-Quelle |
-| Update-Quelle | GitHub Releases API (`/releases/latest`) für eigenes Plugin, puni.sh-Repository-JSON für vnavmesh |
-| Erstinstallation vs. Update | ein Codepfad ("neueste Version holen, mit lokaler vergleichen, installieren wenn nötig/fehlend") |
-| Selbst-Update des Installers | vorerst nicht automatisiert; nur Versions-Hinweistext mit Link |
+| UI framework | WinForms (not WPF) — best UIA support out of the box |
+| Deployment | .NET 8 self-contained single-file EXE, as before |
+| XIVLauncher missing | Note + official setup download, no silent install |
+| vnavmesh setup | devPlugin copy (route A), version pulled dynamically from puni.sh instead of hard-pinned; optionally also a ThirdRepoList entry as a convenience for sighted helpers |
+| Our own plugin | devPlugin copy remains the primary route (first install + update); `repo.json`/custom repo still maintained as an extra option, not as an installer source |
+| Update source | GitHub releases API (`/releases/latest`) for our own plugin, the puni.sh repository JSON for vnavmesh |
+| First install vs. update | one code path ("fetch the newest version, compare with the local one, install if needed/missing") |
+| Self-update of the installer | not automated for now; only a version note with a link |
 
-## 7. Nicht Teil dieses Konzepts
+## 7. Not part of this concept
 
-Keine Implementierung, kein Code, keine Projektdatei-Änderungen. Nächster
-Schritt (nach Freigabe dieses Konzepts) wäre die Erstellung eines
-WinForms-Projekts, das die bestehende `Program.cs`-Logik in Services
-extrahiert (Download/Update-Logik, Dalamud-Config-Patch) und eine dünne
-GUI-Schicht darüberlegt.
+No implementation, no code, no project file changes. The next step (after this
+concept is approved) would be creating a WinForms project that extracts the
+existing `Program.cs` logic into services (download/update logic, Dalamud config
+patch) and lays a thin GUI layer over it.

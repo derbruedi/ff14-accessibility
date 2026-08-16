@@ -200,31 +200,31 @@ Handler → AnnouncementManager → ScreenReader → Tolk → Screen Reader
 
 ## Code Architecture Recommendations
 
-### Quellcode-Recherche: Patterns & Beispiele
+### Source research: patterns & examples
 
-Die Regel selbst — "keine Behauptung ohne Beleg aus `decompiled/` oder `docs/game-api.md`" — steht in **CLAUDE.md (Fact Discipline)**. Hier nur konkrete Suchmuster für die Recherche.
+The rule itself — "no claim without evidence from `decompiled/` or `docs/game-api.md`" — lives in **CLAUDE.md (Fact Discipline)**. Only concrete search patterns for the research here.
 
-**Falsch (Raten):**
+**Wrong (guessing):**
 ```csharp
 var inventory = GameObject.Find("InventoryPanel");
-// Funktioniert nicht — heißt in Wirklichkeit "UI_Inventory_Main"
+// Does not work — it is actually called "UI_Inventory_Main"
 ```
 
-**Richtig (Recherchieren):**
-1. Grep im `decompiled/`: `Inventory`
-2. Finde: `class UI_Inventory_Main : MonoBehaviour`
-3. Prüfe öffentliche API (Singleton? Methoden? Properties?)
+**Right (researching):**
+1. Grep in `decompiled/`: `Inventory`
+2. Find: `class UI_Inventory_Main : MonoBehaviour`
+3. Check the public API (singleton? methods? properties?)
 4. Code: `var inventory = UI_Inventory_Main.Instance;`
 
-**Typische Grep-Patterns:**
-- UI-Screens: `class.*Menu`, `class.*Screen`, `class.*Panel`
+**Typical grep patterns:**
+- UI screens: `class.*Menu`, `class.*Screen`, `class.*Panel`
 - Singletons: `public static.*Instance`
-- Manager/Controller: `class.*Manager`, `class.*Controller`
-- Aktiver Zustand: `static.*Current`, `static.*Active`
-- Sammlungen: `public.*List<`, `public.*Dictionary<`
-- Feature-spezifisch: englischer Begriff der Mechanik, sichtbarer UI-Text, logisch erscheinende Variablennamen
+- Manager/controller: `class.*Manager`, `class.*Controller`
+- Active state: `static.*Current`, `static.*Active`
+- Collections: `public.*List<`, `public.*Dictionary<`
+- Feature-specific: the English term for the mechanic, visible UI text, variable names that seem logical
 
-Erkenntnisse aus jeder Recherche → sofort in `docs/game-api.md`.
+Findings from every piece of research → into `docs/game-api.md` immediately.
 
 ### Core Principles
 - **Modular** - Separate concerns: input handling, UI extraction, announcement, game state
@@ -242,7 +242,7 @@ Erkenntnisse aus jeder Recherche → sofort in `docs/game-api.md`.
 ### Code Standards
 - Avoid redundancy - reuse code, don't duplicate logic
 - Consistent naming conventions throughout the project
-- **IMMER `decompiled/` durchsuchen vor der Implementierung** (siehe Abschnitt oben)
+- **ALWAYS search `decompiled/` before implementing** (see the section above)
 - Always use your utility classes instead of duplicating logic
 - Handle edge cases gracefully (missing elements, unexpected states)
 

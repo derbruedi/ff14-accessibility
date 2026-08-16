@@ -1,0 +1,15 @@
+Role: You are an expert in C# and in developing Dalamud plugins for Final Fantasy XIV.
+Goal: We need to develop an accessibility plugin for blind players that reads out every UI menu, window and popup in the game and speaks it via text-to-speech (TTS). Existing tools often read only the chat, but not the native menus (such as the inventory, character window or confirmation dialogues).
+Technical requirements & workflow:
+1.
+Project setup: Use your local permissions to initialise a new Dalamud plugin project (C# .NET) in this directory. Create the .csproj file with the current Dalamud references.
+2.
+UI interaction (FFXIVClientStructs): To read the menus you have to access the game's UI engine. Use FFXIVClientStructs for that. The key point is accessing AtkUnitBase and iterating through the UI nodes to find the AtkTextNode elements specifically and extract their text content as strings.
+3.
+Event triggering (IAddonLifecycle): The plugin must not blindly read everything out every frame (via Framework.Update), otherwise the audio overlaps. Use the Dalamud service IAddonLifecycle. Hook into events such as AddonSetup or AddonUpdate to detect when a new window (an "addon") is opened or its content changes.
+4.
+Text-to-speech via TOLK: This is very important: do not use the standard Windows speech output. The plugin should communicate with the Tolk library (Tolk Screen Reader Abstraction) in order to send the text directly to screen readers such as NVDA, JAWS or Narrator. You have to integrate the C# wrapper for Tolk. Remember to initialise Tolk when the plugin starts (Tolk.Load()) and to close it cleanly on shutdown (Tolk.Unload()). Use the text output function (e.g. Tolk.Output()) to pass the UI texts you have read on to it.
+5.
+Debouncing / filter: Build in logic that remembers which text was just sent to Tolk, so that a menu updating itself internally every second is not read out over and over again endlessly.
+Your first steps:
+Please confirm that you have understood the approach. As a first step, create the basic file structure and the main class (IDalamudPlugin), register the necessary services (such as IGameGui, IAddonLifecycle, IPluginLog). Also set up the basis for the Tolk integration (point out to me if I need to place certain .dll files for Tolk into the project directory) and write a dummy function that sends the name of any currently open UI addon to Tolk as a test. Let me know once you have generated the setup, so that we can compile it and test it in the game.

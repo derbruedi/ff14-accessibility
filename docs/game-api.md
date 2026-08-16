@@ -1,32 +1,35 @@
-# Game-API-Erkenntnisse (FF14 / Dalamud / FFXIVClientStructs)
+# Game API findings (FF14 / Dalamud / FFXIVClientStructs)
 
-Zentrale, VERIFIZIERTE Fakten über Spiel-Strukturen. Quelle jeweils angegeben
-(ilspycmd gegen FFXIVClientStructs.dll oder Live-Log). Nichts hier ist geraten.
+Central, VERIFIED facts about game structures. The source is given in each case
+(ilspycmd against FFXIVClientStructs.dll, or a live log). Nothing here is guessed.
 
-## Verifizierte Structs (ilspycmd, FFXIVClientStructs.dll im Dalamud-dev-Ordner)
+Note on quoted strings: texts in „German quotes" are verbatim observations from a
+German game client and are deliberately left unchanged, because they are the raw
+data the findings rest on.
+
+## Verified structs (ilspycmd, FFXIVClientStructs.dll in the Dalamud dev folder)
 
 - `RaptureAtkUnitManager.Instance()`, `FocusedUnitsList`/`AllLoadedUnitsList`
   (`AtkUnitList`: Entries[256] + Count), `AtkUnitBase.NameString`/`IsVisible`
 - `AtkComponentCheckBox.IsChecked`
-- `GameObject` (Client.Game.Object): `DrawObject*` @ Offset 256,
-  `VisibilityFlags RenderFlags` @ 280 (Enum: None=0, Model=2, Nameplate=0x800)
-- `DrawObject` (Client.Graphics.Scene): hat `bool IsVisible` (BitField)
-- `CustomizeData` (Client.Game.Character): Race@0, Sex@1, Tribe@4 (Bytes).
-  ABER: kein sauberer Live-Zeiger auf die laufende Charaktererstellung
-  (kein AgentCharaMake in dieser Version; AgentLobby ohne CustomizeData-Feld)
-- `Framework` (Client.System.Framework): `bool WindowInactive` @ Offset 6104
-  — hat das SPIELFENSTER den Fokus? (true = im Hintergrund). Genutzt vom
-  VitalsService, um die HP/MP-Töne stumm zu schalten, solange man in einem
-  anderen Programm ist. Vorzuziehen gegenüber der Windows-API
-  `GetForegroundWindow`: das Spiel führt das Flag ohnehin, eine zweite
-  Wahrheitsquelle könnte davon abdriften. Daneben liegen `CallerWindow`
-  (nint) und `GameWindow*`. NOCH NICHT BELEGT: ob das Flag auch
-  Minimieren/Overlays abdeckt oder nur den reinen Fokuswechsel — der
-  VitalsService loggt jeden Flankenwechsel, das klärt es im Betrieb
+- `GameObject` (Client.Game.Object): `DrawObject*` @ offset 256,
+  `VisibilityFlags RenderFlags` @ 280 (enum: None=0, Model=2, Nameplate=0x800)
+- `DrawObject` (Client.Graphics.Scene): has `bool IsVisible` (bit field)
+- `CustomizeData` (Client.Game.Character): Race@0, Sex@1, Tribe@4 (bytes).
+  BUT: no clean live pointer to the running character creation
+  (no AgentCharaMake in this version; AgentLobby has no CustomizeData field)
+- `Framework` (Client.System.Framework): `bool WindowInactive` @ offset 6104
+  — does the GAME WINDOW have focus? (true = in the background). Used by
+  VitalsService to mute the HP/MP tones while you are in another program.
+  Preferable to the Windows API `GetForegroundWindow`: the game maintains the
+  flag anyway, and a second source of truth could drift from it. Next to it lie
+  `CallerWindow` (nint) and `GameWindow*`. NOT YET ESTABLISHED: whether the flag
+  also covers minimising/overlays or only a plain focus change — VitalsService
+  logs every edge change, which will settle it in practice
 
-## Charaktererstellung (CharaMake)
+## Character creation (CharaMake)
 
-### Addon-Liste (Live-Log 2026-07-10, alle öffnen gleichzeitig)
+### Addon list (live log 2026-07-10, all open at the same time)
 CharaMake, _CharaMakeInfo, _CharaMakeNotice, _CharaMakeShadow, _CharaMakeTitle,
 _CharaMakePose, _CharaMakeProgress, _CharaMakeReturn, _CharaMakeHelp,
 _CharaMakeRaceGender, _CharaMakeTribe, _CharaMakeFeature, _CharaMakeGuardian,
@@ -35,1404 +38,1435 @@ _CharaMakeBirthDay, _CharaMakeBgSelector, _CharaMakeCharaName,
 CMFIconFaceType, CMFIconHair, CMFIconFeature, CMFIconTatoo, CMFIconFacePaint,
 CMFSlider (2x), CMFColorL, CharaMakeSelectYesNo, CharaMakeDCWorldMap(Bg)
 
-### Vorschau-Modelle (Live-Log 2026-07-10, V4.15-Probe)
-- 32 Pc-Objekte GLEICHZEITIG in der ObjectTable: Indizes 200-231, ohne Namen,
-  Sex abwechselnd 0/1 = 8 Völker × 2 Stämme × 2 Geschlechter
-- Genau EINES sichtbar (`DrawObject.IsVisible=true`, RenderFlags=0x0);
-  die 31 versteckten tragen RenderFlags=0x40 (Wert nicht im Enum benannt)
-- Das sichtbare Modell = das angezeigte → sein Sex-Byte ist Ground Truth
-  fürs gewählte Geschlecht (0=männlich, 1=weiblich, FFXIV-Konvention)
+### Preview models (live log 2026-07-10, V4.15 probe)
+- 32 Pc objects SIMULTANEOUSLY in the ObjectTable: indices 200-231, without
+  names, Sex alternating 0/1 = 8 races × 2 tribes × 2 genders
+- Exactly ONE visible (`DrawObject.IsVisible=true`, RenderFlags=0x0); the 31
+  hidden ones carry RenderFlags=0x40 (a value not named in the enum)
+- The visible model = the displayed one → its Sex byte is ground truth for the
+  chosen gender (0=male, 1=female, FFXIV convention)
 
-### _CharaMakeRaceGender (Dumps 2026-07-09)
-- 8 Volk-Zeilen als Comp(1003) [CT=Base], je zwei Geschlechts-Checkboxen:
-  Kind id=4 (Symbol kaputt als ® U+00AE) und id=3 (© U+00A9), Volksname in id=2
-- Symbol→Geschlecht-Zuordnung UNGEKLÄRT; Indiz (1 Datenpunkt, Log 2026-07-10
-  10:19): id=3 (©) checked bei sichtbarem Modell Sex=0 → © wäre männlich,
-  ursprüngliche Annahme id=4=männlich damit wohl FALSCH. Ansage nutzt daher
-  das sichtbare Modell, Checkbox nur als Änderungs-Detektor + Fallback-Label
-- MouseOver-Ansage per Event-Target (`AtkEvent->Node`), CleanRaceName
-  schneidet Glyphen ab
+### _CharaMakeRaceGender (dumps 2026-07-09)
+- 8 race rows as Comp(1003) [CT=Base], each with two gender checkboxes:
+  child id=4 (glyph broken as ® U+00AE) and id=3 (© U+00A9), race name in id=2
+- The glyph→gender mapping is UNRESOLVED; one indication (1 data point, log
+  2026-07-10 10:19): id=3 (©) checked while the visible model had Sex=0 → © would
+  be male, which makes the original assumption id=4=male probably WRONG. The
+  announcement therefore uses the visible model, with the checkbox only as a
+  change detector + fallback label
+- MouseOver announcement via the event target (`AtkEvent->Node`), CleanRaceName
+  strips the glyphs off
 
-### _CharaMakeTribe (Dump 2026-07-10 10:20)
-- Stamm-Optionen = Top-Level-CheckBox-Komponenten (Node id=7 Comp(1006),
-  id=6 Comp(1006)), Name im Text-Kind id=2 („Hochländer", „Wiesländer")
-- Enthält AUSSERDEM 8 Comp(1003)-Zeilen [CT=Base] mit ®/©-Checkboxen
-  (wie RaceGender, Textkinder leer) und Zurück/Ok-Buttons (id=19/18)
-- Kopfzeile: „Volksstamm", Hilfetext „Wähle einen Volksstamm aus."
+### _CharaMakeTribe (dump 2026-07-10 10:20)
+- Tribe options = top-level checkbox components (node id=7 Comp(1006), id=6
+  Comp(1006)), name in the text child id=2 („Hochländer", „Wiesländer")
+- ALSO contains 8 Comp(1003) rows [CT=Base] with ®/© checkboxes (like
+  RaceGender, text children empty) and back/OK buttons (id=19/18)
+- Header row: „Volksstamm", help text „Wähle einen Volksstamm aus."
 
-### _CharaMakeProgress (Dump 2026-07-10 10:20) — Fortschrittsmenü links
-- Comp(1002)-Buttons je Schritt, Label in Text-Kind id=3, aktueller Wert in
-  id=5: „Volk & Geschlecht" (Wert z.B. „Hyuran ©"), „Volksstamm" (Wert
-  „? ? ?" wenn offen), „Aussehen", „Namenstag", „Schutzgottheit", „Klasse",
-  „Stammwelt", „Name"; Ok-Button = Comp(1001)
-- Das ©/® im Wert von „Volk & Geschlecht" ist das gewählte Geschlechts-Symbol
+### _CharaMakeProgress (dump 2026-07-10 10:20) — progress menu on the left
+- Comp(1002) buttons per step, label in the text child id=3, current value in
+  id=5: „Volk & Geschlecht" (value e.g. „Hyuran ©"), „Volksstamm" (value
+  „? ? ?" when still open), „Aussehen", „Namenstag", „Schutzgottheit", „Klasse",
+  „Stammwelt", „Name"; OK button = Comp(1001)
+- The ©/® in the value of „Volk & Geschlecht" is the chosen gender glyph
 
-### _CharaMakeFeature (Dump 2026-07-17 16:35, Schritt „Aussehen")
-- Kategorie-Buttons = Comp(1004) [CT=Button], Label im Text-Kind id=2
-  („Körpergröße", „Körperbau", „Gesicht", … „Stimme"); unsichtbare Buttons
-  (F=0x2023 ohne V) sind für das gewählte Volk nicht verfügbare Kategorien
-- Beschreibung als Top-Level-Text id=6 („Bestimme das Aussehen deines
-  Charakters."), Fenster-Titel id=3 („Aussehen"),
-  „Zufälliges Aussehen" = Comp(1003)-Button, Top-Level-**id=4**
-  (V4.86: Strg+F8 drückt ihn per ButtonClick-Dispatch, Match per
-  Node-ID — sprachunabhängig), Zurück/Ok = id=38/37
-- MouseOver/ButtonClick liefern die Kategorie im Event-Param (node id)
+### _CharaMakeFeature (dump 2026-07-17 16:35, the „Aussehen" step)
+- Category buttons = Comp(1004) [CT=Button], label in the text child id=2
+  („Körpergröße", „Körperbau", „Gesicht", … „Stimme"); invisible buttons
+  (F=0x2023 without V) are categories not available for the chosen race
+- Description as top-level text id=6 („Bestimme das Aussehen deines
+  Charakters."), window title id=3 („Aussehen"), „Zufälliges Aussehen" =
+  Comp(1003) button, top-level **id=4** (V4.86: Ctrl+F8 presses it by
+  ButtonClick dispatch, matched by node ID — language-independent), back/OK =
+  id=38/37
+- MouseOver/ButtonClick deliver the category in the event param (node id)
 
-### CMFIcon* (Dump 2026-07-17 16:35: CMFIconFeature „Gesichtsmerkmale")
-- Auswahl = List(9)-Komponente, Einträge ListItemRenderer(14) mit
-  AUSSCHLIESSLICH Image-Kindern — KEIN Text pro Eintrag. Vorlesen nur als
-  „Eintrag X von Y" (ListLen/Sel im List-Layout) möglich, Icons sind stumm.
-- Fenster-Titel als Top-Level-Text id=3, Ok-Button id=7
-- Bekannte Picker-Fenster (Live-Log 2026-07-17): CMFIconFaceType,
-  CMFIconHair (52), CMFIconFeature, CMFIconTatoo (27?), CMFIconFacePaint
-  (27), CMFColorL (192), CMFColorHair (192), CMFColorFacePaint (96);
-  weitere CMFColor*-Varianten wahrscheinlich (Augen-/Lippen-/Hautfarbe
-  noch nicht im Log gesehen) → Ansage-Pfade matchen per Präfix „CMF"
-- `AtkComponentListItemRenderer.ListItemIndex` (Offset 388, ilspycmd
-  2026-07-17) = DATEN-Zeile des Renderers — korrekt auch wenn die Liste
-  unter einem festen Fokus-Node scrollt (Renderer-Slot-Index wäre falsch)
-- Vorlesen: V4.85, zwei Pfade („12 von 52"): TrackListIndices-Fallback
-  + TryReadCharaMakeIconFocusRow im globalen Fokus-Pfad. Live-Log
-  17:24: BEIDE greifen (Maus-Hover bewegte Hov2 → List-Navigation-
-  Ansage, Fokus-Zeile lieferte denselben Text, Debounce fing das Echo)
-- **Das SPIEL ignoriert Pfeiltasten in diesen Rastern** (Log 17:24:47:
-  alle vier Pfeile, keinerlei Index-/Fokus-Bewegung — reine Maus-UI).
-  V4.87: Plugin navigiert selbst — `AtkComponentList.SelectItem(idx,
-  dispatchEvent)` + `ScrollToItem(short)` + `GetItemCount()` (alle
-  ilspycmd-verifiziert; auch vorhanden: `DispatchItemEvent(idx,
-  AtkEventType)` als Alternative, falls SelectItem die Vorschau nicht
-  aktualisiert — Laufzeit-Wirkung von dispatchEvent noch unverifiziert)
-- Inaktive Picker bleiben geladen mit 0 Einträgen; nur der aktive hat
-  ListLength > 0 (Log 17:23:52) → Erkennung „aktiver Picker" über
-  Count > 0
+### CMFIcon* (dump 2026-07-17 16:35: CMFIconFeature „Gesichtsmerkmale")
+- The selection is a List(9) component, entries are ListItemRenderer(14) with
+  EXCLUSIVELY image children — NO text per entry. Reading out is only possible
+  as "entry X of Y" (ListLen/Sel in the list layout); the icons are mute.
+- Window title as top-level text id=3, OK button id=7
+- Known picker windows (live log 2026-07-17): CMFIconFaceType, CMFIconHair (52),
+  CMFIconFeature, CMFIconTatoo (27?), CMFIconFacePaint (27), CMFColorL (192),
+  CMFColorHair (192), CMFColorFacePaint (96); further CMFColor* variants are
+  likely (eye/lip/skin colour not yet seen in the log) → the announcement paths
+  match on the prefix "CMF"
+- `AtkComponentListItemRenderer.ListItemIndex` (offset 388, ilspycmd 2026-07-17)
+  = the renderer's DATA row — correct even when the list scrolls under a fixed
+  focus node (the renderer slot index would be wrong)
+- Reading out: V4.85, two paths ("12 of 52"): the TrackListIndices fallback +
+  TryReadCharaMakeIconFocusRow in the global focus path. Live log 17:24: BOTH
+  fire (a mouse hover moved Hov2 → list navigation announcement, the focus row
+  delivered the same text, and the debounce caught the echo)
+- **The GAME ignores the arrow keys in these grids** (log 17:24:47: all four
+  arrows, no index/focus movement whatsoever — a pure mouse UI). V4.87: the
+  plugin navigates by itself — `AtkComponentList.SelectItem(idx, dispatchEvent)`
+  + `ScrollToItem(short)` + `GetItemCount()` (all ilspycmd-verified; also
+  present: `DispatchItemEvent(idx, AtkEventType)` as an alternative should
+  SelectItem not update the preview — the runtime effect of dispatchEvent is
+  still unverified)
+- Inactive pickers stay loaded with 0 entries; only the active one has
+  ListLength > 0 (log 17:23:52) → detect the "active picker" via Count > 0
 
-### _CharaMakeCharaName (Namenseingabe, Dump 2026-07-17 17:57)
-- Fenstertitel „Name des Charakters", Hilfetext id=13 („Vor- und
-  Nachname können je zwischen 2 und 15 Zeichen…"), Instruktion id=5
-  („Gib deinem Charakter einen Namen."), Gesamt-Zähler id=12 „0/20"
-- ZWEI sichtbare TextInput-Komponenten (CT=7): **id=9 und id=7**
-  (je F=…V), jede mit eigenem Zähler-Kind id=17 („0/15") und
-  Anzeige-Text id=16. Dazu ZWEI unsichtbare TextInputs id=11 (Zähler
-  „0/9") + id=10 („0/6") = alternative Eingabemodi (nicht genutzt,
-  kein V) → nur sichtbare Felder verarbeiten
-- Labels als Top-Level-Text: **id=8 „Nachname", id=6 „Vorname"**.
-  Node-Reihenfolge: TextInput id=9 → Text id=8 → TextInput id=7 →
-  Text id=6. id-1-Muster passt (9→8, 7→6), aber V4.89 paart per
-  PHYSISCHER NÄHE (X/Y des Feldes vs. Label) — robuster gegen Node-
-  Ordnung/Sprache
-- „Bestätigen"-Button id=16, „Zurück"-Button id=3
-- Vorlesen: V4.89 OnCharaMakeNameUpdate — Fokus-Node → enthaltendes
-  sichtbares TextInput (FindFocusedNameField), bei Feldwechsel Label +
-  Inhalt, sonst Tipp-Echo (EvaluatedString-Diff). Generischer Fokus-
-  Leser für Namensfelder stummgeschaltet (IsFocusInsideNameField),
-  Knöpfe bleiben generisch lesbar
-- OFFEN: wie wechselt der Nutzer die Felder (Tab? Klick?) — Laufzeit-
-  Log fehlte (rotiert); nächster Test klärt es ([Name]-Zeilen)
+### _CharaMakeCharaName (name entry, dump 2026-07-17 17:57)
+- Window title „Name des Charakters", help text id=13 („Vor- und Nachname können
+  je zwischen 2 und 15 Zeichen…"), instruction id=5 („Gib deinem Charakter einen
+  Namen."), total counter id=12 „0/20"
+- TWO visible TextInput components (CT=7): **id=9 and id=7** (each F=…V), each
+  with its own counter child id=17 („0/15") and display text id=16. Plus TWO
+  invisible TextInputs id=11 (counter „0/9") + id=10 („0/6") = alternative input
+  modes (unused, no V) → only process the visible fields
+- Labels as top-level text: **id=8 „Nachname", id=6 „Vorname"**. Node order:
+  TextInput id=9 → text id=8 → TextInput id=7 → text id=6. The id-1 pattern fits
+  (9→8, 7→6), but V4.89 pairs by PHYSICAL PROXIMITY (X/Y of the field vs. the
+  label) — more robust against node order/language
+- „Bestätigen" button id=16, „Zurück" button id=3
+- Reading out: V4.89 OnCharaMakeNameUpdate — focus node → the containing visible
+  TextInput (FindFocusedNameField); on a field change label + content, otherwise
+  a typing echo (EvaluatedString diff). The generic focus reader is muted for
+  name fields (IsFocusInsideNameField), while buttons stay generically readable
+- OPEN: how does the user switch fields (Tab? click?) — the runtime log was
+  missing (rotated); the next test will settle it ([Name] lines)
 
-### Aussehen speichern (Dumps + Log 2026-07-17 17:42)
-- Weg: Aussehen-Schritt → Ok → SelectYesno „Die Einstellungen
-  speichern?" → Ja
-- `CharaMakeDataExport` („CHARAKTERDATEN SPEICHERN"): List(9) mit 40
-  Slots, ListItemRenderer-Zeilen MIT Text: id=6 Volksstamm/Geschlecht
-  („Wiesländer♂"), id=5 „Speicherslot N", id=4 Datum. Tastatur bewegt
-  Hov2 (nativ) → generische Listen-Ansage greift. Spalten-Köpfe +
-  Beschreibung als Top-Level-Texte (id=6/5/4/2)
-- `CharaMakeDataImportDialog`: Überschreiben-Bestätigung (Ok/Abbrechen),
-  Frage wird von OnAnyAddonOpen gelesen
-- `CharaMakeDataInputString`: Kommentar-Dialog — Window-Komponente,
-  Speichern/Abbrechen-Buttons (id=5/6), **TextInput-Komponente (CT=7)**
-  top-level id=4 mit Zähler-Text id=17 („0/40") und Anzeige-Text id=16
-- `AtkComponentInputBase` (ilspycmd 2026-07-17): EvaluatedString @224,
-  RawString @328, CursorPos @460, SelectionStart/End @452/456 —
-  EvaluatedString = Quelle fürs Tipp-Echo (V4.88,
-  OnCharaMakeInputUpdate, Diff-Ansage pro Frame)
-- ACHTUNG Fokus: der globale Fokus sitzt im Dialog auf dem ZÄHLER-Node
-  („0/40") und ändert sich pro Tastendruck → IsBareNumber-Guard
-- [Key]-Probe-Erkenntnis: IsJustPressed sieht Pfeiltasten NUR, wenn das
-  Spiel sie nicht selbst verbraucht (native Listen-Navigation
-  verbraucht sie; tote Icon-Raster nicht) → Plugin-Navigation kollidiert
-  nie mit nativer Navigation
+### Saving the appearance (dumps + log 2026-07-17 17:42)
+- Route: the „Aussehen" step → OK → SelectYesno „Die Einstellungen speichern?" →
+  Yes
+- `CharaMakeDataExport` („CHARAKTERDATEN SPEICHERN"): List(9) with 40 slots,
+  ListItemRenderer rows WITH text: id=6 tribe/gender („Wiesländer♂"), id=5
+  „Speicherslot N", id=4 date. The keyboard moves Hov2 (natively) → the generic
+  list announcement takes hold. Column headers + description as top-level texts
+  (id=6/5/4/2)
+- `CharaMakeDataImportDialog`: overwrite confirmation (OK/Cancel), the question
+  is read by OnAnyAddonOpen
+- `CharaMakeDataInputString`: comment dialog — a window component, save/cancel
+  buttons (id=5/6), **TextInput component (CT=7)** top-level id=4 with counter
+  text id=17 („0/40") and display text id=16
+- `AtkComponentInputBase` (ilspycmd 2026-07-17): EvaluatedString @224, RawString
+  @328, CursorPos @460, SelectionStart/End @452/456 — EvaluatedString = the
+  source for the typing echo (V4.88, OnCharaMakeInputUpdate, diff announcement
+  per frame)
+- WATCH OUT, focus: in the dialog the global focus sits on the COUNTER node
+  („0/40") and changes on every key press → IsBareNumber guard
+- [Key] probe finding: IsJustPressed only sees the arrow keys when the game does
+  not consume them itself (native list navigation consumes them; dead icon grids
+  do not) → plugin navigation never collides with native navigation
 
-### Volk-/Volksstamm-Beschreibung = _CharaMakeHelp (Dumps 2026-07-17 16:31)
-- Der Beschreibungstext steht in `_CharaMakeHelp`, Top-Level-**Text-Node
-  id=4** (F=0x2033 V), und wird beim Markieren einer Option live
-  umgeschrieben — verifiziert an ZWEI Schritten:
-  - Volk & Geschlecht (16:31:39/49): „Die Elezen sind stolze Nomaden, …"
-  - Volksstamm (16:31:57): „Der Volksstamm der Wiesländer macht die
-    große Mehrheit im Volk der Hyuran aus. …"
-- Übrige _CharaMakeHelp-Nodes: id=5 TextNineGrid (Text leer), id=3 Text
-  leer, id=7/6/2 Images — id=4 ist der einzige Inhalts-Node
-- _CharaMakeInfo ist NICHT die Beschreibung (beide Text-Nodes leer,
-  auch während die Beschreibung sichtbar war)
-- Am Schritt „Aussehen" ist _CharaMakeHelp unsichtbar (Dumps 16:32/16:35)
-- Vorlesen: V4.83 `OnCharaMakeHelpUpdate` (PostUpdate _CharaMakeHelp,
-  Änderungs-Detektor auf dem Node-Text, nicht-unterbrechende Ansage)
-- ACHTUNG (V4.84): `_CharaMakeHelp` MUSS in SpecialUpdateAddons stehen —
-  sonst spricht der generische Scanner (ScanAddonTexts) den Text
-  zusätzlich per SpeakInterrupt und schneidet die Namens-Ansage ab
-  (Log 2026-07-17 16:56)
+### Race/tribe description = _CharaMakeHelp (dumps 2026-07-17 16:31)
+- The description text sits in `_CharaMakeHelp`, top-level **text node id=4**
+  (F=0x2033 V), and is rewritten live when an option is highlighted — verified at
+  TWO steps:
+  - Race & gender (16:31:39/49): „Die Elezen sind stolze Nomaden, …"
+  - Tribe (16:31:57): „Der Volksstamm der Wiesländer macht die große Mehrheit im
+    Volk der Hyuran aus. …"
+- The remaining _CharaMakeHelp nodes: id=5 TextNineGrid (text empty), id=3 text
+  empty, id=7/6/2 images — id=4 is the only content node
+- _CharaMakeInfo is NOT the description (both its text nodes empty, even while
+  the description was visible)
+- At the „Aussehen" step _CharaMakeHelp is invisible (dumps 16:32/16:35)
+- Reading out: V4.83 `OnCharaMakeHelpUpdate` (PostUpdate _CharaMakeHelp, change
+  detector on the node text, non-interrupting announcement)
+- WATCH OUT (V4.84): `_CharaMakeHelp` MUST be in SpecialUpdateAddons — otherwise
+  the generic scanner (ScanAddonTexts) speaks the text additionally via
+  SpeakInterrupt and cuts off the name announcement (log 2026-07-17 16:56)
 
-### Noch nicht analysiert (Dumps im Log vom 2026-07-10 vorhanden!)
-- CMFColorL (Farbwahl, ~1283-2793)
+### Not yet analysed (dumps are present in the log of 2026-07-10!)
+- CMFColorL (colour selection, ~1283-2793)
 - CharaMake-SelectYesno (~4555+)
-- Dump-Datei auf Desktop wird bei jedem F5 ÜBERSCHRIEBEN — Log hat alle
+- The dump file on the desktop is OVERWRITTEN on every F5 — the log has them all
 
-## Buttons programmatisch klicken (verifiziert per ilspycmd, 2026-07-10)
+## Clicking buttons programmatically (verified via ilspycmd, 2026-07-10)
 
-Sauberer Weg ohne Callback-Raten: das registrierte ButtonClick-Event des
-Buttons an seinen Listener schicken — derselbe Pfad wie ein echter Mausklick.
+The clean route without guessing at callbacks: send the button's registered
+ButtonClick event to its listener — the same path as a real mouse click.
 
-- `AtkResNode.AtkEventManager.Event` = Kopf einer verketteten Liste
-  (`AtkEvent.NextEvent`); Klick-Events hängen am Collision-Kind oder am
-  Component-Node selbst
+- `AtkResNode.AtkEventManager.Event` = the head of a linked list
+  (`AtkEvent.NextEvent`); click events hang off the collision child or off the
+  component node itself
 - `AtkEvent`: Node@0, Target@8, Listener@16, Param@24, NextEvent@32, State@40
 - `AtkEventState.EventType`@0 — `AtkEventType.ButtonClick = 25`, MouseOver=6,
   MouseClick=9
 - `AtkEventListener.ReceiveEvent(AtkEventType, int eventParam, AtkEvent*,
-  AtkEventData*)` — AtkEventData ist 40 Bytes, genullt übergeben
-- Implementiert in `UIReaderService.PressFocusedOk`/`TryClickButton`
-- SelectYesno-Sonderfall bleibt: Ja = `FireCallback(1, {Int:0})` +
-  `ShouldFireCallbackAndHideOrClose=true`; Nein = `Close(true)` (Nein hat
-  KEINEN Callback — bestätigt)
+  AtkEventData*)` — AtkEventData is 40 bytes, passed zeroed
+- Implemented in `UIReaderService.PressFocusedOk`/`TryClickButton`
+- The SelectYesno special case remains: Yes = `FireCallback(1, {Int:0})` +
+  `ShouldFireCallbackAndHideOrClose=true`; No = `Close(true)` (No has NO callback
+  — confirmed)
 
-## Lobby / Titelbildschirm
+## Lobby / title screen
 
-- `CharaSelect` ist LEERER Container (Vis=True, 0 Nodes) — Inhalt liegt in
-  `_CharaSelectListMenu` (MouseOver param 1/2/3, kein eigener Text-Handler)
-- `SelectYesno` wird mit wechselnden Knopf-Texten wiederverwendet (Ok/Abbrechen):
-  sichtbare Knöpfe Comp(1005) id=8 (Bestätigen) / id=11 (Abbrechen);
-  HoldButton-Duplikate ids 9/12/15 unsichtbar; Window-Komponente (CT=Window(2))
-  trägt Fenstertitel als Text-Kinder; id=8/„Ok" = Callback-Index 0
-- `TitleDCWorldMap`: Event-Parameter der MouseOver-Events sind KEINE Node-IDs;
-  Zuordnung über `AtkEvent->Node` (erstes Feld). Region-Tabs (Comp 1022) ohne
-  Text — Regionsnamen in Panels (Comp-Child 1009), DC-Namen in 1015
+- `CharaSelect` is an EMPTY container (Vis=True, 0 nodes) — the content sits in
+  `_CharaSelectListMenu` (MouseOver param 1/2/3, no text handler of its own)
+- `SelectYesno` is reused with changing button texts (OK/Cancel): visible buttons
+  Comp(1005) id=8 (confirm) / id=11 (cancel); HoldButton duplicates ids 9/12/15
+  invisible; the window component (CT=Window(2)) carries the window title as text
+  children; id=8/"OK" = callback index 0
+- `TitleDCWorldMap`: the event parameters of the MouseOver events are NOT node
+  IDs; map them through `AtkEvent->Node` (the first field). Region tabs (Comp
+  1022) have no text — the region names are in panels (comp child 1009), the DC
+  names in 1015
 
-## Keybind-System (verifiziert per ilspycmd, 2026-07-10)
+## Keybind system (verified via ilspycmd, 2026-07-10)
 
 Namespace `FFXIVClientStructs.FFXIV.Client.System.Input` (+ `Client.UI.UIInputData`):
 
-- **Zugriff:** `UIInputData.Instance()` (holt sich `UIModule.Instance()` intern).
-  `UIInputData` enthält `InputData` als Feld an Offset 0.
-- **`InputData`** (Size 2512): `NumKeybinds` (Offset 2484, int),
-  `Keybinds` (Offset 2488, `Keybind*`), `GetKeybindSpan()` → `Span<Keybind>`,
-  `GetKeybind(InputId)`, `IsInputIdPressed/Down/Held/Released(InputId)`.
-  Index in der Tabelle == InputId-Wert.
-- **`Keybind`** (Size 11): `KeySettings` (2× KeySetting, Tastatur-Slot 1+2),
-  `GamepadSettings` (2× KeySetting, Controller).
-- **`KeySetting`** (Size 2): `Key` (SeVirtualKey, byte — Werte == Windows-VK-Codes,
-  z.B. F1=112, W=87, 0=unbelegt), `KeyModifier` (KeyModifierFlag:
-  Shift=1, Ctrl=2, Alt=4, Flags kombinierbar).
-- **`InputId`**-Enum: ~450 benannte Aktionen (mit Lücken, z.B. 227–236 fehlen;
-  max 678). Wichtige Gruppen: `MOVE_*` (321–327), `CAMERA_*` (328–343),
-  `TARGET_*` (361–429, u.a. `TARGET_P1`–`TARGET_P8` = 370–377 →
-  Gruppenmitglieder, Standard vermutl. F1–F8!), `HOTBAR_1_1`–`HOTBAR_EX_B`
-  (57–188), `MENU_*` (237–280 + weitere), `CMD_*` Chat (281–320),
-  `JUMP`=348, `AUTORUN_KEY`=349, `KEY_SCREENSHOT`=555.
-  Volltext: Scratchpad-Dump oder ilspycmd -t.
-- **Live-Auslesen im Plugin:** `/acc keys` (V4.18, KeybindService) schreibt
-  alle belegten Aktionen + Konflikt-Check gegen Plugin-Tasten nach
+- **Access:** `UIInputData.Instance()` (fetches `UIModule.Instance()`
+  internally). `UIInputData` contains `InputData` as a field at offset 0.
+- **`InputData`** (size 2512): `NumKeybinds` (offset 2484, int), `Keybinds`
+  (offset 2488, `Keybind*`), `GetKeybindSpan()` → `Span<Keybind>`,
+  `GetKeybind(InputId)`, `IsInputIdPressed/Down/Held/Released(InputId)`. The
+  index in the table == the InputId value.
+- **`Keybind`** (size 11): `KeySettings` (2× KeySetting, keyboard slots 1+2),
+  `GamepadSettings` (2× KeySetting, controller).
+- **`KeySetting`** (size 2): `Key` (SeVirtualKey, byte — the values == Windows VK
+  codes, e.g. F1=112, W=87, 0=unbound), `KeyModifier` (KeyModifierFlag: Shift=1,
+  Ctrl=2, Alt=4, flags combinable).
+- **`InputId`** enum: roughly 450 named actions (with gaps, e.g. 227–236 are
+  missing; max 678). Important groups: `MOVE_*` (321–327), `CAMERA_*` (328–343),
+  `TARGET_*` (361–429, among them `TARGET_P1`–`TARGET_P8` = 370–377 → party
+  members, presumably F1–F8 by default!), `HOTBAR_1_1`–`HOTBAR_EX_B` (57–188),
+  `MENU_*` (237–280 + more), `CMD_*` chat (281–320), `JUMP`=348,
+  `AUTORUN_KEY`=349, `KEY_SCREENSHOT`=555. Full text: the scratchpad dump or
+  ilspycmd -t.
+- **Reading it live in the plugin:** `/acc keys` (V4.18, KeybindService) writes
+  all bound actions + a conflict check against the plugin keys to
   `Desktop\FFXIV_Keybinds.txt`.
 
-## Offizielle Standard-Tastaturbelegung (Quelle: de.finalfantasyxiv.com/game_manual/operation, 2026-07-10)
+## Official default keyboard layout (source: de.finalfantasyxiv.com/game_manual/operation, 2026-07-10)
 
-Zusammenfassung des offiziellen Handbuchs. VORBEHALT: Sonderzeichen-Tasten
-(deutsches Layout) teils unklar; Ground Truth ist der Auto-Keybind-Dump (V4.19).
+A summary of the official manual. CAVEAT: the special-character keys (German
+layout) are partly unclear; the ground truth is the auto keybind dump (V4.19).
 
-### Bewegung
-- W/S vor/zurück, A/D drehen, Q/E Seitschritt, Leertaste springen
-- R Auto-Rennen, Y Waffe ziehen/Absteigen, V Kamera-Flip
-- Fliegen: Leertaste hoch, Strg+Leertaste runter/tauchen, Z absteigen (Luft)
+### Movement
+- W/S forward/back, A/D turn, Q/E strafe, space to jump
+- R auto-run, Y draw weapon/dismount, V camera flip
+- Flying: space up, Ctrl+space down/dive, Z dismount (in the air)
 
-### Kamera
-- Pfeiltasten = Kamera richten (NICHT Bewegung!), Bild↑/↓ Zoom
-- Pos1 Kamera wechseln, Ende Standardposition, NUM5 auf Ziel einrasten
+### Camera
+- Arrow keys = aim the camera (NOT movement!), Page Up/Down zoom
+- Home switch camera, End default position, NUM5 lock onto the target
 
-### Zielauswahl (KERN FÜR NAVIGATION — alle F-Tasten belegt!)
-- Tab / Umschalt+Tab: Gegner durchschalten (nah→fern / fern→nah)
-- F: zum Ziel hinwenden; Umschalt+F: Fokusziel setzen/löschen
-- F1: sich selbst; F2–F8: Gruppenmitglieder; F9: Begleiter; F10: Fokusziel
-- F11: nächster GEGNER; F12: nächster NPC ODER OBJEKT (eingebaute Navigation!)
-- T: Ziel des Ziels; Umschalt+T: Angreifer
-- Strg+NUM8/NUM2: Feindliste hoch/runter
+### Targeting (CORE FOR NAVIGATION — all F keys are bound!)
+- Tab / Shift+Tab: cycle enemies (near→far / far→near)
+- F: turn towards the target; Shift+F: set/clear the focus target
+- F1: yourself; F2–F8: party members; F9: companion; F10: focus target
+- F11: next ENEMY; F12: next NPC OR OBJECT (built-in navigation!)
+- T: target's target; Shift+T: attacker
+- Ctrl+NUM8/NUM2: enemy list up/down
 
 ### Chat
-- Enter: Chat öffnen; X: Textkommando; Alt+S/G/R/…: Chatmodi
+- Enter: open chat; X: text command; Alt+S/G/R/…: chat modes
 
-#### Kampflog / eigene Aktionen vorlesen (V4.90)
-Beim Einsetzen einer Aktion schreibt das Spiel "Du wirkst X." ins Kampflog;
-das kommt über `IChatGui.ChatMessage` als eigener `XivChatType`.
-- Benannte Basis-LogKinds (Dalamud `XivChatType`, = Low-7-Bits des Wertes):
-  Damage=41, Miss=42, **Action=43** ("setzt Aktion ein"), Item=44,
-  Healing=45, GainBuff=46, GainDebuff=47, LoseBuff=48, LoseDebuff=49.
-- Reale Nachrichten können als KOMBINIERTE Werte ankommen (Quell-/Ziel-Bits
-  im höheren Byte), darum `(int)type & 0x7F` auf die Basis maskieren
-  (robust, egal ob flach oder kombiniert).
-- OFFEN/PROBE: ob "eigene" vs. "fremde" Aktion über die hohen Bits
-  unterscheidbar ist, ist NICHT verifiziert - ChatReaderService.TryHandleCombat
-  loggt jede Aktions-Zeile roh ([Combat] Aktion type=0x…), damit der
-  Eigen-Code aus einem Live-Log gefiltert werden kann. Bis dahin werden ALLE
-  Aktions-Zeilen gelesen (Config ReadCombatMessages). Auch Nachlese-Kategorie
-  "Kampf".
+#### Combat log / reading out your own actions (V4.90)
+When an action is used the game writes "Du wirkst X." into the combat log; that
+arrives through `IChatGui.ChatMessage` as its own `XivChatType`.
+- Named base LogKinds (Dalamud `XivChatType`, = the low 7 bits of the value):
+  Damage=41, Miss=42, **Action=43** ("uses an action"), Item=44, Healing=45,
+  GainBuff=46, GainDebuff=47, LoseBuff=48, LoseDebuff=49.
+- Real messages can arrive as COMBINED values (source/target bits in the higher
+  byte), so mask `(int)type & 0x7F` down to the base (robust whether flat or
+  combined).
+- OPEN/PROBE: whether "own" vs. "other" actions can be distinguished through the
+  high bits is NOT verified - ChatReaderService.TryHandleCombat logs every action
+  line raw ([Combat] Aktion type=0x…) so that the own-code can be filtered out of
+  a live log. Until then ALL action lines are read (config ReadCombatMessages).
+  Also the review category "combat".
 
-#### Chat SENDEN (Tipp-Echo im Eingabefeld) — ilspycmd-verifiziert 2026-07-17
-NVDA liest das Spiel-Chatfeld nicht; das Plugin spricht die getippten
-Zeichen selbst (V4.90). Quelle:
-- `AddonChatLog` (Addon-Name „ChatLog", IMMER sichtbar).
-  - `TextInput` @608 = `AtkComponentTextInput*` (Direktzeiger, kein
-    Node-Scan nötig).
-  - `TabIndex` @684 / `TabCount` @685 / `TabNames` (FixedSizeArray5) =
-    die Chat-REITER (Allgemein/Kampf/…), NICHT der Sende-Kanal.
+#### SENDING chat (typing echo in the input field) — ilspycmd-verified 2026-07-17
+NVDA does not read the game's chat field; the plugin speaks the typed characters
+itself (V4.90). Source:
+- `AddonChatLog` (addon name "ChatLog", ALWAYS visible).
+  - `TextInput` @608 = `AtkComponentTextInput*` (a direct pointer, no node scan
+    needed).
+  - `TabIndex` @684 / `TabCount` @685 / `TabNames` (FixedSizeArray5) = the chat
+    TABS (general/combat/…), NOT the send channel.
 - `AtkComponentTextInput`:
-  - `IsActive` (bool) = true, solange der Eingabemodus offen ist
-    (Enter geöffnet). DAS Gate, damit das Echo nicht jeden Frame läuft.
-  - `AtkComponentInputBase.EvaluatedString` = getippter Text (wie beim
-    CharaMake-Feld). Dazu `CursorPos`, `SelectionStart/End` für späteren
-    Feinschliff (Editieren mittendrin).
-- Aktiver Kanal (Ansage): `AddonChatLog.CurrentChannelTextNode` @335
-  (`AtkTextNode*`) trägt das Kanal-Label, wie das Spiel es rendert -
-  lokalisiert und immer korrekt (via `->NodeText.ToString()`, dann
-  sanitizen). DAS ist die Quelle für die Kanal-Ansage - KEIN int→Name-Raten
-  nötig. (V4.90 nutzt genau das.)
-  - `RaptureShellModule.Instance()->ChatType` @4048 (int) ist der Kanal als
-    Zahl; Testwerte 2026-07-17: 1/2/4 bei Alt-Umschaltung. `TempChatType`
-    @4284; Flüster-Ziel `TellName` @4056 / `TellWorld` @4160 / `TellWorldId`
-    @4280. Die int→Name-Zuordnung ist NICHT verifiziert (Agent-Enum
-    `ChatChannel` nur Say=1/Party=2/Alliance=3, evtl. andere Nummerierung) -
-    darum wird für die Ansage der Textnode genutzt, nicht die Zahl.
-- Senden (Enter) und Kanalwechsel (Tab/Alt+Taste) bleiben spieleigen —
-  das Plugin sagt nur an. Gesendetes echot der ChatReaderService zurück
-  (eigene /say-Nachricht kommt als XivChatType.Say).
+  - `IsActive` (bool) = true while the input mode is open (opened with Enter).
+    THE gate that keeps the echo from running every frame.
+  - `AtkComponentInputBase.EvaluatedString` = the typed text (as in the CharaMake
+    field). Alongside it `CursorPos`, `SelectionStart/End` for later polish
+    (editing in the middle).
+- Active channel (announcement): `AddonChatLog.CurrentChannelTextNode` @335
+  (`AtkTextNode*`) carries the channel label as the game renders it - localised
+  and always correct (via `->NodeText.ToString()`, then sanitised). THAT is the
+  source for the channel announcement - NO int→name guessing needed. (V4.90 uses
+  exactly that.)
+  - `RaptureShellModule.Instance()->ChatType` @4048 (int) is the channel as a
+    number; test values 2026-07-17: 1/2/4 when toggling with Alt. `TempChatType`
+    @4284; whisper target `TellName` @4056 / `TellWorld` @4160 / `TellWorldId`
+    @4280. The int→name mapping is NOT verified (the agent enum `ChatChannel`
+    only has Say=1/Party=2/Alliance=3, possibly a different numbering) - which is
+    why the text node is used for the announcement, not the number.
+- Sending (Enter) and switching channels (Tab/Alt+key) stay the game's own — the
+  plugin only announces. What is sent is echoed back by ChatReaderService (your
+  own /say message arrives as XivChatType.Say).
 
-### Menüs (Auswahl)
-- NUM0 bestätigen, NUM, (Komma) abbrechen, NUM* Unterkommando
-- NUM8/2/4/6 Cursor, NUM9/NUM7 Reiter, NUM+ Hauptmenü, NUM- System
-- C Charakter, I Inventar, M Karte, J Archiv (Quests!), K Kommandoliste,
-  U Charakterkonfig, Strg+U Systemkonfig, P Inhaltssuche, O Gruppe,
-  L Kontaktkreise, H/G/B/, Notizbücher, ä Emotes, Ö Freie Gesellschaft
-- Esc: alle UI-Elemente schließen; Druck/F13 Screenshot; F14 UI-Modus
+### Menus (selection)
+- NUM0 confirm, NUM, (comma) cancel, NUM* subcommand
+- NUM8/2/4/6 cursor, NUM9/NUM7 tabs, NUM+ main menu, NUM- system
+- C character, I inventory, M map, J journal (quests!), K command list, U
+  character config, Ctrl+U system config, P duty finder, O party, L social
+  circles, H/G/B/, notebooks, ä emotes, Ö free company
+- Esc: close all UI elements; Print/F13 screenshot; F14 UI mode
 
-### Safe Mod Keys (BESTÄTIGT durch Live-Dump 2026-07-10, 171 belegte Aktionen)
-- **N = einziger freier Buchstabe** (nur Alt+N=Neulingschat belegt)
-- **NUMPAD3 frei** (NUMPAD1=HUD-Fokus, NUMPAD5=Kamera, Rest = UI-Cursor)
-- **Strg+F1…F12 komplett frei** (nur Strg+F20 belegt);
-  Umschalt+F1…F12 ebenfalls frei (belegt: Umschalt+Tab/T/F/M/V)
-- Einschränkung: bare SHIFT/CONTROL sind im BARDEN-MUSIKMODUS Oktav-Tasten
-  (PERFORMANCE_MODE_*) — Strg-Kombis dort vermeiden
-- **WINDOWS-FALLE Umschalt+Nummernblock (entdeckt 2026-07-16):** bei aktivem
-  NumLock wandelt der Windows-Tastaturtreiber Umschalt+Numpad-ZIFFER in die
-  Navigations-Taste um (Numpad3 → Bild-ab/VK_NEXT) und lässt Umschalt dabei
-  künstlich los — IKeyState sieht NIE die Numpad-VK. Beleg: Gehhilfe auf
-  Umschalt+Numpad3 (V4.61–V4.63) hat laut Log kein einziges Mal gefeuert,
-  während Strg+Numpad3 (Routen-Vorschau) sofort ankam. Bild-ab ist im Spiel
-  obendrein CAMERA_ZOOMOUT. ⇒ Numpad-Ziffern NIE mit Umschalt kombinieren,
-  nur mit Strg. Strg+Numpad2/4/6/8 sind vom Spiel belegt (Allianz-/
-  Gegnerlisten-Cursor); Strg+Numpad1/3/5/7/9 frei.
-- Plugin-Tasten seit V4.21 (Config-Migration V1→V2): N=Objekte nah,
-  Umschalt+N=Richtung, Strg+N=Ziel verfolgen, Strg+Umschalt+N=Verfolgung aus,
-  Strg+F1=Hilfe, Strg+F2=Fenster, Strg+F5=UI-Dump, Strg+F10=Menü vorlesen,
-  Strg+F11=Stille, Strg+F12=Kampfstatus
-- IsJustPressed kann seit V4.21 Modifier („Strg+Umschalt+N"), EXAKTE
-  Modifier-Übereinstimmung (bare N feuert nicht bei Alt+N)
-- Deutsche Umlaut-Tasten laufen über Sonder-VKs: VK136≈Ö (FC-Menü),
-  VK140≈Ä (Emotes), VK137/139 = Hotbar-Slots 11/12 (vermutl. ß/´) —
-  Zuordnung aus Manual-Abgleich GEFOLGERT, nicht hart verifiziert
-- Weitere Dump-Erkenntnisse: MENU_FISH=F20, MENU_BUDDY=F22, MENU_RETURN=F24
-  (Pseudo-Tasten); Kamera=Pfeiltasten; CMD_CHAT=RETURN bestätigt
+### Safe mod keys (CONFIRMED by the live dump 2026-07-10, 171 bound actions)
+- **N = the only free letter** (only Alt+N=novice chat is bound)
+- **NUMPAD3 free** (NUMPAD1=HUD focus, NUMPAD5=camera, the rest = UI cursor)
+- **Ctrl+F1…F12 completely free** (only Ctrl+F20 is bound); Shift+F1…F12 are
+  likewise free (bound: Shift+Tab/T/F/M/V)
+- Limitation: bare SHIFT/CONTROL are octave keys in BARD PERFORMANCE MODE
+  (PERFORMANCE_MODE_*) — avoid Ctrl combinations there
+- **WINDOWS TRAP, Shift+numpad (discovered 2026-07-16):** with NumLock active the
+  Windows keyboard driver converts Shift+numpad DIGIT into the navigation key
+  (Numpad3 → Page Down/VK_NEXT) and artificially releases Shift while doing so —
+  IKeyState NEVER sees the numpad VK. Evidence: the walk guide on Shift+Numpad3
+  (V4.61–V4.63) did not fire a single time according to the log, while
+  Ctrl+Numpad3 (route preview) arrived immediately. Page Down is moreover
+  CAMERA_ZOOMOUT in the game. ⇒ NEVER combine numpad digits with Shift, only with
+  Ctrl. Ctrl+Numpad2/4/6/8 are taken by the game (alliance/enemy list cursor);
+  Ctrl+Numpad1/3/5/7/9 are free.
+- Plugin keys since V4.21 (config migration V1→V2): N=nearby objects, Shift+N=
+  direction, Ctrl+N=track target, Ctrl+Shift+N=tracking off, Ctrl+F1=help,
+  Ctrl+F2=window, Ctrl+F5=UI dump, Ctrl+F10=read menu, Ctrl+F11=silence,
+  Ctrl+F12=combat status
+- Since V4.21 IsJustPressed can handle modifiers ("Ctrl+Shift+N"), with EXACT
+  modifier matching (a bare N does not fire on Alt+N)
+- The German umlaut keys run through special VKs: VK136≈Ö (FC menu), VK140≈Ä
+  (emotes), VK137/139 = hotbar slots 11/12 (presumably ß/´) — the mapping is
+  INFERRED from a comparison with the manual, not hard-verified
+- Further dump findings: MENU_FISH=F20, MENU_BUDDY=F22, MENU_RETURN=F24
+  (pseudo-keys); camera=arrow keys; CMD_CHAT=RETURN confirmed
 
-### Dalamud-Targeting (verifiziert 2026-07-10, in-game + ilspycmd)
-- `IObjectTable.LocalPlayer.TargetObject` trackt UI-Targeting NICHT
-  (in-game belegt: Tab-Ziel gesetzt, Property blieb null → keine Ansage)
-- Richtig: `ITargetManager` (Dalamud-Service): `.Target` (hartes Ziel),
-  `.SoftTarget`, `.FocusTarget`, `.MouseOverTarget`, `.PreviousTarget` —
-  alle IGameObject?, auch setzbar (null = Ziel löschen)
-- Dalamud `ObjectKind`-Enum: None, Pc, BattleNpc, EventNpc, Treasure,
-  Aetheryte, GatheringPoint, EventObj, Mount, Companion, Retainer,
-  AreaObject, HousingEventObject, Cutscene, ReactionEventObject, Ornament,
-  CardStand (NICHT „Player"/„MountType"!)
+### Dalamud targeting (verified 2026-07-10, in-game + ilspycmd)
+- `IObjectTable.LocalPlayer.TargetObject` does NOT track UI targeting
+  (established in-game: a Tab target was set, the property stayed null → no
+  announcement)
+- Correct: `ITargetManager` (a Dalamud service): `.Target` (hard target),
+  `.SoftTarget`, `.FocusTarget`, `.MouseOverTarget`, `.PreviousTarget` — all
+  IGameObject?, and settable too (null = clear the target)
+- Dalamud `ObjectKind` enum: None, Pc, BattleNpc, EventNpc, Treasure, Aetheryte,
+  GatheringPoint, EventObj, Mount, Companion, Retainer, AreaObject,
+  HousingEventObject, Cutscene, ReactionEventObject, Ornament, CardStand (NOT
+  "Player"/"MountType"!)
 
-### SetHardTarget kann ABLEHNEN (ilspycmd + Live-Log 2026-07-10, 16:39)
+### SetHardTarget can REFUSE (ilspycmd + live log 2026-07-10, 16:39)
 - `TargetSystem.SetHardTarget(GameObject*, bool ignoreTargetModes, bool a4,
-  int a5)` gibt **bool** zurück — das Spiel kann die Zieländerung verweigern.
-  Dalamuds `ITargetManager.Target`-Setter ruft das auf und WIRFT den
-  Rückgabewert WEG (ilspycmd-verifiziert, Dalamud.dll TargetManager).
-- Live belegt: 16:39:26–16:39:44 wurden ALLE Target-Sets des Browsers
-  abgelehnt (Hard-Target blieb auf Honoraint), davor und danach (16:41:34+)
-  funktionierten sie. Ursache noch UNGEKLÄRT — Plugin loggt Ablehnungen
-  seit V4.25 per Read-back („[Nav] Target-Set ABGELEHNT").
-- Getter = `GetHardTarget()` (eigene Spielfunktion, nicht bloß Feld-Read;
-  Feld `Target` liegt bei Offset 128). `ignoreTargetModes`-Parameter
-  ungetestet — Kandidat, falls Ablehnungen zum Problem werden.
+  int a5)` returns a **bool** — the game can refuse the target change. Dalamud's
+  `ITargetManager.Target` setter calls it and THROWS the return value AWAY
+  (ilspycmd-verified, Dalamud.dll TargetManager).
+- Established live: between 16:39:26 and 16:39:44 ALL of the browser's target
+  sets were refused (the hard target stayed on Honoraint), while before and after
+  (16:41:34+) they worked. The cause is still UNRESOLVED — since V4.25 the plugin
+  logs refusals by reading back ("[Nav] Target-Set ABGELEHNT").
+- The getter is `GetHardTarget()` (a game function of its own, not merely a field
+  read; the `Target` field sits at offset 128). The `ignoreTargetModes` parameter
+  is untested — a candidate should refusals become a problem.
 
-### Rotations-Konvention (VERIFIZIERT aus Live-Log 2026-07-10, 15:26–15:27)
-- `IGameObject.Rotation` (Radiant): **Blickvektor = (sin(rot), cos(rot))
-  in der XZ-Ebene**, d. h. rot = atan2(dx, dz) der Blickrichtung.
-  rot=0 blickt nach +Z. Relativwinkel zum Ziel daher:
-  `atan2(dx, dz) - rot` (normalisiert auf ±180°); 0 = geradeaus.
-- Beweis: F-Taste (zum Ziel drehen) rastete zweimal auf exakt rot=-1,83
-  ein; Ziel-Peilung aus stationären Gehhilfe-Ticks: atan2(dx,dz)=-105° =
-  -1,83 rad — Blickvektor traf Zielrichtung auf <0,5° genau. Die alte
-  Annahme „0 = Norden" (atan2(dx,-dz)) war eine SPIEGELUNG, kein Offset.
-- OFFEN: Vorzeichen (positiv = rechts oder links?). Aus dem Log nicht
-  ableitbar. Test: Ziel „links" angesagt → A (links drehen) → Ansage muss
-  Richtung „geradeaus" wandern; bzw. D halten und im Gehhilfe-Log prüfen,
-  ob rot dabei steigt oder fällt.
+### Rotation convention (VERIFIED from the live log 2026-07-10, 15:26–15:27)
+- `IGameObject.Rotation` (radians): **the facing vector = (sin(rot), cos(rot)) in
+  the XZ plane**, i.e. rot = atan2(dx, dz) of the facing direction. rot=0 faces
+  +Z. The relative angle to the target is therefore `atan2(dx, dz) - rot`
+  (normalised to ±180°); 0 = straight ahead.
+- Proof: the F key (turn towards the target) locked in twice at exactly
+  rot=-1.83; the target bearing from stationary walk guide ticks:
+  atan2(dx,dz)=-105° = -1.83 rad — the facing vector matched the target direction
+  to within less than 0.5°. The old assumption "0 = north" (atan2(dx,-dz)) was a
+  MIRRORING, not an offset.
+- OPEN: the sign (does positive mean right or left?). Not derivable from the log.
+  Test: target announced as "left" → A (turn left) → the announcement must move
+  towards "straight ahead"; or hold D and check in the walk guide log whether rot
+  rises or falls.
 
-### vnavmesh-IPC (Quellcode-verifiziert 2026-07-10, github.com/awgil/ffxiv_navmesh)
-- Fremd-Plugin für Navmesh-Wegfindung + Auto-Bewegung. Installation:
-  Repo `https://puni.sh/api/repository/veyn`, ApiLevel 15. Beim User liegt es
-  als Dev-Plugin unter `devPlugins\vnavmesh` — Dalamud aktualisiert das NICHT
-  automatisch, ein Update heisst Dateien austauschen (2026-08-10 von 1.2.3.10
-  auf 1.2.3.13; alte Fassung liegt in `devPlugins\vnavmesh_backup_1.2.3.10`).
-  Die Downloadadresse steht als `DownloadLinkInstall` in der Repo-JSON.
-  ACHTUNG: Ein Versionswechsel kann die Navmesh-Formatversion aendern, dann
-  werden alle gecachten Netze beim ersten Betreten neu gebaut.
-- Für uns relevante IPC-Gates (alle mit Präfix `vnavmesh.`):
-  - `Nav.IsReady` → bool (Mesh der Zone geladen)
-  - `Nav.BuildProgress` → float (Ladefortschritt)
+### vnavmesh IPC (source-verified 2026-07-10, github.com/awgil/ffxiv_navmesh)
+- A third-party plugin for navmesh pathfinding + auto-movement. Installation:
+  repo `https://puni.sh/api/repository/veyn`, ApiLevel 15. On the user's machine
+  it sits as a dev plugin under `devPlugins\vnavmesh` — Dalamud does NOT update
+  that automatically, so an update means swapping files (2026-08-10 from 1.2.3.10
+  to 1.2.3.13; the old version is in `devPlugins\vnavmesh_backup_1.2.3.10`).
+  The download address is the `DownloadLinkInstall` in the repo JSON.
+  WATCH OUT: a version change can alter the navmesh format version, and then all
+  cached meshes are rebuilt on first entry.
+- The IPC gates relevant to us (all with the prefix `vnavmesh.`):
+  - `Nav.IsReady` → bool (the zone's mesh is loaded)
+  - `Nav.BuildProgress` → float (loading progress)
   - `SimpleMove.PathfindAndMoveTo(Vector3 dest, bool fly)` → bool
   - `SimpleMove.PathfindAndMoveCloseTo(Vector3 dest, bool fly, float range)`
-    → bool (false NUR wenn schon eine Wegfindung aussteht; Quelle:
+    → bool (false ONLY when a pathfind is already outstanding; source:
     AsyncMoveRequest.MoveTo)
-  - `SimpleMove.PathfindInProgress` → bool (Wegfindung rechnet noch)
-  - `Path.IsRunning` → bool (läuft gerade; Waypoints.Count > 0)
-  - `Path.Stop` → Action (Subscriber: GetIpcSubscriber<object>, InvokeAction)
-  - `Path.SetTolerance(float)`, `Path.MoveTo(List<Vector3>, bool)` u. a.
-- Dalamud-Seite: `IDalamudPluginInterface.GetIpcSubscriber<T..., TRet>(name)`,
-  `InvokeFunc`/`InvokeAction` (ilspycmd-verifiziert). Fehlt das Plugin,
-  wirft der INVOKE (IpcNotReadyError) — Subscriben ist immer gefahrlos.
-- Pfadziel ist ein PUNKT (Position beim Start) — bewegte NPCs laufen weg,
-  ggf. neu starten.
-- WICHTIG `Nav.Pathfind(Vector3 from, Vector3 to, bool fly)`: reine
-  Wegpunkt-ABFRAGE ohne Auto-Bewegung, aber der Rückgabetyp ist
-  **`Task<List<Vector3>>`**, NICHT `List<Vector3>` (ilspycmd 2026-07-16
-  an der installierten vnavmesh.dll: das IPC-Gate wrappt
-  `NavmeshManager.QueryPathBasic`, eine `async`-Methode). Subscriber:
-  `GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>`;
-  Task pro Frame pollen (`IsCompletedSuccessfully` prüfen — Task kann
-  faulten wenn das Mesh beim Zonenwechsel entlädt), NIE blockierend
-  `.Result` vor Abschluss. `Nav.PathfindInProgress`/`Nav.PathfindNumQueued`
-  melden den Queue-Zustand; mehrere Anfragen werden intern nacheinander
-  abgearbeitet (`ExecuteWhenIdle`). Verdents Konzeptdokument
-  (manuelle-navigation-konzept.md) gibt hier fälschlich `List<Vector3>` an.
-- QueryPath wirft eine Exception, wenn kein Mesh geladen ist — vor dem
-  Invoke `Nav.IsReady` prüfen (RouteService macht das).
+  - `SimpleMove.PathfindInProgress` → bool (the pathfind is still computing)
+  - `Path.IsRunning` → bool (currently running; Waypoints.Count > 0)
+  - `Path.Stop` → Action (subscriber: GetIpcSubscriber<object>, InvokeAction)
+  - `Path.SetTolerance(float)`, `Path.MoveTo(List<Vector3>, bool)` and others
+- The Dalamud side: `IDalamudPluginInterface.GetIpcSubscriber<T..., TRet>(name)`,
+  `InvokeFunc`/`InvokeAction` (ilspycmd-verified). If the plugin is missing, the
+  INVOKE throws (IpcNotReadyError) — subscribing is always safe.
+- A path destination is a POINT (the position at the start) — moving NPCs walk
+  away, so restart if needed.
+- IMPORTANT, `Nav.Pathfind(Vector3 from, Vector3 to, bool fly)`: a pure waypoint
+  QUERY without auto-movement, but the return type is **`Task<List<Vector3>>`**,
+  NOT `List<Vector3>` (ilspycmd 2026-07-16 against the installed vnavmesh.dll:
+  the IPC gate wraps `NavmeshManager.QueryPathBasic`, an `async` method).
+  Subscriber: `GetIpcSubscriber<Vector3, Vector3, bool, Task<List<Vector3>>>`;
+  poll the task per frame (check `IsCompletedSuccessfully` — the task can fault
+  when the mesh unloads on a zone change), NEVER block on `.Result` before
+  completion. `Nav.PathfindInProgress`/`Nav.PathfindNumQueued` report the queue
+  state; multiple requests are worked through one after another internally
+  (`ExecuteWhenIdle`). Verdent's concept document
+  (manuelle-navigation-konzept.md) wrongly states `List<Vector3>` here.
+- QueryPath throws an exception when no mesh is loaded — check `Nav.IsReady`
+  before the invoke (RouteService does that).
 
-### Schatztruhen: Zustand liest man, man rechnet ihn nicht nach
+### Treasure chests: you read the state, you do not recompute it
 `FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure` (ilspycmd 2026-08-09,
-erbt von GameObject, Size 528). Das Spiel fuehrt den Zustand selbst:
-- `State` (FieldOffset **416**, enum `TreasureState`):
+inherits from GameObject, size 528). The game maintains the state itself:
+- `State` (field offset **416**, enum `TreasureState`):
   `Unopened=0, Opening=1, Opened=2, Unk3=3, FadingOut=4, FadedOut=5`.
-  Alles ausser `Unopened` heisst: erledigt. Das Objekt bleibt danach noch eine
-  Weile in der ObjectTable, nur um sein Ausblenden zu spielen.
-- `Flags` (FieldOffset **508**, enum `TreasureFlags`): `Opened=1, FadedOut=2`.
-  ACHTUNG, die Struct-Doku nennt State und Flags ueberlappend und sagt zu
-  FadedOut ausdruecklich „sometimes set when fading starts, sometimes when
-  fading is complete" — deshalb ist `State` die verlaesslichere Quelle.
-- `CofferKind` (FieldOffset 512, enum `TreasureKind`): `Levequest`,
+  Anything other than `Unopened` means: done. The object then stays in the
+  ObjectTable for a while longer, only to play its fade-out.
+- `Flags` (field offset **508**, enum `TreasureFlags`): `Opened=1, FadedOut=2`.
+  WATCH OUT, the struct documentation describes State and Flags as overlapping
+  and says of FadedOut explicitly "sometimes set when fading starts, sometimes
+  when fading is complete" — which is why `State` is the more reliable source.
+- `CofferKind` (field offset 512, enum `TreasureKind`): `Levequest`,
   `DungeonRaid`, `TreasureHunt`, `PersonalLoot`.
-- `ItemCount` (496) + `LootableItemIds` (432, 16 × uint) = Item-Sheet-Zeilen des
-  Inhalts, sobald er im Beutefenster steht.
-- `CountdownTime`/`ClaimTime` (420/428): die Sekunden, die das Beutefenster
-  anzeigt.
-→ V5.75 blendet Truhen mit `State != Unopened` aus der Objekt-Browser-Liste aus
-(NavigationService.IsEmptiedTreasure). NUR die Liste — anvisiert man die Truhe
-mit den Spieltasten, wird sie weiterhin angesagt.
+- `ItemCount` (496) + `LootableItemIds` (432, 16 × uint) = the item sheet rows of
+  the contents, as soon as they appear in the loot window.
+- `CountdownTime`/`ClaimTime` (420/428): the seconds the loot window displays.
+→ V5.75 hides chests with `State != Unopened` from the object browser list
+(NavigationService.IsEmptiedTreasure). ONLY the list — if you target the chest
+with the game keys, it is still announced.
 
-#### Höher gelegene Ziele: was `fly` wirklich tut (ilspycmd 2026-08-08)
-Vollständige IPC-Liste aus `Navmesh.IPCProvider` der installierten DLL
-dekompiliert. Zum Thema „Objekt liegt über mir":
-- **Der `fly`-Parameter wählt ZWEI VERSCHIEDENE SUCHRÄUME**, er ist kein
-  Komfort-Schalter (`NavmeshManager.QueryPath`, Zeile 189):
+#### Targets higher up: what `fly` actually does (ilspycmd 2026-08-08)
+The complete IPC list decompiled from `Navmesh.IPCProvider` of the installed DLL.
+On the subject of "the object is above me":
+- **The `fly` parameter selects TWO DIFFERENT SEARCH SPACES**, it is not a
+  convenience switch (`NavmeshManager.QueryPath`, line 189):
   `flying ? Query.PathfindVolume(...) : Query.PathfindMesh(...)`.
-  - `false` (was wir überall übergeben) = **Gehfläche**. Kennt Höhe sehr wohl —
-    Treppen, Rampen, Brücken sind Teil des Netzes. Was sie NICHT kennt, ist
-    eine Verbindung, die es begehbar nicht gibt.
-  - `true` = **Voxel-Volumen** (Luftraum, `NavVolume`/`VoxelPathfind`).
-- **Das Volumen gibt es nicht immer.** `NavmeshQuery` legt `VolumeQuery` nur an,
-  wenn `navmesh.Volume != null` (Zeile 92-94); sonst antwortet `PathfindVolume`
-  mit dem Log-Fehler „Nav volume was not built" und einer leeren Liste.
-  Ob es für Innenräume/Instanzen gebaut wird: NICHT GEPRÜFT.
-- **`fly=true` lässt die Figur SPRINGEN.** `FollowPath` Zeile 153: liegt der
-  nächste Wegpunkt höher als der Spieler und ist er weder `InFlight` (Condition
-  77) noch `Diving` (81), ruft es `ExecuteJump()` — aber nur, wenn
-  `IgnoreDeltaY` false ist. Und `Path.MoveTo(waypoints, fly)` setzt
-  `IgnoreDeltaY = !fly` (IPCProvider Zeile 78-81). Mit unserem `fly=false`
-  springt die Figur also NIE. (Condition-Namen aus Dalamud.dll verifiziert.)
+  - `false` (what we pass everywhere) = **the walkable surface**. It knows about
+    height perfectly well — stairs, ramps and bridges are part of the mesh. What
+    it does NOT know is a connection that does not exist on foot.
+  - `true` = **the voxel volume** (airspace, `NavVolume`/`VoxelPathfind`).
+- **The volume does not always exist.** `NavmeshQuery` only creates `VolumeQuery`
+  when `navmesh.Volume != null` (lines 92-94); otherwise `PathfindVolume` answers
+  with the log error "Nav volume was not built" and an empty list. Whether it is
+  built for interiors/instances: NOT CHECKED.
+- **`fly=true` makes the character JUMP.** `FollowPath` line 153: if the next
+  waypoint is higher than the player and they are neither `InFlight` (condition
+  77) nor `Diving` (81), it calls `ExecuteJump()` — but only when `IgnoreDeltaY`
+  is false. And `Path.MoveTo(waypoints, fly)` sets `IgnoreDeltaY = !fly`
+  (IPCProvider lines 78-81). With our `fly=false` the character therefore NEVER
+  jumps. (Condition names verified against Dalamud.dll.)
 
-#### Ungenutzte IPC-Gates, die unser „kein Weg gefunden" direkt betreffen
-- `Nav.PathfindWithTolerance(from, to, fly, float range)` → Wegfindung mit
-  Zieltoleranz. Genau der Haukke-Fall (Ziel liegt neben dem Netz).
-- `Query.Mesh.NearestPointReachable(p, halfExtentXZ, halfExtentY)` → nächster
-  **erreichbarer** Netzpunkt (`FindNearestPointOnMesh(..., allowUnreachable:
-  false)`). Unsere selbstgebaute Ringsuche in AutoWalkService macht das zu Fuß
-  nach — hier bietet vnavmesh es fertig an.
-- `Query.Mesh.IsPointOnMesh(p, halfExtentY, allowUnreachable)` → Prüfung, ob ein
-  Punkt überhaupt auf dem Netz liegt.
+#### Unused IPC gates that bear directly on our "no path found"
+- `Nav.PathfindWithTolerance(from, to, fly, float range)` → pathfinding with a
+  destination tolerance. Exactly the Haukke case (the target lies next to the
+  mesh).
+- `Query.Mesh.NearestPointReachable(p, halfExtentXZ, halfExtentY)` → the nearest
+  **reachable** mesh point (`FindNearestPointOnMesh(..., allowUnreachable:
+  false)`). Our home-made ring search in AutoWalkService reproduces that the hard
+  way — here vnavmesh offers it ready-made.
+- `Query.Mesh.IsPointOnMesh(p, halfExtentY, allowUnreachable)` → a check of
+  whether a point lies on the mesh at all.
 - `Nav.PathfindCancelable(from, to, fly, CancellationToken)`.
 
-#### Wie vnavmesh Pfade wirklich startet und beendet (ilspycmd 2026-08-10)
-Drei Eigenschaften, die jede Auto-Lauf-Logik kennen MUSS. Alle drei haben die
-Implementierung vor V5.79 stillschweigend kaputtgemacht — Beleg jeweils im
-Dalamud-Log vom 2026-08-10.
+#### How vnavmesh really starts and ends paths (ilspycmd 2026-08-10)
+Three properties that any auto-walk logic MUST know about. All three silently
+broke the implementation before V5.79 — the evidence for each is in the Dalamud
+log of 2026-08-10.
 
-1. **Ein Pfadauftrag ist asynchron und stoppt den laufenden Pfad NICHT.**
-   `AsyncMoveRequest.MoveTo` setzt nur `_pendingTask` (gibt `false` zurück,
-   wenn schon einer läuft). Erst `AsyncMoveRequest.Update` reicht das Ergebnis
-   an `FollowPath.Move` weiter. In diesem Fenster beschreibt `Path.IsRunning`
-   noch den VORHERIGEN Pfad, und `Path.ListWaypoints` liefert dessen Wegpunkte.
-   → Log 08:05:05: Auftrag „Weinhafen", zurückgelesen wurde die Wegpunktliste
-   des Sonnenküste-Laufs; 52 ms später meldete das Plugin „beendet, noch 499 m",
-   während vnavmesh gleich darauf 50 m weit lossteuerte.
-   → Konsequenz: vor dem eigenen Start `Path.Stop` rufen, und nach dem eigenen
-   Ende noch einige Sekunden nachwachen (ein Task in flight belebt den Lauf neu).
+1. **A path request is asynchronous and does NOT stop the running path.**
+   `AsyncMoveRequest.MoveTo` only sets `_pendingTask` (returning `false` if one is
+   already running). Only `AsyncMoveRequest.Update` passes the result on to
+   `FollowPath.Move`. In that window `Path.IsRunning` still describes the
+   PREVIOUS path, and `Path.ListWaypoints` returns its waypoints.
+   → Log 08:05:05: a request for "Weinhafen", and what was read back was the
+   waypoint list of the Sonnenküste run; 52 ms later the plugin reported
+   "finished, 499 m to go", while vnavmesh promptly set off for another 50 m.
+   → Consequence: call `Path.Stop` before starting our own, and keep watching for
+   several seconds after our own end (a task in flight revives the run).
 
-2. **vnavmesh startet sich selbst neu.** Mit `StopOnStuck` + `RetryOnStuck`
-   (beide in der Nutzerkonfiguration an, `StuckTimeoutMs` 1000,
-   `StuckTolerance` 0,05) ruft `FollowPath.Update` nach einer Sekunde ohne
-   Bewegung `Stop()` und feuert `OnStuck`; `AsyncMoveRequest` schickt daraufhin
-   denselben Auftrag erneut. `Path.IsRunning` blinkt dadurch **im Sekundentakt
-   auf false**, ohne dass der Lauf zu Ende wäre.
-   → Log 08:04:24–08:05:55: 91 „Queueing move-to" im Sekundentakt, nachdem das
-   Plugin sich längst ausgeklinkt hatte — die Figur wurde eine Minute lang
-   lautlos gegen die Netzkante geschoben.
-   → Konsequenz: „Pfad zu Ende" nur nach Entprellung (V5.79: 1,6 s durchgehend
-   `!IsRunning && !PathfindInProgress`). Ein einzelnes Frame lügt.
+2. **vnavmesh restarts itself.** With `StopOnStuck` + `RetryOnStuck` (both on in
+   the user's configuration, `StuckTimeoutMs` 1000, `StuckTolerance` 0.05),
+   `FollowPath.Update` calls `Stop()` after a second without movement and fires
+   `OnStuck`; `AsyncMoveRequest` then sends the same request again. As a result
+   `Path.IsRunning` **flickers to false once a second** without the run being
+   over.
+   → Log 08:04:24–08:05:55: 91 "Queueing move-to" entries at one-second intervals
+   after the plugin had long since disengaged — the character was pushed silently
+   against the mesh edge for a minute.
+   → Consequence: "path finished" only after debouncing (V5.79: 1.6 s of
+   continuous `!IsRunning && !PathfindInProgress`). A single frame lies.
 
-3. **Der letzte Wegpunkt ist frei erfunden.** `NavmeshQuery.PathfindMesh` hängt
-   das ANGEFRAGTE Ziel unbedingt an das Ergebnis an (`list.Add(new Waypoint(
-   rcVec3f...))`), ob es auf dem Netz liegt oder nicht. Zerfällt das Netz einer
-   Zone in unverbundene Inseln, liefert vnavmesh also einen Pfad, dessen letzter
-   Sprung quer durch den Fels geht, und drückt die Figur dann endlos dagegen.
-   → Log 08:04:23: `restWp=1 nextWp=(490,5|19,0|466,6) distNextWp=453,8` —
-   Spieler auf Höhe 58,7, Ziel auf Höhe 19,0, Östliches La Noscea.
-   → Konsequenz: bleibt die Figur stehen und ist nur noch EIN Wegpunkt übrig,
-   ist nicht sie festgesteckt, sondern das begehbare Netz endet dort. V5.79 sagt
-   das so an, statt „festgesteckt" zu behaupten.
+3. **The last waypoint is pure invention.** `NavmeshQuery.PathfindMesh` appends
+   the REQUESTED destination to the result unconditionally (`list.Add(new
+   Waypoint(rcVec3f...))`), whether it lies on the mesh or not. So if a zone's
+   mesh falls apart into unconnected islands, vnavmesh returns a path whose last
+   hop goes straight through the rock, and then pushes the character against it
+   endlessly.
+   → Log 08:04:23: `restWp=1 nextWp=(490,5|19,0|466,6) distNextWp=453,8` — the
+   player at height 58.7, the target at height 19.0, Eastern La Noscea.
+   → Consequence: if the character stops moving and only ONE waypoint is left, it
+   is not the character that is stuck — the walkable mesh ends there. V5.79
+   announces it that way instead of claiming "stuck".
 
-#### Warum das Wegenetz NICHT alle Wege kennt (Navmesh.NavmeshSettings, ilspycmd 2026-08-10)
-Haeufiges Missverstaendnis: das Netz ist keine von Square Enix mitgelieferte
-Wegkarte, sondern wird von vnavmesh selbst mit **Recast** aus der
-Kollisionsgeometrie berechnet - fuer eine idealisierte Figur mit festen Grenzen:
-- `AgentMaxSlopeDeg = 55` - alles steiler als 55 Grad ist NICHT begehbar.
-- `AgentMaxClimb = 0,5` - Absaetze ueber einen halben Meter sind unueberwindbar.
-- `AgentHeight = 2`, `AgentRadius = 0,5` - die Flaeche wird zusaetzlich um einen
-  halben Meter von jeder Wand weg geschrumpft.
-- `GenerateEdgeClimbLinks = false` (Standard, beim User nicht gesetzt) - es
-  werden also KEINE "hier kann man runterspringen/-klettern"-Verbindungen
-  erzeugt. Die zugehoerigen Werte (`ClimbDownMaxHeight` 3,2 m, `EdgeJumpHeight`
-  1,8 m) liegen brach.
-- `RegionMinSize = 8` - kleine isolierte Flaechen fallen ganz raus.
+#### Why the path mesh does NOT know every route (Navmesh.NavmeshSettings, ilspycmd 2026-08-10)
+A common misunderstanding: the mesh is not a route map shipped by Square Enix,
+but is computed by vnavmesh itself with **Recast** from the collision geometry -
+for an idealised character with fixed limits:
+- `AgentMaxSlopeDeg = 55` - anything steeper than 55 degrees is NOT walkable.
+- `AgentMaxClimb = 0.5` - ledges over half a metre are insurmountable.
+- `AgentHeight = 2`, `AgentRadius = 0.5` - the surface is additionally shrunk
+  half a metre away from every wall.
+- `GenerateEdgeClimbLinks = false` (the default, not set on the user's machine) -
+  so NO "you can jump/climb down here" connections are generated. The associated
+  values (`ClimbDownMaxHeight` 3.2 m, `EdgeJumpHeight` 1.8 m) lie idle.
+- `RegionMinSize = 8` - small isolated surfaces drop out entirely.
 
-Folge: Jede Stelle, die man im Spiel nur durch Herunterspringen, Rutschen oder
-ueber einen steilen Hang erreicht, existiert im Netz nicht. Genau so zerfaellt
-Oestliches La Noscea (s1f3) in zwei Haelften - Weinhafen-Plateau (Y ca. 59-76)
-und Kueste/Costa del Sol (Y ca. 17-20). Zu Fuss kommt man hinunter, ueber eine
-55-Grad-Kante fuehrt aber kein Recast-Polygon.
-→ ERLEDIGT UND WIDERLEGT (2026-08-10): `/vnav rebuild` in der Zone gemacht, Cache
-   nachweislich neu geschrieben, vnavmesh auf 1.2.3.13 - die Trennung besteht
-   reproduzierbar weiter (Lauf endete wieder bei 469 m Restentfernung).
+Consequence: every spot in the game reachable only by jumping down, sliding or
+crossing a steep slope does not exist in the mesh. That is exactly how Eastern La
+Noscea (s1f3) falls apart into two halves - the Wineport plateau (Y approx.
+59-76) and the coast/Costa del Sol (Y approx. 17-20). On foot you can get down,
+but no Recast polygon leads over a 55-degree edge.
+→ SETTLED AND REFUTED (2026-08-10): `/vnav rebuild` done in the zone, the cache
+   demonstrably rewritten, vnavmesh on 1.2.3.13 - the separation reproducibly
+   persists (the run again ended at 469 m remaining distance).
 
-KORREKTUR ZUR FRUEHEREN NOTIZ (ilspycmd 2026-08-10): `GenerateEdgeClimbLinks`
-laesst sich NICHT "in den vnavmesh-Einstellungen einschalten". `NavmeshSettings`
-wird ausschliesslich aus `NavmeshCustomization.Settings` gelesen
-(`NavmeshBuilder..ctor`: `Settings = customization.Settings`), und die
-Nutzer-`Config` enthaelt diese Felder gar nicht - sie hat nur AutoLoadNavmesh,
-EnableDTR, ShowQueryStatusInDTR, AlignCameraToMovement/-Height, ShowWaypoints,
+CORRECTION TO THE EARLIER NOTE (ilspycmd 2026-08-10): `GenerateEdgeClimbLinks`
+CANNOT be "switched on in the vnavmesh settings". `NavmeshSettings` is read
+exclusively from `NavmeshCustomization.Settings` (`NavmeshBuilder..ctor`:
+`Settings = customization.Settings`), and the user `Config` does not contain
+these fields at all - it only has AutoLoadNavmesh, EnableDTR,
+ShowQueryStatusInDTR, AlignCameraToMovement/-Height, ShowWaypoints,
 ForceShowGameCollision, CancelMoveOnUserInput, StopOnStuck, StuckTolerance,
-StuckTimeoutMs, RetryOnStuck, RandomnessMultiplier, BuildMaxCores. Die
-`NavmeshSettings.Draw()`-Regler gehoeren zum Debug-Fenster "NavmeshCustom", also
-zu manuell gebauten Testnetzen, nicht zum automatisch geladenen Zonennetz.
-→ Recast-Parameter aendern = vnavmesh forken. Kein Weg ueber eine Datei oder UI.
+StuckTimeoutMs, RetryOnStuck, RandomnessMultiplier, BuildMaxCores. The
+`NavmeshSettings.Draw()` sliders belong to the debug window "NavmeshCustom", i.e.
+to manually built test meshes, not to the automatically loaded zone mesh.
+→ Changing Recast parameters = forking vnavmesh. There is no route via a file or
+  the UI.
 
-#### Was stattdessen geht, um eine Netzluecke zu ueberbruecken (IPC, ilspycmd 2026-08-10)
-- `Path.MoveTo(List<Vector3> waypoints, bool fly)` faehrt eine EIGENE Punktliste
-  ab, ganz ohne Wegsuche (geht direkt an `FollowPath.Move`). Das ist der einzige
-  Weg, die Figur ueber Boden zu schicken, den das Netz nicht kennt - im Spiel
-  bestaetigt 2026-08-07 (Astalicia) und 2026-08-09 (Hinweg zum Magneten).
-  ACHTUNG, die Punktliste ist NICHT sicher (ilspycmd 2026-08-10): Bleibt die
-  Figur `StuckTimeoutMs` (500 ms) unter `StuckTolerance` stehen, ruft
-  `FollowPath.Update` sein eigenes `Stop()` und feuert `OnStuck` mit dem LETZTEN
-  Wegpunkt. Daran haengt `AsyncMoveRequest`, das bei `RetryOnStuck` (beim User
-  an) ein normales `MoveTo` auf diesen Punkt startet - unsere Liste ist weg und
-  die Figur laeuft wieder ueber das Netz, das die Luecke ja nicht kennt.
-  Erkennen laesst sich das an zwei Dingen, die `AutoWalkService.TrailWalkingUpdate`
-  beide prueft: die Wegpunktzahl WAECHST (eine neue Route hat mehr Punkte als
-  unsere Restliste; unsere schrumpft nur), und `PathfindInProgress` wird wahr
-  (unsere Etappe rechnet nie).
-- `NavmeshCustomization.LinkPoints(mesh, start, end)` ist vnavmeshs eigener
-  Mechanismus fuer handgemachte Verbindungen, aber `protected static` in einer
-  Customization-Klasse mit `[CustomizationTerritory(id)]` - nur per Fork
-  erreichbar, nicht ueber die IPC. Fuer Gebiet 135 existiert keine Customization.
-- FLIEGEN: `NavmeshCustomization.IsFlyingSupported` gibt true fuer
-  `TerritoryType.TerritoryIntendedUse` 1, 47 und 49; dann baut `NavmeshBuilder`
-  zusaetzlich eine `VoxelMap`, und `Nav.Pathfind`/`Path.MoveTo` nehmen ein
-  `fly`-Flag. Ein Flugvolumen kennt die 55-Grad-Grenze nicht - fuer Hoehenbrueche
-  in Feldzonen also die grundsaetzlich saubere Umgehung. UNGEPRUEFT ist beides:
-  ob Gebiet 135 einen der drei IntendedUse-Werte hat, und ob der Charakter dort
-  fliegen darf (Aetherstroeme - reiner Spielzustand, steht nicht im Netz).
-- `seeds-local.json` (`FloodFill.AddPoint` + `Serialize`, Ablage im
-  vnavmesh-pluginConfigs-Ordner) markiert nur, welche Flaechen von einem Seed aus
-  erreichbar sind, und schaltet damit `NavmeshManager.Prune` scharf. Das schliesst
-  KEINE Luecke; es macht nur `Query.Mesh.NearestPointReachable` /
-  `IsPointOnMesh(allowUnreachable: false)` ueberhaupt wirksam (die ohne Seeds
-  wirkungslos sind, gemessen 2026-08-09).
+#### What DOES work instead, to bridge a mesh gap (IPC, ilspycmd 2026-08-10)
+- `Path.MoveTo(List<Vector3> waypoints, bool fly)` walks OUR OWN point list, with
+  no path search at all (it goes straight to `FollowPath.Move`). That is the only
+  way to send the character over ground the mesh does not know about - confirmed
+  in-game on 2026-08-07 (Astalicia) and 2026-08-09 (the outward leg to the
+  magnet).
+  WATCH OUT, the point list is NOT safe (ilspycmd 2026-08-10): if the character
+  stays below `StuckTolerance` for `StuckTimeoutMs` (500 ms), `FollowPath.Update`
+  calls its own `Stop()` and fires `OnStuck` with the LAST waypoint.
+  `AsyncMoveRequest` hangs off that and, with `RetryOnStuck` (on for the user),
+  starts a normal `MoveTo` to that point - our list is gone and the character
+  walks over the mesh again, which of course does not know about the gap.
+  This can be detected by two things, both of which
+  `AutoWalkService.TrailWalkingUpdate` checks: the waypoint count GROWS (a new
+  route has more points than our remaining list; ours only shrinks), and
+  `PathfindInProgress` becomes true (our leg never computes).
+- `NavmeshCustomization.LinkPoints(mesh, start, end)` is vnavmesh's own mechanism
+  for hand-made connections, but it is `protected static` in a customization
+  class with `[CustomizationTerritory(id)]` - reachable only through a fork, not
+  through the IPC. No customization exists for territory 135.
+- FLYING: `NavmeshCustomization.IsFlyingSupported` returns true for
+  `TerritoryType.TerritoryIntendedUse` 1, 47 and 49; `NavmeshBuilder` then
+  additionally builds a `VoxelMap`, and `Nav.Pathfind`/`Path.MoveTo` take a `fly`
+  flag. A flight volume does not know about the 55-degree limit - so for height
+  breaks in field zones it is the fundamentally clean workaround. BOTH points are
+  UNCHECKED: whether territory 135 has one of the three IntendedUse values, and
+  whether the character is allowed to fly there (aether currents - pure game
+  state, not recorded in the mesh).
+- `seeds-local.json` (`FloodFill.AddPoint` + `Serialize`, stored in the vnavmesh
+  pluginConfigs folder) only marks which surfaces are reachable from a seed, and
+  thereby arms `NavmeshManager.Prune`. That closes NO gap; it only makes
+  `Query.Mesh.NearestPointReachable` / `IsPointOnMesh(allowUnreachable: false)`
+  effective at all (without seeds they have no effect, measured 2026-08-09).
 
-Weitere belegte Kleinigkeiten:
-- `Path.IsRunning` ist exakt `FollowPath.Waypoints.Count > 0`, nichts weiter.
-- `Path.Stop` = `Waypoints.Clear()`. Es bricht KEINE laufende Wegfindung ab.
-- `FollowPath.OnNavmeshChanged` leert die Wegpunkte — beim Zonenwechsel oder
-  `Nav.Reload` verschwindet ein Pfad also von selbst.
-- `Nav.PathfindCancelAll` ist irreführend benannt: es ruft `Reload(allowLoadFromCache: true)`,
-  lädt das Netz also neu.
-- `Query.Mesh.NearestPointReachable` filtert über `FloodFillAwareFilter`
-  (`NavmeshQuery` Zeile 83) — das ist vnavmeshs eigene Erreichbarkeitsprüfung,
-  eine selbstgebaute Flächenanalyse ist dafür nicht nötig.
-- `CancelMoveOnUserInput`: drückt der Spieler selbst eine Bewegungstaste, ruft
-  `FollowPath.Update` `Stop()` — der Pfad ist dann weg, ohne dass unser Plugin
-  etwas davon erfährt.
+Further established details:
+- `Path.IsRunning` is exactly `FollowPath.Waypoints.Count > 0`, nothing more.
+- `Path.Stop` = `Waypoints.Clear()`. It does NOT abort a running pathfind.
+- `FollowPath.OnNavmeshChanged` empties the waypoints — so on a zone change or
+  `Nav.Reload` a path disappears by itself.
+- `Nav.PathfindCancelAll` is misleadingly named: it calls
+  `Reload(allowLoadFromCache: true)`, i.e. it reloads the mesh.
+- `Query.Mesh.NearestPointReachable` filters through `FloodFillAwareFilter`
+  (`NavmeshQuery` line 83) — that is vnavmesh's own reachability check, and a
+  home-made surface analysis is not needed for it.
+- `CancelMoveOnUserInput`: if the player presses a movement key themselves,
+  `FollowPath.Update` calls `Stop()` — the path is then gone without our plugin
+  finding out about it.
 
-### Spieler „folgen" — KEIN natives API (verifiziert per ilspycmd, 2026-07-26)
-Das Kontextmenü „Folgen" existiert im Spiel, ist aber in FFXIVClientStructs
-**nicht** als aufrufbare Funktion freigelegt. Vollständige Assembly dekompiliert
-und durchsucht: die einzigen „Follow"-Treffer sind Begleiter/Mount
-(`CompanionBehaviorState.Follow`, `FollowMountId`), Porträt-Kamera
-(`BannerCameraFollowFlags`) und das Karten-Häkchen (`FollowPlayerCheckbox`,
-`FollowedPlayerMarkerX/Y`). `MoveController` (MoveControl) trägt KEIN Follow-Feld.
-Ein Auslösen ginge nur fragil über `AgentContext.OpenContextMenu` + Eintrag per
-Text finden/`ReceiveEvent` feuern (sprach-/zieltyp-abhängig) — verworfen.
-→ V5.57 baut „Ziel folgen" (Taste +) stattdessen selbst auf vnavmesh: in
-`AutoWalkService.FollowUpdate` wird `SimpleMove.PathfindAndMoveCloseTo` fortlaufend
-auf die AKTUELLE Zielposition neu ausgelöst (Abstand 3 m, Re-Path ab 1,5 m Drift
-oder wenn der Pfad endete, throttled 0,4 s). Stoppt bei Ziel-weg/Zonenwechsel.
+### "Following" a player — NO native API (verified via ilspycmd, 2026-07-26)
+The "Follow" context menu entry exists in the game, but is **not** exposed as a
+callable function in FFXIVClientStructs. The complete assembly was decompiled and
+searched: the only "Follow" hits are companion/mount
+(`CompanionBehaviorState.Follow`, `FollowMountId`), the portrait camera
+(`BannerCameraFollowFlags`) and the map checkbox (`FollowPlayerCheckbox`,
+`FollowedPlayerMarkerX/Y`). `MoveController` (MoveControl) carries NO follow
+field. Triggering it would only be possible fragilely via
+`AgentContext.OpenContextMenu` + finding the entry by text/firing `ReceiveEvent`
+(language- and target-type dependent) — rejected.
+→ V5.57 builds "follow target" (the + key) on vnavmesh itself instead: in
+`AutoWalkService.FollowUpdate`, `SimpleMove.PathfindAndMoveCloseTo` is
+continuously re-triggered on the CURRENT target position (distance 3 m, re-path
+from 1.5 m of drift or when the path ended, throttled to 0.4 s). It stops when
+the target is gone or on a zone change.
 
-### Kompass-Konvention Welt→Himmelsrichtung (hergeleitet 2026-07-16)
-- Norden = −Z, Osten = +X. Herleitung aus verifizierten Fakten: die
-  Pixel→Welt-Formel (oben) bildet Karten-Pixel-X→Welt-X und
-  Karten-Pixel-Y→Welt-Z GLEICHSINNIG ab; Kartenbilder haben den Ursprung
-  oben links (Pixel-Y wächst nach unten); die Spielkarte ist genordet
-  (Norden oben). ⇒ Peilung ab Nord = `atan2(dx, −dz)` (0°=N, 90°=O).
-- Genutzt von RouteService (Routen-Vorschau „25 Meter nach Norden").
-  Jede Vorschau loggt Segment 1 samt Vektor ([Route]) — eine gespiegelte
-  Achse würde beim ersten Praxistest im Log sichtbar.
-- Spieler-Blickrichtung: rot=0 ⇒ Blickvektor (sin 0, cos 0) = (0,0,1) =
-  +Z = SÜDEN (folgt aus obiger Konvention + verifiziertem Blickvektor).
+### Compass convention, world→cardinal direction (derived 2026-07-16)
+- North = −Z, east = +X. Derived from verified facts: the pixel→world formula
+  (above) maps map pixel X→world X and map pixel Y→world Z in the SAME sense; map
+  images have their origin at the top left (pixel Y grows downwards); the game
+  map is north-oriented (north at the top). ⇒ the bearing from north =
+  `atan2(dx, −dz)` (0°=N, 90°=E).
+- Used by RouteService (the route preview "25 metres to the north"). Every
+  preview logs segment 1 including the vector ([Route]) — a mirrored axis would
+  show up in the log on the first practical test.
+- Player facing direction: rot=0 ⇒ facing vector (sin 0, cos 0) = (0,0,1) = +Z =
+  SOUTH (follows from the convention above + the verified facing vector).
 
-### Online-Fenster / Social (ilspycmd-verifiziert 2026-07-19)
-Taste O = `MENU_PARTY_MEMBER (271)` laut Keybind-Dump; Addon-Name „Social".
-- `FFXIVClientStructs.FFXIV.Client.UI.AddonSocial` (Size 816,
-  [Addon("Social")], erbt AtkUnitBase) hat die vier Registerkarten als
-  `AtkComponentRadioButton*`: `PartyMembersRadioButton`@680,
-  `FriendListRadioButton`@688, `BlacklistRadioButton`@696,
-  `PlayerSearchRadioButton`@704.
-- AKTIVE Karte = die, deren `AtkComponentButton.IsChecked` gesetzt ist.
-  IsChecked ist Bit 18 von `AtkComponentButton.Flags` (dekompiliert:
-  `BitOps.GetBit(Flags, 18)`); RadioButton erbt AtkComponentButton@0.
-- LABEL: `AtkComponentButton.ButtonTextNode` (AtkTextNode) trägt den
-  lokalisierten Karten-Text — nie selbst übersetzen, den Node lesen.
-- Verwandte Structs falls der Inhalt gebraucht wird: `AddonFriendList`,
+### Online window / social (ilspycmd-verified 2026-07-19)
+The O key = `MENU_PARTY_MEMBER (271)` according to the keybind dump; the addon
+name is "Social".
+- `FFXIVClientStructs.FFXIV.Client.UI.AddonSocial` (size 816, [Addon("Social")],
+  inherits AtkUnitBase) has the four tabs as `AtkComponentRadioButton*`:
+  `PartyMembersRadioButton`@680, `FriendListRadioButton`@688,
+  `BlacklistRadioButton`@696, `PlayerSearchRadioButton`@704.
+- The ACTIVE tab = the one whose `AtkComponentButton.IsChecked` is set. IsChecked
+  is bit 18 of `AtkComponentButton.Flags` (decompiled: `BitOps.GetBit(Flags,
+  18)`); RadioButton inherits AtkComponentButton@0.
+- LABEL: `AtkComponentButton.ButtonTextNode` (AtkTextNode) carries the localised
+  tab text — never translate it yourself, read the node.
+- Related structs should the content be needed: `AddonFriendList`,
   `InfoProxyFriendList`, `SocialListNumberArray`/`SocialListStringArray`,
   `AgentFriendlist`.
-- WICHTIG — der INHALT liegt NICHT im Social-Addon (Log 2026-07-18 17:05):
-  ein Tab-Wechsel hängt ein eigenes Fenster an (`Social ReceiveEvent:
-  type=ChildAddonAttached param=126/127`) und öffnet je nach Karte
-  `PartyMemberList`, `FriendList` oder `SocialList`. Eine Listen-Suche im
-  Social-Addon selbst findet daher NICHTS. Beobachtete Zuordnung:
-  Karte 1 „Gruppe"→PartyMemberList, 2 „Freunde"→FriendList,
-  3 „Suche"→SocialList (Karte 4 noch nicht gesehen).
-  ACHTUNG: Karte 3 trug das Label „Suche", obwohl das Struct-Feld an
-  Slot 3 `BlacklistRadioButton` heißt — die Feldnamen der ClientStructs-
-  Version stimmen hier offenbar nicht mit der UI-Reihenfolge überein.
-  Deshalb Label immer aus dem ButtonTextNode lesen, nie aus dem Feldnamen
-  ableiten.
+- IMPORTANT — the CONTENT does NOT sit in the Social addon (log 2026-07-18
+  17:05): a tab change attaches a separate window (`Social ReceiveEvent:
+  type=ChildAddonAttached param=126/127`) and opens `PartyMemberList`,
+  `FriendList` or `SocialList` depending on the tab. A list search in the Social
+  addon itself therefore finds NOTHING. Observed mapping: tab 1 „Gruppe"→
+  PartyMemberList, 2 „Freunde"→FriendList, 3 „Suche"→SocialList (tab 4 not seen
+  yet).
+  WATCH OUT: tab 3 carried the label „Suche" even though the struct field at slot
+  3 is called `BlacklistRadioButton` — the field names of this ClientStructs
+  version evidently do not match the UI order here. So always read the label from
+  the ButtonTextNode, never infer it from the field name.
 
-### Einladungen / Benachrichtigungen (2026-07-18)
-- Popup-Fenster (Namen aus dem Log, nicht geraten): `_NotificationFcJoin`
-  (Freie Gesellschaft), `_NotificationParty`, `_NotificationFriend`,
-  `_Notification`. Laufzeit 300 s, dann bricht das Spiel die Einladung ab
-  („Die Einladung von ... wurde abgebrochen", SystemMessage 57).
-- Das Fenster enthält einen Sekunden-Zähler (bei FcJoin Node key=20005),
-  der sich jede Sekunde ändert — generische Text-Scanner müssen nackte
-  Zahlen unterdrücken, sonst zählt der Screenreader 300 → 0 mit.
-- Die Einladungs-MELDUNG selbst kommt unabhängig davon über Chat
-  (SystemMessage) UND Toast — nicht aus dem Popup lesen.
-- Im Keybind-Dump des Spiels gibt es KEINE Aktion für Benachrichtigungen;
-  ohne Mausklick ist eine Einladung per Tastatur nicht beantwortbar.
-- SPIELFUNKTION zum Antworten (Reserve, ungetestet):
-  `InfoProxyFreeCompanyInvite` (InfoProxyId.FreeCompanyInvite) und die
-  Basis `InfoProxyInvitedList` haben beide in der vtable @104
-  `RespondToInvitation(CStringPointer inviterName, bool accept)`.
-  ACHTUNG: braucht den Namen des Einladenden; im Proxy stehen dafür nur
-  private `UnkString`-Felder (@72 / @176) — unverifiziert.
+### Invitations / notifications (2026-07-18)
+- Popup windows (names from the log, not guessed): `_NotificationFcJoin` (free
+  company), `_NotificationParty`, `_NotificationFriend`, `_Notification`. They run
+  for 300 s, after which the game cancels the invitation ("Die Einladung von ...
+  wurde abgebrochen", SystemMessage 57).
+- The window contains a seconds counter (for FcJoin, node key=20005) that changes
+  every second — generic text scanners have to suppress bare numbers, otherwise
+  the screen reader counts along 300 → 0.
+- The invitation MESSAGE itself arrives independently of that through chat
+  (SystemMessage) AND a toast — do not read it from the popup.
+- The game's keybind dump has NO action for notifications; without a mouse click
+  an invitation cannot be answered from the keyboard.
+- GAME FUNCTION for answering (in reserve, untested):
+  `InfoProxyFreeCompanyInvite` (InfoProxyId.FreeCompanyInvite) and the base
+  `InfoProxyInvitedList` both have `RespondToInvitation(CStringPointer
+  inviterName, bool accept)` in the vtable @104.
+  WATCH OUT: it needs the inviter's name; the proxy only has private `UnkString`
+  fields for that (@72 / @176) — unverified.
 
-### Addon-Verwandtschaft: Kind-/Host-Fenster (ilspycmd 2026-07-18)
-`AtkUnitBase` trägt drei Id-Felder direkt hintereinander (nach
-`AtkValuesCount`): `Id` (ushort), `ParentId`, `HostId`, dazu
-`BlockedParentId`. Damit lässt sich ein angehängtes Kind-Fenster ohne
-hartcodierte Namensliste finden: `AllLoadedUnitsList` durchlaufen und
-`child->HostId == host->Id || child->ParentId == host->Id` prüfen.
-Welches der beiden Felder das Spiel je Fensterfamilie setzt, ist NICHT
-dokumentiert — deshalb beide prüfen und das Ergebnis loggen.
-FALLE: `Id == 0` als Suchschlüssel matcht jedes Addon mit ungesetztem
-Rückverweis — vorher abfangen.
-- LISTEN-TIMING: ein frisch geöffnetes Listenfenster hat oft `Len=0` und
-  wird erst ein paar Frames später gefüllt (FriendList: leer bei
-  PostSetup, Einträge 35 ms später). „0 Einträge" beim Öffnen ist also
-  in der Regel keine leere Liste, sondern eine zu früh gestellte Frage.
+### Addon kinship: child/host windows (ilspycmd 2026-07-18)
+`AtkUnitBase` carries three id fields directly one after another (after
+`AtkValuesCount`): `Id` (ushort), `ParentId`, `HostId`, plus `BlockedParentId`.
+That makes it possible to find an attached child window without a hard-coded
+name list: walk `AllLoadedUnitsList` and check
+`child->HostId == host->Id || child->ParentId == host->Id`. Which of the two
+fields the game sets per window family is NOT documented — so check both and log
+the result.
+TRAP: `Id == 0` as a search key matches every addon with an unset back reference
+— catch that beforehand.
+- LIST TIMING: a freshly opened list window often has `Len=0` and is only filled
+  a few frames later (FriendList: empty at PostSetup, entries 35 ms later). So
+  "0 entries" on opening is usually not an empty list, but a question asked too
+  early.
 
-### Quest-Stufe (ilspycmd-verifiziert 2026-07-18)
-- ERSTE WAHL: `MapMarkerData.RecommendedLevel` (ushort @64) — der Marker
-  trägt die Stufe selbst, kein Namensabgleich nötig. Gegenprobe im Struct:
+### Quest level (ilspycmd-verified 2026-07-18)
+- FIRST CHOICE: `MapMarkerData.RecommendedLevel` (ushort @64) — the marker
+  carries the level itself, no name matching needed. Cross-check in the struct:
   `SetData(.., ushort recommendedLevel, sbyte eventState)`.
-- FALLBACK: Lumina `Quest.ClassJobLevel` (Collection<ushort>, Index 0) —
-  die Stufe, die auch das Journal zeigt. Nur per Quest-NAMEN zuordenbar
-  und damit unpräzise: FFXIV vergibt Namen mehrfach (Wiederholbare).
-  Weitere Felder falls je gebraucht: `QuestLevelOffset` (byte @2764),
-  `LevelMax` (byte @2786), `SortKey` (ushort @2760).
-- OFFEN (Laufzeit): ob RecommendedLevel im Marker überhaupt gefüllt ist.
-  QuestMarkerService loggt pro Marker `lvlMarker=` und `lvlSheet=`.
+- FALLBACK: Lumina `Quest.ClassJobLevel` (Collection<ushort>, index 0) — the
+  level the journal shows too. Only mappable by quest NAME and therefore
+  imprecise: FFXIV assigns names more than once (repeatables). Further fields
+  should they ever be needed: `QuestLevelOffset` (byte @2764), `LevelMax` (byte
+  @2786), `SortKey` (ushort @2760).
+- OPEN (runtime): whether RecommendedLevel is filled in the marker at all.
+  QuestMarkerService logs `lvlMarker=` and `lvlSheet=` per marker.
 
-### Symbol über dem Kopf: `GameObject.NamePlateIconId` (ushort/uint @272)
-Genau das Zeichen, das ein SEHENDER Spieler über dem Objekt sieht (Quest-
-Ausrufezeichen usw.), 0 = keins. Wird gelesen, nie aus dem Quest-Zustand
-nachgebaut. GEMESSEN bisher (alle 2026-08-02): **71201** (Buscarron,
-Süd-Schwarzhölzer), **71203** (Baensyng, Limsa Lominsa), **71351**
-(Thubyrgeim, Limsa Lominsa).
-WICHTIG: Alle drei echten Messwerte liegen bei 712xx/713xx — die
-Bedeutungs-Bereiche in `AccessibilityStrings.QuestMarkerHint`
-(71001–71006 „verfügbar", 71021–71046 „aktiv") haben bis heute **null**
-Messwerte und greifen nie; real trifft immer der Sammel-Fall
-71000–71999 „Quest". Der Objekt-Browser loggt jedes Symbol ungleich 0 mit
-Objektnamen, damit die Einteilung aus echten Daten geschärft werden kann.
-Vor einer Aussage „Icon X heißt Y": erst messen.
-Gegenprobe zur Verlässlichkeit (Log 2026-08-02 20:01): in Limsa Lominsa
-lieferten Symbol-Quelle und Marker-Quelle unabhängig voneinander exakt
-dieselben zwei NPCs (`per Marker 2, per Symbol 2`, 2 Treffer gesamt).
+### The icon above the head: `GameObject.NamePlateIconId` (ushort/uint @272)
+Exactly the symbol a SIGHTED player sees above the object (the quest exclamation
+mark and so on), 0 = none. It is read, never rebuilt from the quest state.
+MEASURED so far (all 2026-08-02): **71201** (Buscarron, South Shroud), **71203**
+(Baensyng, Limsa Lominsa), **71351** (Thubyrgeim, Limsa Lominsa).
+IMPORTANT: all three real measurements lie at 712xx/713xx — the meaning ranges in
+`AccessibilityStrings.QuestMarkerHint` (71001–71006 "available", 71021–71046
+"active") have **zero** measurements to this day and never take hold; in reality
+the catch-all case 71000–71999 "quest" always hits. The object browser logs every
+icon other than 0 together with the object name, so that the classification can
+be sharpened from real data. Before any claim that "icon X means Y": measure
+first.
+Cross-check on reliability (log 2026-08-02 20:01): in Limsa Lominsa the icon
+source and the marker source independently produced exactly the same two NPCs
+(`per Marker 2, per Symbol 2`, 2 hits in total).
 
-### Quest-Marker mit Welt-Position (ilspycmd-verifiziert 2026-07-10)
-Quelle: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (Singleton,
+### Quest markers with a world position (ilspycmd-verified 2026-07-10)
+Source: `FFXIVClientStructs.FFXIV.Client.Game.UI.Map` (singleton,
 `Map.Instance()` via StaticAddressPointers).
-- `QuestMarkers` → Span mit 30× `MarkerInfo` = Marker der ANGENOMMENEN
-  Quests; `UnacceptedQuestMarkers` (StdList<MarkerInfo>) = annehmbare
-  Quests in der Nähe; außerdem u. a. `ActiveLevequestMarker`,
-  `GuildLeveAssignmentMarkers`, `TripleTriadMarkers`.
-- `MarkerInfo` (Size 144): `ObjectiveId`@4 (uint), `Label`@8 (Utf8String,
-  Quest-Name), `MarkerData`@112 (StdVector<MapMarkerData> — MEHRERE Orte
-  pro Quest möglich!), `RecommendedLevel`@136, `ShouldRender`@139 (bool).
-- `MapMarkerData` (Size 80, vollständig ilspycmd 2026-08-02): `LevelId`@0,
-  `ObjectiveId`@4, `TooltipString`@8 (Utf8String*), `IconId`@16,
-  `Position`@28 (Vector3, WELT-Koordinaten!), `Radius`@40, `MapId`@48,
-  `PlaceNameZoneId`@52, `PlaceNameId`@56, `EndTimestamp`@60 (int),
-  `RecommendedLevel`@64 (ushort), `TerritoryTypeId`@66 (ushort),
-  `DataId`@68 (ushort), `MarkerType`@70, `EventState`@71, `Flags`@72.
+- `QuestMarkers` → a span with 30× `MarkerInfo` = markers of ACCEPTED quests;
+  `UnacceptedQuestMarkers` (StdList<MarkerInfo>) = acceptable quests nearby; and
+  among others `ActiveLevequestMarker`, `GuildLeveAssignmentMarkers`,
+  `TripleTriadMarkers`.
+- `MarkerInfo` (size 144): `ObjectiveId`@4 (uint), `Label`@8 (Utf8String, the
+  quest name), `MarkerData`@112 (StdVector<MapMarkerData> — SEVERAL places per
+  quest possible!), `RecommendedLevel`@136, `ShouldRender`@139 (bool).
+- `MapMarkerData` (size 80, completed by ilspycmd 2026-08-02): `LevelId`@0,
+  `ObjectiveId`@4, `TooltipString`@8 (Utf8String*), `IconId`@16, `Position`@28
+  (Vector3, WORLD coordinates!), `Radius`@40, `MapId`@48, `PlaceNameZoneId`@52,
+  `PlaceNameId`@56, `EndTimestamp`@60 (int), `RecommendedLevel`@64 (ushort),
+  `TerritoryTypeId`@66 (ushort), `DataId`@68 (ushort), `MarkerType`@70,
+  `EventState`@71, `Flags`@72.
 
-### FALLE: `MapMarkerData.DataId` ist KEINE Objekt-Id (gemessen 2026-08-02)
-Das Feld sieht aus wie die Datensatz-Id des Ziel-Objekts, ist es aber nicht:
-- Es ist ein **ushort** — eine NPC-`BaseId` liegt bei 1.000.000+ und passt
-  nicht in 16 Bit.
+### TRAP: `MapMarkerData.DataId` is NOT an object id (measured 2026-08-02)
+The field looks like the record id of the target object, but is not:
+- It is a **ushort** — an NPC `BaseId` is 1,000,000+ and does not fit in 16 bits.
 - `MapMarkerData.SetData(levelId, tooltip, icon, x, y, z, radius,
   territoryTypeId, mapId, placeNameZoneId, placeNameId, recommendedLevel,
-  eventState)` hat **keinen dataId-Parameter** — der Setzer schreibt das Feld
-  nie. Messung: bei allen Quest-Markern 0 (Log 2026-08-02, „0 Ids aus
-  Markern", Kategorie blieb leer).
+  eventState)` has **no dataId parameter** — the setter never writes the field.
+  Measurement: 0 on all quest markers (log 2026-08-02, "0 Ids aus Markern", the
+  category stayed empty).
 
-### Quest-Marker → Objekt in der Welt (der richtige Weg, 2026-08-02)
-`MapMarkerData.LevelId`@0 (= erster SetData-Parameter) ist die Zeilennummer
-im Lumina-Sheet **`Level`** (ilspycmd Lumina.Excel.Sheets.Level):
+### Quest marker → object in the world (the right way, 2026-08-02)
+`MapMarkerData.LevelId`@0 (= the first SetData parameter) is the row number in
+the Lumina sheet **`Level`** (ilspycmd Lumina.Excel.Sheets.Level):
 - `X`@0/`Y`@4/`Z`@8, `Yaw`@12, `Radius`@16
-- `Object` (uint @20) — die Datensatz-Id des Objekts an diesem Ort, typisiert
-  über `Type` (byte @32): **8 = ENpcBase, 9 = BNpcBase, 12 = Aetheryte,
+- `Object` (uint @20) — the record id of the object at this place, typed through
+  `Type` (byte @32): **8 = ENpcBase, 9 = BNpcBase, 12 = Aetheryte,
   14 = GatheringPoint, 45 = EObj**
-- `EventId` @24 (RowRef auf TripleTriad/Adventure/Opening/**Quest**),
-  `Map` (ushort @28), `Territory` (ushort @30)
+- `EventId` @24 (RowRef to TripleTriad/Adventure/Opening/**Quest**), `Map`
+  (ushort @28), `Territory` (ushort @30)
 
-`Level.Object` liegt im selben Id-Raum wie `IGameObject.BaseId` im Objekt-
-Browser (Gegenprobe: die NPC-Titel kommen über `ENpcResident.TryGetRow(
-obj.BaseId)` und stimmen). Damit ist „welches Objekt meint dieser Marker"
-eine reine Sheet-Abfrage — keine Icon-Tabelle, keine Abstands-Heuristik.
-Beim Lesen `Level.Territory` gegen die aktuelle Zone prüfen: sonst markiert
-eine Id aus einer anderen Zone einen gleich aussehenden NPC nebenan.
-Achtung bei `Type=9` (BNpcBase): eine Base-Id gilt für ALLE Gegner derselben
-Art in der Zone — das ist für „töte 3 Käfer" richtig, aber es ist eben eine
-Art, kein Einzelgegner.
-- OFFEN (Laufzeit, vor Nutzung per Debug-Probe klären): (1) Feld für
-  TerritoryType/Zone des Markers — Marker können in ANDERER Zone liegen
-  (SetData-Signatur hat territoryTypeId-Parameter, Feld-Offset im Struct
-  noch nicht identifiziert); (2) taugt Position.Y direkt als
-  vnavmesh-Ziel (Marker-Zentrum kann neben dem begehbaren Mesh liegen —
-  PathfindAndMoveCloseTo mit Radius als range dürfte das abfedern).
-- Leere Slots: vermutlich MarkerData.Count==0 bzw. Label leer — per
-  Probe verifizieren, nicht raten.
+`Level.Object` lies in the same id space as `IGameObject.BaseId` in the object
+browser (cross-check: the NPC titles come through
+`ENpcResident.TryGetRow(obj.BaseId)` and are correct). That makes "which object
+does this marker mean" a pure sheet lookup — no icon table, no distance
+heuristic. When reading, check `Level.Territory` against the current zone:
+otherwise an id from another zone marks a similar-looking NPC next door. Careful
+with `Type=9` (BNpcBase): a base id applies to ALL enemies of the same kind in
+the zone — that is right for "kill 3 beetles", but it is a kind, not an
+individual enemy.
+- OPEN (runtime, to be settled with a debug probe before use): (1) the field for
+  the marker's TerritoryType/zone — markers can lie in a DIFFERENT zone (the
+  SetData signature has a territoryTypeId parameter, but the field offset in the
+  struct has not been identified yet); (2) whether Position.Y works directly as a
+  vnavmesh destination (the marker centre can lie next to the walkable mesh —
+  PathfindAndMoveCloseTo with the radius as range should cushion that).
+- Empty slots: presumably MarkerData.Count==0 or an empty Label — verify with a
+  probe, do not guess.
 
-### FATE (ilspycmd-verifiziert 2026-07-31)
-Quelle: `FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager` (Singleton,
-`FateManager.Instance()`). Hält NUR die FATEs der aktuellen Zone; FATEs
-stehen NIE im Quest-Journal (reine Welt-Ereignisse).
-- `FateManager` (Size 208): `CurrentFate`@136 (`FateContext*` — das FATE, in
-  dem der Spieler gerade steht), `Fates`@144 (`StdVector<Pointer<FateContext>>`
-  = alle aktiven FATEs), `SyncedFateId`@168.
-  Methoden: `GetCurrentFateId()`, `GetFateById(ushort)`,
+### FATE (ilspycmd-verified 2026-07-31)
+Source: `FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager` (singleton,
+`FateManager.Instance()`). It holds ONLY the FATEs of the current zone; FATEs are
+NEVER in the quest journal (they are pure world events).
+- `FateManager` (size 208): `CurrentFate`@136 (`FateContext*` — the FATE the
+  player is currently standing in), `Fates`@144
+  (`StdVector<Pointer<FateContext>>` = all active FATEs), `SyncedFateId`@168.
+  Methods: `GetCurrentFateId()`, `GetFateById(ushort)`,
   `TryGetFatePosition(ushort, out Vector3)`, `IsInFateRadius(Vector3*)`,
   `LevelSync()`, `IsSyncedToFate(FateContext*)`.
-- `FateContext` (Size 10704): `FateId`@24 (ushort), `Name`@192 (Utf8String —
-  mit `.ToString()` lesen, NICHT ExtractText!), `Description`@296,
-  `Objective`@400, `State`@940 (`FateState`), `Progress`@951 (byte, 0–100 %),
-  `Level`@2035 (byte), `MaxLevel`@2036 (byte), `IconId`@2004,
-  `Location`@2128 (Vector3, WELT-Koordinaten — taugt direkt als Nav-Ziel).
-- `FateState` (byte): `Preparing`=3 (erscheint gerade), `Running`=4 (aktiv,
-  beitretbar), `Ending`=5, `Ended`=7, `Failed`=8.
-- `StdVector<T>`: `Count` (int) + Indexer `[i]` → `ref T`; iterieren per
-  for-Schleife. `Pointer<FateContext>.Value` → `FateContext*`.
-- Genutzt in FateService (Objekt-Browser-Kategorie „FATEs"): listet Running +
-  Preparing, Numpad3 läuft zur `Location` (als in-Zone-QuestDestination).
+- `FateContext` (size 10704): `FateId`@24 (ushort), `Name`@192 (Utf8String — read
+  it with `.ToString()`, NOT ExtractText!), `Description`@296, `Objective`@400,
+  `State`@940 (`FateState`), `Progress`@951 (byte, 0–100 %), `Level`@2035 (byte),
+  `MaxLevel`@2036 (byte), `IconId`@2004, `Location`@2128 (Vector3, WORLD
+  coordinates — usable directly as a nav destination).
+- `FateState` (byte): `Preparing`=3 (currently appearing), `Running`=4 (active,
+  joinable), `Ending`=5, `Ended`=7, `Failed`=8.
+- `StdVector<T>`: `Count` (int) + indexer `[i]` → `ref T`; iterate with a for
+  loop. `Pointer<FateContext>.Value` → `FateContext*`.
+- Used in FateService (the object browser category "FATEs"): it lists Running +
+  Preparing, and Numpad3 walks to the `Location` (as an in-zone QuestDestination).
 
-### Journal / JournalDetail (F5-Dumps 2026-07-10/11)
-- Journal (Taste J, „ARCHIV"): Quest-Liste = Comp CT=TreeList(12), Zeilen
-  sind ListItemRenderer mit id=4 (Stufe „St. 1") + id=3 (Quest-Name);
-  Kategorie-Zeilen (Gebiet/Add-on) haben id=2. Tabs „Aktiv"/„Abgeschlossen".
-- AtkComponentTreeList erbt AtkComponentList an Offset 0 (ilspycmd:
-  [Inherits<AtkComponentList>(0)]) → SelectedItemIndex/ListLength nutzbar.
+### Journal / JournalDetail (F5 dumps 2026-07-10/11)
+- Journal (the J key, „ARCHIV"): the quest list = a comp CT=TreeList(12), the
+  rows are ListItemRenderers with id=4 (level „St. 1") + id=3 (quest name);
+  category rows (area/expansion) have id=2. Tabs „Aktiv"/„Abgeschlossen".
+- AtkComponentTreeList inherits AtkComponentList at offset 0 (ilspycmd:
+  [Inherits<AtkComponentList>(0)]) → SelectedItemIndex/ListLength are usable.
 
-### AtkComponentList: Index-Felder (ilspycmd 2026-07-11)
-Alle Kandidaten für „welche Zeile ist gewählt/markiert":
+### AtkComponentList: index fields (ilspycmd 2026-07-11)
+All the candidates for "which row is selected/highlighted":
 - `SelectedItemIndex` @308, `HeldItemIndex` @312, `HoveredItemIndex` @316,
-  `HoveredItemIndex2` @344, `HoveredItemIndex3` @352 (alle int)
+  `HoveredItemIndex2` @344, `HoveredItemIndex3` @352 (all int)
 - `ListLength` @288, `FirstVisibleItemIndex` @296
-- `ItemRendererList` @240 (ListItem*, 24 Bytes/Eintrag):
-  `AtkComponentListItemRenderer*` @8, `IsHighlighted` (bool) @20,
-  `IsDisabled` @21. `AllocatedItemRendererListLength` @248 begrenzt die
-  echte Allokation (virtuelle Listen: weniger Slots als ListLength!).
-- GELÖST (Probe-Log 2026-07-11 10:15, SystemMenu-Volltest): die
-  TASTATUR-Navigation trackt `HoveredItemIndex2` (@344) — es ändert sich
-  im Frame des Tastendrucks; `HoveredItemIndex` (@316) zieht 1 Frame
-  später nach. `SelectedItemIndex` bleibt dabei -1 (nur Maus/Bestätigung).
-  Enter auf einem Eintrag setzt `HeldItemIndex` (beobachtet: Held=7 beim
-  Öffnen der Systemkonfiguration). IsHighlighted-Maske blieb leer.
+- `ItemRendererList` @240 (ListItem*, 24 bytes per entry):
+  `AtkComponentListItemRenderer*` @8, `IsHighlighted` (bool) @20, `IsDisabled`
+  @21. `AllocatedItemRendererListLength` @248 bounds the real allocation (virtual
+  lists: fewer slots than ListLength!).
+- SOLVED (probe log 2026-07-11 10:15, full SystemMenu test): KEYBOARD navigation
+  tracks `HoveredItemIndex2` (@344) — it changes in the frame of the key press;
+  `HoveredItemIndex` (@316) follows one frame later. `SelectedItemIndex` stays -1
+  throughout (mouse/confirmation only). Enter on an entry sets `HeldItemIndex`
+  (observed: Held=7 when opening the system configuration). The IsHighlighted
+  mask stayed empty.
 
-### Globaler UI-Fokus: AtkInputManager (ilspycmd 2026-07-11)
+### Global UI focus: AtkInputManager (ilspycmd 2026-07-11)
 - `AtkStage.Instance()->AtkInputManager` (@40): `FocusedNode` @6272
-  (AtkResNode*) = DER aktuell fokussierte UI-Node (Tastatur/Gamepad);
-  `FocusList` = 256× FocusEntry {AtkEventListener* @0 (i.d.R. das Addon),
-  AtkEventTarget* @8 (der Node), FocusParam @16}; `TextInput` @0.
-- Fokus sitzt oft auf dem COLLISION-Kind des Controls, nicht auf dem
-  Komponenten-Node selbst → für Text Eltern hochklettern.
-- AtkStage außerdem: RaptureAtkUnitManager @32, AtkCursor-Typ via
-  AtkCursor-Struct (Type/IsVisible, kein Ziel-Node — Ziel steckt im
+  (AtkResNode*) = THE currently focused UI node (keyboard/gamepad); `FocusList` =
+  256× FocusEntry {AtkEventListener* @0 (usually the addon), AtkEventTarget* @8
+  (the node), FocusParam @16}; `TextInput` @0.
+- The focus often sits on the control's COLLISION child, not on the component
+  node itself → for text, climb up through the parents.
+- AtkStage additionally: RaptureAtkUnitManager @32, the AtkCursor type via the
+  AtkCursor struct (Type/IsVisible, no target node — the target sits in the
   InputManager).
-- OFFENE LAUFZEITFRAGE (V4.35-Probe [Focus]): folgt FocusedNode dem
-  Links/Rechts in SelectYesno/JournalResult? (Node-Flags taten es nicht.)
+- OPEN RUNTIME QUESTION (V4.35 probe [Focus]): does FocusedNode follow left/right
+  in SelectYesno/JournalResult? (The node flags did not.)
 
-### TreeList: eigener Items-Vektor (ilspycmd + Log 2026-07-11)
-- `AtkComponentTreeList.Items` @432 = StdVector<Pointer<AtkComponentTreeListItem>>
-  — die ECHTEN Zeilen (Kategorien + Einträge). Das geerbte `ListLength`
-  bleibt 0 (Journal: „Menü, 0 Einträge" trotz navigierbarer Liste).
-- Renderer-Zugriff (ItemRendererList[idx]) daher gegen
-  `AllocatedItemRendererListLength` prüfen, NICHT gegen ListLength.
+### TreeList: an items vector of its own (ilspycmd + log 2026-07-11)
+- `AtkComponentTreeList.Items` @432 =
+  StdVector<Pointer<AtkComponentTreeListItem>> — the REAL rows (categories +
+  entries). The inherited `ListLength` stays 0 (journal: "menu, 0 entries"
+  despite a navigable list).
+- So check renderer access (ItemRendererList[idx]) against
+  `AllocatedItemRendererListLength`, NOT against ListLength.
 
-### Karten-Marker für „Orte"-Kategorie (Recherche 2026-07-11, ilspycmd)
+### Map markers for the "places" category (research 2026-07-11, ilspycmd)
 - AgentMap (Client.UI.Agent): `EventMarkers` StdVector<MapMarkerData> @232
-  (+ `EventMarkersPtrs` @208), `SymbolMap` StdMap @352,
-  `CurrentTerritoryId` @23072, `CurrentMapId` @23076,
-  `CurrentMapSizeFactor(Float)` + `CurrentOffsetX/Y` @22892–22906,
-  `MapMarkerCount` (byte) @23291.
-- KARTEN-MARKIERUNG („Flagge", Recherche 2026-07-18, ilspycmd):
-  `AgentMap.FlagMarkerCount` (byte @23294) = Anzahl gesetzter Flaggen,
-  `AgentMap.FlagMapMarkers` = Span<FlagMapMarker> (1 Element, Feld
-  `_flagMapMarkers` FixedSizeArray1). FlagMapMarker (Size 72):
-  MapMarkerBase@0, `TerritoryId`@56, `MapId`@60, `XFloat`@64, `YFloat`@68.
-  WICHTIG: XFloat/YFloat sind WELT-Koordinaten (X und Z), KEINE Karten-
-  Pixel — die Pixel→Welt-Formel darf hier NICHT angewandt werden. Beweis:
-  `AgentMap.SetFlagMapMarker(territoryId, mapId, Vector3 worldPosition)`
-  schreibt worldPosition.X → x und worldPosition.Z → y (auf 3 Nachkomma-
-  stellen gerundet) und reicht sie an die Member-Funktion durch. Höhe (Y)
-  gibt es nicht — wie bei allen Kartendaten via Navmesh auflösen.
-  Vor dem Lesen `MapId` gegen die aktuelle Karte prüfen: die Flagge bleibt
-  beim Zonenwechsel stehen und gehört dann zu einer anderen Karte.
-- Map (Client.Game.UI) hat NUR Quest-artige Marker: QuestMarkers[30],
+  (+ `EventMarkersPtrs` @208), `SymbolMap` StdMap @352, `CurrentTerritoryId`
+  @23072, `CurrentMapId` @23076, `CurrentMapSizeFactor(Float)` +
+  `CurrentOffsetX/Y` @22892–22906, `MapMarkerCount` (byte) @23291.
+- MAP MARKING ("flag", research 2026-07-18, ilspycmd):
+  `AgentMap.FlagMarkerCount` (byte @23294) = the number of flags set,
+  `AgentMap.FlagMapMarkers` = Span<FlagMapMarker> (1 element, field
+  `_flagMapMarkers` FixedSizeArray1). FlagMapMarker (size 72): MapMarkerBase@0,
+  `TerritoryId`@56, `MapId`@60, `XFloat`@64, `YFloat`@68.
+  IMPORTANT: XFloat/YFloat are WORLD coordinates (X and Z), NOT map pixels — the
+  pixel→world formula must NOT be applied here. Proof:
+  `AgentMap.SetFlagMapMarker(territoryId, mapId, Vector3 worldPosition)` writes
+  worldPosition.X → x and worldPosition.Z → y (rounded to 3 decimal places) and
+  passes them through to the member function. There is no height (Y) — as with
+  all map data, resolve it via the navmesh.
+  Before reading, check `MapId` against the current map: the flag stays put on a
+  zone change and then belongs to a different map.
+- Map (Client.Game.UI) has ONLY quest-like markers: QuestMarkers[30],
   LevequestMarkers[16], HousingMarkers[62], UnacceptedQuestMarkers,
-  GuildLeveAssignment/GuildOrderGuide/TripleTriad/CustomTalk/
-  GemstoneTrader (alle StdList<MarkerInfo>). KEINE Ätheryten/Ausgänge.
-- Statische Symbole (Ätheryten, Ausgänge, Läden): Lumina-Sheet „MapMarker"
-  — VERIFIZIERT (ilspycmd Lumina.Excel.Sheets.MapMarker, 2026-07-11):
-  Subrow-Sheet, Zeile = Map.MapMarkerRange. Felder: Icon@0,
-  PlaceNameSubtext@2, DataKey@4, X@8/Y@10 (short, KARTEN-PIXEL 0..2048),
-  DataType@15: 1/2=Map (Zonen-Übergang, DataKey=Ziel-Map), 3=Aetheryte,
-  4=PlaceName (Aethernet). Zugriff: IDataManager.GetSubrowExcelSheet.
-- PIXEL→WELT-Formel (hergeleitet aus Dalamud MapUtil, dekompiliert
-  2026-07-11): display = 0.02·offset + 2048/scale + 0.02·welt + 1 und
-  display = 2·pixel/scale + 1 (Check: pixel 0→1.0, 2048→42.0 bei
-  SizeFactor 100) ⇒ welt = (pixel − 1024) · 100/SizeFactor − Offset.
-  Map-Sheet: MapMarkerRange@8, SizeFactor@10, OffsetX@20, OffsetY@22.
-  PRAXIS-CHECK offen: Ätheryt-Wegpunkt vs. Ätheryt-GameObject vergleichen.
-- Y-Höhe: vnavmesh-IPC `Query.Mesh.PointOnFloor(Vector3 p, bool
-  allowUnlandable, float halfExtentXZ) → Vector3?` (IPCProvider
-  dekompiliert 2026-07-11; vnavmesh nutzt denselben Weg für FlagToPoint).
-  Weitere Queries: NearestPoint/NearestPointReachable/IsPointOnMesh;
-  `Nav.Pathfind(from, to, fly) → List<Vector3>` (Wegpunktliste!).
-- FALLE `PointOnFloor(p, allowUnlandable, halfExtentXZ)` castet nach UNTEN
-  (FindPointOnFloor) → auf einem Steg/erhöhten Weg schnappt es auf den
-  Boden WEIT DARUNTER (Log 2026-07-11 19:52: Eingabe Y=-12,9 → Ergebnis
-  Y=-50,5, 37 m tiefer; 18-m-Übergang wurde zum 40-m-Lauf ins Tiefgeschoss).
-  Für Ziele auf Spielerhöhe stattdessen `NearestPoint(p, halfExtentXZ,
-  halfExtentY)` → nächster Netz-Punkt in einer BEGRENZTEN Box (vertikal
-  gedeckelt, fällt nicht durch). Signatur `<Vector3, float, float, Vector3?>`.
-  ResolveFloorPoint nutzt jetzt NearestPoint(10,10) zuerst, PointOnFloor nur
-  als Fallback.
+  GuildLeveAssignment/GuildOrderGuide/TripleTriad/CustomTalk/GemstoneTrader (all
+  StdList<MarkerInfo>). NO aetherytes/exits.
+- Static symbols (aetherytes, exits, shops): the Lumina sheet "MapMarker" —
+  VERIFIED (ilspycmd Lumina.Excel.Sheets.MapMarker, 2026-07-11): a subrow sheet,
+  the row = Map.MapMarkerRange. Fields: Icon@0, PlaceNameSubtext@2, DataKey@4,
+  X@8/Y@10 (short, MAP PIXELS 0..2048), DataType@15: 1/2=Map (zone transition,
+  DataKey=target map), 3=Aetheryte, 4=PlaceName (aethernet). Access:
+  IDataManager.GetSubrowExcelSheet.
+- PIXEL→WORLD formula (derived from Dalamud MapUtil, decompiled 2026-07-11):
+  display = 0.02·offset + 2048/scale + 0.02·world + 1 and
+  display = 2·pixel/scale + 1 (check: pixel 0→1.0, 2048→42.0 at SizeFactor 100)
+  ⇒ world = (pixel − 1024) · 100/SizeFactor − offset.
+  Map sheet: MapMarkerRange@8, SizeFactor@10, OffsetX@20, OffsetY@22.
+  PRACTICAL CHECK outstanding: compare the aetheryte waypoint with the aetheryte
+  GameObject.
+- Y height: the vnavmesh IPC `Query.Mesh.PointOnFloor(Vector3 p, bool
+  allowUnlandable, float halfExtentXZ) → Vector3?` (IPCProvider decompiled
+  2026-07-11; vnavmesh uses the same route for FlagToPoint). Further queries:
+  NearestPoint/NearestPointReachable/IsPointOnMesh;
+  `Nav.Pathfind(from, to, fly) → List<Vector3>` (the waypoint list!).
+- TRAP: `PointOnFloor(p, allowUnlandable, halfExtentXZ)` casts DOWNWARDS
+  (FindPointOnFloor) → on a walkway or a raised path it snaps to the floor FAR
+  BELOW (log 2026-07-11 19:52: input Y=-12.9 → result Y=-50.5, 37 m lower; an
+  18 m transition became a 40 m run into the basement).
+  For targets at player height use `NearestPoint(p, halfExtentXZ, halfExtentY)`
+  instead → the nearest mesh point in a BOUNDED box (vertically capped, it does
+  not fall through). Signature `<Vector3, float, float, Vector3?>`.
+  ResolveFloorPoint now uses NearestPoint(10,10) first, with PointOnFloor only as
+  a fallback.
 
-### Zonenübergänge: die ECHTEN Grenzen (ilspycmd-verifiziert 2026-08-09)
-- Das Kartensymbol eines Übergangs (MapMarker DataType 1/2, siehe oben) ist
-  Kartengrafik: Karten-Pixel, KEINE Ausdehnung, KEINE Richtung. Es taugt zum
-  Benennen und Auflisten, NICHT als Laufziel — man landet daneben statt
-  hindurch (User-Meldung 2026-08-09 "ich komme nicht rüber, stehe evtl schief").
-- Die echte Grenze führt die Layout-Engine: `ExitRangeLayoutInstance`
+### Zone transitions: the REAL boundaries (ilspycmd-verified 2026-08-09)
+- The map symbol of a transition (MapMarker DataType 1/2, see above) is map
+  graphics: map pixels, NO extent, NO direction. It is good for naming and
+  listing, NOT as a walk destination — you land beside it instead of going
+  through (user report 2026-08-09 "I can't get across, maybe I'm standing at an
+  angle").
+- The real boundary is maintained by the layout engine: `ExitRangeLayoutInstance`
   (`Client.LayoutEngine.Layer`), `InstanceType.ExitRange = 41`.
-  Eigene Felder: `ExitType`@128 (`ExitRangeType`: **ZoneLine = 1**,
-  **Invisible = 2**), `ZoneId`(ushort)@132, `TerritoryType`(ushort)@134
-  = Zielzone, `Index`(int)@136, `DestInstanceId`@140, `ReturnInstanceId`@144,
+  Its own fields: `ExitType`@128 (`ExitRangeType`: **ZoneLine = 1**,
+  **Invisible = 2**), `ZoneId`(ushort)@132, `TerritoryType`(ushort)@134 = the
+  target zone, `Index`(int)@136, `DestInstanceId`@140, `ReturnInstanceId`@144,
   **`PlayerRunningDirection`(float)@148**.
-- Geerbt von `TriggerBoxLayoutInstance`: `Collider*`@48, **`Transform`@64**
-  (`LayoutEngine.Transform`, Size 48: `Translation`@0, `Rotation`(Quaternion)@16,
-  `Scale`@32 — Mitte UND Ausdehnung der Trigger-Box), `Priority`@112,
+- Inherited from `TriggerBoxLayoutInstance`: `Collider*`@48, **`Transform`@64**
+  (`LayoutEngine.Transform`, size 48: `Translation`@0, `Rotation`(Quaternion)@16,
+  `Scale`@32 — the centre AND the extent of the trigger box), `Priority`@112,
   `FlagsType`@116, `FlagsActive`@120.
-- Zugriff: `LayoutWorld.Instance()` → `ActiveLayout`(`LayoutManager*`)@32 →
-  `Layers` (`StdMap<ushort, Pointer<LayerManager>>`@552) → `LayerManager.Instances`
-  (`StdMap<uint, Pointer<ILayoutInstance>>`@40), filtern auf
-  `ILayoutInstance.Id.Type == ExitRange` (`Identifier`@24: `Type`(InstanceType)@1,
-  `LayerKey`@2, `InstanceKey`@4). `ILayoutInstance.IsActive` ist ein Bitfeld
-  in `Flags3`@43.
-- FALLE beim Iterieren: `StdMap` liefert **`StdPair`** (`Item1`/`Item2`), NICHT
-  `KeyValuePair` — und `Item2` ist ein `Pointer<T>`, also `.Item2.Value`.
-- NICHT GEMESSEN, DESHALB NICHT BENUTZT: Bedeutung von
-  `PlayerRunningDirection` (Einheit, Bezugssystem, welche der beiden
-  Richtungen) und ob `Scale` Halb- oder Vollausdehnung ist. Sonde
-  `/acc uebergang` loggt beide Lesarten. Eine falsche Laufrichtung würde die
-  Figur von der Grenze WEG steuern — schlimmer als der heutige Zustand.
+- Access: `LayoutWorld.Instance()` → `ActiveLayout`(`LayoutManager*`)@32 →
+  `Layers` (`StdMap<ushort, Pointer<LayerManager>>`@552) →
+  `LayerManager.Instances` (`StdMap<uint, Pointer<ILayoutInstance>>`@40),
+  filtering on `ILayoutInstance.Id.Type == ExitRange` (`Identifier`@24:
+  `Type`(InstanceType)@1, `LayerKey`@2, `InstanceKey`@4).
+  `ILayoutInstance.IsActive` is a bit field in `Flags3`@43.
+- TRAP when iterating: `StdMap` yields a **`StdPair`** (`Item1`/`Item2`), NOT a
+  `KeyValuePair` — and `Item2` is a `Pointer<T>`, so `.Item2.Value`.
+- NOT MEASURED, THEREFORE NOT USED: the meaning of `PlayerRunningDirection`
+  (unit, frame of reference, which of the two directions) and whether `Scale` is
+  the half or the full extent. The probe `/acc uebergang` logs both readings. A
+  wrong walking direction would steer the character AWAY from the boundary —
+  worse than the current state.
 
-### Talk / TalkSubtitle (Log-verifiziert 2026-07-11)
-- AddonTalk hat nur UNBENANNTE Text-Node-Felder (AtkTextNode220/228/238/
-  240/248, ilspycmd) — kein benanntes „Name"-Feld.
-- PROBE-VERIFIZIERT (Dialog-Nodes-Zeilen, Sessions 09:36 + 10:14):
-  Talk-Sprechername = Text-Node id=2, Dialogtext = id=3. Der Name-Node
-  kommt in Node-Listen-Reihenfolge NACH dem Text (zuletzt).
-- `_BattleTalk` (Kampf-Sprechblase, [ArenaText]-Log 2026-07-26 16:26): NPC-/
-  Lehrer-Ansagen in Instanzen und im Kampfuebungsplatz ("Erledigt zuerst den
-  Thaumaturgie-Lehrer", "Das ist der falsche Gegner!"). Sprechername = Text-Node
-  id=4, Ansagetext = id=6. Wird vom SELBEN Handler (OnTalkUpdate) gelesen; die
-  Sprecher-Node-Id ist addon-abhaengig (Talk=2, _BattleTalk=4). V5.55.
+### Talk / TalkSubtitle (log-verified 2026-07-11)
+- AddonTalk has only UNNAMED text node fields
+  (AtkTextNode220/228/238/240/248, ilspycmd) — no named "Name" field.
+- PROBE-VERIFIED (dialogue node lines, sessions 09:36 + 10:14): the Talk speaker
+  name = text node id=2, the dialogue text = id=3. The name node comes AFTER the
+  text in node list order (last).
+- `_BattleTalk` (the combat speech bubble, [ArenaText] log 2026-07-26 16:26):
+  NPC/instructor announcements in instances and on the combat practice ground
+  ("Erledigt zuerst den Thaumaturgie-Lehrer", "Das ist der falsche Gegner!"). The
+  speaker name = text node id=4, the announcement text = id=6. It is read by the
+  SAME handler (OnTalkUpdate); the speaker node id is addon-dependent (Talk=2,
+  _BattleTalk=4). V5.55.
 
-### ConfigSystem (Systemkonfiguration, Dump 2026-07-11 10:16, 593 Nodes)
-- Kategorie-Tabs: 8× CT=DragDrop(17), NodeIds 7–14 (Indizes [581]–[588],
-  am Ende der Node-Liste). Aktiver Tab: Kind id=4 sichtbar.
-- Seiten-Überschrift = Top-Level-Text id=22 (z. B. „Anzeigeeinstellungen").
-- FALLE: Top-Level-Text id=4 = fps-Zähler („59 fps"), liegt bei
-  Rückwärtssuche VOR der Überschrift und ändert sich sekündlich →
-  Überschriften-Suche muss volatile Texte (fps/Zahlen) überspringen.
-- Controls: CheckBox(3)/RadioButton(4)/Slider(6)/DropDownList(10),
-  Label = Kind-Text id=2 der Komponente; Abschnitts-Überschriften sind
-  eigenständige Top-Level-Texte (id 575 „Farbwahrnehmung" usw.).
-- Fußnoten-Buttons: „Voreinstellung"/„Schließen"/„Anwenden" (Comp 1001?
-  via Kind id=2-Text).
-- Lautstärke-Regler (Reiter „Sound", V5.58): Zeilen-Muster Top-Level-Text-Label
-  → Stumm-CheckBox Comp(1027) → Slider Comp(1023); Label = nächster vorangehender
-  Top-Level-Text (NearestPrecedingLabel). Slider laufen 0..100 → als Prozent
-  ansagen. `NearestPrecedingLabel` findet z. B. „Hauptlautstärke" vor Slider id=113.
-  KURZFORM für 0..100-Slider: „Label, Wert %" (kein „Regler, von 0 bis 100" —
-  die Langform wurde beim schnellen Navigieren abgeschnitten, User 2026-07-27).
-- FALLE Doppel-Ansage (V5.58): Audio-Slider tragen den Wert als Text-Kind id=2
-  („100"); der GENERISCHE Fokus-Leser las diese nackte Zahl ~14 ms nach der
-  Config-Ansage und würgte das Label ab. Fix: nackte Zahlen überspringen, solange
-  ConfigSystem sichtbar ist (wie bei JournalResult).
-- Schalter-Zustand (V5.58): CheckBox-Ansage „Label, Schalter, an/aus"; deaktivierte
-  („ausgegraut") erkannt an **`NodeFlags.Enabled` (0x20) gelöscht** am Komponenten-
-  Node — ilspycmd-verifiziert gegen FFXIVClientStructs; Dump: aktiv F=0x2033 vs.
-  ausgegraut F=0x2013 (z. B. Hintergrund-Wiedergabe-Unterpunkte bei Master AUS,
-  und der „Anwenden"-Button vor einer Änderung).
-- Barrierefreiheit = Reiter 8 (DragDrop, Tooltip „Barrierefreiheit"). Seite schaltet
-  beim NAVIGIEREN um und wird gelesen (Farbwahrnehmung/Töne visualisieren/Transparenz
-  etc.). Enter wird in ConfigSystem vom Spiel geschluckt (IKeyState sieht es nicht) →
-  die eigene Reiter-Enter-Aktivierung (TryActivateFocusedConfigTab) feuert dort nie;
-  für den Seitenwechsel aber nicht nötig. Überschrift zeigt „Anzeigeeinstellungen"
-  (offener kosmetischer Punkt).
-- JournalDetail: Begleit-Addon (nie fokussiert, ChildAddonAttached an
-  Journal). Inhalt liegt im Comp CT=JournalCanvas(20), direkte Text-Kinder:
-  id=38 Quest-Titel, id=9 Stufe, id=8 Beschreibungstext, id=7 Label
-  „Beschreibung", id=11 Label „Ziel". Quest-Ziele = Multipurpose(21)-
-  Komponenten mit nicht-leerem id=3-Text („Mit Miounne sprechen").
-  Labels stehen in Node-Reihenfolge NACH ihrem Inhalt (Z-Order).
+### ConfigSystem (system configuration, dump 2026-07-11 10:16, 593 nodes)
+- Category tabs: 8× CT=DragDrop(17), NodeIds 7–14 (indices [581]–[588], at the
+  end of the node list). The active tab: child id=4 is visible.
+- The page heading = top-level text id=22 (e.g. „Anzeigeeinstellungen").
+- TRAP: top-level text id=4 = the fps counter („59 fps"), which lies BEFORE the
+  heading in a backwards search and changes every second → the heading search has
+  to skip volatile texts (fps/numbers).
+- Controls: CheckBox(3)/RadioButton(4)/Slider(6)/DropDownList(10), the label =
+  the component's child text id=2; section headings are top-level texts in their
+  own right (id 575 „Farbwahrnehmung" and so on).
+- Footer buttons: „Voreinstellung"/„Schließen"/„Anwenden" (Comp 1001? via the
+  child id=2 text).
+- Volume sliders (the „Sound" tab, V5.58): the row pattern is a top-level text
+  label → a mute checkbox Comp(1027) → a slider Comp(1023); the label = the
+  nearest preceding top-level text (NearestPrecedingLabel). Sliders run 0..100 →
+  announce them as a percentage. `NearestPrecedingLabel` finds e.g.
+  „Hauptlautstärke" before slider id=113.
+  SHORT FORM for 0..100 sliders: "label, value %" (not "slider, from 0 to 100" —
+  the long form got cut off while navigating quickly, user 2026-07-27).
+- TRAP, double announcement (V5.58): audio sliders carry the value as the child
+  text id=2 („100"); the GENERIC focus reader read that bare number about 14 ms
+  after the config announcement and choked off the label. Fix: skip bare numbers
+  while ConfigSystem is visible (as with JournalResult).
+- Switch state (V5.58): the checkbox announcement is "label, switch, on/off";
+  disabled ("greyed out") ones are detected by **`NodeFlags.Enabled` (0x20) being
+  cleared** on the component node — ilspycmd-verified against FFXIVClientStructs;
+  dump: active F=0x2033 vs. greyed out F=0x2013 (e.g. the background playback
+  sub-items when master is OFF, and the „Anwenden" button before a change).
+- Accessibility = tab 8 (DragDrop, tooltip „Barrierefreiheit"). The page switches
+  while NAVIGATING and is read out (colour perception/visualise sounds/
+  transparency etc.). Enter is swallowed by the game in ConfigSystem (IKeyState
+  does not see it) → our own tab Enter activation (TryActivateFocusedConfigTab)
+  never fires there; but it is not needed for the page change. The heading shows
+  „Anzeigeeinstellungen" (an open cosmetic point).
+- JournalDetail: a companion addon (never focused, ChildAddonAttached to
+  Journal). The content sits in the comp CT=JournalCanvas(20), with direct text
+  children: id=38 quest title, id=9 level, id=8 description text, id=7 label
+  „Beschreibung", id=11 label „Ziel". Quest objectives = Multipurpose(21)
+  components with a non-empty id=3 text („Mit Miounne sprechen"). The labels come
+  AFTER their content in node order (Z-order).
 
-### Kampf: Gegner-HP, Cast, Hotbar (ilspycmd-verifiziert 2026-07-11)
-- Gegner-/Ziel-Daten über Dalamud `IBattleChara` (erbt `ICharacter`):
-  `CurrentHp`/`MaxHp`/`CurrentMp`/`MaxMp` (uint, aus ICharacter);
-  `IsCasting` (bool), `IsCastInterruptible` (bool), `CastActionType`
-  (byte), `CastActionId` (uint), `CastTargetObjectId` (ulong),
-  `CurrentCastTime`/`TotalCastTime` (float). Zugriff: `ITargetManager.Target
-  as IBattleChara` (nur Character-Objekte haben HP; NPCs/Objekte casten null).
-- Cast-Aktionsname: Lumina-Sheet `Action` (Lumina.Excel.Sheets.Action),
-  `.Name` ist `ReadOnlySeString` → `.ExtractText()`; Zugriff
+### Combat: enemy HP, cast, hotbar (ilspycmd-verified 2026-07-11)
+- Enemy/target data through the Dalamud `IBattleChara` (inherits `ICharacter`):
+  `CurrentHp`/`MaxHp`/`CurrentMp`/`MaxMp` (uint, from ICharacter); `IsCasting`
+  (bool), `IsCastInterruptible` (bool), `CastActionType` (byte), `CastActionId`
+  (uint), `CastTargetObjectId` (ulong), `CurrentCastTime`/`TotalCastTime`
+  (float). Access: `ITargetManager.Target as IBattleChara` (only character
+  objects have HP; NPCs/objects cast null).
+- The cast action name: the Lumina sheet `Action` (Lumina.Excel.Sheets.Action),
+  `.Name` is a `ReadOnlySeString` → `.ExtractText()`; access
   `IDataManager.GetExcelSheet<Action>().TryGetRow(CastActionId, out row)`.
-  Namespace-Kollision mit System.Action → `using LuminaAction = ...`.
+  Namespace collision with System.Action → `using LuminaAction = ...`.
 
-### AoE-Form/Radius (Action-Sheet, ilspycmd-verifiziert 2026-07-26)
-Für das AoE-Ausweich-Feature nötig. Lumina `Action`-Sheet-Felder (Offsets aus
-Lumina.Excel.Sheets.Action dekompiliert):
-- `CastType` (byte, @40) — die FORM der Aktion (Kreis / Kegel / Linie / Donut …).
-  ⚠️ Das Sheet liefert NUR die Zahl, keine Bedeutung. Die Zuordnung
-  Zahl→Form ist Community-Wissen, aber NICHT am Code verifiziert → wird per
-  DEBUG-Sonde `CombatService.AoeCastProbe` empirisch belegt, bevor darauf
-  „stehst-drin"-Logik gebaut wird. NICHT hartcodiert raten.
-- `EffectRange` (byte, @41) — Reichweite/Radius.
-- `XAxisModifier` (byte, @42) — Breite (für Linien/Rechtecke).
-- `Omen` / `OmenAlt` (RowRef<Omen>, @28/@30) — Verweis auf die Telegraph-Grafik
-  (Boden-Markierung). Noch nicht ausgewertet.
-- CASTTYPE->FORM (aus [AoeProbe]-Log + OmenPath belegt, Kampfuebungsplatz 2026-07-26):
-  - `2` = KREIS an der Ziel-Position (Feura, EffectRange=5, OmenPath 'general_1b').
-    Zentrum = Ziel-Objekt des Casts (CastTargetObjectId), sonst Caster. Boden-
-    platzierte Kreise ohne Ziel-Objekt haben ihr Zentrum nur in der VFX -> noch offen.
-  - `3` = KEGEL vom Caster in Blickrichtung (Kahlrodung, EffectRange=6=Laenge,
-    OmenPath 'gl_fan090' = 90 Grad voll). Halbwinkel = fan-Zahl/2. Andere Kegel:
-    fan060/fan120 -> Winkel aus dem Namen parsen.
-  - `4` = LINIE/RECHTECK vom Caster in Blickrichtung (Spalten, EffectRange=30=Laenge,
-    XAxisModifier=2, OmenPath 'general02'). ANNAHME: Halbbreite = XAxisModifier
-    (in-game verifizieren). Achtung: EffectRange ist hier die LAENGE, NICHT ein
-    Radius -> Linie als Kreis behandeln = riesige Falsch-Zone (war der V1-Bug).
-  - Unbekannte Typen: konservativ Caster-Kreis (lieber ueber- als unterwarnen).
-  - Geometrie umgesetzt in `CombatService.IsPlayerInAoe` (V5.55).
-- MESS-SONDE (V5.55, #if DEBUG, auto pro Frame): `AoeCastProbe` iteriert die
-  ObjectTable, loggt je castenden IBattleChara (dedupe per casterId, rising edge)
-  `[AoeProbe]` mit castId/Name/CastType/EffectRange/XAxisModifier/Omen + Geometrie
-  (casterPos, rot, playerPos, dist, relBearing per verifizierter Rotations-
-  Konvention, atMe, castTime). Zweck: CastType-Zahlen gegen das mappen, was der
-  Spieler wirklich sieht. Aus Release rauskompiliert.
+### AoE shape/radius (the Action sheet, ilspycmd-verified 2026-07-26)
+Needed for the AoE dodging feature. Lumina `Action` sheet fields (offsets
+decompiled from Lumina.Excel.Sheets.Action):
+- `CastType` (byte, @40) — the SHAPE of the action (circle / cone / line /
+  donut …).
+  ⚠️ The sheet only delivers the number, no meaning. The number→shape mapping is
+  community knowledge but is NOT verified against the code → it is established
+  empirically with the DEBUG probe `CombatService.AoeCastProbe` before any
+  "you-are-standing-in-it" logic is built on it. Do not guess it hard-coded.
+- `EffectRange` (byte, @41) — range/radius.
+- `XAxisModifier` (byte, @42) — width (for lines/rectangles).
+- `Omen` / `OmenAlt` (RowRef<Omen>, @28/@30) — a reference to the telegraph
+  graphic (the ground marker). Not yet evaluated.
+- CASTTYPE→SHAPE (established from the [AoeProbe] log + OmenPath, combat practice
+  ground 2026-07-26):
+  - `2` = CIRCLE at the target position (Feura, EffectRange=5, OmenPath
+    'general_1b'). The centre = the cast's target object (CastTargetObjectId),
+    otherwise the caster. Ground-placed circles without a target object have
+    their centre only in the VFX -> still open.
+  - `3` = CONE from the caster in the facing direction (Kahlrodung,
+    EffectRange=6=length, OmenPath 'gl_fan090' = a full 90 degrees). The half
+    angle = the fan number / 2. Other cones: fan060/fan120 -> parse the angle from
+    the name.
+  - `4` = LINE/RECTANGLE from the caster in the facing direction (Spalten,
+    EffectRange=30=length, XAxisModifier=2, OmenPath 'general02'). ASSUMPTION:
+    the half width = XAxisModifier (verify in-game). Careful: EffectRange is the
+    LENGTH here, NOT a radius -> treating a line as a circle = a huge false zone
+    (that was the V1 bug).
+  - Unknown types: conservatively a caster circle (better to over-warn than
+    under-warn).
+  - The geometry is implemented in `CombatService.IsPlayerInAoe` (V5.55).
+- MEASUREMENT PROBE (V5.55, #if DEBUG, automatic per frame): `AoeCastProbe`
+  iterates the ObjectTable and logs, per casting IBattleChara (deduped by
+  casterId, rising edge), `[AoeProbe]` with
+  castId/name/CastType/EffectRange/XAxisModifier/Omen + the geometry (casterPos,
+  rot, playerPos, dist, relBearing per the verified rotation convention, atMe,
+  castTime). Purpose: to map the CastType numbers against what the player really
+  sees. Compiled out of the release.
 
-- Hotbar: `RaptureHotbarModule.Instance()` (via UIModule, direkte statische
-  Instance() vorhanden). `GetSlotById(uint hotbarId, uint slotId)` →
-  `HotbarSlot*`. UI-„Aktionsleiste 1" = hotbarId 0; 16 Slots/Leiste,
-  Standard-Tasten 1–9,0 = Slots 0–9, Slots 10/11 = Tasten 11/12
-  (HOTBAR_1_A/B = VK137/139).
-- `HotbarSlot`: `CommandType` (Enum `HotbarSlotType : byte`, Empty=0,
-  Action=1, Item=2, …, GeneralAction, Macro, Emote, Mount …),
-  `CommandId`@184 (uint = ActionId bei Type Action), `PopUpHelp`@0
-  (Utf8String = spiel-eigener Anzeigename inkl. Keybind-Hinweis, universell
-  für alle Typen; als Fallback nach Lumina). Weitere nützliche Member:
-  `IsSlotUsable(type, id)`, `IsSlotActionTargetInRange2(type, id)` (für
-  spätere Cooldown-/Reichweiten-Ansage, noch ungenutzt).
+- Hotbar: `RaptureHotbarModule.Instance()` (via UIModule, a direct static
+  Instance() is present). `GetSlotById(uint hotbarId, uint slotId)` →
+  `HotbarSlot*`. The UI "hotbar 1" = hotbarId 0; 16 slots per bar, the default
+  keys 1–9,0 = slots 0–9, slots 10/11 = keys 11/12 (HOTBAR_1_A/B = VK137/139).
+- `HotbarSlot`: `CommandType` (enum `HotbarSlotType : byte`, Empty=0, Action=1,
+  Item=2, …, GeneralAction, Macro, Emote, Mount …), `CommandId`@184 (uint = the
+  ActionId for type Action), `PopUpHelp`@0 (Utf8String = the game's own display
+  name including the keybind hint, universal for all types; use it as a fallback
+  after Lumina). Further useful members: `IsSlotUsable(type, id)`,
+  `IsSlotActionTargetInRange2(type, id)` (for a later cooldown/range
+  announcement, still unused).
 
-### Cooldown / Recast (ActionManager, ilspycmd-verifiziert 2026-07-30)
-- `ActionManager.Instance()` → `ActionManager*`. Alle Cooldown-Abfragen nehmen
-  `ActionType` (Enum: None=0, **Action=1**, Item=2, GeneralAction=5 …) + actionId.
-- INSTANZ-Methoden (`am->…`):
-  - `GetRecastTime(ActionType, uint id) → float` = GESAMT-Abklingzeit der Action
-    (unabhaengig vom aktuellen Stand). GCD-Skills ~2,5 s; echte Fähigkeiten (oGCD)
-    deutlich mehr. `CooldownService` nutzt Schwelle >3 s, um GCD auszuschliessen —
-    ohne die build-spezifische GCD-Recast-Gruppen-Id raten zu muessen.
-  - `IsRecastTimerActive(ActionType, uint id) → bool` = laeuft die Abklingzeit noch
-    (true = auf Cooldown). Fallende Kante true→false = „wieder bereit".
-  - `GetRecastTimeElapsed(ActionType, uint id) → float` = bisher verstrichen.
+### Cooldown / recast (ActionManager, ilspycmd-verified 2026-07-30)
+- `ActionManager.Instance()` → `ActionManager*`. All cooldown queries take an
+  `ActionType` (enum: None=0, **Action=1**, Item=2, GeneralAction=5 …) + an
+  actionId.
+- INSTANCE methods (`am->…`):
+  - `GetRecastTime(ActionType, uint id) → float` = the TOTAL cooldown of the
+    action (independent of the current state). GCD skills ~2.5 s; real abilities
+    (oGCD) considerably more. `CooldownService` uses a threshold of >3 s to
+    exclude the GCD — without having to guess the build-specific GCD recast group
+    id.
+  - `IsRecastTimerActive(ActionType, uint id) → bool` = is the cooldown still
+    running (true = on cooldown). A falling edge true→false = "ready again".
+  - `GetRecastTimeElapsed(ActionType, uint id) → float` = how much has elapsed so
+    far.
   - `IsActionOffCooldown(ActionType, uint id) → bool`.
-  - `GetCurrentCharges(uint id) → uint` (Instanz).
-- STATISCH (ohne thisPtr): `ActionManager.GetMaxCharges(uint id, uint level) → ushort`.
-  maxCharges>1 = Ladungs-Fähigkeit; dann zaehlt die Ladungs-Anzahl (IsRecast-
-  TimerActive bleibt bis VOLL true, deshalb Ladungen als Signal nutzen).
-- Weiter vorhanden (noch ungenutzt): `GetRecastGroup(int type, uint id) → int`
-  (GCD-Gruppe existiert, Nr. build-abhaengig — NICHT hartkodiert), `GetActionRange`,
-  `GetActionCost`, `GetAdjustedRecastTime`, `StartCooldown`, `GetActionStatus`.
-- Genutzt von `CooldownService` (V5.61): Standard-Leisten 0..9 durchgehen, Action-
-  Slots dedupen, GCD per >3 s ausschliessen, Kante on→off ansagen (Ton+Name).
+  - `GetCurrentCharges(uint id) → uint` (instance).
+- STATIC (without a thisPtr): `ActionManager.GetMaxCharges(uint id, uint level) →
+  ushort`. maxCharges>1 = a charge ability; the charge count then counts
+  (IsRecastTimerActive stays true until FULL, which is why charges are used as
+  the signal).
+- Also present (still unused): `GetRecastGroup(int type, uint id) → int` (the GCD
+  group exists, but its number is build-dependent — do NOT hard-code it),
+  `GetActionRange`, `GetActionCost`, `GetAdjustedRecastTime`, `StartCooldown`,
+  `GetActionStatus`.
+- Used by `CooldownService` (V5.61): walk the standard bars 0..9, dedupe action
+  slots, exclude the GCD via >3 s, announce the on→off edge (tone + name).
 
-### Hotbar UMBELEGEN + gelernte Skills (ilspycmd-verifiziert 2026-07-17)
-- `RaptureHotbarModule.SetAndSaveSlot(uint hotbarId, uint slotId,
-  HotbarSlotType commandType, uint commandId, bool ignoreSharedHotbars=false,
-  bool allowSaveToPvP=true)` — schreibt NUR den GESPEICHERTEN Hotbar-
-  Zustand, NICHT die Live-Leiste! IN-GAME BEWIESEN (2026-07-17): Zuweisung
-  9:43 blieb live wirkungslos (auch 2 Frames später, Leiste nicht geteilt),
-  erschien aber nach dem Relog um 11:57 auf der Leiste. Die GitHub-Doku
-  („sets a hotbar slot and triggers a save") ist hier irreführend.
-  ⇒ Für sofortige Wirkung danach `LoadSavedHotbar(classJobId, hotbarId)`
-  aufrufen („loads the saved hotbar into the live hotbar, will not reload
-  from disk", respektiert PvP automatisch) — V4.78 macht das; Erfolg per
-  Read-back über `GetSlotById` prüfen (2 Frames später).
-  Verwandt: `ClearSavedSlotById(hotbarId, slotId)` (Slot leeren),
-  `ExecuteSlotById(hotbarId, slotId)` (Slot auslösen, byte-Rückgabe),
+### REBINDING the hotbar + learned skills (ilspycmd-verified 2026-07-17)
+- `RaptureHotbarModule.SetAndSaveSlot(uint hotbarId, uint slotId, HotbarSlotType
+  commandType, uint commandId, bool ignoreSharedHotbars=false, bool
+  allowSaveToPvP=true)` — writes ONLY the SAVED hotbar state, NOT the live bar!
+  PROVEN IN-GAME (2026-07-17): an assignment at 9:43 had no live effect (even two
+  frames later, with the bar not shared), but appeared on the bar after the relog
+  at 11:57. The GitHub documentation ("sets a hotbar slot and triggers a save") is
+  misleading here.
+  ⇒ For immediate effect, call `LoadSavedHotbar(classJobId, hotbarId)` afterwards
+  ("loads the saved hotbar into the live hotbar, will not reload from disk",
+  respects PvP automatically) — V4.78 does that; check success by reading back
+  through `GetSlotById` (two frames later).
+  Related: `ClearSavedSlotById(hotbarId, slotId)` (empty a slot),
+  `ExecuteSlotById(hotbarId, slotId)` (trigger a slot, byte return),
   `IsHotbarShared(hotbarId)` (bool).
-- Lumina `Action`-Sheet (Spalten dekompiliert 2026-07-17): `Name`,
-  `ClassJobLevel` (byte; 0 = keine per-Stufe-gelernte Spieler-Action),
-  `ClassJobCategory` (RowRef, bool-Spalte je Job wie beim Item-Sheet —
-  Spaltenwahl über engl. ClassJob-Abkürzung, s. GearInfoService.AllowsJob),
-  `ClassJob` (RowRef), `IsPvP`, `IsRoleAction`, `IsPlayerAction` (packed
-  bools), `UnlockLink` (untypisierte RowRef, uint bei Offset+4; 0 = keine
-  Quest-Freischaltung nötig).
-- Freischaltungs-Check: `UIState.Instance()->
-  IsUnlockLinkUnlockedOrQuestCompleted(uint unlockLinkOrQuestId, byte
-  minQuestProgression=0, bool a4=true)` — nimmt laut Signatur UnlockLink-
-  ODER Quest-Id (deckt beide Fälle der UnlockLink-Spalte ab). UIState liegt
-  in `FFXIVClientStructs.FFXIV.Client.Game.UI`.
-- Skill-Browser-Filter: RowId!=0, !IsPvP, ClassJobLevel 1..Spielerstufe,
-  ClassJobCategory enthält aktuellen Job, UnlockLink erfüllt, UND
-  IsPlayerAction==true — OHNE letzteres rutschen interne Zeilen durch den
-  Job-Filter (in-game belegt 2026-07-17 12:01: fünfmal „Ausweichen" +
-  „Perfekter Hieb" bei Job 26). OFFEN: exakter Abgleich mit dem Fenster
-  „Aktionen & Traits" (Log `[Hotbar] Skill-Liste gebaut` zeigt Anzahl).
-- KEINE Unlock-Methode in `ActionManager` (komplett durchgesehen 2026-07-17)
-  — Action-Freischaltung läuft nur über UIState/UnlockLink.
-- LEISTEN-ANZAHL (ilspycmd 2026-07-17): `RaptureHotbarModule.Hotbars` =
-  FixedSizeArray18<Hotbar>; `StandardHotbars` = Hotbars[0..9] (10 Stück,
-  UI „Kommandomenü 1–10"), `CrossHotbars` = Hotbars[10..17] (Gamepad).
-  Jede Hotbar hat 16 Slots (FixedSizeArray16<HotbarSlot>), Standard-UI
-  nutzt 12. `GetSlotById(uint hotbarId, uint slotId)`,
-  `LoadSavedHotbar(uint classJobId, uint hotbarId)` und SetAndSaveSlot
-  nehmen alle die Leisten-Nummer — der V4.78-Pfad gilt für jede Leiste.
-- HOTBAR-TASTEN im InputId-Enum (Live-Dump 2026-07-17):
-  `HOTBAR_{Leiste}_{Suffix}` mit Suffix 1..9, 0, A, B = Slot 0..11
-  (HOTBAR_1_1=57, Blöcke à 12 direkt hintereinander). Leiste 2 ist
-  standardmäßig Strg+1..Strg+0 (+Strg+VK137/139 für Slot 11/12);
-  Leiste 3+ unbelegt. Live-Abfrage: KeybindService.GetBoundKey
+- The Lumina `Action` sheet (columns decompiled 2026-07-17): `Name`,
+  `ClassJobLevel` (byte; 0 = not a per-level learned player action),
+  `ClassJobCategory` (RowRef, a bool column per job as in the item sheet — the
+  column is chosen by the English ClassJob abbreviation, see
+  GearInfoService.AllowsJob), `ClassJob` (RowRef), `IsPvP`, `IsRoleAction`,
+  `IsPlayerAction` (packed bools), `UnlockLink` (an untyped RowRef, uint at
+  offset+4; 0 = no quest unlock needed).
+- Unlock check: `UIState.Instance()->IsUnlockLinkUnlockedOrQuestCompleted(uint
+  unlockLinkOrQuestId, byte minQuestProgression=0, bool a4=true)` — by its
+  signature it takes an UnlockLink OR a quest id (covering both cases of the
+  UnlockLink column). UIState lives in
+  `FFXIVClientStructs.FFXIV.Client.Game.UI`.
+- Skill browser filter: RowId!=0, !IsPvP, ClassJobLevel 1..player level,
+  ClassJobCategory contains the current job, UnlockLink satisfied, AND
+  IsPlayerAction==true — without the last one, internal rows slip through the job
+  filter (established in-game 2026-07-17 12:01: five times „Ausweichen" +
+  „Perfekter Hieb" on job 26). OPEN: an exact comparison with the "Actions &
+  Traits" window (the log `[Hotbar] Skill-Liste gebaut` shows the count).
+- NO unlock method in `ActionManager` (reviewed in full 2026-07-17) — action
+  unlocking runs solely through UIState/UnlockLink.
+- BAR COUNT (ilspycmd 2026-07-17): `RaptureHotbarModule.Hotbars` =
+  FixedSizeArray18<Hotbar>; `StandardHotbars` = Hotbars[0..9] (10 of them, the UI
+  "hotbar 1–10"), `CrossHotbars` = Hotbars[10..17] (gamepad). Each hotbar has 16
+  slots (FixedSizeArray16<HotbarSlot>), and the standard UI uses 12.
+  `GetSlotById(uint hotbarId, uint slotId)`, `LoadSavedHotbar(uint classJobId,
+  uint hotbarId)` and SetAndSaveSlot all take the bar number — the V4.78 route
+  applies to every bar.
+- HOTBAR KEYS in the InputId enum (live dump 2026-07-17): `HOTBAR_{bar}_{suffix}`
+  with suffix 1..9, 0, A, B = slot 0..11 (HOTBAR_1_1=57, blocks of 12 directly one
+  after another). Bar 2 is Ctrl+1..Ctrl+0 by default (+Ctrl+VK137/139 for slots
+  11/12); bar 3 onwards is unbound. Live query: KeybindService.GetBoundKey
   (Enum.TryParse<InputId> → GetKeybindSpan()[Index], V4.81).
 
-### ConfigKeybind — Fenster „Tastenbelegung" (F5-Dump 2026-07-17)
-- KORREKTUR (Log 2026-07-17 13:12, widerlegt den 09:45-Befund):
-  Pfeiltasten bewegen den GLOBALEN Fokus (AtkInputManager.FocusedNode),
-  die Listen-Indizes stehen still (Hov2 blieb 0, nur EINE
-  List-Navigation beim Öffnen). Die Liste scrollt dabei UNTER einem
-  festen Fokus-Node (gleicher Node-Ptr, wechselnder Zeilentext) —
-  Zeilen-Ansagen müssen deshalb pro Frame neu gelesen werden, nicht
-  nur bei Fokus-Wechsel. ListLen wechselt je Kategorie-Reiter
-  (Bewegung 32, Schnelltasten 134). Ansage läuft seit V4.79 über
-  UpdateGlobalFocus → ClimbToItemRenderer → dedizierter Zeilen-Leser.
-- FALLE dabei: GetTextFromNodeTree verwirft Texte der Länge 1 —
-  einstellige Tasten-Labels („W", „1", „C") fehlten deshalb im
-  generischen Fokus-Pfad, mehrstellige („Tab", „NUM0") nicht.
-- Zeile = ListItemRenderer(14) mit: direktem Text id=2 = Befehlsname
-  („Kommandomenü 1 - Slot 1"), Button-Komponente id=6 = Belegung 1,
-  Button id=5 = Belegung 2; der Tasten-Text steckt JEWEILS in einem
-  Text-Kind id=5 IN der Button-Komponente. Der generische
-  ReadListItemText liest nur direkte Text-Nodes → Tasten fehlten in
-  der Ansage (Fix V4.77: ReadConfigKeybindRow).
-- Deutsch: Hotbar heißt in der UI „Kommandomenü", Reiter als
-  RadioButtons: Bewegung/Zielen/Schnelltasten/Chat/System/Kommandos/
-  Gamepad; Knöpfe Schließen/Anwenden/Zurücksetzen; Checkbox
-  „Direkt-Chatmodus aktivieren".
-- WICHTIG (Semantik): Dieses Fenster ändert TASTE→SLOT-Bindungen
-  („welche Taste feuert Kommandomenü 1 - Slot 1"), NICHT welcher
-  Skill im Slot liegt (das ist die Hotbar selbst / SetAndSaveSlot).
-- OFFEN: Was löst Enter auf einer Zeile aus (Erfassungsmodus für
-  neue Taste?) — nie getestet, kein Handler; nächster In-Game-Test.
-- StdList (z. B. `Map.UnacceptedQuestMarkers`): implementiert
-  `IEnumerable<T>`+`Count`; `GetEnumerator()` liefert Struct-Enumerator
-  (foreach allokationsfrei), yield by value (read-only-Kopie sicher).
+### ConfigKeybind — the „Tastenbelegung" (key bindings) window (F5 dump 2026-07-17)
+- CORRECTION (log 2026-07-17 13:12, refuting the 09:45 finding): the arrow keys
+  move the GLOBAL focus (AtkInputManager.FocusedNode), while the list indices
+  stand still (Hov2 stayed 0, only ONE list navigation on opening). The list
+  scrolls UNDER a fixed focus node (the same node pointer, changing row text) —
+  so row announcements have to be re-read per frame, not only on a focus change.
+  ListLen changes per category tab (movement 32, hotkeys 134). Since V4.79 the
+  announcement runs through UpdateGlobalFocus → ClimbToItemRenderer → a dedicated
+  row reader.
+- A TRAP along the way: GetTextFromNodeTree discards texts of length 1 —
+  single-character key labels („W", „1", „C") were therefore missing from the
+  generic focus path, while multi-character ones („Tab", „NUM0") were not.
+- A row = a ListItemRenderer(14) with: a direct text id=2 = the command name
+  („Kommandomenü 1 - Slot 1"), a button component id=6 = binding 1, button id=5 =
+  binding 2; the key text sits IN EACH CASE in a text child id=5 INSIDE the button
+  component. The generic ReadListItemText only reads direct text nodes → the keys
+  were missing from the announcement (fix V4.77: ReadConfigKeybindRow).
+- German: the hotbar is called „Kommandomenü" in the UI, with the tabs as radio
+  buttons: Bewegung/Zielen/Schnelltasten/Chat/System/Kommandos/Gamepad; the
+  buttons Schließen/Anwenden/Zurücksetzen; the checkbox „Direkt-Chatmodus
+  aktivieren".
+- IMPORTANT (semantics): this window changes KEY→SLOT bindings ("which key fires
+  hotbar 1 - slot 1"), NOT which skill sits in the slot (that is the hotbar itself
+  / SetAndSaveSlot).
+- OPEN: what does Enter on a row trigger (a capture mode for a new key?) — never
+  tested, no handler; the next in-game test.
+- StdList (e.g. `Map.UnacceptedQuestMarkers`): implements `IEnumerable<T>`+`Count`;
+  `GetEnumerator()` returns a struct enumerator (foreach is allocation-free),
+  yielding by value (a read-only copy is safe).
 
-### Toasts / Fehlermeldungen (IToastGui, ilspycmd-verifiziert 2026-07-17)
-- Aktions-Fehler („Das Ziel ist zu weit entfernt.", „Die Aktion ist
-  noch nicht bereit.") sind FEHLER-TOASTS im Overlay `_TextError`.
-- FALLE: `_TextError` feuert PostRefresh NIE — Log 2026-07-17 zeigt
-  über eine ganze Session nur das leere PostSetup beim Login. Der
-  Lifecycle-Ansatz (NotificationAddons) kann diese Meldungen also
-  prinzipiell nicht liefern. In den Chat gespiegelt werden die
-  meisten Aktions-Fehler ebenfalls nicht.
-- Sauberer Weg: `Dalamud.Plugin.Services.IToastGui` (ilspycmd an
-  Dalamud.dll): Events `ErrorToast(ref SeString, ref bool isHandled)`,
-  `Toast(ref SeString, ref ToastOptions, ref bool)`,
-  `QuestToast(ref SeString, ref QuestToastOptions, ref bool)` —
-  feuern auf dem Show-Toast-Aufruf des Spiels. Seit V4.80 liest
-  ToastService.cs sie vor (Fehler = Interrupt, Info/Quest = Queue
-  mit WasRecentlySpoken-Echo-Schutz, da manche Info-Toasts parallel
-  als `_WideText`/`_ScreenText` gezeichnet werden).
+### Toasts / error messages (IToastGui, ilspycmd-verified 2026-07-17)
+- Action errors („Das Ziel ist zu weit entfernt.", „Die Aktion ist noch nicht
+  bereit.") are ERROR TOASTS in the overlay `_TextError`.
+- TRAP: `_TextError` NEVER fires PostRefresh — the log of 2026-07-17 shows only
+  the empty PostSetup at login across a whole session. So the lifecycle approach
+  (NotificationAddons) fundamentally cannot deliver these messages. Most action
+  errors are not mirrored into the chat either.
+- The clean route: `Dalamud.Plugin.Services.IToastGui` (ilspycmd against
+  Dalamud.dll): the events `ErrorToast(ref SeString, ref bool isHandled)`,
+  `Toast(ref SeString, ref ToastOptions, ref bool)`, `QuestToast(ref SeString,
+  ref QuestToastOptions, ref bool)` — they fire on the game's show-toast call.
+  Since V4.80 ToastService.cs reads them out (errors = interrupt, info/quest =
+  queued with WasRecentlySpoken echo protection, because some info toasts are
+  drawn in parallel as `_WideText`/`_ScreenText`).
 
-## Werkzeuge / Traps
+## Tools / traps
 
-- FALLE NodeType: Komponenten-Nodes tragen im ROHEN Type-Feld Werte
-  >= 1000 (1003, 1006, 1027, …). `NodeType.Component` ist 10000 und wird
-  nur von GetNodeType() zurückgegeben (ilspycmd 2026-07-11, Doku-Remark
-  im Enum). Ein Vergleich `node->Type == NodeType.Component` ist deshalb
-  IMMER falsch — so war FindListInAddon seit Einführung tot und die
-  universelle Listen-Navigation hat nie gefeuert (Journal, SystemMenu,
-  SelectString in-game alle stumm). Richtig: `(int)node->Type >= 1000`.
+- TRAP, NodeType: component nodes carry values >= 1000 in the RAW Type field
+  (1003, 1006, 1027, …). `NodeType.Component` is 10000 and is only returned by
+  GetNodeType() (ilspycmd 2026-07-11, the doc remark in the enum). A comparison
+  `node->Type == NodeType.Component` is therefore ALWAYS false — which is how
+  FindListInAddon was dead from the moment it was introduced and the universal
+  list navigation never fired (journal, SystemMenu, SelectString all mute
+  in-game). Correct: `(int)node->Type >= 1000`.
 
-- FALLE dalamudConfig.json: Dalamud liest sie über ReliableFileStorage
-  (rohe Bytes → UTF8.GetString, KEIN BOM-Strip). Eine mit BOM geschriebene
-  Datei (PowerShell 5.1 `Set-Content -Encoding utf8`!) wirft im Parser
-  JsonReaderException → Dalamud fällt STILL (nur Verbose-Log) auf seine
-  SQLite-Sicherung `dalamudVfs.db` zurück und überschreibt die Datei beim
-  nächsten Speichern mit dem alten Stand. Externe Edits gehen so lautlos
-  verloren. Immer BOM-los schreiben: `[IO.File]::WriteAllText(path, text,
-  UTF8Encoding($false))`. (Bewiesen 2026-07-10 per Repro mit Dalamuds
-  eigenen Serializer-Settings; kostete drei mysteriöse Fehlversuche)
-- Dev-Plugins lädt Dalamud NUR aus `DevPluginLoadLocations` in
-  dalamudConfig.json (+ DevMode=true) — der devPlugins-Ordner allein
-  genügt NICHT. Neue Dev-Plugins brauchen zudem DevPluginSettings-Eintrag
-  mit StartOnBoot=true
-- ilspycmd 9.1.0: `--list-types` kaputt (1 Zeile) — aber `-l c` (Klassen),
-  `-l s` (Structs), `-l e` (Enums) funktionieren; Typen einzeln per `-t`
-- UIReaderService.cs hat gemischte Zeichenkodierung — bei Edits old_strings
-  ohne Umlaute wählen; einmal steckte ein U+2000-Space drin (per awk ersetzt)
-- MEMORY_BASIC_INFORMATION braucht Size=48 (nicht 44), sonst scheitert
-  VirtualQuery IMMER still → IsReadable-Helfer mit Positivtest verifizieren
-- Dalamud lädt Dev-Plugin DIREKT aus `bin\Debug\net10.0-windows\` —
-  nach jedem Build Spiel neu starten
+- TRAP, dalamudConfig.json: Dalamud reads it through ReliableFileStorage (raw
+  bytes → UTF8.GetString, NO BOM strip). A file written with a BOM (PowerShell 5.1
+  `Set-Content -Encoding utf8`!) throws a JsonReaderException in the parser →
+  Dalamud falls back SILENTLY (verbose log only) to its SQLite backup
+  `dalamudVfs.db` and overwrites the file on the next save with the old state.
+  External edits are lost silently that way. Always write without a BOM:
+  `[IO.File]::WriteAllText(path, text, UTF8Encoding($false))`. (Proven 2026-07-10
+  by a repro with Dalamud's own serializer settings; it cost three mysterious
+  failed attempts.)
+- Dalamud loads dev plugins ONLY from `DevPluginLoadLocations` in
+  dalamudConfig.json (+ DevMode=true) — the devPlugins folder alone is NOT
+  enough. New dev plugins additionally need a DevPluginSettings entry with
+  StartOnBoot=true.
+- ilspycmd 9.1.0: `--list-types` is broken (1 line) — but `-l c` (classes), `-l s`
+  (structs) and `-l e` (enums) work; individual types via `-t`.
+- UIReaderService.cs has mixed character encoding — when editing, choose
+  old_strings without umlauts; once a U+2000 space was lodged in it (replaced with
+  awk).
+- MEMORY_BASIC_INFORMATION needs Size=48 (not 44), otherwise VirtualQuery ALWAYS
+  fails silently → verify the IsReadable helper with a positive test.
+- Dalamud loads the dev plugin DIRECTLY from `bin\Debug\net10.0-windows\` —
+  restart the game after every build.
 
-### Stufe / Erfahrung (PlayerState, ilspycmd-verifiziert 2026-07-12)
+### Level / experience (PlayerState, ilspycmd-verified 2026-07-12)
 `PlayerState.Instance()` (FFXIVClientStructs.FFXIV.Client.Game.UI):
-- `CurrentLevel` (short) = Stufe des AKTIVEN Jobs (echte Stufe; daneben
-  `SyncedLevel`/`IsLevelSynced` bei Level-Sync in Dungeons)
-- `CurrentClassJobId` (byte) = aktiver Job (zum Level-Up-Tracking, damit ein
-  Jobwechsel nicht als "Level-Up" zählt)
-- `ps->GetCurrentClassJobExp()` (uint) = aktuelle EXP in DIESER Stufe
-- `ps->GetCurrentClassJobNeededExp()` (uint) = EXP für die nächste Stufe;
-  == 0 bei Maximalstufe
-- "Noch bis Level-Up" = NeededExp − CurrentExp
-- WICHTIG: Die statischen `delegate* unmanaged<PlayerState*,uint>`-Properties
-  NICHT als `PlayerState.GetCurrentClassJobExp(ps)` aufrufen (Compiler wählt die
-  0-Arg-Instanzmethode → CS1501). Instanzmethode am Pointer nutzen: `ps->GetCurrentClassJobExp()`.
-- Level-Up-Ansage: CurrentLevel jeden Frame lesen, bei Anstieg (gleicher Job)
-  ansagen — sauber aus PlayerState, kein UI-Scraping. (CombatService.TrackLevelUp)
-- XP-Gewinn-Ansage (V5.52, User-Wunsch 2026-07-25): GetCurrentClassJobExp() jeden
-  Frame lesen, bei Anstieg (gleicher Job) das Delta ansagen ("X Erfahrung") und in
-  den Nachlese-Kanal "Beute" schreiben. Baseline pro Job (Job-Wechsel aendert den
-  Wert ohne echten Gewinn) + Level-Up-Ruecksprung (Wert faellt Richtung 0) nur
-  stumm nachziehen; needed==0 (Maxstufe) => kein Tracking. Nicht-unterbrechend
-  (Speak), damit XP nie eine HP-/Cast-Warnung abschneidet. (CombatService.TrackXpGain)
+- `CurrentLevel` (short) = the level of the ACTIVE job (the real level; alongside
+  it `SyncedLevel`/`IsLevelSynced` for level sync in dungeons)
+- `CurrentClassJobId` (byte) = the active job (for level-up tracking, so that a
+  job change does not count as a "level up")
+- `ps->GetCurrentClassJobExp()` (uint) = the current EXP within THIS level
+- `ps->GetCurrentClassJobNeededExp()` (uint) = the EXP for the next level; == 0 at
+  maximum level
+- "Remaining until level up" = NeededExp − CurrentExp
+- IMPORTANT: do NOT call the static `delegate* unmanaged<PlayerState*,uint>`
+  properties as `PlayerState.GetCurrentClassJobExp(ps)` (the compiler picks the
+  zero-argument instance method → CS1501). Use the instance method on the
+  pointer: `ps->GetCurrentClassJobExp()`.
+- Level-up announcement: read CurrentLevel every frame and announce on an
+  increase (same job) — cleanly from PlayerState, no UI scraping.
+  (CombatService.TrackLevelUp)
+- XP gain announcement (V5.52, user request 2026-07-25): read
+  GetCurrentClassJobExp() every frame, announce the delta on an increase (same
+  job) ("X experience") and write it into the review channel "loot". The baseline
+  per job (a job change alters the value without a real gain) + the level-up
+  reset (the value falls towards 0) are only tracked silently; needed==0 (max
+  level) => no tracking. Non-interrupting (Speak), so that XP never cuts off an
+  HP/cast warning. (CombatService.TrackXpGain)
 
-### Loot-Kanal (eingesammelte Gegenstaende) — VERIFIZIERT (Live-[Chat]-Log 2026-07-25)
-Beute/Waehrung, die ins Inventar wandert, kommt ueber **XivChatType.LootNotice
-(62)** — leerer Sender, voller Satz ("Du hast ein Lammfilet erhalten.", "Du hast
-115 Gil erhalten.", "Du hast 17 Legionstaler erhalten."). Deckt Gegner-Drops
-(Schaf -> Lammfilet/Schafsbockhorn), Gil, GC-Taler und Sammel-Kristalle ab. Liegt
-AUSSERHALB des Kampflog-Bereichs (41-49), wird also NICHT von IsCombatLogLine
-verworfen — kam von Anfang an sauber im [Chat]-Log an, nur ungelesen (ShouldRead
-default false). V5.52: LootNotice -> ReadLoot (Config AnnounceLoot), Nachlese-Kanal
-"Beute" (gemeinsam mit XP), kein Prefix. Gathering (67) bleibt der separate
-Abbau-Kanal.
-- OFFEN (nicht verifiziert): Instanz-/Dungeon-Beute per Wuerfelsystem (Bedarf/Gier)
-  koennte ueber einen anderen Kanal (LootRoll?) laufen — bei Bedarf spaeter aus
-  einem Dungeon-Log nachziehen.
+### The loot channel (items picked up) — VERIFIED (live [Chat] log 2026-07-25)
+Loot/currency that goes into the inventory arrives through
+**XivChatType.LootNotice (62)** — an empty sender, a full sentence ("Du hast ein
+Lammfilet erhalten.", "Du hast 115 Gil erhalten.", "Du hast 17 Legionstaler
+erhalten."). It covers enemy drops (sheep -> mutton/ram's horn), gil, GC seals
+and gathering crystals. It lies OUTSIDE the combat log range (41-49) and is
+therefore NOT discarded by IsCombatLogLine — it arrived cleanly in the [Chat] log
+from the very beginning, just unread (ShouldRead defaulted to false). V5.52:
+LootNotice -> ReadLoot (config AnnounceLoot), review channel "loot" (shared with
+XP), no prefix. Gathering (67) remains the separate harvesting channel.
+- OPEN (not verified): instance/dungeon loot via the roll system (need/greed)
+  could run through another channel (LootRoll?) — pull that from a dungeon log
+  later if needed.
 
-### Emotes ausführen (ilspycmd-verifiziert 2026-07-12)
+### Executing emotes (ilspycmd-verified 2026-07-12)
 - `AgentEmote.Instance()` (FFXIVClientStructs.FFXIV.Client.UI.Agent):
-  - `agent->ExecuteEmote((ushort)emoteId, playEmoteOption=null, addToHistory=true, liveUpdateHistory=true)`
-    — löst ein Emote direkt aus (dieselbe Funktion wie das Gesten-Menü);
-    kein Chat/keine UI nötig. Externer Call → try-catch.
-  - `agent->CanUseEmote((ushort)emoteId)` — true wenn freigeschaltet.
-- Lumina-Sheet `Emote`: RowId == emoteId für ExecuteEmote; `Name` = Anzeigename
-  ("Verbeugen"); `TextCommand` = RowRef<TextCommand> → `.Command` = echter
-  /befehl (WICHTIG: deutscher /befehl ≠ Anzeigename; "/verbeugen" existiert NICHT
-  — Befehl aus dem Sheet lesen, nicht raten). `Order`/`EmoteCategory` für Sortierung.
-- Umgesetzt: EmoteService (Browser: Umschalt+F4/F5 blättern nutzbare Emotes
-  alphabetisch, Umschalt+F6 führt aus). Grund: blinder User kann Chat nicht
-  tippen und Icon-Gesten-Palette nicht navigieren.
+  - `agent->ExecuteEmote((ushort)emoteId, playEmoteOption=null,
+    addToHistory=true, liveUpdateHistory=true)` — triggers an emote directly (the
+    same function as the emote menu); no chat and no UI needed. An external call →
+    try-catch.
+  - `agent->CanUseEmote((ushort)emoteId)` — true when it is unlocked.
+- The Lumina sheet `Emote`: RowId == the emoteId for ExecuteEmote; `Name` = the
+  display name („Verbeugen"); `TextCommand` = RowRef<TextCommand> → `.Command` =
+  the real /command (IMPORTANT: the German /command ≠ the display name;
+  "/verbeugen" does NOT exist — read the command from the sheet, do not guess it).
+  `Order`/`EmoteCategory` for sorting.
+- Implemented: EmoteService (browser: Shift+F4/F5 page through the usable emotes
+  alphabetically, Shift+F6 executes). Reason: a blind user cannot type in chat and
+  cannot navigate the icon emote palette.
 
-### JournalResult Belohnungs-Fenster (UI-Dump-verifiziert 2026-07-12)
-JournalCanvas enthält Belohnungs-Einträge als Multipurpose(21)-Komponenten:
-- ITEM-Belohnung: Comp(1010) Multipurpose → Fokus auf id=3 Collision, Kind
-  id=2 Comp(1003) Icon(15) = AtkComponentIcon (IconId → Name via ResolveIconName,
-  Menge in QuantityText/id=7). Leerer Slot = IconId 0.
-- WÄHRUNG/EXP: Comp(1007) Multipurpose → Fokus auf id=5 Collision, Betrag in
-  Kind id=2 Comp(1011) TextNineGrid(19) → id=2 Text ("260"/"127"). Der TYP
-  (Erfahrung/Gil) steht NUR als id=3 Image (kein auflösbares Icon) → aktuell
-  per Position gelabelt (Erfahrung zuerst, dann Gil = Standard-FF14-Reihenfolge).
-- Buttons: id=38 "Ablehnen", id=37 "Abschließen".
-- Umgesetzt: UIReaderService.BuildRewardText liest beim Öffnen "Belohnung: <Items>,
-  Erfahrung X, Gil Y". Grund: Fokus-Navigation der Währungszellen sagte nur nackte
-  Zahlen (User: "ich will wissen was der Eintrag ist").
+### The JournalResult reward window (UI-dump-verified 2026-07-12)
+JournalCanvas contains the reward entries as Multipurpose(21) components:
+- ITEM reward: Comp(1010) Multipurpose → focus on the id=3 collision, child id=2
+  Comp(1003) Icon(15) = AtkComponentIcon (IconId → name via ResolveIconName, the
+  quantity in QuantityText/id=7). An empty slot = IconId 0.
+- CURRENCY/EXP: Comp(1007) Multipurpose → focus on the id=5 collision, the amount
+  in child id=2 Comp(1011) TextNineGrid(19) → id=2 text ("260"/"127"). The TYPE
+  (experience/gil) exists ONLY as the id=3 image (no resolvable icon) → currently
+  labelled by position (experience first, then gil = the standard FF14 order).
+- Buttons: id=38 „Ablehnen", id=37 „Abschließen".
+- Implemented: UIReaderService.BuildRewardText reads "reward: <items>, experience
+  X, gil Y" on opening. Reason: focus navigation of the currency cells announced
+  only bare numbers (user: "I want to know what the entry is").
 
-### Hauptszenario-Quest erkennen (MSQ, ilspycmd-verifiziert 2026-07-12)
-- Lumina Quest.JournalGenre → JournalGenre.JournalCategory → JournalCategory.
-  JournalSection. MSQ = JournalSection.RowId == 0 ("Hauptszenario").
-- Umgesetzt: QuestMarkerService baut 1× ein HashSet der MSQ-Quest-Namen aus dem
-  Quest-Sheet und matcht die Marker-Label dagegen (MarkerInfo hat keinen direkten
-  Quest-Zeiger, nur Label + ObjectiveId). QuestDestination.IsMainStory → Ansage
-  "Story: <Quest>". [Quest] Hauptszenario-Namen-Log zeigt die Anzahl.
-- MarkerInfo-Felder: ObjectiveId(uint), Label(Utf8String), MarkerData(StdVector),
+### Recognising a main scenario quest (MSQ, ilspycmd-verified 2026-07-12)
+- Lumina Quest.JournalGenre → JournalGenre.JournalCategory →
+  JournalCategory.JournalSection. MSQ = JournalSection.RowId == 0 („Hauptszenario").
+- Implemented: QuestMarkerService builds a HashSet of the MSQ quest names from the
+  quest sheet once and matches the marker labels against it (MarkerInfo has no
+  direct quest pointer, only Label + ObjectiveId). QuestDestination.IsMainStory →
+  the announcement "story: <quest>". The [Quest] main scenario name log shows the
+  count.
+- MarkerInfo fields: ObjectiveId(uint), Label(Utf8String), MarkerData(StdVector),
   RecommendedLevel(ushort), ShouldRender(bool). MapMarkerData: IconId, Position,
   MapId, TerritoryTypeId, ObjectiveId, MarkerType(byte), Flags(byte), DataId.
 
-### Dalamud-eigene UI ist ImGui — nicht lesbar (verifiziert 2026-07-19, ilspycmd Dalamud.dll)
-- Dalamuds Plugin-Installer, Dalamud-Einstellungen und die Fenster fremder
-  Plugins (z.B. vnavmesh) werden in **ImGui** gezeichnet: kein AtkUnitBase,
-  keine Nodes, kein Baum. Weder UIReaderService noch NVDA können dort etwas
-  finden. Es gibt KEINEN UI-Scraping-Weg — nicht danach suchen.
-- Richtiger Weg: die DATEN hinter der UI lesen.
+### Dalamud's own UI is ImGui — not readable (verified 2026-07-19, ilspycmd Dalamud.dll)
+- Dalamud's plugin installer, the Dalamud settings and the windows of third-party
+  plugins (e.g. vnavmesh) are drawn in **ImGui**: no AtkUnitBase, no nodes, no
+  tree. Neither UIReaderService nor NVDA can find anything there. There is NO
+  UI-scraping route — do not go looking for one.
+- The right route: read the DATA behind the UI.
   `IDalamudPluginInterface.InstalledPlugins` → `IEnumerable<IExposedPlugin>`.
-- `IExposedPlugin` (öffentlich, `Dalamud.Plugin`): Name, InternalName, Version,
-  IsLoaded, IsOutdated, IsTesting, IsOrphaned, IsDecommissioned, IsBanned,
-  IsDev, IsThirdParty, Manifest, HasMainUi, HasConfigUi,
-  `OpenMainUi()`, `OpenConfigUi()` (werfen InvalidOperationException, wenn das
-  jeweilige HasXUi false ist).
-- `IDalamudPluginInterface.OpenPluginInstallerTo(kind, searchText)` öffnet nur
-  das ImGui-Fenster → für blinde Nutzer wertlos. `CheckForUpdateAsync()` gilt
-  NUR fürs eigene Plugin.
-- NICHT öffentlich: Installieren/Updaten/Entfernen. `InstallPluginAsync`,
+- `IExposedPlugin` (public, `Dalamud.Plugin`): Name, InternalName, Version,
+  IsLoaded, IsOutdated, IsTesting, IsOrphaned, IsDecommissioned, IsBanned, IsDev,
+  IsThirdParty, Manifest, HasMainUi, HasConfigUi, `OpenMainUi()`,
+  `OpenConfigUi()` (which throw an InvalidOperationException when the respective
+  HasXUi is false).
+- `IDalamudPluginInterface.OpenPluginInstallerTo(kind, searchText)` only opens the
+  ImGui window → worthless for blind users. `CheckForUpdateAsync()` applies ONLY
+  to our own plugin.
+- NOT public: installing/updating/removing. `InstallPluginAsync`,
   `UpdatePluginsAsync`, `UpdateSinglePluginAsync`, `RemovePlugin`,
-  `UpdatablePlugins` liegen in `Dalamud.Plugin.Internal.PluginManager`
-  (internal) — nur per Reflection erreichbar, bricht potenziell still bei
-  Dalamud-Updates. Bewusst nicht genutzt (User-Entscheid 2026-07-19);
-  Installation/Update laufen über die Installer-EXE.
-- Genutzt in `DalamudPluginsService.cs` (V5.13, Umschalt+F1/F2/F12).
+  `UpdatablePlugins` live in `Dalamud.Plugin.Internal.PluginManager` (internal) —
+  reachable only through reflection, and liable to break silently on Dalamud
+  updates. Deliberately not used (user decision 2026-07-19); installation/updates
+  run through the installer EXE.
+- Used in `DalamudPluginsService.cs` (V5.13, Shift+F1/F2/F12).
 
-### GrandCompanyExchange (Staatstaler-Quartiermeister) — F5-Dump 2026-07-25 (V5.47)
-Shop, in dem man Staatstaler (Grand Company Seals) gegen Gegenstaende eintauscht.
-Wird von der GENERISCHEN Listen-Navigation erfasst (nicht unterdrueckt, hat eine
-`List(9)`), aber die generische Zeile las kryptisch „0, 1.060, Legionaers-Schwert"
-(Spaltenreihenfolge, ohne Label, teils doppelt bei Sichtbarkeits-Flackern).
-- Addon „GrandCompanyExchange", Fenstertitel `Comp(1007)` Kind id=3 = „STAATSTALER
-  EINTAUSCHEN".
-- **Item-Liste**: id=57 `Comp(1014)` `[CT=List(9)]`, `ListLen=21`. Tastatur trackt
-  wie ueberall `HoveredItemIndex2` (@344) — die generische `TrackListIndices` sagt an.
-- **Zeilen-Template** (`ListItemRenderer`/`Comp(1015)`, jede Zeile identisch):
-  - id=10 Text = **Besitz** (wie viele man schon hat), z.B. „0".
-  - id=7  Text = **Preis in Staatstalern**, z.B. „1.060".
-  - id=6  `Comp(1011)` `NumericInput` = **Kaufmenge**, Kind-Text id=5 = „1"
-    (liegt in der EIGENEN ULD des NumericInput, NICHT im Renderer-NodeList → wird
-    vom generischen Reader und vom dedizierten Reader NICHT versehentlich gelesen).
-  - id=5  Text (UNSICHTBAR) = Item-Name-Duplikat.
-  - id=4  Text (sichtbar) = **Item-Name** (SeString-Payload, Sanitize noetig).
-- **Kategorie-Reiter** (`RadioButton(4)`/`Comp(1008)`, Text-Kind id=2): id=44 Waffen,
-  id=45 Ruestung, id=46 Militaerbedarf, id=47 Materialien, id=48 Besondere Artikel.
-  Der AKTIVE Reiter = der RadioButton mit `IsChecked==true`. `AtkComponentButton.IsChecked`
-  = `BitOps.GetBit(Flags@232, 18)` (ilspycmd 2026-07-25; `AtkComponentRadioButton`
-  erbt `AtkComponentButton`). KEIN gemeinsamer Titel-Node wie bei ArmouryBoard (id=121) —
-  darum Reiter ueber checked-State ermitteln, Label aus Text-Kind id=2. V5.47:
-  `OnGrandCompanyUpdate` sagt bei Reiterwechsel „Kategorie X" (die Rang-Icons `Comp(1016)`
-  sind auch RadioButtons, haben aber KEIN Text-Kind id=2 → per leerem Label gefiltert).
-- **Rang-Icons** (`RadioButton(4)`/`Comp(1016)`, id=37–42): OHNE Text → der globale
-  Fokus-Reader pendelt hier stumm (Log 2026-07-25, [Focus] STUMM, alle ~0,3s).
-- Addon-Root-Texte: id=6 = eigener GC-Rang („Legionaer 3. Klasse"), id=8 = eigenes
-  Staatstaler-Guthaben („300"). (Noch NICHT genutzt — Kandidat fuer Oeffnungs-Ansage,
-  PostSetup-Timing unverifiziert.)
-- **Loesung V5.47**: dedizierter `ReadGrandCompanyRow` (Name/Preis/Besitz per
-  `ReadComponentTextById` id 4/7/10) → „Name, X Staatstaler, Besitz Y"; eingehaengt im
-  `name switch` von `TrackListIndices`. Stabiler Text ⇒ `idx|text`-Dedup killt das Doppel.
+### GrandCompanyExchange (the seal quartermaster) — F5 dump 2026-07-25 (V5.47)
+A shop where you exchange Grand Company seals for items. It is picked up by the
+GENERIC list navigation (not suppressed, it has a `List(9)`), but the generic row
+read out cryptically as „0, 1.060, Legionaers-Schwert" (column order, without
+labels, sometimes doubled on visibility flicker).
+- The addon „GrandCompanyExchange", window title `Comp(1007)` child id=3 =
+  „STAATSTALER EINTAUSCHEN".
+- **Item list**: id=57 `Comp(1014)` `[CT=List(9)]`, `ListLen=21`. As everywhere,
+  the keyboard tracks `HoveredItemIndex2` (@344) — the generic `TrackListIndices`
+  announces it.
+- **Row template** (`ListItemRenderer`/`Comp(1015)`, every row identical):
+  - id=10 text = **owned** (how many you already have), e.g. „0".
+  - id=7  text = **the price in seals**, e.g. „1.060".
+  - id=6  `Comp(1011)` `NumericInput` = **the purchase quantity**, child text id=5
+    = „1" (it sits in the NumericInput's OWN ULD, NOT in the renderer NodeList →
+    so neither the generic reader nor the dedicated reader picks it up by
+    accident).
+  - id=5  text (INVISIBLE) = a duplicate of the item name.
+  - id=4  text (visible) = **the item name** (an SeString payload, sanitising
+    needed).
+- **Category tabs** (`RadioButton(4)`/`Comp(1008)`, text child id=2): id=44
+  weapons, id=45 armour, id=46 military supplies, id=47 materials, id=48 special
+  items. The ACTIVE tab = the radio button with `IsChecked==true`.
+  `AtkComponentButton.IsChecked` = `BitOps.GetBit(Flags@232, 18)` (ilspycmd
+  2026-07-25; `AtkComponentRadioButton` inherits `AtkComponentButton`). There is
+  NO shared title node as in ArmouryBoard (id=121) — so determine the tab through
+  the checked state, and take the label from the text child id=2. V5.47:
+  `OnGrandCompanyUpdate` announces "category X" on a tab change (the rank icons
+  `Comp(1016)` are radio buttons too, but have NO text child id=2 → filtered out
+  by their empty label).
+- **Rank icons** (`RadioButton(4)`/`Comp(1016)`, id=37–42): WITHOUT text → the
+  global focus reader oscillates mutely here (log 2026-07-25, [Focus] STUMM, about
+  every 0.3 s).
+- Addon root texts: id=6 = your own GC rank („Legionaer 3. Klasse"), id=8 = your
+  own seal balance („300"). (NOT yet used — a candidate for an opening
+  announcement, PostSetup timing unverified.)
+- **Solution V5.47**: a dedicated `ReadGrandCompanyRow` (name/price/owned via
+  `ReadComponentTextById` id 4/7/10) → "name, X seals, owned Y"; hooked into the
+  `name switch` of `TrackListIndices`. Stable text ⇒ the `idx|text` dedupe kills
+  the duplicate.
 
-## Fischen (ilspycmd-verifiziert 2026-07-25, FFXIVClientStructs.dll + Lumina.Excel.dll)
+## Fishing (ilspycmd-verified 2026-07-25, FFXIVClientStructs.dll + Lumina.Excel.dll)
 
-Ziel: Angeln barrierefrei. Erster Schritt „wo kann ich angeln" — Laufzeit-Sonde
-`/acc fishprobe` (FishingService.Probe, read-only) loggt (A) alle Objekte in 200 m
-mit ObjectKind/DataId/Position und (B) den FishingSpot-Katalog der Zone mit
-Roh-X/Z + Umrechnung. NOCH NICHT verifiziert (Sonde offen): ob Angel-Loecher in
-der ObjectTable auftauchen (und als welche ObjectKind), und die X/Z-Skalierung.
+Goal: accessible fishing. The first step, "where can I fish" — the runtime probe
+`/acc fishprobe` (FishingService.Probe, read-only) logs (A) all objects within
+200 m with their ObjectKind/DataId/position and (B) the zone's FishingSpot
+catalogue with raw X/Z + the conversion. NOT YET verified (the probe is
+outstanding): whether fishing holes appear in the ObjectTable (and as which
+ObjectKind), and the X/Z scaling.
 
-### Laufzeit-Zustand: FishingEventHandler (Client.Game.Event, Size 560)
-- Erbt `EventHandler` + `AtkModuleInterface.AtkEventInterface`. Zugriff ueber
-  `EventFramework.Instance()->GetEventHandlerById(<Fisch-Event-ID>)` — die
-  konkrete ID ist NICHT verifiziert (CraftEventHandler nutzt 655361/0xA0001;
-  Fishing-ID per Probe `GetEventId` des aktiven Handlers festnageln).
-- `State` @456 = enum **FishingState** — die Grundwahrheit des Angelvorgangs:
-  None, CastingOut, PullingPoleIn (kein Biss / Fisch entwischt / nach Fang / Rest),
-  Quitting, PoleReady (Standby, Rute bereit), **Bite (BISS — jetzt anschlagen!)**,
-  Hooking (Anschlagen + Einholen), ReleasingCatch, ConfirmingCollectable,
-  AmbitiousLure/ModestLure (nur Aktions-Animation), Unk11, LineInWater (Leine im
-  Wasser, warten auf Biss). ⇒ Biss-Ansage = Flanke State->Bite.
-- `CanFish` @464 (bool) — betrifft „richtig stehen": ob gerade ausgeworfen werden
-  kann. Weitere Flags @465–470: CanMoochPreviousCatch, CanMooch2PreviousCatch,
-  CanReleasePreviousCatch, ChangingPosition, CanIdenticalCastPreviousCatch,
-  CanSurfaceSlapPreviousCatch. `CurrentCastBaitFlags` @472 (FishingBaitFlags).
-- Tug-Staerke (leicht/mittel/schwer) ist in DIESEM Struct NICHT als Feld sichtbar
-  — per Probe klaeren (evtl. aus Bite-Untertyp/Animation ableitbar).
+### Runtime state: FishingEventHandler (Client.Game.Event, size 560)
+- It inherits `EventHandler` + `AtkModuleInterface.AtkEventInterface`. Access via
+  `EventFramework.Instance()->GetEventHandlerById(<fish event ID>)` — the concrete
+  ID is NOT verified (CraftEventHandler uses 655361/0xA0001; pin the fishing ID
+  down with a probe on the active handler's `GetEventId`).
+- `State` @456 = the enum **FishingState** — the ground truth of the fishing
+  process: None, CastingOut, PullingPoleIn (no bite / the fish got away / after a
+  catch / the rest), Quitting, PoleReady (standby, rod ready), **Bite (A BITE —
+  strike now!)**, Hooking (striking + reeling in), ReleasingCatch,
+  ConfirmingCollectable, AmbitiousLure/ModestLure (an action animation only),
+  Unk11, LineInWater (the line is in the water, waiting for a bite). ⇒ the bite
+  announcement = the edge State->Bite.
+- `CanFish` @464 (bool) — this covers "standing correctly": whether a cast can be
+  made right now. Further flags @465–470: CanMoochPreviousCatch,
+  CanMooch2PreviousCatch, CanReleasePreviousCatch, ChangingPosition,
+  CanIdenticalCastPreviousCatch, CanSurfaceSlapPreviousCatch.
+  `CurrentCastBaitFlags` @472 (FishingBaitFlags).
+- The tug strength (light/medium/heavy) is NOT visible as a field in THIS struct —
+  settle it with a probe (it may be derivable from the bite subtype/animation).
 
-### FishingModule (Client.UI.Misc, Size 192) — NICHT Laufzeit
-- Reines Save-File (UserFileEvent): Fischtagebuch. `UnseenFishCount` @188. Fuer
-  die Positionierung/Biss-Ansage irrelevant.
+### FishingModule (Client.UI.Misc, size 192) — NOT runtime
+- A pure save file (UserFileEvent): the fishing log. `UnseenFishCount` @188.
+  Irrelevant for positioning/bite announcements.
 
-### FishingSpot-Sheet (Lumina) — statischer Katalog aller Angelplaetze
-- Felder: `TerritoryType` @52 (RowRef, = Zone), `PlaceNameMain` @54,
-  `PlaceNameSub` @56, `PlaceName` @60 (RowRef, Anzeigename), `Radius` @58 (ushort),
-  `Order` @62, `X` @64 (short), `Z` @66 (short), `GatheringLevel` @68 (byte, noetige
-  Angelstufe), `FishingSpotCategory` @69, `Rare` @71. Filter Zone:
-  `row.TerritoryType.RowId == clientState.TerritoryType`.
-- X/Z = KARTEN-PIXEL (0..2048), VERIFIZIERT an echten Sheet-Werten (Lumina gegen
-  sqpack, 2026-07-25): alle 333 Zeilen liegen in X 108..1948 / Z 210..1934, also
-  im Pixelbereich; Umrechnung ergibt sinnvolle Kartenkoordinaten (Fallgourd Float
-  21,0/24,6; Limsa Untere Decks 7,7/12,2). ⇒ NICHT MapCoordToWorld (1..42), sondern
-  `PlacesService.MapPixelToWorld(X, Z)` (nutzt die verifizierte PixelToWorld-Formel,
-  wie MapMarker). Radius ist NICHT in denselben Welt-Einheiten (Stadtwerte bis 3000)
-  — fuer die Fuehrung ignoriert, grosszuegige Ankunftsdistanz + Navmesh reichen.
-- Y-Hoehe fehlt (Kartendaten 2D) → via Navmesh (PointOnFloor / PathfindAndMoveCloseTo)
-  aufloesen, wie bei allen anderen Wegpunkten. LIVE noch zu bestaetigen: dass der
-  umgerechnete Punkt auf dem Angelloch landet (Kompass-Ansage von /acc fish = Check).
-- GEBAUT V5.52 (Debug): FishingService.GetSpotsInCurrentZone + AnnounceSpotsInCurrentZone,
-  Kommando **/acc fish** — sagt Angelplaetze der Zone (Name, Stufe, Entfernung,
-  Himmelsrichtung), naechster zuerst.
-- Verwandte Typen (falls je gebraucht): AddonFishingNote, AddonFishGuide2,
-  AgentFishGuide, AddonSpearFishing, InstanceContentOceanFishing (Meeresangeln),
+### The FishingSpot sheet (Lumina) — a static catalogue of all fishing spots
+- Fields: `TerritoryType` @52 (RowRef, = the zone), `PlaceNameMain` @54,
+  `PlaceNameSub` @56, `PlaceName` @60 (RowRef, display name), `Radius` @58
+  (ushort), `Order` @62, `X` @64 (short), `Z` @66 (short), `GatheringLevel` @68
+  (byte, the fishing level required), `FishingSpotCategory` @69, `Rare` @71. Zone
+  filter: `row.TerritoryType.RowId == clientState.TerritoryType`.
+- X/Z = MAP PIXELS (0..2048), VERIFIED against real sheet values (Lumina against
+  sqpack, 2026-07-25): all 333 rows lie within X 108..1948 / Z 210..1934, i.e. in
+  the pixel range; the conversion yields sensible map coordinates (Fallgourd Float
+  21.0/24.6; Limsa Lower Decks 7.7/12.2). ⇒ NOT MapCoordToWorld (1..42), but
+  `PlacesService.MapPixelToWorld(X, Z)` (which uses the verified PixelToWorld
+  formula, as MapMarker does). The radius is NOT in the same world units (city
+  values up to 3000) — ignored for guidance, since a generous arrival distance +
+  the navmesh are enough.
+- The Y height is missing (map data is 2D) → resolve it via the navmesh
+  (PointOnFloor / PathfindAndMoveCloseTo), as with all other waypoints. STILL to
+  be confirmed LIVE: that the converted point lands on the fishing hole (the
+  compass announcement of /acc fish is the check).
+- BUILT V5.52 (debug): FishingService.GetSpotsInCurrentZone +
+  AnnounceSpotsInCurrentZone, the command **/acc fish** — announces the zone's
+  fishing spots (name, level, distance, cardinal direction), nearest first.
+- Related types (should they ever be needed): AddonFishingNote, AddonFishGuide2,
+  AgentFishGuide, AddonSpearFishing, InstanceContentOceanFishing (ocean fishing),
   Lumina SpearfishingNotebook.
 
-## Triple Triad (Kartenspiel) — AddonTripleTriad
+## Triple Triad (the card game) — AddonTripleTriad
 
-Verifiziert per ilspycmd gegen FFXIVClientStructs.dll (2026-07-26).
+Verified via ilspycmd against FFXIVClientStructs.dll (2026-07-26).
 
-- Addon-Name: `"TripleTriad"` (GetAddonByName). Struct `AddonTripleTriad`
-  (Size 4056, `[Inherits<AtkUnitBase>]`, **`[GenerateInterop(false)]`** →
-  KEINE generierten Span-Accessoren!).
-- Kartenlisten sind `internal FixedSizeArray*<TripleTriadCard>` — aus dem Plugin
-  NICHT direkt zugreifbar. Deshalb per Pointer-Arithmetik an den verifizierten
-  Offsets lesen (Stride = `sizeof(TripleTriadCard)` = 168):
-  - `_blueDeck` @576  — FixedSizeArray5 = eigene Hand (Spieler ist immer Blau)
-  - `_redDeck`  @1416 — FixedSizeArray5 = Gegnerhand
-  - `_board`    @2256 — FixedSizeArray9 = 3x3-Brett, row-major (Feld 1..9)
-  - Die Offsets liegen exakt auf Stride 168 aufeinander (576+5*168=1416,
-    1416+5*168=2256) → Stride cross-verifiziert.
-- `TripleTriadCard` (Size 168, public struct in AddonTripleTriad):
-  - `CardRarity`@128 (byte), `CardType`@129 (enum None/Primal/Scion/Beastman/Garland),
+- Addon name: `"TripleTriad"` (GetAddonByName). The struct `AddonTripleTriad`
+  (size 4056, `[Inherits<AtkUnitBase>]`, **`[GenerateInterop(false)]`** → NO
+  generated span accessors!).
+- The card lists are `internal FixedSizeArray*<TripleTriadCard>` — NOT directly
+  accessible from the plugin. So read them by pointer arithmetic at the verified
+  offsets (stride = `sizeof(TripleTriadCard)` = 168):
+  - `_blueDeck` @576  — FixedSizeArray5 = your own hand (the player is always
+    blue)
+  - `_redDeck`  @1416 — FixedSizeArray5 = the opponent's hand
+  - `_board`    @2256 — FixedSizeArray9 = the 3x3 board, row-major (fields 1..9)
+  - The offsets sit exactly a stride of 168 apart (576+5*168=1416,
+    1416+5*168=2256) → the stride is cross-verified.
+- `TripleTriadCard` (size 168, a public struct in AddonTripleTriad):
+  - `CardRarity`@128 (byte), `CardType`@129 (enum
+    None/Primal/Scion/Beastman/Garland),
   - `CardOwner`@130 (enum **Empty=0, Blue=1, Red=2**),
-  - `NumSideU`@131, `NumSideD`@132, `NumSideR`@133, `NumSideL`@134 (byte, Kantenwerte
-    1..10; das Spiel zeigt 10 als "A"),
-  - `HasCard`@164 (bool — Brett: Feld belegt; Hand: Slot noch nicht gespielt).
-- `AddonTripleTriad.TurnState`@568 (enum **Waiting=0, NormalMove=1, MaskedMove=2**).
-  HYPOTHESE (in-game noch zu verifizieren): Waiting = nicht am Zug, Normal/MaskedMove
-  = du bist am Zug. Rohwert wird von TripleTriadService geloggt ([TripleTriad]).
-- GEBAUT (Debug, ungetestet): `TripleTriadService.ReadBoard()` (Strg+Umschalt+F4) +
-  `ReadHand()` (Strg+Umschalt+F5). Brett: Kartenzahl beider Seiten, Zug-Zustand,
-  dann Feld 1..9. Hand: eigene Karten per festem Slot (1..5), gespielte Slots
-  uebersprungen. NOCH IN-GAME ZU TESTEN.
-- Offene Frage fuer den Test: Ob der Spielcursor in der Hand gespielte Slots
-  ueberspringt oder die Karten kompaktiert — davon haengt ab, ob die feste
-  Slot-Nummer (aktuell) oder eine laufende Nummer die richtige Referenz ist.
+  - `NumSideU`@131, `NumSideD`@132, `NumSideR`@133, `NumSideL`@134 (byte, edge
+    values 1..10; the game displays 10 as "A"),
+  - `HasCard`@164 (bool — on the board: the field is occupied; in the hand: the
+    slot has not been played yet).
+- `AddonTripleTriad.TurnState`@568 (enum **Waiting=0, NormalMove=1,
+  MaskedMove=2**). HYPOTHESIS (still to be verified in-game): Waiting = not your
+  turn, Normal/MaskedMove = it is your turn. The raw value is logged by
+  TripleTriadService ([TripleTriad]).
+- BUILT (debug, untested): `TripleTriadService.ReadBoard()` (Ctrl+Shift+F4) +
+  `ReadHand()` (Ctrl+Shift+F5). Board: the card count on both sides, the turn
+  state, then fields 1..9. Hand: your own cards by fixed slot (1..5), with played
+  slots skipped. STILL TO BE TESTED IN-GAME.
+- An open question for the test: whether the game cursor in the hand skips played
+  slots or compacts the cards — that determines whether the fixed slot number
+  (current behaviour) or a running number is the right reference.
 
-## Quest-Gegenstaende im Kampf (ilspycmd + Sheet-Dump, 2026-08-09)
+## Quest items in combat (ilspycmd + sheet dump, 2026-08-09)
 
-Ausloeser: Spielerfrage „Quests, wo man mit Gegenstaenden im Kampf etwas
-ausloesen muss". Es sind ZWEI getrennte Mechaniken — nicht vermischen.
+The trigger: a player question about "quests where you have to trigger something
+with items during a fight". There are TWO separate mechanics — do not mix them up.
 
-### A) Schluesselgegenstand der Quest (EventItem) — der haeufige Fall
-- Lumina-Sheet `EventItem` (Zeilen ab 2000000). Felder: `Name`/`Singular`/`Plural`,
-  `Quest` (RowRef auf die Quest, die den Gegenstand ausgibt), `Action` (RowRef;
-  bei Quest-Gegenstaenden i. d. R. `Action#1 „Schluesselgegenstand"`), `Icon`,
-  `StackSize`, `Category` (EventItemCategory), `CastTime` (byte, Wirkzeit in s),
+### A) The quest's key item (EventItem) — the common case
+- The Lumina sheet `EventItem` (rows from 2000000). Fields:
+  `Name`/`Singular`/`Plural`, `Quest` (RowRef to the quest that issues the item),
+  `Action` (RowRef; for quest items usually `Action#1
+  „Schluesselgegenstand"`/"key item"), `Icon`, `StackSize`, `Category`
+  (EventItemCategory), `CastTime` (byte, the cast time in seconds),
   `CastTimeline`, `Timeline`.
-- Zuordnung Quest → Gegenstand geht in BEIDE Richtungen:
-  - vom Gegenstand aus: `EventItem.Quest.RowId`
-  - von der Quest aus: `Quest.QuestParams[]` mit `ScriptInstruction` = `ITEM0`,
-    `ITEM1`, … und `ScriptArg` = EventItem-RowId. Analog `ENEMY0` (Gegner),
-    `ACTOR0` (NPC), `HOWTO_EITEM` (Anleitungs-Id).
-- BELEGTES BEISPIEL (offline Sheet-Dump gegen sqpack, DE): Quest **66333
-  „Ein Licht fuer die Nacht"** (Stufe 28, JournalGenre 113 „Nebenauftraege
-  Finsterwald", Nordwald):
+- The quest → item mapping works in BOTH directions:
+  - from the item: `EventItem.Quest.RowId`
+  - from the quest: `Quest.QuestParams[]` with `ScriptInstruction` = `ITEM0`,
+    `ITEM1`, … and `ScriptArg` = the EventItem RowId. Likewise `ENEMY0`
+    (enemies), `ACTOR0` (NPCs), `HOWTO_EITEM` (the instruction id).
+- ESTABLISHED EXAMPLE (offline sheet dump against sqpack, DE): quest **66333
+  „Ein Licht fuer die Nacht"** (level 28, JournalGenre 113 „Nebenauftraege
+  Finsterwald", North Shroud):
   - `ITEM0` = EventItem **2000627 „Bergmannslampe"** (StackSize 1, CastTime 1)
   - `ITEM1` = EventItem **2000628 „Gleissende Lampe"** (StackSize 2, CastTime 3)
   - `ENEMY0` = 2266
-- Inventar: Schluesselgegenstaende liegen im Container
-  `GameInventoryType.KeyItems`; die `ItemId` dort indiziert das EventItem-Sheet
-  (nutzt `InventoryService.CollectKeyItems` bereits).
-- Auf die Leiste legbar: `RaptureHotbarModule.HotbarSlotType.**EventItem**`
-  (Id = EventItem-RowId). Es gibt zusaetzlich `HotbarSlotType.KeyItem` — das ist
-  laut Struct-Doku NUR der DragDrop-Sonderfall (Id = Slot-Index im
-  KeyItems-Container, wird beim Setzen in `EventItem` aufgeloest). Fuer eine
-  programmatische Zuweisung ist also `EventItem` + RowId der richtige Weg.
-- Ausfuehren als Aktion: `ActionType.EventItem` (=3); daneben existiert
+- Inventory: key items live in the container `GameInventoryType.KeyItems`; the
+  `ItemId` there indexes the EventItem sheet (already used by
+  `InventoryService.CollectKeyItems`).
+- Placeable on the bar: `RaptureHotbarModule.HotbarSlotType.**EventItem**` (Id =
+  the EventItem RowId). There is additionally `HotbarSlotType.KeyItem` — according
+  to the struct documentation that is ONLY the DragDrop special case (Id = the
+  slot index in the KeyItems container, resolved to `EventItem` when set). So for
+  a programmatic assignment, `EventItem` + RowId is the right route.
+- Executing it as an action: `ActionType.EventItem` (=3); alongside it there is
   `ActionType.EventAction` (=4).
 
-### B) Sonderaktionen im Auftrag („Duty Actions") — die kleine Extra-Leiste
-- `FFXIVClientStructs.FFXIV.Client.Game.DutyActionManager` (Size 160):
-  - `GetInstanceIfReady()` (statisch) — null, solange es keine gibt
+### B) Special duty actions — the small extra bar
+- `FFXIVClientStructs.FFXIV.Client.Game.DutyActionManager` (size 160):
+  - `GetInstanceIfReady()` (static) — null as long as there are none
   - `ActionsPresent` @25 (bool), `NumValidSlots` @24 (byte)
-  - `ActionId[5]` @32 (uint, Action-Sheet), `ActionActive[5]` @26 (bool)
+  - `ActionId[5]` @32 (uint, the Action sheet), `ActionActive[5]` @26 (bool)
   - `Recast[5]` @52 (RecastDetail), `MaxCharges[2]` @152, `CurCharges[2]` @154
-  - `GetDutyActionId(ushort slot)` (statisch, Slot 0 oder 1)
-- Ausfuehren: `RaptureHotbarModule.ExecuteDutyActionSlot(uint index)` → bool;
-  dazu `GetDutyActionSlot(index)` → `DutyActionSlot` (erbt `HotbarSlot`,
-  zusaetzlich `PrimaryCostType`@224, `IsActive`@225).
-- WICHTIG fuer Barrierefreiheit: Im Live-Tastenbelegungs-Dump (679 Eintraege,
-  2026-08-09) gibt es KEINE Belegung fuer diese Leiste — das Spiel erwartet dort
-  einen Mausklick. Ohne Mod ist sie per Tastatur nicht erreichbar.
+  - `GetDutyActionId(ushort slot)` (static, slot 0 or 1)
+- Executing: `RaptureHotbarModule.ExecuteDutyActionSlot(uint index)` → bool; plus
+  `GetDutyActionSlot(index)` → `DutyActionSlot` (inherits `HotbarSlot`, with the
+  additional `PrimaryCostType`@224, `IsActive`@225).
+- IMPORTANT for accessibility: in the live key binding dump (679 entries,
+  2026-08-09) there is NO binding for this bar — the game expects a mouse click
+  there. Without a mod it cannot be reached from the keyboard.
 
-### Was KEINE Quelle hat
-Wann im Kampf der Gegenstand einzusetzen ist, steht in keiner der o. g.
-Strukturen — das ist Kampf-/Questlogik. Vorhandene Kanaele dafuer: Systemmeldung
-(ChatReaderService), Gegner-Zauber (CombatService), ToDo-Liste der Quest.
+### What has NO source
+When during a fight the item is to be used is in none of the structures above —
+that is combat/quest logic. The available channels for it: the system message
+(ChatReaderService), the enemy's cast (CombatService), and the quest's to-do list.
