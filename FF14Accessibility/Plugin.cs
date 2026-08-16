@@ -119,10 +119,11 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    // 5.84 ist die erste veroeffentlichte Fassung MIT den sechs Beitraegen von
-    // aussen (vorher lagen sie nur im Testzweig test/prs).
-    private const string PluginVersion    = "5.84";
-    private const string PluginVersionTag = "Tiefes Gewoelbe, Chat-Puffer, Charaktererstellung, Verbuendete+Inhalte, Wohngebiet, Erholungsbonus";
+    // 5.85 macht drei Fenster lesbar, in denen bisher nur nackte Zahlen standen
+    // (Tauschen, Vermoegen, Errungenschaften), und gibt den Chat-Kanaelen ein
+    // Menue. Der Tooltip-Leser liefert seither ueberall lesbaren Text.
+    private const string PluginVersion    = "5.85";
+    private const string PluginVersionTag = "Chat-Kanaele im Menue, Tauschfenster, Vermoegen, Errungenschaftspunkte";
 
     public Plugin()
     {

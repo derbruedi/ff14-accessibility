@@ -206,4 +206,31 @@ public static partial class AccessibilityStrings
     /// Zustand er ist.</summary>
     public static string OptChatFallback =>
         IsGerman ? "Chat vorlesen (Register nicht lesbar)" : "Read chat aloud (tabs unreadable)";
+
+    // ── Einstellungen: die Kanäle des GEWOHNTEN Chatsystems ───────
+
+    /// <summary>Der Abschnitt, der im gewohnten Chatsystem an der Stelle steht, an
+    /// der im neuen <see cref="OptionsChatTabs"/> steht. "Kanäle" und nicht
+    /// "Register", weil das alte System keine Register kennt: seine Einteilung ist
+    /// die feste Kategorienliste, die der Spieler auch beim Nachlesen hört.</summary>
+    public static string OptionsChatChannels => IsGerman ? "Chat-Kanäle" : "Chat channels";
+
+    /// <summary>Die Sammel-Rückmeldungen beim Abbauen (XivChatType.Gathering). Sie
+    /// haben einen eigenen Schalter, landen in der Nachlese aber unter "System" -
+    /// deshalb ist dies der einzige Kanalname dieses Abschnitts, der nicht aus
+    /// <see cref="AccessibilityStrings.LegacyChatCategoryName"/> kommen kann.</summary>
+    public static string OptChatGathering => IsGerman ? "Sammeln" : "Gathering";
+
+    /// <summary>
+    /// Hängt sich an die Bestätigung, wenn ein Kanal ABGESCHALTET wird ("Gruppe aus.
+    /// Steht weiter zum Nachlesen bereit.").
+    ///
+    /// Nur beim Abschalten, und nur dort: das ist der Moment, in dem sich die Frage
+    /// stellt, ob die Nachrichten jetzt weg sind. Beim Einschalten ist der Satz
+    /// überflüssig, und in der Zeilenbeschriftung stünde er bei jedem Durchblättern
+    /// im Weg.
+    /// </summary>
+    public static string ChatChannelStillArchived =>
+        IsGerman ? "Steht weiter zum Nachlesen bereit."
+                 : "Still available in the history.";
 }

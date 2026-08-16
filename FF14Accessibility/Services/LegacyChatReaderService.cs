@@ -69,9 +69,10 @@ public sealed class LegacyChatReaderService : IDisposable
         // Nachricht machen das Log nur schwerer lesbar.
         if (_isActive())
             _log.Info($"[ChatAlt] kind={msg.LogKind} ({(int)msg.LogKind}) sender='{senderText}' " +
-                      $"gelesen={ShouldRead(msg.LogKind)} text='{messageText}'");
+                      $"bekannt={IsKnownChannel(msg.LogKind)} gesprochen={ShouldSpeak(msg.LogKind)} " +
+                      $"text='{messageText}'");
 
-        if (!ShouldRead(msg.LogKind)) return;
+        if (!IsKnownChannel(msg.LogKind)) return;
 
         if (string.IsNullOrWhiteSpace(messageText)) return;
 
@@ -109,6 +110,17 @@ public sealed class LegacyChatReaderService : IDisposable
         // Echo-Schutz), und die duerfen dem anderen System nicht in die Quere
         // kommen.
         if (!_isActive()) return;
+
+        // DIE KANALSCHALTUNG DES SPIELERS, und sie sitzt hinter dem Archivieren.
+        // Ein abgeschalteter Kanal ist still, aber vollstaendig nachlesbar
+        // (Alt+Bild-auf/-ab) - dieselbe Bedeutung, die eine Schaltung im neuen
+        // Chatsystem hat (OptionsMenu: "A switch here NEVER touches the buffer").
+        // Vorher stand diese Abfrage vor dem Archiv, so dass ein stummgeschalteter
+        // Kanal auch aus der Nachlese verschwand; das ist niemandem aufgefallen,
+        // weil die Schalter bis dahin nur in der JSON-Datei erreichbar und deshalb
+        // durchweg an waren. Mit dem Menue waere daraus eine Falle geworden:
+        // "Gruppe aus" heisst "nicht ins Ohr", nicht "weg".
+        if (!ShouldSpeak(msg.LogKind)) return;
 
         // Many toast notifications (_TextError etc.) the UIReader already spoke
         // are mirrored into the chat log as SystemMessage/ErrorMessage a few
@@ -171,7 +183,47 @@ public sealed class LegacyChatReaderService : IDisposable
             _tolk.RememberSpokenVariant(messageText);
     }
 
-    private bool ShouldRead(XivChatType type) => type switch
+    /// <summary>
+    /// Die Chat-Typen, die dieser Leser ueberhaupt bearbeitet - unabhaengig davon,
+    /// ob der Spieler sie hoeren will.
+    ///
+    /// SIE ENTSCHEIDET UEBERS ARCHIVIEREN. Alles hier Genannte landet in der
+    /// Nachlese, damit eine stummgeschaltete Zeile spaeter noch zu finden ist;
+    /// was hier fehlt, gehoert nicht in dieses System (Kampflog faengt schon
+    /// <see cref="IsCombatLogLine"/> ab, der Rest ist Unbekanntes).
+    ///
+    /// Die Liste ist wortgleich die Fallunterscheidung, die frueher ShouldRead
+    /// war - nur ohne die Schalter, die jetzt in <see cref="ShouldSpeak"/> stehen.
+    /// Wer hier einen Typ ergaenzt, muss ihn auch dort und in
+    /// <see cref="MapCategory"/> bedenken.
+    /// </summary>
+    private static bool IsKnownChannel(XivChatType type) => type switch
+    {
+        XivChatType.Say              => true,
+        XivChatType.Shout            => true,
+        XivChatType.Party            => true,
+        XivChatType.Alliance         => true,
+        XivChatType.TellIncoming     => true,
+        XivChatType.FreeCompany      => true,
+        XivChatType.SystemMessage    => true,
+        XivChatType.ErrorMessage     => true,
+        XivChatType.Gathering        => true,
+        XivChatType.NPCDialogue      => true,
+        XivChatType.NPCDialogueAnnouncements => true,
+        XivChatType.LootNotice       => true,
+        XivChatType.TellOutgoing     => true,
+        XivChatType.Yell             => true,
+        XivChatType.CrossParty       => true,
+        XivChatType.Echo             => true,
+        _                            => false
+    };
+
+    /// <summary>
+    /// Ob eine Zeile laut vorgelesen wird. Das sind die Schaltungen aus dem
+    /// Optionsmenue (Umschalt+F9, "Chat-Kanaele"); archiviert ist die Zeile da
+    /// bereits.
+    /// </summary>
+    private bool ShouldSpeak(XivChatType type) => type switch
     {
         XivChatType.Say              => _config.ReadSayChat,
         XivChatType.Shout            => _config.ReadShoutChat,
@@ -180,6 +232,10 @@ public sealed class LegacyChatReaderService : IDisposable
         XivChatType.TellIncoming     => _config.ReadTellChat,
         XivChatType.FreeCompany      => _config.ReadFCChat,
         XivChatType.SystemMessage    => _config.ReadSystemMessages,
+        // OHNE SCHALTER, mit Absicht: eine Fehlermeldung ist die Antwort des
+        // Spiels auf etwas, das der Spieler gerade selbst getan hat ("Das Ziel
+        // ist zu weit entfernt"). Ohne sie steht er vor einer Aktion, die
+        // wortlos nichts tut - der eine Fall, in dem Stille eine Falle ist.
         XivChatType.ErrorMessage     => true,
         // Gathering (67): loot + status while mining/logging ("Du hast X
         // erhalten", "Du bist fertig ..."). Empty sender, so it is announced

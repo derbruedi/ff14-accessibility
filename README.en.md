@@ -34,8 +34,12 @@ cues — including braille display output and automatic walking.
 ### Chat
 
 - **Receiving**: incoming messages are read aloud, and each channel can be
-  turned off individually (say, shout, party, alliance, tell, free
-  company, system).
+  turned off individually in the settings menu (Shift+F9, entry "Chat
+  channels") — a flat list, one row per channel. In the familiar chat
+  system those are dialogue, say, shout, party, alliance, tell, free
+  company, system, gathering and loot; in the new one they are the game's
+  own channels. A channel switched off merely stops being spoken — it stays
+  in the history for you to read back.
 - **Writing**: opening the chat input announces the active channel ("Chat
   input, Say"), and so does switching channels while typing. Every typed
   character is spoken, as are deletions — because a screen reader cannot
@@ -55,7 +59,10 @@ cues — including braille display output and automatic walking.
   The tabs can be switched by key (the game itself has none for that).
   Switch systems in the settings menu (Shift+F9); the **familiar one is the
   default**. Both histories always record, so switching mid-session leaves
-  no gap. (Contributed by
+  no gap. Alongside "Chat channels" this system also offers "Chat tabs",
+  which goes finer: tabs, the channels inside them, and the game's own
+  filter rows, where damage dealt can be told apart from damage taken.
+  (Contributed by
   [bladestorm360](https://github.com/bladestorm360), PR #5)
 
 ### Navigation and walking
@@ -201,6 +208,14 @@ instead of sixteen world categories there are four answers.
   read aloud.
 - **Mounts**, **grand company shops** and the **character configuration**
   are operable.
+- **Exchange windows** (seals, certificates): every row names the item, its
+  price including the currency, how many you hold yourself, and the
+  description.
+- **Currency window**: every row says which currency it is — "49,457 gil",
+  "1,652/10,000 Storm Seals". It used to be bare numbers next to an icon.
+- **Achievements**: opening the window announces your points and
+  certificates ("350 achievement points, 1 achievement certificate"); the
+  same figure is available any time by moving onto the icon in the window.
 - **Triple Triad**: read the board and your own hand.
 - Logging in stays quiet: while the game builds its windows, the automatic
   announcements hold back so they cannot cut each other off.

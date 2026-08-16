@@ -858,6 +858,20 @@ public static partial class AccessibilityStrings
             ? (IsGerman ? $"Eingabefeld: {typed}" : $"Input field: {typed}")
             : (IsGerman ? "Eingabefeld, leer"     : "Input field, empty");
 
+    // ── Zahl mit ihrer Beschriftung ──────────────────────────────────
+    /// <summary>
+    /// A number followed by what it counts: "49.457 Gil",
+    /// "1.652/10.000 Legionstaler", "350 Errungenschaftspunkte". Used wherever
+    /// the game shows a bare figure next to an icon and the word comes from the
+    /// game itself (currency rows, the achievement window header).
+    ///
+    /// The order is the user's decision (2026-08-16), not a default - the name
+    /// goes BEHIND the number. Both halves are the game's own words in the
+    /// CLIENT language, so this format adds no words of its own and reads the
+    /// same in both mod languages.
+    /// </summary>
+    public static string AmountWithLabel(string amount, string label) => $"{amount} {label}";
+
     // ── Belohnungs-Zeile (JournalResult) ─────────────────────────────
     // Currency type is only a UI image, so the mod labels amounts by position.
     public static string[] RewardCurrencyLabels =>

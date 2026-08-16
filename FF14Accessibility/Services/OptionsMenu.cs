@@ -62,19 +62,49 @@ public sealed class OptionsMenu
 
     /// <summary>Builds the top level. Called fresh on every open, so the labels
     /// always report the values the config actually holds right now.</summary>
-    public MenuLevel Build() => new()
+    public MenuLevel Build()
     {
-        Title = AccessibilityStrings.OptionsTitle,
-        Entries =
+        var level = new MenuLevel
         {
-            new MenuEntry { Label = AccessibilityStrings.OptionsSounds,        Submenu = BuildSounds },
-            new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements },
+            Title = AccessibilityStrings.OptionsTitle,
+            // Rebuild, damit die Chat-Zeilen dem Umschalter am Ende folgen: der ist
+            // StayOpen, und ohne Rebuild stuenden hier nach dem Umschalten noch die
+            // Abschnitte des anderen Systems - Zeilen, die auf das Falsche zeigen.
+            Rebuild = Build,
+        };
 
-            new MenuEntry { Label = AccessibilityStrings.OptionsChatTabs,      Submenu = BuildChatTabs },
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsSounds,        Submenu = BuildSounds });
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements });
 
-            ChatSystemRow(),
-        },
-    };
+        // "CHAT-KANAELE" GIBT ES IN BEIDEN SYSTEMEN, an derselben Stelle und mit
+        // derselben Bedeutung: eine flache Liste, eine Zeile je Kanal, aus. Nur die
+        // Quelle der Liste unterscheidet sich - im gewohnten System die festen
+        // Kategorien des Plugins, im neuen die Kanaele des SPIELS, quer ueber alle
+        // Register eingesammelt.
+        //
+        // DAS WAR EINE KORREKTUR (2026-08-16). Zuerst stand hier ein Entweder-Oder:
+        // Kanaele im alten, Register im neuen System. Der User lief auf dem neuen,
+        // bekam also weiterhin nur die Register zu sehen und damit genau die Funktion
+        // nicht, nach der er gefragt hatte. Ein Abschnitt, den es je nach Einstellung
+        // gar nicht gibt, ist fuer den Spieler nicht von einem kaputten zu
+        // unterscheiden.
+        level.Entries.Add(new MenuEntry
+        {
+            Label   = AccessibilityStrings.OptionsChatChannels,
+            Submenu = _config.UseLegacyChatSystem ? BuildChatChannels : BuildGameChatChannels,
+        });
+
+        // Die feine Aufloesung, und nur das neue System hat sie: Register, darin
+        // Kanaele, darin die Filterzeilen des Spiels - dort trennt sich "Schaden
+        // ausgeteilt" von "Schaden erlitten". Die flache Liste darueber kann das nicht
+        // und soll es nicht: sie beantwortet die haeufige Frage in einem Druck, diese
+        // hier die seltene genau.
+        if (!_config.UseLegacyChatSystem)
+            level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsChatTabs, Submenu = BuildChatTabs });
+
+        level.Entries.Add(ChatSystemRow());
+        return level;
+    }
 
     // ── Welches Chatsystem ────────────────────────────────────────
 
@@ -110,6 +140,257 @@ public sealed class OptionsMenu
             _log.Info($"[Einstellungen] Chatsystem -> {(legacy ? "alt (feste Kategorien)" : "neu (Register des Spiels)")}");
         },
     };
+
+    // ── Chat-Kanäle des gewohnten Systems ─────────────────────────
+
+    /// <summary>
+    /// Eine Schaltung je Kanal des GEWOHNTEN Chatsystems - das Gegenstück zu
+    /// <see cref="BuildChatTabs"/>, das dem neuen gehört.
+    ///
+    /// DIESE SCHALTER GAB ES SCHON, ERREICHBAR WAREN SIE NICHT. Die Felder stehen
+    /// seit jeher in <see cref="Configuration"/> und werden in
+    /// <c>LegacyChatReaderService.ShouldSpeak</c> gelesen, aber kein Menü und kein
+    /// Befehl hat sie je angefasst: der einzige Weg war, pluginConfigs/
+    /// FF14Accessibility.json von Hand zu bearbeiten. Genau das, was dieses Menü
+    /// laut seinem eigenen Klassenkommentar nicht sein soll. Aufgefallen ist es,
+    /// weil beide READMEs die Kanalauswahl als Funktion beschreiben (Spielerfrage
+    /// 2026-08-16, "wie geht das?").
+    ///
+    /// DIE REIHENFOLGE IST DIE DER NACHLESE (LegacyChatHistoryService.Order), und
+    /// die Namen sind wörtlich deren Kategorienamen. Wer einen Kanal stummschaltet,
+    /// sucht ihn danach im Nachlese-Browser - dort trägt er dann dasselbe Wort.
+    /// "Sammeln" ist die einzige Ausnahme und hat deshalb einen eigenen Namen: es
+    /// hat einen eigenen Schalter, wird aber unter "System" archiviert.
+    ///
+    /// NICHT DABEI, weil ohne Schalter im Leser: Fehlermeldungen des Spiels (die
+    /// Antwort auf eine gerade ausgeführte Aktion) und das eigene /echo. Eine Zeile
+    /// anzubieten, hinter der ein fest verdrahtetes <c>true</c> steht, wäre eine
+    /// Schaltung, die nichts schaltet.
+    /// </summary>
+    private MenuLevel BuildChatChannels() => new()
+    {
+        Title   = AccessibilityStrings.OptionsChatChannels,
+        Rebuild = BuildChatChannels,
+        Entries =
+        {
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Dialogue),
+                          () => _config.ReadNpcDialogue,       v => _config.ReadNpcDialogue = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Say),
+                          () => _config.ReadSayChat,           v => _config.ReadSayChat = v),
+            // Rufen deckt auch /bruellen, Gruppe auch die weltuebergreifende
+            // Gruppe, Fluestern beide Richtungen - so steht es in ShouldSpeak. Ein
+            // Kanal, den das Spiel getrennt führt, das Plugin aber nicht, bekommt
+            // hier keine eigene Zeile: sie würde eine Trennung versprechen, die
+            // der Leser nicht macht.
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Shout),
+                          () => _config.ReadShoutChat,         v => _config.ReadShoutChat = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Party),
+                          () => _config.ReadPartyChat,         v => _config.ReadPartyChat = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Alliance),
+                          () => _config.ReadAllianceChat,      v => _config.ReadAllianceChat = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Tell),
+                          () => _config.ReadTellChat,          v => _config.ReadTellChat = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.FreeCompany),
+                          () => _config.ReadFCChat,            v => _config.ReadFCChat = v),
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.System),
+                          () => _config.ReadSystemMessages,    v => _config.ReadSystemMessages = v),
+            ChannelToggle(AccessibilityStrings.OptChatGathering,
+                          () => _config.ReadGatheringMessages, v => _config.ReadGatheringMessages = v),
+            // AnnounceLoot heißt anders als seine Nachbarn, wirkt aber an genau
+            // derselben Stelle: es ist der Schalter für XivChatType.LootNotice in
+            // ShouldSpeak und sonst nirgends (geprüft 2026-08-16). Also gehört er
+            // hierher und nicht zu den Ansagen.
+            ChannelToggle(ChannelName(LegacyChatHistoryService.Category.Loot),
+                          () => _config.AnnounceLoot,          v => _config.AnnounceLoot = v),
+        },
+    };
+
+    /// <summary>Der Name, unter dem die Nachlese diesen Kanal führt. Eine Quelle für
+    /// beides, damit Menü und Browser nicht auseinanderlaufen können.</summary>
+    private static string ChannelName(LegacyChatHistoryService.Category category) =>
+        AccessibilityStrings.LegacyChatCategoryName(category);
+
+    /// <summary>
+    /// Wie <see cref="Toggle"/>, sagt beim ABSCHALTEN aber dazu, dass der Kanal
+    /// weiter nachlesbar bleibt.
+    ///
+    /// Der Satz steht hier und nicht in der Beschriftung, weil er nur einmal
+    /// gebraucht wird: in dem Moment, in dem der Spieler etwas stummschaltet und
+    /// sich fragt, ob es damit weg ist. Beim Durchblättern wäre er neun Mal im Weg.
+    /// </summary>
+    private MenuEntry ChannelToggle(string name, Func<bool> get, Action<bool> set) => new()
+    {
+        Label    = AccessibilityStrings.OptionToggle(name, get()),
+        StayOpen = true,
+        Activate = () =>
+        {
+            var value = !get();
+            set(value);
+            Persist();
+            var spoken = AccessibilityStrings.OptionToggled(name, value);
+            if (!value) spoken += " " + AccessibilityStrings.ChatChannelStillArchived;
+            _tolk.SpeakInterrupt(spoken);
+            _log.Info($"[Einstellungen] Chat-Kanal {name} -> {(value ? "an" : "aus")} "
+                      + "(Nachlese unberuehrt)");
+        },
+    };
+
+    // ── Chat-Kanäle des NEUEN Systems (flach über alle Register) ──
+
+    /// <summary>
+    /// Dieselbe flache Liste wie <see cref="BuildChatChannels"/>, nur mit den
+    /// Kanälen des SPIELS: eine Zeile je Kanal, quer über alle Register
+    /// eingesammelt und in der Reihenfolge des spieleigenen Einstellungsfensters.
+    ///
+    /// WARUM ES SIE NEBEN <see cref="BuildChatTabs"/> GIBT: dort ist ein Kanal drei
+    /// Ebenen tief (Register, Kanal, Filterzeile) und steht unter dem Register, in
+    /// dem der Spieler ihn eingerichtet hat. Das ist die richtige Form für die feine
+    /// Frage ("nur den erlittenen Schaden") und die falsche für die häufige ("die
+    /// Freie Gesellschaft will ich nicht mehr hören") - für die muss der Spieler
+    /// sonst wissen, in welchem seiner Register der Kanal sitzt. Ein Kanal in
+    /// mehreren Registern braucht dann sogar mehrere Griffe.
+    ///
+    /// EINE ZEILE SCHALTET DEN KANAL IN ALLEN REGISTERN, in denen er vorkommt, und
+    /// meldet "an", sobald ihn EIN Register spricht - denn genau dann hört ihn der
+    /// Spieler. Das ist dieselbe Oder-Regel, mit der ChatReaderService entscheidet
+    /// (dort über die Routen einer Zeile), nur von der anderen Seite gelesen.
+    ///
+    /// GESCHRIEBEN WIRD NUR DER SPRACH-SCHALTER DES PLUGINS. Die Filterkästchen des
+    /// Spiels bleiben unangetastet - was hier verstummt, steht weiter im Chatlog und
+    /// in der Nachlese. Siehe ChatTabSpeech, ganz oben.
+    /// </summary>
+    private MenuLevel BuildGameChatChannels()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptionsChatChannels,
+            Rebuild = BuildGameChatChannels,
+        };
+
+        // Kanal -> die Register, die ihn gerade zeigen. Live aus den Filterbytes des
+        // Spiels, wie ueberall in diesem Abschnitt: hakt der Spieler drueben etwas
+        // an, steht es beim naechsten Oeffnen hier.
+        var byChannel = new Dictionary<int, List<GameChatTab>>();
+        var channels = new List<int>();
+        var tabs = _chatFilters.Available ? _chatFilters.Tabs : Array.Empty<GameChatTab>();
+        foreach (var tab in tabs)
+        {
+            if (_chatFilters.ChannelsInTab(tab.Index, channels) != ChatFilterState.Ready) continue;
+            foreach (var key in channels)
+            {
+                if (!byChannel.TryGetValue(key, out var showing))
+                    byChannel[key] = showing = new List<GameChatTab>();
+                showing.Add(tab);
+            }
+        }
+
+        // Sortiert wie das Einstellungsfenster des Spiels (Kategorie, dann
+        // DisplayOrder) - GameChatChannel.Sort traegt genau das. Ein Kanal, den das
+        // Sheet nicht mehr kennt, faellt raus statt einen erfundenen Namen zu
+        // bekommen; dieselbe Regel wie in BuildChatTab.
+        var ordered = byChannel.Keys
+            .Select(key => _chatFilters.Channel(key))
+            .Where(channel => channel != null)
+            .OrderBy(channel => channel!.Sort)
+            .ToList();
+
+        foreach (var channel in ordered)
+        {
+            var key = channel!.Key;
+            var showing = byChannel[key];
+            level.Entries.Add(ChannelToggle(
+                channel.Name,
+                () => IsChannelAudible(key, showing),
+                on => SetChannelInAllTabs(key, showing, on)));
+        }
+
+        // Die beiden Zeilen, die zu keinem Register gehoeren - woertlich aus
+        // BuildChatTabs uebernommen, damit hier nichts fehlt, was es dort gibt.
+        if (level.Entries.Count > 0)
+            level.Entries.Add(ChannelToggle(
+                AccessibilityStrings.OptChatUnfiltered,
+                () => ChatTabSpeech.IsOn(_config, ChatTabSpeech.UnfilteredIndex, true),
+                on => ChatTabSpeech.Set(_config, ChatTabSpeech.UnfilteredIndex, on)));
+        else
+            level.Entries.Add(ChannelToggle(
+                AccessibilityStrings.OptChatFallback,
+                () => ChatTabSpeech.IsOn(_config, ChatTabSpeech.FallbackIndex, true),
+                on => ChatTabSpeech.Set(_config, ChatTabSpeech.FallbackIndex, on)));
+
+        return level;
+    }
+
+    /// <summary>
+    /// Ob der Spieler diesen Kanal irgendwo hört.
+    ///
+    /// Die Frage wird genauso beantwortet, wie ChatReaderService sie beim Sprechen
+    /// stellt: ein Register muss vorgelesen werden UND die Zeile darin muss an sein.
+    /// Geprüft wird bis auf die FILTERZEILEN hinunter, weil das Untermenü einzelne
+    /// Zeilen setzen kann und ein gespeicherter Zeilen-Schalter seinen Kanal
+    /// aussticht (<see cref="ChatTabSpeech.RowIsOn"/>). Nur den Kanal zu fragen
+    /// hiesse, eine Zeile zu übersehen, die noch spricht.
+    /// </summary>
+    private bool IsChannelAudible(int channelKey, List<GameChatTab> showing)
+    {
+        var rows = new List<int>();
+        foreach (var tab in showing)
+        {
+            var tabDefault = !tab.CarriesBattleLog;
+            if (!ChatTabSpeech.IsOn(_config, tab.Index, tabDefault)) continue;
+
+            // Nicht lesbar: dann entscheidet der Kanal-Schalter allein. Lieber die
+            // gröbere Antwort als gar keine - eine Zeile, die in diesem Moment
+            // nichts sagen kann, waere schlimmer als eine, die eine Ebene hoeher
+            // schaut.
+            if (_chatFilters.RowsInTab(tab.Index, channelKey, rows) != ChatFilterState.Ready
+                || rows.Count == 0)
+            {
+                if (ChatTabSpeech.ChannelIsOn(_config, tab.Index, channelKey, true)) return true;
+                continue;
+            }
+
+            foreach (var rowId in rows)
+                if (ChatTabSpeech.RowIsOn(_config, tab.Index, channelKey, rowId, true)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Schaltet einen Kanal in jedem Register, das ihn zeigt.
+    ///
+    /// Die gespeicherten ZEILEN-Schalter dieses Kanals werden dabei vergessen
+    /// (<see cref="ChatTabSpeech.ClearRows"/>, vor dem Setzen - siehe dort warum),
+    /// damit sie den Kanal wieder erben. Sonst spräche nach einem "aus" noch eine
+    /// einzeln eingeschaltete Zeile weiter, und nach einem "an" bliebe eine einzeln
+    /// abgeschaltete stumm: in beiden Fällen sagte die Zeile im Menü etwas anderes,
+    /// als der Spieler hört. Wer die feine Einstellung behalten will, macht sie
+    /// unter "Chat-Register" - dieser Schalter ist die grobe Antwort und sagt das,
+    /// indem er die feine überschreibt.
+    /// </summary>
+    private void SetChannelInAllTabs(int channelKey, List<GameChatTab> showing, bool on)
+    {
+        var channels = new List<int>();
+        var rows = new List<int>();
+
+        foreach (var tab in showing)
+        {
+            var tabDefault = !tab.CarriesBattleLog;
+
+            if (_chatFilters.RowsInTab(tab.Index, channelKey, rows) == ChatFilterState.Ready)
+                ChatTabSpeech.ClearRows(_config, tab.Index, rows);
+
+            // Die Kanalliste des Registers wird frisch gelesen und nicht von oben
+            // durchgereicht - aus demselben Grund wie in SetChannelSpeech: SetChannel
+            // legt die uebrigen Kanaele still, wenn es ein stummes Register oeffnet,
+            // und eine veraltete Liste wuerde dabei den falschen Kanal treffen.
+            _chatFilters.ChannelsInTab(tab.Index, channels);
+
+            if (ChatTabSpeech.SetChannel(_config, tab.Index, channelKey, on, tabDefault, channels))
+                _log.Info($"[Einstellungen] Registerkarte {tab.Index} wurde nicht vorgelesen - "
+                          + $"fuer Kanal {channelKey} eingeschaltet, die uebrigen "
+                          + $"{channels.Count - 1} bleiben ungesprochen.");
+        }
+    }
 
     // ── Chat tabs ─────────────────────────────────────────────────
 

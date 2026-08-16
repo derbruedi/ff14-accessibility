@@ -1,0 +1,142 @@
+Suggested topic title:
+FF14 Accessibility - a screen reader plugin for FINAL FANTASY XIV
+
+Suggested forum section:
+New Releases Room
+
+
+--- POST TEXT BELOW THIS LINE ---
+
+
+Hello everyone,
+
+I would like to introduce a project I have been working on: FF14
+Accessibility, a plugin that makes FINAL FANTASY XIV playable with a
+screen reader.
+
+I am blind myself, and this plugin exists because I wanted to actually
+play this game rather than read about it. It speaks through NVDA (via
+Tolk) and also sends every announcement to a braille display. Its own
+announcements are available in English and German.
+
+Link:
+https://github.com/derbruedi/ff14-accessibility
+
+
+What it does
+
+Menus and text:
+- Title screen, character selection and the whole character creation,
+  including the appearance step with its roughly twenty pickers. None of
+  those pickers is text in the game, so a screen reader finds nothing
+  there otherwise.
+- Lists, dialogues, context menus and the journal are read row by row as
+  focus moves.
+- Settings windows with sliders, drop-down lists, checkboxes and tabs.
+- The keybind window announces each command together with the key bound
+  to it.
+- NPC dialogue with the speaker's name first, plus the game's own error
+  messages and toasts.
+
+Chat:
+- Incoming messages are spoken, and each channel can be silenced
+  individually from the settings menu. A silenced channel merely stops
+  being read aloud, it stays in the history for you to catch up on.
+- While typing, the active channel is announced and every character you
+  type is spoken, because the game's input field cannot be read.
+- A history browser with eight separate categories and no message limit,
+  so you can catch up at your own pace without disturbing the live chat.
+- Enter in the history replies to the message you just heard, in the
+  right channel. A tell is answered without typing the name.
+
+Getting around:
+- An object browser cycles through everything nearby with one key: NPCs,
+  merchants, enemies, allies, other players, quest objectives, FATEs,
+  levequests, gathering points, fishing spots, aetherytes, duty
+  entrances and map waypoints. It announces name, kind, distance and
+  direction, and targets the object at the same time.
+- An audio beacon points at your target through stereo panning and
+  pitch, with the volume following the distance.
+- A walk guide talks you along the navigation mesh while you steer
+  yourself, around obstacles, with waypoint tones and an arrival tone.
+- Auto-walk goes to the target on its own. This needs the third party
+  plugin vnavmesh, which the installer offers to fetch for you.
+- Places the mesh does not know can be walked once by hand and recorded.
+  If auto-walk gets stuck there later, it uses your own recorded trail
+  instead of giving up.
+- Your facing direction is announced as you turn, and you can copy your
+  map coordinates to the clipboard or walk to coordinates somebody
+  pasted in chat.
+
+Combat:
+- Your own HP as a number, target HP in steps, tones for HP and MP.
+- Cycling through enemies announces their level and HP.
+- A cast warning when an enemy casts at you, from any nearby enemy, not
+  only your current target. Spells aimed at other players stay silent.
+- An optional pulsing tone while you stand inside a telegraphed area
+  attack, which stops the moment you step out.
+- A tone and the name when an ability comes off cooldown.
+- Experience gains and loot are announced, and loot rolls are read out
+  with the item's stats so you can actually decide need or greed.
+
+Items and hotbars:
+- Bag, character window and armoury chest announce name, level and
+  whether you can wear the piece, plus item level, defence and
+  attributes. Jobs are named with your own classes instead of the game's
+  list of abbreviations.
+- If a piece belongs to a gear set, the announcement says so, because
+  the game only paints that hint as a symbol onto the icon.
+- An assignment menu places actions and items on any of the ten hotbars,
+  entirely from the numpad.
+
+Also covered: emotes, the hunting log, fishing, gathering, mounts, grand
+company shops, exchange counters (item, price with its currency, and how
+many you hold), the currency window (every row says which currency it is
+instead of a bare number), the achievement window (your points and
+certificates), character configuration, Triple Triad, and the deep
+dungeons (Palace of the Dead and friends) with their rooms, treasure and
+floor effects.
+
+
+Installation
+
+There is a graphical installer with a single button. It sets everything
+up and keeps the plugin updated, so you never have to operate Dalamud's
+own plugin window, which a screen reader cannot read.
+
+1. Download FF14AccessibilityInstaller.exe from the latest release:
+   https://github.com/derbruedi/ff14-accessibility/releases/latest
+2. Run it. Windows SmartScreen may complain because the installer is not
+   signed. Activate "More info", then "Run anyway".
+3. Focus lands on the "Install or update" button. Press Enter and wait
+   for the status messages.
+4. Start XIVLauncher and log in. The plugin greets you with a spoken
+   version announcement.
+
+To update, run the same file again. The installer also updates itself
+and asks before doing so.
+
+You need Windows, FINAL FANTASY XIV and XIVLauncher with Dalamud, and
+NVDA as your screen reader. The required Tolk DLLs ship with the plugin.
+
+
+Honest notes
+
+- This plugin runs on Dalamud/XIVLauncher, which is outside Square
+  Enix's official terms of service. Use at your own risk.
+- vnavmesh is an independent third party plugin by another author. It is
+  only linked and downloaded, never redistributed here.
+- Development and testing happen mostly on a German client, and I am one
+  person playing one character. Some of the newer features have not been
+  verified in game by anyone yet, and the release notes say which ones.
+  If something announces nonsense, that is a bug and I want to hear
+  about it.
+- Six of the larger features were contributed by bladestorm360 on
+  GitHub, and I am grateful for them.
+
+Feedback, bug reports and feature requests are very welcome, either here
+in this thread or as an issue on GitHub. If you try it and get stuck at
+some point in the game, tell me where. That is usually how the next
+feature gets built.
+
+Thanks for reading.

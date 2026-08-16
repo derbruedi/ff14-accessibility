@@ -594,6 +594,15 @@ public sealed class UIReaderService : IDisposable
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
 
+        // Errungenschaften: die Kopfzahlen werden erst angesagt, wenn das Spiel
+        // die Tooltips gebunden hat - hier faellt nur der Startschuss fuer das
+        // Warten (siehe AnnounceAchievementHeader).
+        if (name == "Achievement")
+        {
+            _achievementHeaderSince  = DateTime.UtcNow;
+            _achievementHeaderSpoken = false;
+        }
+
         // Invitation popups: say HOW to answer, not just that something opened.
         if (InviteNotificationAddons.Contains(name))
         {
@@ -930,6 +939,222 @@ public sealed class UIReaderService : IDisposable
         _tolk.SpeakInterrupt(text + ".");
     }
 
+    /// <summary>
+    /// Die Zahlenfelder im Kopf des Errungenschaften-Fensters als
+    /// (Zahl, Symbol-Komponente, Bild daneben). Ids aus dem Dump 2026-08-16
+    /// 15:22:58; jedes Paar steht zweimal im Fenster, einmal fuer die Listen-
+    /// und einmal fuer die Empfehlungs-Seite. Die PUNKTE STEHEN VORN, weil der
+    /// User genau danach gefragt hat - welche Id das ist, ist gemessen und
+    /// nicht aus dem Wort geraten (Log 15:42:08: id=23 -> "Errungenschafts-
+    /// punkte", id=26 -> "Errungenschaftszertifikat").
+    /// </summary>
+    private static readonly (uint Text, uint Icon, uint Image)[] AchievementHeaderFields =
+    {
+        (23, 24, 25), (8, 9, 10), (26, 27, 28), (11, 12, 13)
+    };
+
+    /// <summary>So lange wird auf die Tooltips gewartet, bevor die Ansage entfaellt.</summary>
+    private const double AchievementHeaderWaitS = 8.0;
+
+    /// <summary>
+    /// So lange wartet die Kopf-Ansage nach dem Oeffnen, bevor sie ueberhaupt
+    /// spricht. GEMESSEN NOETIG (Log 2026-08-16 16:52:56): die Ansage ging um
+    /// .841 raus und wurde 15 ms spaeter von der ersten Fokusmeldung
+    /// ("Legacy, Vergütung", SpeakInterrupt) abgeschnitten - der Spieler hat sie
+    /// nie gehoert. Nach 1,5 s sind Titel, Fokus und die "Keine Eintraege"-
+    /// Meldung (1,0 s) durch. Wer in der Zwischenzeit weiternavigiert,
+    /// uebertoent sie mit seiner eigenen Ansage - das ist richtig so, er hat
+    /// dann etwas anderes gefragt. Verlaesslich abrufbar bleibt die Zahl ueber
+    /// das Symbol im Fenster (siehe TryReadAchievementHeaderFocus).
+    /// </summary>
+    private const double AchievementHeaderDelayS = 1.5;
+
+    private DateTime _achievementHeaderSince  = DateTime.MinValue;
+    private bool     _achievementHeaderSpoken = true;
+
+    /// <summary>
+    /// Sagt beim Oeffnen des Errungenschaften-Fensters die beiden Zahlen aus
+    /// seinem Kopf an: "350 Errungenschaftspunkte, 1 Errungenschaftszertifikat".
+    ///
+    /// ANLASS (User, 2026-08-16): "wie bzw wo sehe ich meine
+    /// errungenschaftspunkte". Ein Sehender liest sie oben im Fenster ab; fuer
+    /// den Spieler waren sie unerreichbar. Sie stehen in keiner Liste, sie
+    /// aendern sich beim Blaettern nicht, und der generische Text-Scanner
+    /// spricht nackte Zahlen grundsaetzlich nicht aus (ScanAddonTexts, "BARE
+    /// NUMBERS ARE NEVER SPOKEN HERE") - die Regel ist richtig, trifft hier
+    /// aber genau die gesuchte Zahl.
+    ///
+    /// WOHER DIE WOERTER KOMMEN: aus dem Tooltip des Symbols neben der Zahl,
+    /// gemessen am 2026-08-16 um 15:42:08 - id=23/id=8 tragen
+    /// "Errungenschaftspunkte", id=26/id=11 "Errungenschaftszertifikat". Kein
+    /// eigenes Wort der Mod, also auch keine Uebersetzungsluecke: das Spiel
+    /// liefert es in der Client-Sprache. Es gibt dafuer auch keine API-Quelle -
+    /// der Struct `Achievement` fuehrt nur die Bitmap der abgeschlossenen
+    /// Errungenschaften, `AgentAchievement` kein Punktefeld, ein
+    /// `AddonAchievement` existiert nicht (ilspycmd, 2026-08-16).
+    ///
+    /// WARUM GEWARTET WIRD: die Tooltips haengen erst am fertig gebauten
+    /// Fenster. Die erste Messung derselben Sitzung fand um 15:29:06 noch
+    /// KEINE (Fenster war vor dem Hot-Reload aufgebaut), die zweite um
+    /// 15:42:08 alle vier. Und noch eine Zehntelsekunde vor der guten Messung
+    /// standen die Zahlenfelder leer da (15:42:08.185). Deshalb laeuft die
+    /// Ansage erst, wenn Zahl UND Wort dastehen - und faellt nach
+    /// <see cref="AchievementHeaderWaitS"/> ersatzlos aus, statt eine Zahl ohne
+    /// ihr Wort zu sprechen.
+    /// </summary>
+    private unsafe void AnnounceAchievementHeader(AtkUnitBase* addon)
+    {
+        if (_achievementHeaderSpoken) return;
+
+        var openFor = (DateTime.UtcNow - _achievementHeaderSince).TotalSeconds;
+        if (openFor < AchievementHeaderDelayS) return;
+
+        var parts = new List<string>();
+        foreach (var (textId, iconId, imageId) in AchievementHeaderFields)
+        {
+            // Fensterebene statt GetNodeById: dieselben Ids kommen in den
+            // Listenzeilen noch einmal vor (siehe FindTopLevelNode).
+            var textNode = FindTopLevelNode(addon, textId);
+            if (textNode == null || textNode->Type != NodeType.Text) continue;
+            var value = AtkText.ReadClean((AtkTextNode*)textNode).Trim();
+            if (value.Length == 0) continue;
+
+            var label = FindTooltipInSubtree(FindTopLevelNode(addon, iconId))
+                     ?? FindTooltipInSubtree(FindTopLevelNode(addon, imageId));
+            if (string.IsNullOrWhiteSpace(label)) continue;
+
+            // Zahl vor dem Wort, wie im Vermoegen-Fenster.
+            parts.Add(AccessibilityStrings.AmountWithLabel(value, label.Trim()));
+        }
+
+        // Beide Werte stehen doppelt im Fenster (Listen- und Empfehlungs-Seite);
+        // JoinDistinctParts wirft die Wiederholung raus.
+        if (parts.Count > 0)
+        {
+            _achievementHeaderSpoken = true;
+            var text = JoinDistinctParts(parts);
+            _log.Info($"[Achievement] Kopf: {text}");
+            // Speak, nicht SpeakInterrupt: der Fenstertitel und die Listenansage
+            // laufen gerade und duerfen nicht abgeschnitten werden.
+            _tolk.Speak(text);
+            return;
+        }
+
+        if (openFor > AchievementHeaderWaitS)
+        {
+            _achievementHeaderSpoken = true;
+            _log.Info("[Achievement] Kopfzahlen ohne Zahl oder ohne Tooltip - keine Ansage.");
+        }
+    }
+
+    /// <summary>
+    /// Der Fokus steht auf einem der beiden Symbole im Kopf des
+    /// Errungenschaften-Fensters: dann die ZAHL dazu ansagen, nicht nur das
+    /// Wort.
+    ///
+    /// ANLASS (Log 2026-08-16 16:52:58.829): der Spieler faehrt das Symbol mit
+    /// der Tastatur an - es ist also erreichbar - und hoerte seit dem
+    /// Tooltip-Fix "Errungenschaftspunkte". Das ist die Beschriftung ohne ihren
+    /// Wert, also die halbe Auskunft; ein Sehender liest beides in einem Blick.
+    ///
+    /// Der Fokus sitzt auf dem Kollisionskind der Symbol-Komponente (id=3 in
+    /// Comp id=24). Erkannt wird deshalb an der ELTERN-Komponente, nicht am
+    /// Tooltip-Wort: die Knoten-Id ist sprachunabhaengig und im Dump
+    /// (15:22:58) belegt, das Wort waere es nicht.
+    /// </summary>
+    private unsafe bool TryReadAchievementHeaderFocus(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!string.Equals(FindAddonNameForNode(node), "Achievement", StringComparison.Ordinal))
+            return false;
+
+        var ptr = _gameGui.GetAddonByName("Achievement");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+
+        foreach (var (textId, iconId, imageId) in AchievementHeaderFields)
+        {
+            var iconNode  = FindTopLevelNode(addon, iconId);
+            var imageNode = FindTopLevelNode(addon, imageId);
+            if (!IsFocusInside(node, iconNode) && !IsFocusInside(node, imageNode)) continue;
+
+            var textNode = FindTopLevelNode(addon, textId);
+            if (textNode == null || textNode->Type != NodeType.Text) return false;
+            var value = AtkText.ReadClean((AtkTextNode*)textNode).Trim();
+            if (value.Length == 0) return false;
+
+            var label = FindTooltipInSubtree(iconNode) ?? FindTooltipInSubtree(imageNode);
+            if (string.IsNullOrWhiteSpace(label)) return false;
+
+            text = AccessibilityStrings.AmountWithLabel(value, label.Trim());
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Der Knoten mit dieser Id in der OBERSTEN Knotenliste des Fensters.
+    ///
+    /// WARUM NICHT <c>addon-&gt;GetNodeById</c>, und das hat einen Tag gekostet:
+    /// Knoten-Ids sind nur INNERHALB ihres Containers eindeutig. Die Zeilen der
+    /// Errungenschaftsliste tragen ihrerseits einen Knoten id=25 - dieselbe Id
+    /// wie das Bild neben der Punktzahl. Ein Vergleich ueber die Id hielt
+    /// deshalb jede Zeile fuer das Symbol und sagte auf jeder "350
+    /// Errungenschaftspunkte" statt der Errungenschaft (User 2026-08-16: "jetzt
+    /// nicht mehr was ich freigeschalten habe", Log 16:58:18 bis 16:58:20).
+    /// Diese Suche bleibt auf der Fensterebene und liefert einen ZEIGER, den
+    /// der Aufrufer eindeutig vergleichen kann.
+    /// </summary>
+    private static unsafe AtkResNode* FindTopLevelNode(AtkUnitBase* addon, uint nodeId)
+    {
+        if (addon == null) return null;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n != null && n->NodeId == nodeId) return n;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Ob der Fokus auf diesem Knoten oder in ihm sitzt - per Zeiger, nicht per
+    /// Id (siehe <see cref="FindTopLevelNode"/>). Der Fokus liegt meist auf dem
+    /// Kollisionskind, deshalb die drei Ebenen nach oben.
+    /// </summary>
+    private static unsafe bool IsFocusInside(AtkResNode* focus, AtkResNode* target)
+    {
+        if (target == null) return false;
+        for (var up = 0; up < 3 && focus != null; up++, focus = focus->ParentNode)
+            if (focus == target) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Tooltip an diesem Knoten oder an einem seiner direkten Kinder. Klettert
+    /// bewusst NACH UNTEN statt nach oben wie
+    /// <see cref="TooltipService.TryGetTooltipDeep"/>: hier ist der Ausgangspunkt
+    /// die Komponente, und das Maus-Ziel ist ihr Kollisionskind.
+    /// </summary>
+    private unsafe string? FindTooltipInSubtree(AtkResNode* node)
+    {
+        if (node == null) return null;
+        var own = _tooltips.TryGetTooltip(node);
+        if (own != null) return own;
+        if ((int)node->Type < 1000) return null;
+
+        var comp = ((AtkComponentNode*)node)->Component;
+        if (comp == null) return null;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var child = comp->UldManager.NodeList[i];
+            if (child == null) continue;
+            var tip = _tooltips.TryGetTooltip(child);
+            if (tip != null) return tip;
+        }
+        return null;
+    }
+
     private unsafe void OnAnyAddonUpdate(AddonEvent type, AddonArgs args)
     {
         if (InLoginQuiet) return;
@@ -939,6 +1164,11 @@ public sealed class UIReaderService : IDisposable
 
         var currentAddon = (AtkUnitBase*)(nint)args.Addon;
         if (currentAddon == null || !currentAddon->IsVisible) return;
+
+        // Errungenschaften: die zwei Zahlen im Fensterkopf ansagen, sobald das
+        // Spiel sie samt Tooltip gesetzt hat. KEIN return - der Rest des
+        // Fensters (Liste, Fokus) muss weiterlaufen.
+        if (name == "Achievement") AnnounceAchievementHeader(currentAddon);
 
         if (name == "_TitleMenu")
         {
@@ -1975,6 +2205,12 @@ public sealed class UIReaderService : IDisposable
         // per-frame operation); cache it so same-node frames reuse the name.
         if ((nint)node != _lastFocusedNodePtr)
         {
+#if DEBUG
+            // Vermoegen / Sozialliste / Suchmaske vermessen - siehe
+            // ProbeFocusContext. Vor der Item-Aufloesung, damit sie auch dann
+            // laeuft, wenn eine spezialisierte Leseregel weiter unten aussteigt.
+            ProbeFocusContext(node);
+#endif
             _lastFocusedItemName = ResolveFocusedItemName(node);
             // Tausch-Zeilen haben KEINEN Icon-Slot unter dem Fokus, aus dem die
             // Item-Id sonst kommt - deshalb blieb _lastFocusedItemId dort 0, und
@@ -2004,7 +2240,30 @@ public sealed class UIReaderService : IDisposable
 
         string text;
         var itemBranchActive = false; // set true only when the item name is what gets announced
-        if (TryReadConfigFocusRow(node, out var configRow))
+        if (TryReadPlayerSearchFocus(node, out var searchRow))
+        {
+            // Spielersuche: das Ankreuzfeld "Welt" sagt jetzt auch, OB es
+            // angekreuzt ist, und die Stufenfelder ihren Wert statt gar nichts.
+            // Vor dem allgemeinen Pfad, weil der beim Ankreuzfeld nur die
+            // Beschriftung fand und die Zahlenfelder ganz verschluckte.
+            text = searchRow;
+        }
+        else if (TryReadCurrencyFocusRow(node, out var currencyRow))
+        {
+            // Vermoegen: die Zeile sagt jetzt, WELCHE Waehrung sie ist. Vor dem
+            // Gegenstands-Zweig, weil das Waehrungssymbol in der Zeile sonst als
+            // Inventar-Gegenstand aufgeloest wuerde - der Name allein, ohne den
+            // Stand daneben, waere die halbe Auskunft.
+            text = currencyRow;
+        }
+        else if (TryReadAchievementHeaderFocus(node, out var achievementHeader))
+        {
+            // Errungenschaften: das Punkte- bzw. Zertifikat-Symbol sagt seine
+            // ZAHL mit an. Vor dem allgemeinen Pfad, der seit dem Tooltip-Fix
+            // nur das Wort ohne den Wert fand.
+            text = achievementHeader;
+        }
+        else if (TryReadConfigFocusRow(node, out var configRow))
         {
             // Character configuration (ConfigCharacter + ConfigChara* panels):
             // name the icon-only category tab via its tooltip, and append the
@@ -2741,6 +3000,131 @@ public sealed class UIReaderService : IDisposable
     }
 
 #if DEBUG
+    /// <summary>Die Fenster, die <see cref="ProbeFocusContext"/> vermisst.</summary>
+    private static readonly string[] ProbeAddonNames = { "Currency", "SocialList", "PcSearchDetail" };
+
+    private nint _lastProbedNodePtr;
+
+    /// <summary>
+    /// SONDE fuer die drei Fenster aus der User-Meldung vom 2026-08-16: das
+    /// Vermoegen (Currency), die Ergebnisliste der Sozialliste (SocialList) und
+    /// die Suchmaske (PcSearchDetail).
+    ///
+    /// WAS SIE BEANTWORTET, und warum der Strg+F5-Dump dafuer nicht reicht: der
+    /// Dump zeigt Knotentypen und Texte, aber KEINE Icon-Ids. Genau daran haengt
+    /// das Vermoegen-Fenster - dort steht neben jeder Zahl nur ein Symbol, und
+    /// welche Waehrung das ist, sagt kein Text (Log 11:49: "49.457, Woche,
+    /// Gesamt"). Ueber die Icon-Id kommt der Name aus dem Item-Sheet
+    /// (InventoryService.ResolveIconItem, dieselbe Aufloesung wie im Inventar).
+    /// Die Sonde loest gleich mit auf, damit im Log steht, ob der Weg ueberhaupt
+    /// traegt, statt nur eine Zahl zu melden, die noch jemand nachschlagen muss.
+    ///
+    /// Sie protokolliert den ELTERN-Container des Fokus mit allen seinen Kindern,
+    /// weil die gesuchte Angabe nie am Fokusknoten selbst haengt: der Fokus sitzt
+    /// auf einem Kollisionsknoten, Text und Symbol sind seine Geschwister (so war
+    /// es schon im Tauschfenster, siehe <see cref="ProbeShopRow"/>).
+    ///
+    /// Eine Zeile je Fokuswechsel - mit eigenem Zeigervergleich statt
+    /// _lastFocusedNodePtr, weil der erst weiter unten gesetzt wird und mehrere
+    /// Ausstiege dazwischenliegen. Faellt raus, sobald die drei Fenster gebaut
+    /// sind (siehe debug_probe_convention).
+    /// </summary>
+    private unsafe void ProbeFocusContext(AtkResNode* node)
+    {
+        if (node == null || (nint)node == _lastProbedNodePtr) return;
+
+        var addon = FindAddonNameForNode(node);
+        if (Array.IndexOf(ProbeAddonNames, addon) < 0) return;
+        _lastProbedNodePtr = (nint)node;
+
+        // Vom Fokus aufwaerts bis zur ersten lesbaren Komponente - das ist die
+        // "Zeile" bzw. das Feld, zu dem der Fokus gehoert.
+        var cur = node->ParentNode;
+        for (var up = 0; up < 4 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)cur)->Component;
+            if (comp == null || !IsReadable(comp)) continue;
+
+            var parts = new List<string>();
+            CollectProbeParts(comp, parts, depth: 0);
+
+            // DER TOOLTIP, und er ist nach der ersten Messrunde dazugekommen: im
+            // Vermoegen-Fenster fand die Sonde in KEINER Zeile ein Symbol
+            // (12:23:30 bis 12:23:45, nur die Zahlen und die beiden
+            // Spaltenwoerter). Der Name der Waehrung muss also woanders herkommen,
+            // und der Tooltip ist der Weg, den dieses Plugin fuer symbolgetriebene
+            // Bedienelemente schon geht (Konfigurations-Reiter,
+            // TryReadConfigFocusRow).
+            var tip = _tooltips.TryGetTooltipDeep(node);
+            if (!string.IsNullOrWhiteSpace(tip)) parts.Add($"Tooltip='{tip.Trim()}'");
+
+            // Listenzustand: bei SocialList sass der Fokus direkt in der
+            // Listen-Komponente und die erste Sonde meldete "NICHTS LESBAR" - was
+            // an ihr lag, nicht an der Liste. Laenge und Auswahl sagen, ob
+            // ueberhaupt Zeilen da waren.
+            if (IsListComponent(comp->GetComponentType()))
+            {
+                var list = (AtkComponentList*)comp;
+                parts.Add($"ListLen={GetListEntryCount(list)} Sel={list->SelectedItemIndex}");
+            }
+
+            _log.Info($"[UiProbe] {addon}: Fokus id={node->NodeId} typ={(int)node->Type} "
+                      + $"in Comp id={cur->NodeId} typ={comp->GetComponentType()} "
+                      + $"-> {(parts.Count > 0 ? string.Join(" | ", parts) : "NICHTS LESBAR")}");
+            return;
+        }
+
+        _log.Info($"[UiProbe] {addon}: Fokus id={node->NodeId} typ={(int)node->Type} "
+                  + "- keine lesbare Eltern-Komponente in vier Ebenen.");
+    }
+
+    /// <summary>
+    /// Sammelt Texte und Symbole einer Komponente - und, bis zu zwei Ebenen
+    /// tief, die ihrer Unter-Komponenten.
+    ///
+    /// DIE TIEFE IST DER GRUND FUER DIESE METHODE. Die erste Fassung sah nur die
+    /// direkten Kinder und meldete fuer die Ergebnisliste der Sozialliste
+    /// deshalb "NICHTS LESBAR" (12:24:12): dort ist jede ZEILE eine eigene
+    /// Komponente (ListItemRenderer), und die Namen stecken eine Ebene tiefer.
+    /// Zwei Ebenen und nicht mehr, damit eine lange Liste das Log nicht flutet.
+    /// </summary>
+    private unsafe void CollectProbeParts(AtkComponentBase* comp, List<string> parts, int depth)
+    {
+        if (comp == null || depth > 2 || parts.Count > 40) return;
+
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var child = comp->UldManager.NodeList[i];
+            if (child == null) continue;
+
+            if (child->Type == NodeType.Text)
+            {
+                var t = AtkText.ReadClean((AtkTextNode*)child).Trim();
+                if (t.Length > 0) parts.Add($"Text{child->NodeId}='{t}'");
+                continue;
+            }
+
+            if ((int)child->Type < 1000) continue;
+
+            var childComp = ((AtkComponentNode*)child)->Component;
+            if (childComp == null) continue;
+
+            var icon = FindSlotIcon(childComp);
+            if (icon != null && icon->IconId != 0)
+            {
+                // Gleich aufgeloest: eine nackte Icon-Id waere ein zweiter
+                // Arbeitsgang, und ob die Aufloesung traegt, ist die eigentliche
+                // Frage dieser Sonde.
+                var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
+                parts.Add($"Icon{child->NodeId}={icon->IconId}"
+                          + (name.Length > 0 ? $" -> '{name}' (Item {itemId})" : " -> UNBEKANNT"));
+            }
+
+            CollectProbeParts(childComp, parts, depth + 1);
+        }
+    }
+
     /// <summary>
     /// SONDE: every text node of the focused shop row, with its id, its raw text
     /// and the item it links to. Answers the one open question this window still
@@ -2963,6 +3347,186 @@ public sealed class UIReaderService : IDisposable
     /// Structure verified via the config probe (2026-07-26): tabs = DragDrop
     /// with tooltip, settings = CheckBox/RadioButton with a text label + IsChecked.
     /// </summary>
+    /// <summary>
+    /// Liest das fokussierte Bedienelement der SPIELERSUCHE (`PcSearchDetail`):
+    /// Ankreuzfelder mit ihrem Zustand, Zahlenfelder mit ihrem Wert.
+    ///
+    /// ANLASS, und der Befund war ein anderer als die Meldung: Der User suchte
+    /// die Auswahl der WELT, in der gesucht wird, und "konnte sie nicht
+    /// auslesen". Die Sonde zeigt, dass es gar keine Liste ist - `Welt` ist ein
+    /// ANKREUZFELD ([UiProbe] 2026-08-16 12:24:20: "Fokus id=5 typ=8 in Comp
+    /// id=27 typ=CheckBox -> Text2='Welt'"). Gesprochen wurde nur die
+    /// Beschriftung, nie der Zustand - angekreuzt und nicht angekreuzt klangen
+    /// gleich, und deshalb wirkte das Feld tot.
+    ///
+    /// Der Suchbereich braucht hier nichts: der liegt in einem eigenen Fenster
+    /// (`PcSearchSelectLocation`) und wird bereits sauber vorgelesen (Log
+    /// 11:45:23 bis 11:45:30 - La Noscea, Limsa Lominsa, Norvrandt ...).
+    ///
+    /// EIGENE METHODE statt einer Erweiterung von
+    /// <see cref="TryReadConfigFocusRow"/>: jene ist auf Config*-Fenster
+    /// beschraenkt, weil dort ein Aufklappfeld selbst als CheckBox-Komponente
+    /// gebaut ist und die Regel es sonst als Schalter ansagen wuerde. Dieses
+    /// Fenster hat gemessen keine Aufklappfelder (CheckBox, Button,
+    /// NumericInput, TextInput), aber die Einschraenkung dort ist teuer erkauft
+    /// und wird nicht aufgeweicht.
+    ///
+    /// ZAHLENFELDER: die Stufengrenzen waren komplett stumm ("[Focus] STUMM
+    /// id=5 typ=3" bei gleichzeitig vorhandenem Wert "Text5='1'"). Angesagt wird
+    /// nur der WERT - welche Grenze es ist, sagt kein Text der Komponente, und
+    /// eine geratene Beschriftung ("Mindeststufe") waere schlimmer als keine.
+    /// </summary>
+    private unsafe bool TryReadPlayerSearchFocus(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!string.Equals(FindAddonNameForNode(node), "PcSearchDetail", StringComparison.Ordinal))
+            return false;
+
+        // Zur naechsten Komponente hoch. Der Knoten SELBST wird mitgeprueft, denn
+        // der Fokus sitzt mal auf einem Kollisionskind ("Fokus id=5 typ=8 in Comp
+        // id=27"), mal auf der Komponente selbst ("Fokus id=5 typ=1007") - beides
+        // in derselben Messung.
+        AtkComponentBase* comp = null;
+        AtkResNode* compNode = null;
+        var cur = node;
+        for (var up = 0; up < 4 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var candidate = ((AtkComponentNode*)cur)->Component;
+            if (candidate == null) continue;
+            comp     = candidate;
+            compNode = cur;
+            break;
+        }
+        if (comp == null || compNode == null) return false;
+
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.CheckBox:
+                var label = GetTextFromNodeTree(compNode).Trim();
+                if (string.IsNullOrWhiteSpace(label)) return false;
+                // Wortgleich zu den Konfigurationsfenstern, inklusive des Wortes
+                // "Schalter": derselbe Bedienelementtyp muss ueberall gleich
+                // klingen, sonst muss der Spieler je Fenster neu lernen.
+                var isChecked = ((AtkComponentButton*)comp)->IsChecked;
+                text = $"{label}, {AccessibilityStrings.SwitchControl}, "
+                     + (isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff);
+                if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+                    text = $"{text}, {AccessibilityStrings.StateDisabled}";
+                return true;
+
+            case ComponentType.NumericInput:
+                var value = GetTextFromNodeTree(compNode).Trim();
+                if (string.IsNullOrWhiteSpace(value)) return false;
+                text = AccessibilityStrings.InputFieldValue(value);
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Liest die fokussierte Zeile des VERMOEGENS (`Currency`): WELCHE Waehrung
+    /// das ist und wie viel man davon hat.
+    ///
+    /// ANLASS: die Zeilen tragen nur eine Zahl und ein Symbol, kein Wort. Der
+    /// generische Leser sagte deshalb "49.457, Woche, Gesamt" (Log 2026-08-16
+    /// 15:04:01) - eine Zahl ohne die Auskunft, worum es geht.
+    ///
+    /// WOHER DER NAME KOMMT: aus dem Tooltip, den das Spiel beim Bauen des
+    /// Fensters an die Zeile bindet - gemessen im Dump derselben Minute:
+    /// Zeile id=20 -> "Gil", Zeile id=200403 -> "Legionstaler". Die
+    /// Ueberschriften des Fensters (Comp(1014): "Gil", "Staatstaler",
+    /// "Wertmarken", ...) taugen dafuer NICHT: sie benennen die Gruppe, nicht
+    /// die Zeile - unter "Staatstaler" steht der "Legionstaler". Ohne Tooltip
+    /// steigt der Leser aus, statt eine Gruppe als Namen auszugeben.
+    ///
+    /// WARUM NUR SICHTBARE TEXTE: jede Zeilenvorlage enthaelt die Spaltenwoerter
+    /// "Woche" und "Gesamt", das Spiel blendet sie je Zeile ein oder aus (Dump:
+    /// id=20 Kinder id=4/id=3 mit F=0x2023, also ohne Sichtbar-Bit). Der
+    /// generische <see cref="GetTextFromNodeTree"/> prueft das Bit nicht und
+    /// sprach sie mit. Was auf dem Bildschirm steht, wird gesagt; was nicht,
+    /// nicht.
+    ///
+    /// WARUM NICHT <see cref="GetTextFromNodeTree"/> fuer den Wert: der wirft
+    /// Texte mit einem einzigen Zeichen weg (t.Length > 1). Die
+    /// Wertmarken-Zeile im Dump steht auf "6" - der Stand waere ersatzlos
+    /// verschwunden.
+    /// </summary>
+    private unsafe bool TryReadCurrencyFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!string.Equals(FindAddonNameForNode(node), "Currency", StringComparison.Ordinal))
+            return false;
+
+        // Der Name ist die Bedingung, nicht die Zugabe: ohne ihn hat diese Regel
+        // der generischen nichts voraus, und die soll dann weiterlaufen.
+        var name = _tooltips.TryGetTooltipDeep(node);
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        name = name.Trim();
+
+        // Zur naechsten Komponente hoch - der Fokus sitzt auf dem Kollisionskind
+        // der Zeile ("Fokus id=7 typ=8 in Comp id=20", Log 15:04:01), der Knoten
+        // selbst wird mitgeprueft.
+        AtkComponentBase* comp = null;
+        var cur = node;
+        for (var up = 0; up < 4 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var candidate = ((AtkComponentNode*)cur)->Component;
+            if (candidate == null) continue;
+            comp = candidate;
+            break;
+        }
+        if (comp == null) return false;
+
+        // Die Kategorie-Reiter (Dump: neun Comp(1011) RadioButton, ids 6 bis 14)
+        // sind reine Symbole ohne jeden Text. Welcher der gewaehlte ist, sagt
+        // IsChecked - wortgleich zu den Konfigurationsfenstern.
+        if (comp->GetComponentType() == ComponentType.RadioButton)
+        {
+            text = ((AtkComponentButton*)comp)->IsChecked
+                ? $"{name}, {AccessibilityStrings.RadioSelected}"
+                : name;
+            return true;
+        }
+
+        var parts = new List<string>();
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
+            var value = AtkText.ReadClean((AtkTextNode*)child).Trim();
+            if (value.Length > 0) parts.Add(value);
+        }
+
+        if (parts.Count == 0)
+        {
+            text = name;
+            return true;
+        }
+
+        // Der STAND ist der Teil mit einer Ziffer ("49.457", "1.652/10.000",
+        // "6"). Er muss herausgegriffen werden, weil der Name laut
+        // User-Entscheid HINTER die Zahl gehoert und ein sichtbar gebliebenes
+        // Spaltenwort sonst an dessen Stelle rutschen wuerde ("Gesamt
+        // Wolfsmarke, 0/20.000"). Sprachneutral: die Spaltenwoerter tragen in
+        // keiner Sprache eine Ziffer, der Name kommt ohnehin aus dem Tooltip.
+        var amountIndex = parts.FindIndex(p => p.Any(char.IsDigit));
+        if (amountIndex < 0)
+        {
+            text = JoinDistinctParts(new List<string> { name, JoinDistinctParts(parts) });
+            return true;
+        }
+
+        var amount = parts[amountIndex];
+        parts.RemoveAt(amountIndex);
+        text = AccessibilityStrings.AmountWithLabel(amount, name);
+        if (parts.Count > 0) text = $"{text}, {JoinDistinctParts(parts)}";
+        return true;
+    }
+
     private unsafe bool TryReadConfigFocusRow(AtkResNode* node, out string text)
     {
         text = string.Empty;

@@ -3,7 +3,407 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-16, "TAUSCHFENSTER: PREIS UND BESCHREIBUNG" - GEBAUT, ZU TESTEN)
+## STAND JETZT (2026-08-16, RELEASE v5.85 - "DREI FENSTER OHNE WORTE")
+
+>>> VEROEFFENTLICHT. Alles unten aus diesem Tag ist damit oeffentlich:
+    - Tauschfenster: Preis samt Waehrung, Beschreibung, eigener Bestand.
+    - Vermoegen: jede Zeile nennt ihre Waehrung ("49.457 Gil").
+    - Errungenschaften: Punkte + Zertifikate beim Oeffnen und am Symbol.
+    - Chat-Kanaele als flache Liste im Optionsmenue (Umschalt+F9), in BEIDEN
+      Chatsystemen.
+    - TooltipService liest jetzt SeString statt roher Bytes - das repariert
+      symbolgetriebene Beschriftungen im ganzen Plugin, nicht nur hier.
+
+>>> VOM USER IN-GAME BESTAETIGT (16.8. nachmittags): Vermoegen-Zeilen,
+    Errungenschaftspunkte, und nach dem Zeiger-Fix auch die Errungenschafts-
+    zeilen wieder ("ja passt alles").
+
+>>> NICHT GEGENGEPRUEFT im Release: die Chat-Kanal-Schalter von heute Vormittag
+    (Punkte 6 bis 9 im Block darunter) - gebaut und deployt, aber vom User nicht
+    ausdruecklich zurueckgemeldet.
+
+## FRUEHERER STAND (2026-08-16, "CHAT-KANAELE INS OPTIONSMENUE" - GEBAUT, ZU TESTEN)
+
+>>> ANLASS: Der User wollte das Projekt im audiogames.net-Forum vorstellen und
+    fragte beim Korrekturlesen des Beitrags nach, WIE man Chat-Kanaele einzeln
+    stummschaltet - beide READMEs behaupten das seit jeher. Antwort nach
+    Codesuche: gar nicht. Die sieben Schalter (Configuration.cs:250-256) wurden
+    NUR in LegacyChatReaderService.ShouldRead gelesen, kein Menue, kein /acc-
+    Befehl, kein Fenster fasste sie an. Der einzige Weg war pluginConfigs/
+    FF14Accessibility.json von Hand - genau das, was der Klassenkommentar von
+    OptionsMenu ausschliesst ("Asking a blind player to edit ... is not an
+    option"). Das NEUE Chatsystem (PR #5) hatte seine Bedienung unter
+    "Chat-Register", das GEWOHNTE - die Voreinstellung - hatte gar keine.
+
+>>> ZWEITER FUND BEIM BAUEN, und er hat das Verhalten geaendert: ShouldRead stand
+    VOR dem Archivieren (Zeile 74, Archiv erst 105). Ein abgeschalteter Kanal war
+    damit nicht nur still, sondern auch aus der Nachlese verschwunden. Im neuen
+    System gilt ausdruecklich das Gegenteil ("A switch here NEVER touches the
+    buffer", OptionsMenu.cs:128). Aufgefallen ist es nie, weil die Schalter
+    unerreichbar und deshalb durchweg an waren; mit einem Menue davor waere es
+    eine Falle geworden. DEM USER VORGELEGT, ER HAT ENTSCHIEDEN: nur stumm, die
+    Nachlese bleibt.
+
+>>> GEBAUT:
+    - LegacyChatReaderService: ShouldRead in IsKnownChannel (entscheidet ueber
+      das Archivieren, ohne Schalter) und ShouldSpeak (die Schalter, abgefragt
+      hinter dem Archiv und hinter _isActive) getrennt. Die [ChatAlt]-Sonde zeigt
+      jetzt "bekannt=" und "gesprochen=" statt eines einzigen "gelesen=".
+    - OptionsMenu: BuildChatChannels mit ZEHN Zeilen. Die oberste Ebene zeigt
+      "Chat-Kanaele" ODER "Chat-Register", je nach aktivem System - ein Abschnitt,
+      der im anderen System nichts tut, wird gar nicht erst angeboten. Dafuer hat
+      die oberste Ebene jetzt Rebuild=Build, sonst zeigte sie nach dem Umschalten
+      noch auf den Abschnitt des alten Systems.
+    - Die Kanalnamen kommen aus AccessibilityStrings.LegacyChatCategoryName, also
+      woertlich aus der Nachlese: wer etwas stummschaltet, findet es dort unter
+      demselben Wort wieder. Reihenfolge = LegacyChatHistoryService.Order.
+      Ausnahme "Sammeln" (eigener Schalter, wird unter System archiviert).
+    - Beim ABSCHALTEN sagt die Bestaetigung dazu "Steht weiter zum Nachlesen
+      bereit." - nur dann, nicht beim Einschalten und nicht in der Beschriftung.
+    - AnnounceLoot ist mit hineingenommen: geprueft, es wirkt ausschliesslich in
+      ShouldSpeak (LootNotice) und nirgends sonst.
+
+>>> BEWUSST OHNE ZEILE: ErrorMessage und Echo stehen im Leser fest auf true. Eine
+    Menuezeile ohne Schalter dahinter waere eine Einstellung, die nichts einstellt.
+
+>>> ZU TESTEN (Debug gebaut + deployt, 0 Warnungen):
+    1. Umschalt+F9: heisst der Chat-Abschnitt "Chat-Kanaele"? (Voreinstellung ist
+       das gewohnte System.)
+    2. Einen Kanal abschalten - kommt "... aus. Steht weiter zum Nachlesen bereit."?
+    3. Gegenprobe: kommen in diesem Kanal wirklich keine Ansagen mehr?
+    4. WICHTIGSTE PROBE: Alt+Bild-auf/-ab zu diesem Kanal - stehen die neuen
+       Nachrichten trotzdem drin?
+    5. Chatsystem umschalten (Zeile darunter, Menue bleibt offen): wird die Zeile
+       darueber sofort zu "Chat-Register"?
+
+>>> READMES + FORUMSBEITRAG NACHGEZOGEN: beide READMEs nennen jetzt Umschalt+F9,
+    die vollstaendige Kanalliste und den Satz, dass Abschalten die Nachlese nicht
+    anfasst. forum-post-audiogames.txt (neu, im Projektwurzelverzeichnis) ist der
+    Vorstellungstext fuer audiogames.net, vom User noch nicht freigegeben.
+
+>>> NACHTRAG, UND ES WAR EIN EIGENER FEHLER: die erste Fassung zeigte "Chat-
+    Kanaele" NUR im gewohnten System, im neuen weiterhin "Chat-Register". Der User
+    laeuft aber auf dem NEUEN (Config sagt UseLegacyChatSystem=False, das Log zeigt
+    [Chat] statt [ChatAlt]) - er bekam also genau die Funktion nicht zu sehen,
+    nach der er gefragt hatte, und meldete "hat sich nichts geaendert". Die
+    Diagnose kam komplett aus Log + Config, ohne dass er etwas nachspielen musste:
+    Spielstart 11:24:03 lag NACH dem Build 11:22:11 (neue DLL war also geladen),
+    "[Menue] 'Chat-Register' mit 4 Eintraegen" um 11:25:58, danach sechsmal
+    Chatsystem hin und her.
+
+>>> DARAUF GEBAUT (auf Ansage des Users): BuildGameChatChannels - dieselbe flache
+    Liste fuer das NEUE System, aus den Kanaelen des Spiels quer ueber alle
+    Register, sortiert nach GameChatChannel.Sort (Reihenfolge des spieleigenen
+    Einstellungsfensters). "Chat-Kanaele" steht jetzt in BEIDEN Systemen an
+    derselben Stelle; "Chat-Register" kommt im neuen zusaetzlich darunter fuer die
+    feine Ebene (Filterzeilen, ausgeteilt vs. erlitten).
+    - EINE Zeile schaltet den Kanal in ALLEN Registern, die ihn zeigen, und meldet
+      "an", sobald EIN Register ihn spricht. Das ist dieselbe Oder-Regel, mit der
+      ChatReaderService entscheidet (Zeile 315-322, ueber die Routen), nur von der
+      anderen Seite gelesen.
+    - IsChannelAudible prueft bis auf die FILTERZEILEN hinunter, weil ein
+      gespeicherter Zeilen-Schalter seinen Kanal aussticht (RowIsOn).
+    - Neu in ChatTabSpeech: ClearRows. Ohne das wuerde die flache Zeile luegen -
+      nach "aus" spraeche eine einzeln eingeschaltete Zeile weiter, nach "an"
+      bliebe eine einzeln abgeschaltete stumm. MUSS vor SetChannel laufen: in den
+      Kategorien 1 und 2 ist die Row-Id dieselbe Zahl wie der Kanal-Key.
+    - Build() ist von Objekt-Initialisierer auf Methode umgebaut, weil eine
+      bedingte Zeile sonst als null in der Liste gelandet waere.
+
+>>> ZUSAETZLICH ZU TESTEN (Debug gebaut, 0 Warnungen - das Spiel lief seit 11:24
+    und muss fuer diese Fassung NEU GESTARTET werden):
+    6. Umschalt+F9 im neuen System: stehen jetzt FUENF Zeilen da (Toene, Ansagen,
+       Chat-Kanaele, Chat-Register, Chatsystem)?
+    7. "Chat-Kanaele" oeffnen: kommt eine flache Liste mit den Kanalnamen des
+       Spiels?
+    8. Freie Gesellschaft abschalten, dann eine FC-Nachricht abwarten: still?
+       Und steht sie trotzdem in der Nachlese?
+    9. Gegenprobe auf die Anzeige: Zeile wieder an, Menue schliessen und neu
+       oeffnen - meldet sie weiterhin "an"?
+
+## STAND JETZT (2026-08-16, "DREI STUMME FENSTER" - 1 VON 3 GEBAUT, 2 BRAUCHEN NOCH EINE RUNDE)
+
+>>> ERSTE MESSRUNDE IST DA ([UiProbe], 12:23:30 bis 12:24:26). Sie hat EINEN der
+    drei Punkte fertig aufgeklaert, bei den anderen beiden lag die Sonde selbst
+    zu flach - beides unten korrigiert.
+
+>>> AUFGEKLAERT UND GEBAUT - DAS WELTFELD DER SPIELERSUCHE. Der User: "man kann
+    wohl auch die welten aussuchen wo man sucht aber das konnte ich nicht
+    auslesen". Der Befund ist ein anderer als die Meldung:
+      [UiProbe] PcSearchDetail: Fokus id=5 typ=8 in Comp id=27 typ=CheckBox
+                -> Text2='Welt'
+    Es ist KEINE Auswahlliste, sondern ein ANKREUZFELD. Gesprochen wurde nur die
+    Beschriftung "Welt", nie der Zustand - angekreuzt und nicht angekreuzt
+    klangen gleich, und genau deshalb wirkte das Feld tot.
+    NICHT ZU VERWECHSELN mit dem SUCHBEREICH: der liegt in einem eigenen Fenster
+    (`PcSearchSelectLocation`) und geht laengst - La Noscea, Limsa Lominsa,
+    Norvrandt, Eulmore, Crystarium, Garlemald, Thavnair, Radz-at-Han kamen alle
+    sauber (Log 11:45:23 bis 11:45:30).
+    GEBAUT: `TryReadPlayerSearchFocus` (UIReaderService, vor dem allgemeinen
+    Pfad). Ankreuzfeld -> "Welt, Schalter, an/aus" (+ "ausgegraut", wenn
+    NodeFlags.Enabled fehlt), Zahlenfeld -> Wert statt Stille. Wortgleich zu den
+    Konfigurationsfenstern, damit derselbe Bedienelementtyp ueberall gleich
+    klingt.
+    EIGENE METHODE, KEINE ERWEITERUNG von TryReadConfigFocusRow: jene ist mit
+    Absicht auf Config* beschraenkt, weil dort ein Aufklappfeld selbst eine
+    CheckBox-Komponente ist und als "Schalter, aus" angesagt wuerde. Diese
+    Einschraenkung ist teuer erkauft und bleibt.
+    ZAHLENFELDER: die Stufengrenzen waren ganz stumm ("[Focus] STUMM id=5 typ=3"
+    bei gleichzeitig vorhandenem "Text5='1'"). Angesagt wird nur der WERT -
+    welche Grenze es ist, sagt kein Text der Komponente, und ein geratenes
+    "Mindeststufe" waere schlimmer als keines. Offen, braucht eine eigene Messung.
+
+>>> ERLEDIGT AM 16.8. NACHMITTAGS - VERMOEGEN IST GEBAUT. Die zweite Messrunde
+    (Strg+F5-Dump 15:04:36 + [UiProbe] 15:03:59 bis 15:04:34) hat die offene
+    Frage von unten beantwortet: DER TOOLTIP TRAEGT DEN NAMEN.
+      Comp id=20     -> Tooltip='...Gil...'
+      Comp id=200403 -> Tooltip='...Legionstaler...'
+    Er kam nur nie sauber an: `TooltipService.OnAttach` las
+    `args->TextArgs.Text` mit `ptr.ToString()`, also ROH - bei einem
+    Gegenstandsverweis stehen dann die SeString-Steuerbytes mit drin
+    ("H?%I?&GilIH"). Einfache Beschriftungen ueberlebten das
+    ("Waehrungseinstellungen"), Waehrungen nicht.
+    GEBAUT 1 - `TooltipService.ReadTooltipText`: liest ueber Dalamuds
+    SeString-Leser + TolkService.Sanitize, mit AtkText.IsReadable davor (der
+    Lauf geht bis zur Null, eine nicht gemappte Seite wuerde sonst
+    ueberlaufen). Wirkt fuer ALLE symbolgetriebenen Fenster, nicht nur hier -
+    alle fuenf Aufrufer sprechen den Text nur aus, keiner zerlegt ihn.
+    GEBAUT 2 - `TryReadCurrencyFocusRow` (UIReaderService, direkt nach der
+    Spielersuche in der Kette): Name aus dem Tooltip, Stand aus den SICHTBAREN
+    Textkindern. Drei Dinge, die der generische Leser falsch machte:
+    - "Woche"/"Gesamt" laufen nicht mehr mit, wo das Spiel sie ausblendet
+      (Dump: Kinder id=4/id=3 der Zeile id=20 haben F=0x2023, also kein
+      Sichtbar-Bit). `GetTextFromNodeTree` prueft das Bit nicht.
+    - Der Stand "6" (Wertmarken) waere ganz verschwunden: der generische Leser
+      wirft Texte mit einem einzigen Zeichen weg (t.Length > 1).
+    - Reihenfolge wie vom User festgelegt: "49.457 Gil". Der Stand wird als der
+      Teil MIT ZIFFER herausgegriffen, damit ein sichtbar gebliebenes
+      Spaltenwort nicht an die Stelle der Zahl rutscht.
+    OHNE TOOLTIP steigt die Regel aus und ueberlaesst die Zeile dem bisherigen
+    Weg - lieber die nackte Zahl als eine geratene Waehrung. Die
+    Gruppen-Ueberschriften des Fensters (Comp(1014): "Gil", "Staatstaler",
+    "Wertmarken", "Manderville Gold Saucer-Punkte") taugen als Ersatz NICHT:
+    unter "Staatstaler" steht der "Legionstaler", die Ueberschrift benennt die
+    Gruppe, nicht die Zeile.
+    KATEGORIE-REITER: die neun Comp(1011)-RadioButtons (ids 6 bis 14, davon
+    fuenf sichtbar) sind reine Symbole. Sie bekommen denselben Weg (Tooltip +
+    "ausgewaehlt" per IsChecked) - OB an ihnen ueberhaupt ein Tooltip haengt,
+    ist NICHT gemessen. Haengt keiner dran, bleibt es beim bisherigen
+    Verhalten. Der WECHSEL der Kategorie wird schon angesagt: ScanAddonTexts
+    spricht den geaenderten Text id=4 ("Allgemein", Log 15:04:01).
+    Der Ersatzweg ueber die Sheets (unten) wird damit nicht gebraucht.
+    IN-GAME BESTAETIGT (Log 15:18:45 bis 15:19:11, noch mit der Zwischenfassung
+    "Name vorn"): "Gil: 49.457", "Legionstaler: 1.652/10.000", "Wertmarke: 6",
+    "Wolfsmarke: 0/20.000", "Waehrungseinstellungen". Damit sind alle drei
+    Fehler des generischen Lesers belegt behoben - die Waehrung ist benannt,
+    "Woche/Gesamt" ist weg, und die einstellige "6" faellt nicht mehr raus.
+    NOCH NICHT GETESTET ist die REIHENFOLGE: seit dem Build 15:45 steht die Zahl
+    vorn ("49.457 Gil"), wie vom User festgelegt. Gehoert hat er bisher nur die
+    Fassung mit dem Namen vorn.
+
+>>> ALTER STAND DAZU (vor der zweiten Messrunde) - VERMOEGEN: die Sonde fand in KEINER Zeile ein Symbol.
+      Comp id=20     typ=Base -> Text5='49.457'      | Text4='Woche' | Text3='Gesamt'
+      Comp id=200403 typ=Base -> Text5='1.652/10.000'| Text4='Woche' | Text3='Gesamt'
+      Comp id=200404 typ=Base -> Text5='6'           | ...
+      Comp id=200405 typ=Base -> Text5='499'         | ...
+    Damit ist der geplante Weg (Icon-Id -> ResolveIconItem) WIDERLEGT: es gibt
+    keine Icon-KOMPONENTE in der Zeile. Entweder ist das Symbol ein reiner
+    Bildknoten (dann fuehrt der Weg ueber den Texturpfad, wofuer es im Projekt
+    bisher keinen Code gibt), oder der Name kommt aus dem Tooltip. Die Sonde
+    fragt jetzt den Tooltip mit ab - denselben Weg geht das Plugin bei den
+    symbolgetriebenen Konfigurations-Reitern schon.
+    NEBENBEFUND: "Woche" und "Gesamt" stehen in JEDER Zeile - sie gehoeren zur
+    Zeile, sind also keine einmaligen Spaltenueberschriften.
+    FORM VOM USER FESTGELEGT: der Name kommt HINTER die Zahl ("49.457 Gil"),
+    nicht davor.
+    ERSATZWEG, falls der Tooltip nichts liefert: das Spiel fuehrt eigene
+    Verzeichnisse - die Sheets `Currency`, `Tomestones` und `TomestonesItem`
+    sind als Lumina-Typen vorhanden (geprueft in Lumina.Excel.dll). Damit waere
+    der Name aus den Spieldaten zu holen. NICHT gebaut: die Zuordnung Zeile ->
+    Sheet-Eintrag ist ungemessen, und eine geratene Reihenfolge haengt die
+    falsche Waehrung an die richtige Zahl.
+
+>>> ERRUNGENSCHAFTSPUNKTE - GEMESSEN UND GEBAUT (Frage des Users 16.8.: "wie
+    bzw wo sehe ich meine errungenschaftspunkte").
+    DIE MESSUNG IST DA, Log 15:42:08 - beide Symbole tragen einen Tooltip:
+      id=23 / id=8  = "350" -> "Errungenschaftspunkte"
+      id=26 / id=11 = "1"   -> "Errungenschaftszertifikat"
+    Damit ist geklaert, was der Dump offenliess: die groessere Zahl sind die
+    Punkte. Nebenbefund zur ZEIT: die erste Messung derselben Sitzung (15:29:06)
+    fand KEINEN Tooltip - das Fenster war vor dem Hot-Reload aufgebaut, die
+    Attach-Aufrufe liefen also am neuen Hook vorbei. Und eine Zehntelsekunde vor
+    der guten Messung (15:42:08.185) standen die Zahlenfelder noch leer.
+    GEBAUT: `AnnounceAchievementHeader` - sagt beim Oeffnen des Fensters "350
+    Errungenschaftspunkte, 1 Errungenschaftszertifikat". Wartet, bis Zahl UND
+    Tooltip dastehen (bis 8 s), und faellt danach ersatzlos aus, statt eine Zahl
+    ohne ihr Wort zu sprechen. Beide Werte stehen doppelt im Fenster (Listen-
+    und Empfehlungs-Seite), JoinDistinctParts wirft die Wiederholung raus.
+    Gesprochen mit Speak statt SpeakInterrupt, damit Fenstertitel und
+    Listenansage nicht abgeschnitten werden.
+    Die Wortwahl kommt komplett vom Spiel (Tooltip in Client-Sprache), die Mod
+    steuert nur die Reihenfolge bei: `AccessibilityStrings.CurrencyRow` heisst
+    jetzt `AmountWithLabel` und wird von Vermoegen UND Errungenschaften genutzt.
+    Die Sonde `ProbeAchievementHeader` ist damit erledigt und wieder raus;
+    `FindTooltipInSubtree` bleibt (sucht den Tooltip an der Komponente, ihren
+    Kindern und am Bildknoten daneben - nach UNTEN, anders als TryGetTooltipDeep).
+    IN-GAME GELAUFEN (Log 16:52:56.841): "[Achievement] Kopf: 350
+    Errungenschaftspunkte, 1 Errungenschaftszertifikat" ging raus - ABER 15 ms
+    spaeter kam "[Speak] INT 'Legacy, Vergütung'" (erste Fokusmeldung, mit
+    Unterbrechung). Der Spieler hat die Ansage also mit hoher Wahrscheinlichkeit
+    NIE GEHOERT. Zwei Nachbesserungen daraus:
+    - AchievementHeaderDelayS = 1,5 s: die Kopf-Ansage wartet, bis Titel, erste
+      Fokusmeldung und die "Keine Eintraege"-Meldung (1,0 s) durch sind.
+    - `TryReadAchievementHeaderFocus`: das Punkte-Symbol IST mit der Tastatur
+      erreichbar (Log 16:52:58.829, Fokus id=3 in Comp id=24). Seit dem
+      Tooltip-Fix sagte es "Errungenschaftspunkte" - das Wort ohne den Wert.
+      Jetzt kommt "350 Errungenschaftspunkte". Erkannt wird an der
+      Eltern-Komponente (Knoten-Id, sprachunabhaengig), nicht am Tooltip-Wort.
+    REGRESSION AUS GENAU DIESER NACHBESSERUNG, vom User sofort gemeldet ("er
+    liest mir die punkte vor aber jetzt nicht mehr was ich freigeschalten
+    habe") und im Log bestaetigt (16:58:18 bis 16:58:20: jede Zeile meldete
+    "350 Errungenschaftspunkte"): der Fokusknoten der LISTENZEILEN hat die Id
+    25 - dieselbe wie das Bild neben der Punktzahl. Knoten-Ids sind eben nur
+    innerhalb ihres Containers eindeutig, und mein Vergleich lief ueber die Id.
+    GEFIXT: `FindTopLevelNode` sucht auf der FENSTEREBENE
+    (addon->UldManager.NodeList) und liefert einen ZEIGER; `IsFocusInside`
+    vergleicht Zeiger statt Ids. Auch die Oeffnungs-Ansage nutzt jetzt diesen
+    Weg statt addon->GetNodeById - die Funktion ist nativ, ob sie in
+    Komponenten absteigt, ist nicht nachpruefbar.
+    ZU TESTEN: Errungenschaften oeffnen - (1) kommt die Zeile mit Punkten und
+    Zertifikat vollstaendig durch, (2) sagen die Zeilen wieder die
+    Errungenschaften, (3) sagt das Symbol beim Anfahren die Zahl mit?
+
+>>> AUSGANGSBEFUND DAZU - Dump 15:22:58 (Addon `Achievement`) und
+    Log 15:22:40 bis 15:22:58:
+    - Das Fenster zeigt im Kopf ZWEI Zahlen, jede neben einem Symbol und ohne
+      ein Wort dazu: Text id=26 = "1" und Text id=23 = "350". Dieselben zwei
+      Werte noch einmal als id=11 und id=8 - je einmal fuer die Listen- und die
+      Empfehlungs-Seite. WELCHE davon die Punkte sind, sagt der Dump nicht.
+    - Warum der Spieler sie nicht hoert: sie stehen in keiner Liste, sie
+      aendern sich beim Blaettern nicht, und ScanAddonTexts spricht nackte
+      Zahlen grundsaetzlich nicht ("BARE NUMBERS ARE NEVER SPOKEN HERE") -
+      sonst wuerde jeder Zaehler im Sekundentakt dazwischenreden.
+    - Die ZEILEN gehen dagegen schon, inklusive Punktwert am Ende: "Vergütung,
+      10 verschiedene Dungeons oder Prüfungen erfolgreich abgeschlossen., Auf
+      in die Dungeons II, 10" (15:22:44).
+    - KEINE API-QUELLE (ilspycmd auf FFXIVClientStructs, 16.8.): der Struct
+      `Achievement` fuehrt nur die Bitmap der abgeschlossenen Errungenschaften,
+      fuenf Verlaufseintraege und den Fortschritt einer einzelnen - keine
+      Punktsumme. `AgentAchievement` hat kein Punktefeld, ein
+      `AddonAchievement` existiert gar nicht. Der Fensterknoten ist also die
+      einzige Quelle.
+    Die Sonde `[AchProbe]` hat das aufgeklaert (siehe Block darueber). Der
+    Ersatzweg - Punktsumme aus dem Achievement-Sheet ueber die
+    CompletedAchievements-Bitmap - wird damit nicht gebraucht; er waere
+    Nachrechnen statt Ablesen gewesen.
+
+>>> NOCH OFFEN 2 - SUCHERGEBNISSE: "[UiProbe] SocialList: Fokus id=7 typ=8 in
+    Comp id=14 typ=List -> NICHTS LESBAR". Das lag an der SONDE, nicht an der
+    Liste: sie sah nur die direkten Kinder, und in einer Liste ist jede Zeile
+    eine eigene Komponente (ListItemRenderer) mit den Namen eine Ebene tiefer.
+    Ausserdem hat der User in dieser Runde gar keine Suche mit Treffern
+    gestartet (Log: Felder angefahren, dann Fenster zu).
+    NACHGEBESSERT: `CollectProbeParts` sammelt jetzt zwei Ebenen tief (gedeckelt
+    bei 40 Eintraegen gegen Log-Flut) und meldet bei Listen zusaetzlich Laenge
+    und Auswahl.
+
+>>> ZU TESTEN / ZU MESSEN (Debug gebaut, 0 Warnungen, Spiel neu starten):
+    1. Spielersuche, Feld "Welt" anfahren: kommt "Welt, Schalter, an" bzw. "aus"?
+       Und aendert sich die Ansage, wenn man es umschaltet?
+    2. Stufenfelder anfahren: kommt jetzt eine Zahl statt Stille?
+    3. ERLEDIGT - der Tooltip stand im Log, siehe oben.
+    4. Suche mit ECHTEN Treffern starten und durch die Ergebnisse blaettern.
+       Das ist die Messung, die weiterhin komplett fehlt.
+    5. NEU (Vermoegen, Debug gebaut 16.8. nachmittags, 0 Warnungen, Spiel neu
+       starten): ueber die Zeilen blaettern - kommt "49.457 Gil" und
+       "1.652/10.000 Legionstaler" statt "49.457, Woche, Gesamt"?
+    6. Die Zeile, die im Dump auf "6" steht (Wertmarken): kommt sie jetzt
+       ueberhaupt mit einer Zahl? Vorher fiel sie ganz weg.
+    7. Kategorie wechseln und dort blaettern - werden auch die Waehrungen der
+       anderen Reiter benannt (im Dump z.B. die Wolfsmarke)?
+    8. Die Kategorie-Reiter selbst anfahren: sagen sie einen Namen? Wenn nicht,
+       haengt an ihnen kein Tooltip - dann bitte melden, das braucht einen
+       eigenen Weg.
+    9. Nebenwirkung des Tooltip-Fixes gegenpruefen: Konfigurations-Reiter und
+       Reittier-Fenster klingen weiterhin richtig?
+
+## FRUEHERER STAND (2026-08-16, "DREI STUMME FENSTER" - SONDE GEBAUT, MESSUNG STAND AUS)
+
+>>> MELDUNG DES USERS: "mir ist noch was aufgefallen was nicht richtig
+    barrierefrei ist schau in die log und dump datei". Der Dump (11:48:36) war
+    SocialList, das Log lief bis 11:49. Auf Nachfrage: ALLE DREI Fundstellen
+    sollen bearbeitet werden.
+
+>>> BEFUND 1 - VERMOEGEN (Addon `Currency`), Log 11:49:04 bis 11:49:12:
+    Gesprochen wurde "49.457, Woche, Gesamt", "1.652/10.000, Woche, Gesamt",
+    "Woche, Gesamt" (ganz ohne Zahl) und "499, Woche, Gesamt". Es fehlt die
+    WAEHRUNG - der Spieler hoert Zahlen ohne zu wissen, wovon. Ein Sehender
+    erkennt sie am Symbol. "Woche, Gesamt" sind Spaltenueberschriften, die jedes
+    Mal mitlaufen.
+    AddonCurrency EXISTIERT in FFXIVClientStructs, hilft aber kaum: das einzige
+    eigene Feld ist `_tabs` (FixedSizeArray5<AtkComponentRadioButton>), also die
+    fuenf Reiter. Die Zeilen selbst sind nicht benannt.
+    WEG, DER TRAGEN SOLLTE: Icon-Id am Zeilen-Symbol -> InventoryService.
+    ResolveIconItem (Item/EventItem-Rueckwaertssuche, dieselbe Aufloesung wie im
+    Inventar und beim Reittier-Fenster). NICHT gebaut, weil die Icon-Ids dieses
+    Fensters nicht gemessen sind.
+
+>>> BEFUND 2 - SUCHERGEBNISSE DER SOZIALLISTE (`SocialList`), Log 11:45:11 und
+    11:45:12: zweimal "[Focus] STUMM addon='SocialList' id=7", typ=8
+    (Kollisionsknoten) in einer Listen-Komponente (Comp 1013).
+    EINSCHRAENKUNG, DIE STEHENBLEIBEN MUSS: im Dump war die Liste LEER
+    (ListLen=0, "Freunde in dieser Gruppe: 0", Nachbarn '--'). Ob die Zeilen mit
+    echten Treffern Text tragen, ist damit NICHT gemessen. Ohne diese Messung
+    waere jeder Handler geraten.
+
+>>> BEFUND 3 - SPIELERSUCHE (`PcSearchDetail`), Log 11:45:15 bis 11:45:18:
+    - id=5 zweimal STUMM; das Event-Ziel des Knotens verraet den Inhalt ("Kein
+      Set ausgewaehlt.").
+    - id=9 beim ersten Betreten STUMM, liest erst nach Eingabe ("100").
+    - Beim Oeffnen eine Sammelansage aus reinen Beschriftungen: "Sprache. SG.
+      Status. Ort. Max.. Min.. Stufe. Klasse/Job. Name" - Feldnamen ohne Werte.
+    - Das Namensfeld liest die Zeichenzahl mit ("10/15, Gordankane"), beim
+      Loeschen also "9/15, Gordankan", "8/15, Gordanka" ...
+    KEIN AddonPcSearchDetail und KEIN AddonSocialList in FFXIVClientStructs
+    (gepruefte Typnamen in der DLL) - hier gibt es nichts als die Knoten.
+
+>>> GEBAUT: EINE Sonde fuer alle drei, `ProbeFocusContext` in UIReaderService
+    (#if DEBUG, Log-Praefix `[UiProbe]`). Sie haengt im Fokus-Pfad und
+    protokolliert je Fokuswechsel den ELTERN-Container mit allen Kindern: Texte
+    mit Knoten-Id UND Icon-Ids, letztere gleich ueber ResolveIconItem aufgeloest.
+    Der Strg+F5-Dump kann das nicht - er zeigt keine Icon-Ids, und genau daran
+    haengt Befund 1. Eigener Zeigervergleich (_lastProbedNodePtr) statt
+    _lastFocusedNodePtr, weil der erst weiter unten gesetzt wird.
+
+>>> BEFUND 3b - DIE WELTAUSWAHL, vom User nachgereicht ("man kann wohl auch die
+    welten aussuchen wo man sucht aber das konnte ich nicht auslesen"). Das Log
+    trennt hier zwei Dinge, die leicht verwechselt werden:
+    - Der SUCHBEREICH geht bereits: eigenes Addon `PcSearchSelectLocation`
+      ("SUCHBEREICH ANPASSEN"), und dort kommt alles sauber an - La Noscea,
+      Limsa Lominsa, Norvrandt, Eulmore, Crystarium, Garlemald, Thavnair,
+      Radz-at-Han (Log 11:45:23 bis 11:45:30). Das ist der ORT, nicht die Welt.
+    - Das WELTFELD ist halb stumm: 11:45:19 "[Focus] id=5 Text='Welt'" - nur die
+      Beschriftung, NICHT der eingestellte Wert. Beim Aktivieren (11:45:20,
+      ButtonClick param=1200 auf Knoten 27) folgt im Log KEIN neues Addon; der
+      Fokus springt einfach weiter. Beim Suchbereich erscheint an derselben
+      Stelle sekundenschnell "Addon: PcSearchSelectLocation".
+    OFFEN, AUS DEM LOG NICHT ZU ENTSCHEIDEN: ob die Weltliste ein Aufklappfeld
+    INNERHALB von PcSearchDetail ist (Liste als Kindknoten, vom Leser nicht
+    gefunden) oder ob der Klick gar nichts oeffnet. Genau dafuer die Sonde.
+
+>>> WAS DER USER MESSEN MUSS (Spiel neu starten, dann durch die Fenster):
+    1. Vermoegen oeffnen, ueber MEHRERE Waehrungen blaettern.
+    2. Spielersuche oeffnen, jedes Feld einmal anfahren - und das WELTFELD
+       zusaetzlich aktivieren, damit im Log steht, was dabei aufgeht.
+    3. Suche mit ECHTEN Treffern starten und durch die Ergebnisliste blaettern -
+       das ist die Messung, die noch komplett fehlt.
+    Danach reicht das Log; die Dump-Datei wird nicht gebraucht (die Dump-Zeilen
+    stehen ohnehin auch im Log, und das wird nicht ueberschrieben).
+
+>>> NICHTS DAVON IST GEBAUT. Bewusst: ohne die Messung waere jede Ansage geraten,
+    und bei einer Waehrung heisst geraten "falsche Zahl zur falschen Marke".
+
+## FRUEHER (2026-08-16, "TAUSCHFENSTER: PREIS UND BESCHREIBUNG" - GEBAUT, ZU TESTEN)
 
 >>> ANLASS: Der Errungenschafts-NPC. Fenster ist `ShopExchangeCurrency`. Der
     Spieler hoerte dort NUR den Namen ("Schwarzes Chocobo-Kueken", Log 00:30),

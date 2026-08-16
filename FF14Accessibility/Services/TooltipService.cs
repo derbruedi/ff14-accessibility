@@ -149,7 +149,7 @@ public sealed unsafe class TooltipService : IDisposable
                 var ptr = args->TextArgs.Text;
                 if (ptr.HasValue)
                 {
-                    var text = ptr.ToString();
+                    var text = ReadTooltipText(ptr.Value);
                     if (!string.IsNullOrEmpty(text))
                     {
                         _byNode[(nint)targetNode]  = text;
@@ -178,6 +178,30 @@ public sealed unsafe class TooltipService : IDisposable
         }
 
         _attachHook!.Original(self, type, parentId, targetNode, args);
+    }
+
+    /// <summary>
+    /// Reads an attached tooltip string as READABLE text.
+    ///
+    /// WHY NOT the pointer's own ToString(): that returns the raw UTF-8 bytes,
+    /// SeString payload markers included. Plain labels survive it
+    /// ("Währungseinstellungen"), item links do not - the currency window binds
+    /// its rows to item links, and the map stored "H?%I?&amp;GilIH" instead of
+    /// "Gil" (log 2026-08-16 15:04:01 and 15:04:03, the same two rows also
+    /// reachable as "Legionstaler"). Parsing through Dalamud's SeString reader
+    /// yields the bare name - the route
+    /// <see cref="AtkText.ReadClean(FFXIVClientStructs.FFXIV.Client.System.String.Utf8String*)"/>
+    /// already takes for node text.
+    ///
+    /// The pointer is checked before it is walked: it comes from the game's own
+    /// call, but the read runs to the terminating zero, so an unmapped page
+    /// would be walked off the same way <see cref="AtkText"/> guards against.
+    /// </summary>
+    private static string ReadTooltipText(byte* start)
+    {
+        if (!AtkText.IsReadable(start)) return string.Empty;
+        var se = Dalamud.Memory.MemoryHelper.ReadSeStringNullTerminated((nint)start);
+        return TolkService.Sanitize(se.TextValue);
     }
 
     private void OnDetach(AtkTooltipManager* self, AtkResNode* targetNode)

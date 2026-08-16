@@ -34,8 +34,12 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 ### Chat
 
 - **Empfangen**: eingehende Nachrichten werden vorgelesen, je Kanal
-  abschaltbar (Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie
-  Gesellschaft, System).
+  abschaltbar im Einstellungsmenü (Umschalt+F9, Punkt „Chat-Kanäle") —
+  eine flache Liste, eine Zeile je Kanal. Im gewohnten Chatsystem sind das
+  Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
+  System, Sammeln und Beute; im neuen die Kanäle des Spiels selbst. Ein
+  abgeschalteter Kanal wird nur nicht mehr vorgelesen — nachlesen kannst du
+  ihn weiterhin.
 - **Schreiben**: beim Öffnen der Chat-Eingabe wird der aktive Kanal
   angesagt („Chat-Eingabe, Sagen"), ein Kanalwechsel während des Tippens
   ebenso. Jedes getippte Zeichen wird gesprochen, ebenso Gelöschtes —
@@ -56,6 +60,10 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   selbst hat dafür keine). Umschaltbar im Einstellungsmenü (Umschalt+F9);
   **voreingestellt ist das gewohnte System**. Mitgeschrieben wird immer in
   beide Verläufe, ein Wechsel mitten in der Sitzung reißt also keine Lücke.
+  Zusätzlich zu „Chat-Kanäle" gibt es in diesem System den Punkt
+  „Chat-Register": dort geht es feiner — Register, darin die Kanäle, darin
+  die Filterzeilen des Spiels, wo sich etwa ausgeteilter von erlittenem
+  Schaden trennen lässt.
   (Beitrag von [bladestorm360](https://github.com/bladestorm360), PR #5)
 
 ### Navigation und Laufen
@@ -208,6 +216,14 @@ sich darin um: statt sechzehn Weltkategorien gibt es vier Antworten.
   vorgelesen.
 - **Reittiere**, **Läden der Staatlichen Gesellschaft** und die
   **Charakterkonfiguration** sind bedienbar.
+- **Tauschfenster** (Marken, Zertifikate): jede Zeile nennt den Gegenstand,
+  seinen Preis samt Währung, deinen eigenen Bestand und die Beschreibung.
+- **Vermögen**: jede Zeile sagt, um welche Währung es geht — „49.457 Gil",
+  „1.652/10.000 Legionstaler". Vorher standen dort nur nackte Zahlen neben
+  einem Symbol.
+- **Errungenschaften**: beim Öffnen kommen Punktestand und Zertifikate
+  („350 Errungenschaftspunkte, 1 Errungenschaftszertifikat"); dieselbe
+  Auskunft gibt es jederzeit, wenn du das Symbol im Fenster anfährst.
 - **Triple Triad**: Spielbrett und eigene Hand vorlesen.
 - Beim Anmelden bleibt es ruhig: während das Spiel seine Fenster aufbaut,
   schweigen die automatischen Ansagen, damit sie sich nicht gegenseitig

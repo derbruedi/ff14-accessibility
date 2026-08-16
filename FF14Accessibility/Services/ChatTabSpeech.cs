@@ -219,6 +219,30 @@ public static class ChatTabSpeech
         config.ChatTabChannelSpeech.TryGetValue(tabIndex, out var channels)
         && channels.Remove(channelKey);
 
+    /// <summary>
+    /// Forgets the stored ROW switches of one channel in one tab, so
+    /// every row inherits its channel again.
+    ///
+    /// FOR THE FLAT CHANNEL LIST, and without it that list would lie. A row's own
+    /// entry beats its channel (<see cref="RowIsOn"/> looks the row up first), so a
+    /// channel switched off while one of its rows still carries a stored "spoken"
+    /// would go on speaking that row while the switch read "off" - and the same the
+    /// other way round, a channel switched on whose rows are all pinned silent. The
+    /// flat list is one switch for a whole channel, so it has to clear the level
+    /// below rather than write against it.
+    ///
+    /// CALL IT BEFORE <see cref="SetChannel"/>, never after: in categories 1 and 2
+    /// the row id IS the channel key (same number, one shared map), so afterwards
+    /// this would delete the very switch that was just written.
+    /// </summary>
+    /// <param name="rowIds">The channel's rows in this tab, read from the game's
+    /// filter bytes by the caller.</param>
+    public static void ClearRows(Configuration config, int tabIndex, IReadOnlyList<int> rowIds)
+    {
+        if (!config.ChatTabChannelSpeech.TryGetValue(tabIndex, out var stored)) return;
+        foreach (var id in rowIds) stored.Remove(id);
+    }
+
     /// <summary>Forgets a stored value so the tab goes back to its derived default.
     /// Used by nothing yet; here so a future "reset" row cannot be tempted to write
     /// a hardcoded true.</summary>
