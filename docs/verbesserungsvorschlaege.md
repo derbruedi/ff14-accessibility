@@ -1,247 +1,247 @@
-# Accessibility-Audit und Verbesserungsvorschläge
+# Accessibility audit and improvement suggestions
 
-## Einleitung und Würdigung des Ist-Stands
+## Introduction and appreciation of the current state
 
-FF14 Accessibility (Stand V4.61) ist ein außergewöhnlich weit entwickeltes Dalamud-Plugin. Es deckt bereits einen großen Teil des Spieler-Alltags ab: Charaktererstellung (teilweise), Login und Lobby, Bewegung und Zielerfassung über einen Objekt-Browser mit Kategorien, Auto-Lauf per vnavmesh, eine Gehhilfe mit Sound-Beacon, NPC-Dialoge, Quest-Annahme und -Verfolgung samt Zielsätzen, einfachen Solo-Kampf mit HP/MP- und Cast-Ansagen, Inventar und Gil, eine Aktionsleiste, das Bestiarium (Jagdtagebuch) inklusive Lebensraum-Ansage und Monster-Tracking, einen Emote-Browser sowie eine automatische Tastenkonflikt-Prüfung gegen die Spielbelegung.
+FF14 Accessibility (as of V4.61) is an unusually well developed Dalamud plugin. It already covers a large part of everyday play: character creation (partly), login and lobby, movement and target acquisition through an object browser with categories, auto-walk via vnavmesh, a walk guide with a sound beacon, NPC dialogues, quest acceptance and tracking including objective sentences, simple solo combat with HP/MP and cast announcements, inventory and gil, an action bar, the bestiary (hunting log) including habitat announcement and monster tracking, an emote browser, and an automatic key conflict check against the game's own bindings.
 
-Bemerkenswert ist die Qualität der Entwicklung selbst: Nahezu jede Verhaltensentscheidung im Code ist mit Datum, Nutzer-Feedback-Referenz oder Log-Beleg kommentiert. Das zeigt eine iterative, nutzergetriebene Vorgehensweise, die für ein Ein-Personen-Accessibility-Projekt sehr solide ist.
+The quality of the development itself is remarkable: nearly every behavioural decision in the code is commented with a date, a user feedback reference or log evidence. That shows an iterative, user-driven approach that is very solid for a one-person accessibility project.
 
-Gleichzeitig zeigt die Analyse aller 16 Services deutliche Lücken beim Gruppenspiel (Party-HP, Aggro, AoE-Flächen), bei den Wirtschafts-/Sozialfunktionen (Marktbrett, Handel, Retainer, Mail, Duty Finder, Gruppensuche), beim Handwerk sowie einige technische Altlasten (harte Kodierung, Ansage-Spam-Quellen, fehlende Konfigurierbarkeit über eine Einstellungs-Oberfläche). Die folgenden Vorschläge sind nach Themen gruppiert; am Ende steht eine Top-5-Priorisierung.
+At the same time, the analysis of all 16 services shows clear gaps in group play (party HP, aggro, AoE areas), in the economy/social functions (market board, trading, retainers, mail, duty finder, party finder), in crafting, plus some technical legacy issues (hard coding, sources of announcement spam, missing configurability through a settings interface). The suggestions below are grouped by topic; a top-5 prioritisation comes at the end.
 
-Grundsätzliche Realismus-Einschränkung vorab: Ein Dalamud-Plugin hat keinen Zugriff auf die Audio-Engine des Spiels und keine Möglichkeit, den Spielclient grafisch zu verändern. Alles, was vorgeschlagen wird, muss über Lesezugriff auf Spieldaten (ObjectTable, UI-Node-Bäume, Lumina-Sheets, native Spielstrukturen per Reflection) plus eigene TTS-Ausgabe (Tolk) und eigene Sound-Dateien (NAudio, wie das bestehende Beacon-System) umsetzbar sein.
+A fundamental realism constraint up front: a Dalamud plugin has no access to the game's audio engine and no way to change the game client graphically. Everything suggested here has to be implementable through read access to game data (ObjectTable, UI node trees, Lumina sheets, native game structures via reflection) plus our own TTS output (Tolk) and our own sound files (NAudio, like the existing beacon system).
 
-## Kampf und Encounter
+## Combat and encounters
 
-### Party-HP über gepannte Earcons
+### Party HP through panned earcons
 
-Was: Für jedes sichtbare Gruppenmitglied (`IPartyList`) einen kurzen, links/rechts gepannten Ton abspielen, dessen Tonhöhe oder Klangfarbe den HP-Zustand in 20-Prozent-Stufen kodiert, ähnlich dem bestehenden Beacon-Prinzip aus `BeaconService.cs`. Optional zusätzlich eine Taste für die textuelle Ansage "Gruppe: Alice 80 Prozent, Bob 45 Prozent, ...".
-Warum wichtig: Aktuell liest `CombatService.AnnounceStatus()` ausschließlich `LocalPlayer` und das eigene Ziel; Gruppenkämpfe sind für den blinden Spieler faktisch unsichtbar. Ohne Party-Status ist aktive Unterstützung (Heilung, Rettung) kaum möglich.
-Aufwand: mittel (IPartyList ist bereits über Dalamud verfügbar, die Panning-Logik existiert konzeptionell schon im BeaconService).
-Priorität: hoch
+What: for every visible party member (`IPartyList`), play a short tone panned left/right whose pitch or timbre encodes the HP state in 20-percent steps, similar to the existing beacon principle in `BeaconService.cs`. Optionally add a key for the textual announcement "Party: Alice 80 percent, Bob 45 percent, ...".
+Why it matters: currently `CombatService.AnnounceStatus()` reads only `LocalPlayer` and one's own target; group fights are effectively invisible to a blind player. Without party status, active support (healing, rescuing) is barely possible.
+Effort: medium (IPartyList is already available through Dalamud, and the panning logic already exists conceptually in BeaconService).
+Priority: high
 
-### Aggro-/Enmity-Ansage
+### Aggro/enmity announcement
 
-Was: Über die native Enmity-/Hate-Datenstruktur (ClientStructs `EnmityModule`) erkennen, ob der Spieler auf einem Gegner Platz 1 (Tank-Aggro) hat, und bei Wechsel kurz ansagen ("Aggro auf dich" / "Aggro verloren").
-Warum wichtig: Für Tank-Spieler und zur allgemeinen Gefahreneinschätzung im Kampf ist Aggro-Information zentral und aktuell komplett unvorhanden.
-Aufwand: mittel (erfordert Reflection auf eine bislang nicht genutzte native Struktur, ähnlich wie bereits bei RaptureHotbarModule/AgentEmote erfolgreich gemacht).
-Priorität: mittel
+What: through the native enmity/hate data structure (ClientStructs `EnmityModule`), detect whether the player holds position 1 on an enemy (tank aggro), and announce briefly on a change ("aggro on you" / "aggro lost").
+Why it matters: for tank players and for general danger assessment in combat, aggro information is central and currently completely absent.
+Effort: medium (requires reflection on a native structure not yet used, similar to what has already been done successfully for RaptureHotbarModule/AgentEmote).
+Priority: medium
 
-### Cooldown-/GCD-Ansage ("bereit")
+### Cooldown/GCD announcement ("ready")
 
-Was: Über `ActionManager.GetRecastTime`/`IsRecastActive` und `HotbarSlot.IsSlotUsable` erkennen, wann eine Fähigkeit wieder einsatzbereit ist, und dies per kurzem Erkennungston oder auf Abfrage-Taste ansagen.
-Warum wichtig: Dies ist bereits in `STATUS.md` (Zeilen 824-827, 1907) als nächster geplanter Schritt vermerkt, aber technisch noch nicht verifiziert. Ohne Cooldown-Feedback ist eine effiziente Rotation für blinde Spieler kaum möglich.
-Aufwand: mittel bis groß (native Struktur muss erst per ilspycmd verifiziert werden, wie es für andere Features bereits Praxis ist).
-Priorität: hoch
+What: via `ActionManager.GetRecastTime`/`IsRecastActive` and `HotbarSlot.IsSlotUsable`, detect when an ability is usable again and announce that with a short recognition tone or on a query key.
+Why it matters: this is already noted in `STATUS.md` (lines 824-827, 1907) as the next planned step, but is not yet technically verified. Without cooldown feedback an efficient rotation is barely possible for blind players.
+Effort: medium to large (the native structure first has to be verified with ilspycmd, as is already the practice for other features).
+Priority: high
 
-### Laufende Cast-Zeit des Gegners statt Einmal-Ansage
+### The enemy's running cast time instead of a one-off announcement
 
-Was: Die bereits vorhandene `IsCasting`/`CastActionId`-Erkennung in `CombatService.cs` um eine Restzeit-Ansage erweitern (z. B. kurze Zwischentöne, die schneller werden, oder eine Ansage bei 50 Prozent Restzeit), plus explizite Nennung ob der Cast unterbrechbar ist (`IsCastInterruptible` wird laut Analyse aktuell nur geloggt, nicht gesprochen).
-Warum wichtig: Ob ein gefährlicher Cast unterbrechbar ist und wie viel Zeit bleibt, ist eine der wichtigsten Kampfinformationen für Sehende und fehlt blinden Spielern komplett.
-Aufwand: klein bis mittel (Datenquelle ist bereits erschlossen, nur die Sprachausgabe fehlt).
-Priorität: hoch
+What: extend the existing `IsCasting`/`CastActionId` detection in `CombatService.cs` with a remaining-time announcement (e.g. short interstitial tones that speed up, or an announcement at 50 percent remaining), plus explicitly stating whether the cast is interruptible (`IsCastInterruptible` is according to the analysis currently only logged, not spoken).
+Why it matters: whether a dangerous cast is interruptible and how much time is left is one of the most important pieces of combat information for sighted players, and is completely missing for blind players.
+Effort: small to medium (the data source is already opened up, only the speech output is missing).
+Priority: high
 
-### AoE-Flächen-Erkennung (Bodeneffekte)
+### AoE area detection (ground effects)
 
-Was: Über `ObjectTable`-Einträge vom Typ Bodeneffekt/Omen (soweit über Dalamud/ClientStructs auslesbar) die Position und Fläche gefährlicher Bodenmarkierungen ermitteln und als gerichteten Warnton (z. B. "Fläche links, 3 Meter" oder ein kurzer, lauter werdender Ton bei Annäherung) ausgeben.
-Warum wichtig: AoE-Ausweichen ist einer der zentralen Kampf-Skills in FF14 und für blinde Spieler ohne technische Hilfe praktisch unmöglich. Dies ist zugleich die größte technische Herausforderung des gesamten Projekts.
-Aufwand: groß (unklar, ob und wie zuverlässig Bodeneffekt-Daten über Reflection zugänglich sind; erfordert eigene Forschungsphase, evtl. nur für einfache, kreisförmige Flächen machbar).
-Priorität: mittel (hohe Wichtigkeit, aber hohes technisches Risiko - realistisch als mittelfristiges Forschungsprojekt einordnen, nicht als schnellen Gewinn)
+What: through `ObjectTable` entries of the ground-effect/omen type (as far as they are readable through Dalamud/ClientStructs), determine the position and area of dangerous ground markers and output them as a directional warning tone (e.g. "area to the left, 3 metres" or a short tone that grows louder on approach).
+Why it matters: dodging AoEs is one of the central combat skills in FF14 and is practically impossible for blind players without technical help. This is at the same time the largest technical challenge of the whole project.
+Effort: large (it is unclear whether and how reliably ground-effect data is accessible through reflection; it requires a research phase of its own, and may only be feasible for simple, circular areas).
+Priority: medium (high importance, but high technical risk - realistically classify this as a medium-term research project, not a quick win)
 
-### Buff-/Debuff-Ansage kontrolliert einführen
+### Introduce buff/debuff announcements in a controlled way
 
-Was: Die Statuseffekt-Leiste (`_StatusCustom0`) nicht mehr nur als Spam-Quelle behandeln (aktuell laut `STATUS.md` Zeilen 96-98 ungefiltert und mit Sprint-Countdown-Spam), sondern gezielt: wichtige Debuffs (Bewegungsunfähigkeit, Silence, Vulnerability-Stacks) auf Auftreten/Wegfall ansagen, Countdown-Werte dagegen grundsätzlich unterdrücken.
-Warum wichtig: Buffs/Debuffs sind kampfentscheidend, aktuell aber weder gefiltert noch gezielt genutzt - nur als bekanntes Ansage-Spam-Problem dokumentiert.
-Aufwand: mittel (Aufbau einer kuratierten Ignorier-/Ansage-Liste je Status-ID).
-Priorität: mittel
+What: stop treating the status effect bar (`_StatusCustom0`) purely as a spam source (currently unfiltered according to `STATUS.md` lines 96-98, with sprint countdown spam) and instead use it deliberately: announce important debuffs (immobilisation, silence, vulnerability stacks) when they appear/disappear, while suppressing countdown values as a matter of principle.
+Why it matters: buffs/debuffs decide fights, but currently they are neither filtered nor used deliberately - only documented as a known announcement spam problem.
+Effort: medium (building a curated ignore/announce list per status ID).
+Priority: medium
 
-## Bestehendes verbessern: Ansage-Qualität und Spam-Reduktion
+## Improving what exists: announcement quality and spam reduction
 
-### Bekannte Spam-Quellen endlich filtern
+### Finally filter the known spam sources
 
-Was: Die in `STATUS.md` (Zeilen 96-104) seit V4.60/61 dokumentierten, aber unbehobenen Spam-Quellen beheben: `_StatusCustom0` (Sprint-Countdown im Sekundentakt), `_FlyText` ("+Sprint", "700", "(+100%)"), sowie restliches Login-Geplapper ("INVENTAR", "SEITE AN SEITE", "Menü, 0 Einträge").
-Warum wichtig: Diese Störquellen sind bereits identifiziert, aber laut Status-Dokumentation bewusst zurückgestellt. Sie erzeugen unnötige, ablenkende Sprachausgabe gerade in kampfnahen Situationen.
-Aufwand: klein (Ignorierliste analog zu `HudNoiseAddons` in `UIReaderService.cs` erweitern).
-Priorität: hoch
+What: fix the spam sources documented in `STATUS.md` (lines 96-104) since V4.60/61 but left unfixed: `_StatusCustom0` (sprint countdown once a second), `_FlyText` ("+Sprint", "700", "(+100%)"), plus the remaining login chatter ("INVENTORY", "SIDE BY SIDE", "menu, 0 entries").
+Why it matters: these disturbances have already been identified but were deliberately deferred according to the status documentation. They produce unnecessary, distracting speech output precisely in combat-adjacent situations.
+Effort: small (extend the ignore list along the lines of `HudNoiseAddons` in `UIReaderService.cs`).
+Priority: high
 
-### Zentrale Konfigurations-Oberfläche statt reiner Code-Konfiguration
+### A central configuration interface instead of pure code configuration
 
-Was: Eine echte Dalamud-Settings-UI (oder zumindest ein textbasiertes Konfigurationsmenü, das per Tastatur bedienbar ist) für die bereits in `Configuration.cs` vorhandenen Schalter (Chat-Kanäle, Beacon-Lautstärke, Zielwechsel-Ansagen etc.), plus neue Schalter für Ansage-Ausführlichkeit (kurz/normal/ausführlich) je Themenbereich.
-Warum wichtig: Aktuell lassen sich Einstellungen nur durch Bearbeiten der Konfigurationsdatei oder durch Neukompilieren ändern (die Analyse von `UIReaderService.cs` bestätigt: keine Laufzeit-Konfiguration, keine Einstellungs-Oberfläche). Für Endnutzer ohne Entwicklerkenntnisse ist das eine erhebliche Hürde.
-Aufwand: mittel (Dalamud bietet Standard-Mechanismen für Plugin-Konfigurationsfenster, die selbst wieder screenreader-zugänglich gestaltet werden müssen - z. B. rein tastaturnavigierbare ImGui-Elemente).
-Priorität: hoch
+What: a real Dalamud settings UI (or at least a text-based configuration menu operable by keyboard) for the switches already present in `Configuration.cs` (chat channels, beacon volume, target change announcements etc.), plus new switches for announcement verbosity (short/normal/detailed) per topic area.
+Why it matters: currently settings can only be changed by editing the configuration file or by recompiling (the analysis of `UIReaderService.cs` confirms: no runtime configuration, no settings interface). For end users without developer knowledge that is a considerable hurdle.
+Effort: medium (Dalamud offers standard mechanisms for plugin configuration windows, which then have to be made screen-reader accessible themselves - e.g. purely keyboard-navigable ImGui elements).
+Priority: high
 
-### Code-Architektur: Addon-Namen und Node-IDs zentralisieren
+### Code architecture: centralise addon names and node IDs
 
-Was: Die derzeit über den gesamten `UIReaderService.cs` (4092 Zeilen) verteilten String-Literale für Addon-Namen und hartkodierte Node-IDs in eine zentrale Konfigurationsstruktur (Dictionary/Enum) auslegen; wiederkehrende Node-Traversierungs-Muster (`ReadFirstTextInComponent`, `ReadAllTexts`, `ScanAddonTexts` u. a.) zu einer gemeinsamen generischen Hilfsfunktion zusammenführen.
-Warum wichtig: Dies ist keine funktionale Lücke, sondern eine Wartbarkeits-Investition: Bei über 4000 Zeilen in einer einzigen Datei mit vielfach dupliziertem Traversal-Code wird jede künftige Erweiterung (z. B. neue Addons für Markt/Retainer, siehe unten) zunehmend fehleranfälliger und aufwändiger.
-Aufwand: groß (Refactoring ohne Funktionsänderung, hohes Regressionsrisiko bei einer derart zentralen Datei - sollte schrittweise und mit Testabdeckung je Addon erfolgen).
-Priorität: niedrig (technische Schuld, aber kein Nutzer-Schmerzpunkt - erst angehen, wenn neue große Features im gleichen Bereich anstehen)
+What: move the string literals for addon names and hard-coded node IDs currently spread across the whole of `UIReaderService.cs` (4092 lines) into a central configuration structure (dictionary/enum); merge recurring node traversal patterns (`ReadFirstTextInComponent`, `ReadAllTexts`, `ScanAddonTexts` and others) into a shared generic helper function.
+Why it matters: this is not a functional gap but a maintainability investment: with over 4000 lines in a single file and heavily duplicated traversal code, every future extension (e.g. new addons for market/retainer, see below) becomes increasingly error-prone and laborious.
+Effort: large (refactoring without functional change, high regression risk in such a central file - should be done step by step with test coverage per addon).
+Priority: low (technical debt, but not a user pain point - only tackle it when new large features in the same area are due)
 
-### Sprechgeschwindigkeit/-lautstärke aus dem Plugin steuerbar machen
+### Make speech rate/volume controllable from the plugin
 
-Was: `Tolk_SetRate`/vergleichbare Tolk-Funktionen nutzen, um pro Ansage-Kategorie (z. B. Kampf-Ansagen schneller, Quest-Text normal) eine Sprechgeschwindigkeit vorzugeben, statt sich komplett auf die globale Screenreader-Einstellung zu verlassen.
-Warum wichtig: In hektischen Kampfsituationen kann eine schnellere, aber knappere Sprachausgabe helfen; aktuell hat das Plugin darauf laut Analyse von `TolkService.cs` keinerlei Einfluss.
-Aufwand: klein bis mittel (abhängig davon, ob die genutzte Tolk-Version diese Steuerung nativ unterstützt).
-Priorität: niedrig
+What: use `Tolk_SetRate`/comparable Tolk functions to set a speech rate per announcement category (e.g. combat announcements faster, quest text normal), instead of relying entirely on the global screen reader setting.
+Why it matters: in hectic combat situations faster but terser speech output can help; currently, according to the analysis of `TolkService.cs`, the plugin has no influence on this at all.
+Effort: small to medium (depending on whether the Tolk version in use supports this control natively).
+Priority: low
 
-### Mehrsprachigkeit konsequent zu Ende führen
+### Follow multilingualism through consistently
 
-Was: Die in `UIReaderService.cs` an mehreren Stellen (z. B. `ConfirmButtonLabels`, Belohnungs-Label "Erfahrung"/"Gil") hart auf Deutsch kodierten Texte in die bereits vorhandene, aber nur teilweise genutzte `AccessibilityStrings`-Klasse überführen, die schon DE/EN unterscheidet.
-Warum wichtig: Aktuell ist die deutsche Sprachausgabe an mehreren Stellen fest verdrahtet, obwohl das Projekt an anderer Stelle bereits eine zweisprachige Infrastruktur hat - das Plugin würde bei einem englischen Spielclient an diesen Stellen falsch oder gar nicht erkennen.
-Aufwand: mittel
-Priorität: niedrig
+What: move the texts hard-coded to German in several places in `UIReaderService.cs` (e.g. `ConfirmButtonLabels`, the reward labels "Erfahrung"/"Gil") into the existing but only partly used `AccessibilityStrings` class, which already distinguishes DE/EN.
+Why it matters: German speech output is currently hard-wired in several places even though the project already has bilingual infrastructure elsewhere - with an English game client the plugin would recognise things wrongly or not at all in those places.
+Effort: medium
+Priority: low
 
-## Navigation und Bewegung
+## Navigation and movement
 
-### Vorne/Hinten-Unterscheidung im Sound-Beacon verbessern
+### Improve front/back discrimination in the sound beacon
 
-Was: Das bestehende Beacon-System (`BeaconService.cs`) kodiert Winkelabweichung aktuell nur über Tonhöhe (880 Hz vorne bis 220 Hz hinten) und Seite über Stereo-Pan; bei 0° und 180° liefert das Pan-Signal aber denselben (zentrierten) Wert, wodurch "leicht vorne links" und "leicht hinten links" schwerer unterscheidbar sind. Eine zusätzliche, dritte Klangeigenschaft (z. B. Klangfarbe/Timbre-Wechsel oder ein kurzer Echo-Effekt für "hinten") würde die Front/Rück-Unterscheidung eindeutiger machen - ähnlich dem Objekt-Signatur-Prinzip aus reinen Audiospielen wie Shades of Doom.
-Warum wichtig: Präzise Richtungswahrnehmung ist die Grundlage der gesamten manuellen Navigation (Gehhilfe); eine Mehrdeutigkeit hier wirkt sich auf jede Nutzung aus.
-Aufwand: klein bis mittel (Erweiterung der bestehenden `BeaconSampleProvider`-Klasse).
-Priorität: mittel
+What: the existing beacon system (`BeaconService.cs`) currently encodes angular deviation only through pitch (880 Hz ahead down to 220 Hz behind) and the side through stereo pan; at 0° and 180° the pan signal delivers the same (centred) value, which makes "slightly ahead-left" and "slightly behind-left" harder to tell apart. An additional, third sound property (e.g. a timbre change or a short echo effect for "behind") would make the front/back distinction unambiguous - similar to the object signature principle from pure audio games such as Shades of Doom.
+Why it matters: precise directional perception is the foundation of all manual navigation (the walk guide); an ambiguity here affects every single use.
+Effort: small to medium (an extension of the existing `BeaconSampleProvider` class).
+Priority: medium
 
-### Objekt-Signatur-Sounds für Landmarken
+### Object signature sounds for landmarks
 
-Was: Für unterschiedliche Objektkategorien (NPC, Sammelpunkt, Quest-Ziel, Ätheryt, Schatzkiste) jeweils einen kurzen, charakteristischen Erkennungston definieren, der beim Durchblättern im Objekt-Browser (`NavigationService.CycleObject`) zusätzlich zur Sprachansage abgespielt wird.
-Warum wichtig: Erleichtert schnelles Wiedererkennen von Objekttypen ohne den vollen Text abwarten zu müssen - ein Konzept, das in vergleichbaren Audio-Spielen (Shades of Doom) erfolgreich eingesetzt wird und sich hier eins zu eins auf die vorhandene Kategorien-Struktur übertragen lässt.
-Aufwand: klein (kurze Sounddateien plus ein Mapping Kategorie→Sound im bestehenden Cue-/Beacon-System).
-Priorität: niedrig
+What: define a short, characteristic recognition tone for each object category (NPC, gathering node, quest target, aetheryte, treasure chest), played in addition to the speech announcement while cycling through the object browser (`NavigationService.CycleObject`).
+Why it matters: makes it easier to recognise object types quickly without waiting for the full text - a concept used successfully in comparable audio games (Shades of Doom) and transferable one-to-one to the existing category structure here.
+Effort: small (short sound files plus a category→sound mapping in the existing cue/beacon system).
+Priority: low
 
-### Bekannte Auto-Lauf-Probleme systematisch nachverfolgen
+### Track known auto-walk problems systematically
 
-Was: Die in `AutoWalkService.cs` als "DIAGNOSTIC (temporary)" markierten Log-Mechanismen (Wegpunkt-Logging für Zonenübergangs-Verkeilungen) in ein dauerhaftes, aber unauffälliges Diagnose-Log überführen, und den bekannten "Bridge-Trap"-Bug (Navmesh castet bei Brücken/Stegen fälschlich auf einen viel tieferen Boden) sowie den in `STATUS.md` erwähnten vnavmesh-eigenen Netz-Bug beim Zonenübergang "Tiefer Wald" dokumentiert an die vnavmesh-Entwickler zurückmelden, da diese Probleme außerhalb der Kontrolle dieses Plugins liegen.
-Warum wichtig: Auto-Lauf ist eine Kernfunktion; ungelöste, nur notdürftig umgangene Navmesh-Probleme führen zu Vertrauensverlust bei blinden Nutzern, die sich beim Laufen ganz auf das System verlassen müssen.
-Aufwand: klein (Rückmeldung an Drittprojekt) bis mittel (eigene weitere Umgehungslogik).
-Priorität: mittel
+What: convert the log mechanisms marked "DIAGNOSTIC (temporary)" in `AutoWalkService.cs` (waypoint logging for zone transition snags) into a permanent but unobtrusive diagnostic log, and report the known "bridge trap" bug (on bridges/walkways the navmesh wrongly casts onto a much lower floor) as well as the vnavmesh-internal mesh bug at the "Deep Forest" zone transition mentioned in `STATUS.md` back to the vnavmesh developers in documented form, since these problems lie outside this plugin's control.
+Why it matters: auto-walk is a core function; unsolved navmesh problems that are only patched over lead to a loss of trust among blind users who have to rely entirely on the system while walking.
+Effort: small (feedback to a third-party project) to medium (further workaround logic of our own).
+Priority: medium
 
-### Vertikale Navigation und Etagenwechsel klarer kommunizieren
+### Communicate vertical navigation and floor changes more clearly
 
-Was: Wenn "kein Weg gefunden" auf eine getrennte Mesh-Insel (z. B. Stadt-Ebenen, nur per Aufzug/Aethernet erreichbar) zurückzuführen ist, dies expliziter von einem echten Pfadfindungs-Fehler unterscheiden und - wo möglich - automatisch erkennen, ob ein Aufzug/eine Treppe in der Nähe ist, statt nur auf Aethernet zu verweisen.
-Warum wichtig: Das bestehende System erkennt dieses Problem laut Code-Kommentar bereits konzeptionell ("walking can NEVER cross that gap") und bietet mit dem Aethernet-Tipp schon eine gute Grundlösung; eine noch genauere Unterscheidung (Aufzug vs. reine Distanz) würde Fehlinterpretationen weiter reduzieren.
-Aufwand: mittel
-Priorität: niedrig
+What: when "no path found" is due to a separate mesh island (e.g. city levels reachable only by lift/aethernet), distinguish that more explicitly from a genuine pathfinding failure and - where possible - detect automatically whether a lift/staircase is nearby, instead of only pointing to the aethernet.
+Why it matters: the existing system already recognises this problem conceptually according to a code comment ("walking can NEVER cross that gap") and already offers a good basic solution with the aethernet hint; an even more precise distinction (lift vs. pure distance) would further reduce misinterpretations.
+Effort: medium
+Priority: low
 
-### Party-Sammelpunkt / "Wo ist meine Gruppe?"
+### Party rally point / "where is my group?"
 
-Was: Über `IPartyList`-Positionsdaten eine Richtungs-/Distanzansage zum nächsten oder zu allen Gruppenmitgliedern anbieten (analog zur bestehenden Objekt-Browser-Logik), besonders nützlich beim Dungeon-Betreten oder nach einem Tod/Rückzug.
-Warum wichtig: In Gruppeninhalten (Dungeons, Trials) ist es für blinde Spieler entscheidend, den Anschluss an die Gruppe zu halten; aktuell existiert dafür kein Werkzeug.
-Aufwand: klein bis mittel (Positionsdaten sind über Dalamud verfügbar, Richtungsberechnung existiert bereits in `NavigationService.cs`).
-Priorität: mittel
+What: offer a direction/distance announcement to the nearest or to all party members using `IPartyList` position data (analogous to the existing object browser logic), particularly useful when entering a dungeon or after a death/retreat.
+Why it matters: in group content (dungeons, trials) staying with the group is crucial for blind players; currently there is no tool for it.
+Effort: small to medium (position data is available through Dalamud, and the direction calculation already exists in `NavigationService.cs`).
+Priority: medium
 
-## UI-Bereiche: Inventar, Markt, Retainer, Gruppensuche
+## UI areas: inventory, market, retainer, party finder
 
-### Marktbrett (Auktionshaus) barrierefrei machen
+### Make the market board (auction house) accessible
 
-Was: Das Marktbrett-Fenster (Suche, Preisliste, Kaufen/Verkaufen) über den bestehenden universellen Addon-Reader oder einen dedizierten Handler zugänglich machen; dies ist in `STATUS.md` bereits als geplanter, aber noch nicht begonnener Punkt vermerkt.
-Warum wichtig: Ohne Marktbrett-Zugang ist ein wesentlicher Teil der In-Game-Wirtschaft (Ausrüstung kaufen, Materialien verkaufen) für blinde Spieler nicht nutzbar - dies wurde in keiner der 16 Service-Dateien und nirgends im Statusdokument als umgesetzt gefunden.
-Aufwand: groß (komplexes, listenbasiertes Fenster mit Sortier-/Filterfunktionen, ähnlich aufwändig wie das bereits gelöste Bestiarium, vermutlich aufwändiger wegen Preis-/Mengenfeldern).
-Priorität: hoch
+What: make the market board window (search, price list, buying/selling) accessible through the existing universal addon reader or a dedicated handler; this is already noted in `STATUS.md` as a planned but not yet started item.
+Why it matters: without market board access a substantial part of the in-game economy (buying gear, selling materials) is unusable for blind players - this was found as implemented in none of the 16 service files and nowhere in the status document.
+Effort: large (a complex, list-based window with sort/filter functions, roughly as laborious as the already solved bestiary, probably more so because of the price/quantity fields).
+Priority: high
 
-### Retainer (Gehilfe) bedienbar machen
+### Make retainers usable
 
-Was: Retainer-Fenster (Beauftragen, Verkaufsliste einsehen/bearbeiten, Lagerung) über eigene oder universelle Addon-Handler zugänglich machen.
-Warum wichtig: Aktuell existiert laut Analyse nur ein reines Objekt-Label ("Gehilfe") in der Zielkategorie-Ansage - keinerlei Fensterlogik. Retainer sind für viele Spieler zentral für Wirtschaft und Inventarverwaltung.
-Aufwand: mittel bis groß
-Priorität: mittel
+What: make the retainer windows (assigning ventures, viewing/editing the sale list, storage) accessible through dedicated or universal addon handlers.
+Why it matters: according to the analysis there is currently only a bare object label ("retainer") in the target category announcement - no window logic at all. Retainers are central to the economy and inventory management for many players.
+Effort: medium to large
+Priority: medium
 
-### Gearset-/Ausrüstungs-Ansage
+### Gear set/equipment announcement
 
-Was: Aktuelle Ausrüstung (angelegte Items pro Slot) über `IGameInventory`/`InventoryType.EquippedItems` auslesbar machen und auf Tastendruck ansagen; perspektivisch auch Gearset-Wechsel screenreader-lesbar gestalten.
-Warum wichtig: `InventoryService.cs` deckt laut Analyse Taschen, Schlüsselgegenstände und Gil ab, aber keine Ausrüstung - ein Spieler kann aktuell nicht erfahren, was er trägt, ohne das Sehende-UI zu nutzen.
-Aufwand: klein bis mittel (die Inventar-API-Struktur ist bereits im Projekt etabliert, `EquippedItems` ist ein regulärer `GameInventoryType`).
-Priorität: hoch
+What: make the current equipment (equipped items per slot) readable through `IGameInventory`/`InventoryType.EquippedItems` and announce it on a key press; in due course also make gear set switching screen-reader readable.
+Why it matters: according to the analysis `InventoryService.cs` covers bags, key items and gil, but not equipment - a player currently cannot find out what they are wearing without using the sighted UI.
+Effort: small to medium (the inventory API structure is already established in the project, and `EquippedItems` is a regular `GameInventoryType`).
+Priority: high
 
-### Handel (Trade-Fenster) zwischen Spielern
+### Trading between players (trade window)
 
-Was: Das Trade-Fenster (Gegenstände/Gil anbieten, Bestätigung) analog zum bereits gelösten NPC-Ablieferungsfenster (`Request`) zugänglich machen.
-Warum wichtig: Handel zwischen Spielern ist eine grundlegende soziale/wirtschaftliche Interaktion, die aktuell nicht unterstützt wird, obwohl die technische Lösung für ein sehr ähnliches Fenster (NPC-Request) bereits existiert und wiederverwendet werden kann.
-Aufwand: klein bis mittel (hohe Ähnlichkeit zum bereits gelösten Request-Fenster ist ein klarer Vorteil).
-Priorität: mittel
+What: make the trade window (offering items/gil, confirmation) accessible in the same way as the already solved NPC delivery window (`Request`).
+Why it matters: trading between players is a fundamental social/economic interaction that is currently unsupported, even though the technical solution for a very similar window (NPC request) already exists and can be reused.
+Effort: small to medium (the high similarity to the already solved request window is a clear advantage).
+Priority: medium
 
-### Duty Finder und Gruppensuche (Party Finder)
+### Duty Finder and Party Finder
 
-Was: Dungeon-/Trial-Auswahl im Duty Finder sowie Party-Finder-Listen (Beschreibung, Anforderungen, Beitreten) über den universellen oder einen dedizierten Handler lesbar machen.
-Warum wichtig: Ohne Duty-Finder-Zugang können blinde Spieler nicht selbstständig in Gruppeninhalte (Dungeons, Trials, Raids) gelangen - eine der größten Zugangsbarrieren für "vollständig eigenständiges Spielen".
-Aufwand: mittel (überwiegend listenbasierte Fenster, ähnliche Struktur wie bereits gelöste Listen-Addons).
-Priorität: hoch
+What: make the dungeon/trial selection in the Duty Finder as well as the Party Finder lists (description, requirements, joining) readable through the universal or a dedicated handler.
+Why it matters: without Duty Finder access blind players cannot get into group content (dungeons, trials, raids) on their own - one of the biggest access barriers to "playing completely independently".
+Effort: medium (predominantly list-based windows, a similar structure to the list addons already solved).
+Priority: high
 
-### Mail (Postfach)
+### Mail (letter box)
 
-Was: Postfach-Fenster (Absenderliste, Betreff, Anhänge, Annehmen) zugänglich machen.
-Warum wichtig: Wird aktuell nirgends im Projekt erwähnt oder unterstützt; für Handel per Retainer-Verkauf und generelle Kommunikation notwendig.
-Aufwand: klein bis mittel (einfaches Listenfenster)
-Priorität: niedrig
+What: make the letter box window (sender list, subject, attachments, accepting) accessible.
+Why it matters: currently not mentioned or supported anywhere in the project; necessary for trading via retainer sales and for general communication.
+Effort: small to medium (a simple list window)
+Priority: low
 
-### Handwerk/Crafting-Grundunterstützung
+### Basic crafting support
 
-Was: Zumindest eine einfache Ansage des Synthese-Fortschritts (Fortschritt/Qualität/Haltbarkeit-Werte) während des Craftings sowie Vorlesen des Rezeptbuchs.
-Warum wichtig: Handwerk wird im gesamten Projekt bislang an keiner Stelle erwähnt oder unterstützt; es ist ein umfangreicher eigenständiger Spielbereich, dessen komplette Erschließung (Rotation, Qualitäts-Feedback in Echtzeit) sehr aufwändig wäre, aber selbst eine einfache Fortschrittsansage wäre ein erster Zugang.
-Aufwand: groß (vollständige Unterstützung), klein bis mittel (nur Basis-Statusansage)
-Priorität: niedrig (im Vergleich zu Kampf/Markt/Duty-Finder-Lücken; als Langfrist-Ziel einordnen)
+What: at minimum a simple announcement of the synthesis progress (progress/quality/durability values) during crafting, plus reading out the recipe book.
+Why it matters: crafting is so far not mentioned or supported anywhere in the whole project; it is an extensive game area of its own whose complete coverage (rotation, real-time quality feedback) would be very laborious, but even a simple progress announcement would be a first way in.
+Effort: large (full support), small to medium (basic status announcement only)
+Priority: low (compared with the combat/market/duty finder gaps; classify as a long-term goal)
 
-## Onboarding und Ersteinstieg für neue blinde Spieler
+## Onboarding and getting started for new blind players
 
-### Interaktives Ersteinrichtungs-Tutorial
+### Interactive first-time setup tutorial
 
-Was: Ein geführter Ersteinstieg (z. B. über `/acc tutorial` oder automatisch beim allerersten Start) der Schritt für Schritt durch die wichtigsten Tasten (Objekt-Browser, Auto-Lauf, Hilfe-Taste, Kampfstatus) führt, mit kurzen Übungsaufgaben statt nur einer statischen Hilfe-Ansage.
-Warum wichtig: Die aktuelle Hilfe (`Strg+F1`) liest eine lange, undifferenzierte Liste aller Tasten auf einmal vor - für komplette Neueinsteiger ohne Sehvermögen ist das eine hohe kognitive Hürde. Vergleichbare Projekte wie Hearthstone Access setzen bewusst auf ein eigenes, geführtes Tutorial für Screenreader-Nutzer.
-Aufwand: mittel (Konzept und Texte, keine neue technische Infrastruktur nötig, nutzt bestehende TTS-Ausgabe).
-Priorität: hoch
+What: a guided introduction (e.g. through `/acc tutorial` or automatically on the very first start) that walks step by step through the most important keys (object browser, auto-walk, help key, combat status), with short practice tasks instead of only a static help announcement.
+Why it matters: the current help (`Ctrl+F1`) reads out a long, undifferentiated list of all keys at once - for complete newcomers without sight that is a high cognitive hurdle. Comparable projects such as Hearthstone Access deliberately rely on a dedicated, guided tutorial for screen reader users.
+Effort: medium (concept and texts, no new technical infrastructure needed, uses the existing TTS output).
+Priority: high
 
-### Kontextsensitive "Wo bin ich"-Ansage konsolidieren und ausbauen
+### Consolidate and expand the context-sensitive "where am I" announcement
 
-Was: Die bestehende `AnnounceActiveWindow`/`Strg+F2`-Funktion als zentrale Orientierungshilfe stärker bewerben und um eine kurze "was kann ich hier tun"-Zusatzinfo erweitern (z. B. bei einem neuen Fenstertyp automatisch die wichtigsten Bedienhinweise mitsprechen, ähnlich einer Kontexthilfe).
-Warum wichtig: Gerade neue Nutzer wissen oft nicht, in welchem Menü/Fenster sie sich befinden oder welche Tasten dort gelten - eine konsolidierte, verständliche Ansage reduziert Verwirrung erheblich.
-Aufwand: klein bis mittel
-Priorität: mittel
+What: promote the existing `AnnounceActiveWindow`/`Ctrl+F2` function more strongly as the central orientation aid and extend it with a short "what can I do here" note (e.g. automatically speak the most important operating hints for a new window type, like a context help).
+Why it matters: new users in particular often do not know which menu/window they are in or which keys apply there - a consolidated, comprehensible announcement reduces confusion considerably.
+Effort: small to medium
+Priority: medium
 
-### Übungsmodus / reduzierte Komplexität für Kampf-Neulinge
+### Practice mode / reduced complexity for combat newcomers
 
-Was: Eine Art "Trainingshinweis" beim ersten Betreten des Kampfmodus, der die wichtigsten Kampf-Tasten (HP-Ansage, Hotbar, Zielwechsel) kurz erläutert, angelehnt an das Prinzip aus reinen Audio-Spielen (Shades of Doom, Hearthstone Access), Nutzer zuerst behutsam an das Sound-/Sprach-Vokabular heranzuführen.
-Warum wichtig: Kampfsysteme sind für blinde Neueinsteiger die komplexeste Hürde; ein sanfter Einstieg erhöht die Wahrscheinlichkeit, dass neue Spieler nicht frühzeitig aufgeben.
-Aufwand: klein (rein textuell/konzeptionell, keine neue Technik).
-Priorität: mittel
+What: a kind of "training hint" on first entering combat mode that briefly explains the most important combat keys (HP announcement, hotbar, target switching), following the principle from pure audio games (Shades of Doom, Hearthstone Access) of easing users gently into the sound/speech vocabulary first.
+Why it matters: combat systems are the most complex hurdle for blind newcomers; a gentle start increases the likelihood that new players do not give up early.
+Effort: small (purely textual/conceptual, no new technology).
+Priority: medium
 
-### Zentrales Hilfe-System nach Themen statt einer langen Liste
+### A central help system organised by topic instead of one long list
 
-Was: Die Hilfe-Ansage (`AnnounceHelp` in `Plugin.cs`) in thematische Unterabschnitte gliedern (z. B. "Strg+F1 für Navigation, Strg+F2 für Kampf, Strg+F3 für Menüs"), durch die man mit einer Taste blättern kann, statt eines einzigen langen Fließtexts.
-Warum wichtig: Die aktuelle Hilfe ist bereits umfangreich (Navigation, Kampf, Inventar, Emotes gemischt) und wird mit jedem neuen Feature länger - eine flache Liste wird zunehmend unübersichtlich vorzulesen.
-Aufwand: klein
-Priorität: mittel
+What: split the help announcement (`AnnounceHelp` in `Plugin.cs`) into thematic subsections (e.g. "Ctrl+F1 for navigation, Ctrl+F2 for combat, Ctrl+F3 for menus") that can be paged through with a key, instead of a single long block of prose.
+Why it matters: the current help is already extensive (navigation, combat, inventory and emotes mixed together) and grows longer with every new feature - a flat list becomes increasingly unwieldy to read out.
+Effort: small
+Priority: medium
 
-## Endgame: Raids, Extreme/Savage - realistische Einschätzung
+## Endgame: raids, Extreme/Savage - a realistic assessment
 
-Eine vollständige, eigenständige Bewältigung von Extreme- oder Savage-Raid-Mechaniken (komplexe, zeitkritische AoE-Muster, Stack-/Spread-Mechaniken, Rollen-spezifische Sonderaufgaben) ist mit den aktuell realistisch verfügbaren Dalamud-Mitteln nur sehr eingeschränkt erreichbar. Die technische Grundvoraussetzung dafür - zuverlässige, latenzarme Erkennung von Bodeneffekten/Telegraphen - ist selbst bei bestehenden Sehenden-Add-ons (Cactbot, ACT-Overlays) ein aufwändiges Feature, das auf externe Encounter-Datenbanken und ständige Pflege pro Kampf angewiesen ist.
+Completing Extreme or Savage raid mechanics fully and independently (complex, time-critical AoE patterns, stack/spread mechanics, role-specific special tasks) is only achievable to a very limited degree with the Dalamud means realistically available today. The basic technical prerequisite for it - reliable, low-latency detection of ground effects/telegraphs - is a laborious feature even in existing sighted add-ons (Cactbot, ACT overlays), one that depends on external encounter databases and constant maintenance per fight.
 
-Realistisch umsetzbar und sinnvoll ist dagegen:
-- Party-HP und eigene HP/Cast-Informationen (siehe oben) als Grundlage für "Support"-Rollen (Heiler) auch in schwierigeren Inhalten.
-- Eine allgemeine, nicht encounter-spezifische AoE-Erkennung für einfache, klar erkennbare Bodenmarkierungen (siehe Vorschlag oben), die auch in Extreme/Savage zumindest teilweise hilft.
-- Die Zusammenarbeit mit einer sehenden Person in der Gruppe (Ansage per Discord/Sprachchat) bleibt für hochkomplexe Encounter-Mechaniken auf absehbare Zeit der praktikabelste Weg - das Plugin sollte diesen nicht ersetzen wollen, sondern wo möglich ergänzen (z. B. durch das oben erwähnte Cast-Interrupt-Feature).
+Realistically implementable and worthwhile, on the other hand:
+- Party HP and one's own HP/cast information (see above) as a foundation for "support" roles (healers) even in harder content.
+- A general, non-encounter-specific AoE detection for simple, clearly recognisable ground markers (see the suggestion above), which helps at least partly in Extreme/Savage too.
+- Working together with a sighted person in the group (callouts over Discord/voice chat) remains the most practical route for highly complex encounter mechanics for the foreseeable future - the plugin should not try to replace that, but complement it where possible (e.g. through the cast interrupt feature mentioned above).
 
-Diese Einschätzung sollte transparent kommuniziert werden, damit Erwartungen realistisch bleiben: "Perfekt spielbar" ist im Solo- und Gruppen-Content bis einschließlich normaler Schwierigkeit ein erreichbares Ziel; bei Extreme/Savage ist eher von "mit Unterstützung spielbar" auszugehen.
+This assessment should be communicated transparently so that expectations stay realistic: "perfectly playable" is an achievable goal for solo and group content up to and including normal difficulty; for Extreme/Savage, "playable with support" is the more likely outcome.
 
-## Sound-Design: Weiterentwicklung des bestehenden Beacon-Konzepts
+## Sound design: developing the existing beacon concept further
 
-Das bestehende Beacon-System ist bereits ein funktionales Richtungs-/Distanz-Feedback (Tonhöhe für Winkel, Stereo-Pan für Seite, Lautstärke für Distanz), aber kein echtes Sonar mit Umgebungsabtastung. Vergleichbare Projekte zeigen folgende übertragbare Konzepte:
+The existing beacon system is already functional direction/distance feedback (pitch for angle, stereo pan for side, volume for distance), but it is not a true sonar with environmental scanning. Comparable projects show the following transferable concepts:
 
-### Mehrere gleichzeitige Signaturtöne (Objekt-Radar statt Einzelziel)
+### Several simultaneous signature tones (object radar instead of a single target)
 
-Was: Statt nur des einen aktiven Navigationsziels könnten mehrere nahe, relevante Objekte (z. B. die 2-3 nächsten Gegner oder Sammelpunkte) gleichzeitig als leise, unterscheidbare Earcons im Hintergrund hörbar gemacht werden, ähnlich einem Sonar-Sweep.
-Warum wichtig: Aktuell muss der Objekt-Browser aktiv durchgeblättert werden, um zu erfahren, was in der Nähe ist; ein passives Hintergrund-Signal würde räumliches Bewusstsein ohne aktive Abfrage ermöglichen - ein Kernkonzept aus reinen Audio-Spielen wie Shades of Doom.
-Aufwand: groß (mehrere gleichzeitige Audioquellen ohne gegenseitige Verwirrung zu gestalten ist eine größere Sounddesign-Herausforderung, technisch aber mit dem vorhandenen NAudio-Unterbau machbar).
-Priorität: niedrig (spannendes Zukunftsfeature, aber kein akuter Schmerzpunkt gegenüber den oben genannten Lücken).
+What: instead of only the one active navigation target, several nearby relevant objects (e.g. the 2-3 nearest enemies or gathering nodes) could be made audible simultaneously as quiet, distinguishable earcons in the background, similar to a sonar sweep.
+Why it matters: currently the object browser has to be cycled through actively to find out what is nearby; a passive background signal would enable spatial awareness without an active query - a core concept from pure audio games such as Shades of Doom.
+Effort: large (designing several simultaneous audio sources without them confusing each other is a substantial sound design challenge, though technically feasible with the existing NAudio substructure).
+Priority: low (an exciting future feature, but not an acute pain point compared with the gaps named above).
 
-### Wärmer/Kälter-Prinzip für Wegpunkt-Navigation
+### A warmer/colder principle for waypoint navigation
 
-Was: Analog zum ESO-Accessibility-Addon FCOAccessibility bei der Gehhilfe einen kontinuierlichen "wärmer/kälter"-Effekt (z. B. Tonhöhe steigt, je näher man dem direkten Pfad zum Ziel kommt, unabhängig vom reinen Zielwinkel) ergänzen.
-Warum wichtig: Kann helfen, wenn der Spieler leicht vom optimalen Pfad abweicht, ohne dass er die exakte Gradzahl abschätzen muss - eine niedrigschwelligere Ergänzung zur bestehenden Winkel-/Distanz-Logik.
-Aufwand: klein bis mittel (Erweiterung des bestehenden Beacon-Systems)
-Priorität: niedrig
+What: following the ESO accessibility addon FCOAccessibility, add a continuous "warmer/colder" effect to the walk guide (e.g. the pitch rises the closer one gets to the direct path to the target, independently of the pure target angle).
+Why it matters: can help when the player deviates slightly from the optimal path, without them having to estimate the exact number of degrees - a lower-threshold complement to the existing angle/distance logic.
+Effort: small to medium (an extension of the existing beacon system)
+Priority: low
 
-## Top-5-Empfehlung: Was zuerst angehen
+## Top 5 recommendation: what to tackle first
 
-1. Bekannte Ansage-Spam-Quellen filtern (`_StatusCustom0`-Sprint-Countdown, `_FlyText`, Login-Geplapper) - kleiner Aufwand, sofortige spürbare Verbesserung der täglichen Nutzungsqualität, seit Version 4.60/61 bereits identifiziert und nur noch nicht umgesetzt.
-2. Party-HP-Ansage für Gruppeninhalte (gepannte Earcons plus Sammel-Taste) - schließt die größte funktionale Lücke für alles jenseits von Solo-Content und ist mit vorhandener Infrastruktur (IPartyList, BeaconService-Muster) machbar.
-3. Gearset-/Ausrüstungs-Ansage im Inventar - kleiner bis mittlerer Aufwand, schließt eine überraschend grundlegende Lücke (der Spieler weiß aktuell nicht, was er anhat).
-4. Cast-Interrupt-Information und laufende Cast-Zeit-Ansage des Gegners ergänzen - Datenquelle ist bereits erschlossen (`IsCastInterruptible` wird schon geloggt), es fehlt nur die Sprachausgabe; hoher Wirkungsgrad für Kampfsicherheit bei geringem technischem Risiko.
-5. Duty Finder und Marktbrett grundlegend zugänglich machen - größere Aufwände, aber sie schließen die beiden Lücken, die dem Ziel "komplett ohne Sehen spielen" am stärksten entgegenstehen (kein eigenständiger Zugang zu Gruppeninhalten, keine eigenständige Marktteilnahme).
+1. Filter the known announcement spam sources (`_StatusCustom0` sprint countdown, `_FlyText`, login chatter) - small effort, an immediately noticeable improvement in everyday usage quality, already identified since version 4.60/61 and simply not yet implemented.
+2. Party HP announcement for group content (panned earcons plus a summary key) - closes the largest functional gap for everything beyond solo content and is feasible with the existing infrastructure (IPartyList, the BeaconService pattern).
+3. Gear set/equipment announcement in the inventory - small to medium effort, closes a surprisingly fundamental gap (the player currently does not know what they are wearing).
+4. Add cast interrupt information and a running announcement of the enemy's cast time - the data source is already opened up (`IsCastInterruptible` is already logged), only the speech output is missing; high impact on combat safety at low technical risk.
+5. Make the Duty Finder and market board fundamentally accessible - larger efforts, but they close the two gaps that most strongly obstruct the goal of "playing completely without sight" (no independent access to group content, no independent market participation).

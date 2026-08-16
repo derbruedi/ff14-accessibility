@@ -1,142 +1,142 @@
-# Modding bei alten Unity-Versionen
+# Modding Old Unity Versions
 
-## Unity-Versionen und Mod-Loader-Kompatibilität
+## Unity versions and mod loader compatibility
 
-- **Unity 2019+**: MelonLoader, BepInEx, Doorstop - alle funktionieren
-- **Unity 2017-2018**: MelonLoader, BepInEx, Doorstop - alle funktionieren
-- **Unity 5.x**: Teilweise MelonLoader, teilweise BepInEx, evtl. Doorstop, Assembly-Patch als Fallback
-- **Unity 4.x oder älter**: Nur Assembly-Patching funktioniert
+- **Unity 2019+**: MelonLoader, BepInEx, Doorstop - all work
+- **Unity 2017-2018**: MelonLoader, BepInEx, Doorstop - all work
+- **Unity 5.x**: MelonLoader partially, BepInEx partially, possibly Doorstop, assembly patching as fallback
+- **Unity 4.x or older**: Only assembly patching works
 
-## Vor dem Setup prüfen
+## Check before setup
 
-### 1. Unity-Version ermitteln
+### 1. Determine the Unity version
 
-Die Unity-Version steht in:
-- `[Game]_Data/output_log.txt` (erste Zeile: "Initialize engine version: X.X.X")
-- Oder im Crash-Log
-- Oder im MelonLoader-Log nach erstem Start
+The Unity version is found in:
+- `[Game]_Data/output_log.txt` (first line: "Initialize engine version: X.X.X")
+- Or in the crash log
+- Or in the MelonLoader log after the first start
 
-### 2. Architektur prüfen
+### 2. Check the architecture
 
-- `Mono/` Ordner = 32-bit, altes Mono
-- `MonoBleedingEdge/` Ordner = 64-bit, neueres Mono
-- Spiel in "Program Files (x86)" = oft 32-bit
+- `Mono/` folder = 32-bit, old Mono
+- `MonoBleedingEdge/` folder = 64-bit, newer Mono
+- Game in "Program Files (x86)" = often 32-bit
 
-### 3. Community-Recherche
+### 3. Community research
 
-**Immer zuerst prüfen:**
-- Gibt es bereits Mods für das Spiel?
-- Welches Framework nutzt die Community?
-- Gibt es ein offizielles Mod-System?
+**Always check first:**
+- Do mods for the game already exist?
+- Which framework does the community use?
+- Is there an official mod system?
 
-**Suchbegriffe:**
-- "[Spielname] modding guide"
-- "[Spielname] BepInEx"
-- "[Spielname] MelonLoader"
-- "[Spielname] dll mod"
+**Search terms:**
+- "[game name] modding guide"
+- "[game name] BepInEx"
+- "[game name] MelonLoader"
+- "[game name] dll mod"
 
-**Wo suchen:**
-- Steam-Diskussionen
+**Where to search:**
+- Steam discussions
 - Nexus Mods
 - ModDB
 - GitHub
-- Offizielle Foren des Entwicklers
+- The developer's official forums
 
-## Mod-Loader nach Priorität versuchen
+## Try mod loaders in priority order
 
-### Bei Unity 2017+
+### For Unity 2017+
 
-1. **MelonLoader** - Einfachste Option für Unity-Spiele
-2. **BepInEx** - Sehr verbreitet, gute Dokumentation
-3. **Doorstop** - Falls andere nicht funktionieren
+1. **MelonLoader** - simplest option for Unity games
+2. **BepInEx** - very widespread, good documentation
+3. **Doorstop** - if the others do not work
 
-### Bei Unity 5.x
+### For Unity 5.x
 
-1. **BepInEx 5.x** mit net35-Kompatibilität
+1. **BepInEx 5.x** with net35 compatibility
 2. **Doorstop v3** (legacy branch)
-3. **Assembly-Patching** als Fallback
+3. **Assembly patching** as fallback
 
-### Bei Unity 4.x oder älter
+### For Unity 4.x or older
 
-1. **Community-Lösung suchen** - Vielleicht hat jemand etwas gefunden
-2. **Assembly-Patching** - Meist die einzige funktionierende Option
+1. **Look for a community solution** - maybe someone has already found something
+2. **Assembly patching** - usually the only option that works
 
-## Assembly-Patching (Immer funktioniert)
+## Assembly patching (always works)
 
-### Was es ist
+### What it is
 
-Den Mod-Code direkt in die Spiel-DLL (`Assembly-CSharp.dll`) einfügen.
+Inserting the mod code directly into the game DLL (`Assembly-CSharp.dll`).
 
-### Vorteile
+### Advantages
 
-- Funktioniert mit jeder Unity-Version
-- Keine externen Tools zur Laufzeit
-- Keine Proxy-DLLs nötig
+- Works with any Unity version
+- No external tools at runtime
+- No proxy DLLs needed
 
-### Nachteile
+### Disadvantages
 
-- Ändert Original-Dateien (Backup machen!)
-- Bei Spiel-Updates muss neu gepatcht werden
-- Steam-Integritätsprüfung erkennt Änderung
+- Modifies original files (make a backup!)
+- Has to be re-patched on game updates
+- Steam integrity check detects the change
 
 ### Tools
 
-- **dnSpy** - GUI-basiert, kann editieren und speichern
-- **ILSpy + Reflexil** - Alternative
+- **dnSpy** - GUI-based, can edit and save
+- **ILSpy + Reflexil** - alternative
 
-### Vorgehen
+### Procedure
 
-1. Backup von `[Game]_Data/Managed/Assembly-CSharp.dll`
-2. DLL in dnSpy öffnen
-3. Geeignete Stelle finden (z.B. MainMenu.Start oder Awake)
-4. Code einfügen (Methode editieren oder neue Klasse)
-5. Speichern (Modul speichern)
-6. Testen
+1. Back up `[Game]_Data/Managed/Assembly-CSharp.dll`
+2. Open the DLL in dnSpy
+3. Find a suitable spot (e.g. MainMenu.Start or Awake)
+4. Insert code (edit a method or add a new class)
+5. Save (save module)
+6. Test
 
-### Geeignete Einstiegspunkte
+### Suitable entry points
 
-- `Awake()` oder `Start()` einer früh geladenen Klasse
-- Hauptmenü-Klasse (wird immer geladen)
-- Singleton-Initialisierung
+- `Awake()` or `Start()` of a class loaded early
+- Main menu class (always loaded)
+- Singleton initialisation
 
-## Bekannte Probleme
+## Known problems
 
 ### "mono.dll Access Violation"
 
-- Tritt bei Unity 4.x mit BepInEx/Doorstop auf
-- Mono-Runtime zu alt für moderne Tools
-- Lösung: Assembly-Patching
+- Occurs on Unity 4.x with BepInEx/Doorstop
+- Mono runtime too old for modern tools
+- Solution: assembly patching
 
 ### "Hooked into null"
 
-- MelonLoader kann sich nicht einhaken
-- Unity-Version nicht unterstützt
-- Lösung: Anderes Framework oder Assembly-Patching
+- MelonLoader cannot hook in
+- Unity version not supported
+- Solution: another framework or assembly patching
 
-### Spiel startet nicht (0xc0000142)
+### Game does not start (0xc0000142)
 
-- Proxy-DLL inkompatibel
-- Lösung: Proxy-DLL entfernen, anderen Ansatz wählen
+- Proxy DLL incompatible
+- Solution: remove the proxy DLL, choose another approach
 
-## C#-Sprachfeatures und alte Mono-Runtimes
+## C# language features and old Mono runtimes
 
-Unity bringt seine eigene Mono-Runtime mit. Bei alten Unity-Versionen ist diese Runtime so alt, dass bestimmte C#-Features zwar **kompilieren**, aber zur **Laufzeit abstürzen**. Das ist besonders tückisch, weil kein Compiler-Fehler auftritt — der Build ist erfolgreich, und dann crasht das Spiel ohne klare Fehlermeldung.
+Unity ships its own Mono runtime. On old Unity versions that runtime is so old that certain C# features do **compile** but **crash at runtime**. That is particularly treacherous because no compiler error appears — the build succeeds, and then the game crashes without a clear error message.
 
-### Wie erkennt man, welche Runtime man hat?
+### How do you tell which runtime you have?
 
-- `Mono/` Ordner im Spielverzeichnis = alte Runtime (Unity 5.x und früher)
-- `MonoBleedingEdge/` Ordner = neuere Runtime (Unity 2017+, aber trotzdem eingeschränkt bis ~2019)
-- Ab Unity 2021+ mit `MonoBleedingEdge/` sind praktisch alle modernen C#-Features sicher
+- `Mono/` folder in the game directory = old runtime (Unity 5.x and earlier)
+- `MonoBleedingEdge/` folder = newer runtime (Unity 2017+, but still limited until roughly 2019)
+- From Unity 2021+ with `MonoBleedingEdge/`, practically all modern C# features are safe
 
-### Bekannte Einschränkungen (Unity 2017 und älter)
+### Known limitations (Unity 2017 and older)
 
-**LINQ mit Lambdas** — Crash zur Laufzeit:
+**LINQ with lambdas** — crashes at runtime:
 ```csharp
-// CRASHT bei alter Mono-Runtime:
+// CRASHES on the old Mono runtime:
 var active = myList.Where(x => x.IsActive).ToList();
 var names = myList.Select(x => x.Name).ToList();
 
-// SICHER — klassische Schleife stattdessen:
+// SAFE — a classic loop instead:
 var active = new List<MyType>();
 foreach (var item in myList)
 {
@@ -144,36 +144,36 @@ foreach (var item in myList)
 }
 ```
 
-**string.Join mit List** — Crash zur Laufzeit:
+**string.Join with a List** — crashes at runtime:
 ```csharp
-// CRASHT — alte Mono kennt nur die Array-Überladung:
+// CRASHES — old Mono only knows the array overload:
 string result = string.Join(", ", myList);
 
-// SICHER:
+// SAFE:
 string result = string.Join(", ", myList.ToArray());
 ```
 
-**Switch Expressions** — Kompiliert nicht oder crasht:
+**Switch expressions** — do not compile, or crash:
 ```csharp
-// CRASHT:
-string label = state switch { State.Active => "an", State.Off => "aus", _ => "?" };
+// CRASHES:
+string label = state switch { State.Active => "on", State.Off => "off", _ => "?" };
 
-// SICHER:
+// SAFE:
 string label;
 switch (state)
 {
-    case State.Active: label = "an"; break;
-    case State.Off: label = "aus"; break;
+    case State.Active: label = "on"; break;
+    case State.Off: label = "off"; break;
     default: label = "?"; break;
 }
 ```
 
-**Sort mit Lambda** — Crash zur Laufzeit:
+**Sort with a lambda** — crashes at runtime:
 ```csharp
-// CRASHT:
+// CRASHES:
 myList.Sort((a, b) => a.Distance.CompareTo(b.Distance));
 
-// SICHER — eigene IComparer-Klasse:
+// SAFE — your own IComparer class:
 private class DistanceComparer : IComparer<MyType>
 {
     public int Compare(MyType a, MyType b)
@@ -184,74 +184,74 @@ private class DistanceComparer : IComparer<MyType>
 myList.Sort(new DistanceComparer());
 ```
 
-**Reflection Null-Checks** — Vergleich funktioniert nicht:
+**Reflection null checks** — the comparison does not work:
 ```csharp
-// FUNKTIONIERT NICHT bei alter Mono — gibt immer false:
+// DOES NOT WORK on old Mono — always returns false:
 if (fieldInfo == null) { ... }
 
-// SICHER — expliziter Cast:
+// SAFE — explicit cast:
 if ((object)fieldInfo == null) { ... }
 ```
 
-### Welche Unity-Version braucht was?
+### Which Unity version needs what?
 
-- **Unity 4.x:** Stark eingeschränkt. Kein LINQ, keine Lambdas, kein `var` in manchen Kontexten. Wie C# 3.0 behandeln.
-- **Unity 5.x:** LINQ-Grundfunktionen gehen (Where, Select ohne Lambda), aber Lambda-Syntax oft problematisch. Sort-Lambdas unsicher.
-- **Unity 2017-2018:** LINQ mit Lambdas geht meistens, aber string.Join mit List und Switch Expressions nicht. Reflection-Null-Checks unsicher.
-- **Unity 2019+:** Die meisten modernen C#-Features funktionieren. Trotzdem testen.
-- **Unity 2021+:** Praktisch keine Einschränkungen mehr.
+- **Unity 4.x:** Heavily limited. No LINQ, no lambdas, no `var` in some contexts. Treat it like C# 3.0.
+- **Unity 5.x:** Basic LINQ works (Where, Select without lambdas), but lambda syntax is often problematic. Sort lambdas are unsafe.
+- **Unity 2017-2018:** LINQ with lambdas usually works, but string.Join with a List and switch expressions do not. Reflection null checks are unsafe.
+- **Unity 2019+:** Most modern C# features work. Test anyway.
+- **Unity 2021+:** Practically no limitations left.
 
-### Warum das funktioniert
+### Why this works
 
-Das ist kein Hack. Der C#-Compiler erzeugt für `list.Where(x => ...)` anderen Zwischencode (IL) als für eine `foreach`-Schleife. Die alte Mono-Runtime kann den einfacheren IL ausführen, den komplexeren nicht. Beide Varianten machen exakt dasselbe — die Schleife ist die ältere, kompatible Art, dasselbe Ergebnis zu bekommen.
+This is not a hack. For `list.Where(x => ...)` the C# compiler emits different intermediate code (IL) than for a `foreach` loop. The old Mono runtime can execute the simpler IL but not the more complex one. Both variants do exactly the same thing — the loop is the older, compatible way of getting the same result.
 
-Das betrifft nur die **Mono-Runtime des Spiels**, nicht den Mod-Loader. MelonLoader und BepInEx laufen auf dieser Runtime — sie können sie nicht ändern oder umgehen.
+This only concerns the **game's Mono runtime**, not the mod loader. MelonLoader and BepInEx run on that runtime — they cannot change or bypass it.
 
-### Empfehlung
+### Recommendation
 
-Bei Unity 2018 und älter: Die kompatiblen Varianten verwenden (Schleifen statt LINQ-Lambdas, Arrays statt Listen bei string.Join, switch-Blöcke statt switch-Expressions). Das ist kein Stilkompromiss, sondern technisch notwendig, weil die Spiel-Runtime die modernen IL-Instruktionen nicht versteht. Wenn ein Feature wider Erwarten doch funktioniert, im Code kommentieren, dass es getestet wurde — das spart dem nächsten Entwickler die gleiche Recherche.
+On Unity 2018 and older: use the compatible variants (loops instead of LINQ lambdas, arrays instead of lists for string.Join, switch blocks instead of switch expressions). This is not a stylistic compromise but a technical necessity, because the game runtime does not understand the modern IL instructions. If a feature does work against expectations, note in the code that it was tested — that saves the next developer the same research.
 
 ---
 
-## Besonderheiten bei der UI-Analyse (alte Unity-Versionen)
+## Peculiarities of UI analysis (old Unity versions)
 
-Bei älteren Unity-Versionen können zusätzliche Herausforderungen auftreten:
+Older Unity versions can present additional challenges:
 
-- **Ältere UI-Systeme:** Unity 4.x nutzt oft noch das alte `OnGUI`-System statt uGUI/Canvas
-- **Andere Komponenten-Namen:** `GUIText` statt `Text`, `GUITexture` statt `Image`
-- **Fehlende Features:** TextMeshPro existiert möglicherweise nicht
-- **Reflection-Unterschiede:** Private Fields können andere Naming-Conventions haben
+- **Older UI systems:** Unity 4.x often still uses the old `OnGUI` system instead of uGUI/Canvas
+- **Different component names:** `GUIText` instead of `Text`, `GUITexture` instead of `Image`
+- **Missing features:** TextMeshPro may not exist
+- **Reflection differences:** private fields may follow different naming conventions
 
-### OnGUI-System (Unity 4.x und früher)
+### The OnGUI system (Unity 4.x and earlier)
 
-Das alte OnGUI-System funktioniert komplett anders als moderne Unity UI:
+The old OnGUI system works completely differently from modern Unity UI:
 
 ```csharp
 void OnGUI() {
     if (GUI.Button(new Rect(10, 10, 100, 50), "Click me")) {
-        // Button wurde geklickt
+        // Button was clicked
     }
     GUI.Label(new Rect(10, 70, 100, 20), "Some text");
 }
 ```
 
-**Herausforderungen:**
-- UI wird jeden Frame neu gezeichnet (Immediate Mode)
-- Keine persistenten GameObjects für UI-Elemente
-- Schwieriger zu hoooken als moderne UI
-- Text ist oft nur im OnGUI-Aufruf bekannt
+**Challenges:**
+- The UI is redrawn every frame (immediate mode)
+- No persistent GameObjects for UI elements
+- Harder to hook than modern UI
+- The text is often only known inside the OnGUI call
 
-**Mögliche Lösungen:**
-- Harmony-Patch auf die OnGUI-Methode
-- GUI.skin und GUIStyle analysieren
-- Eigene Tracking-Logik für UI-Zustand
+**Possible solutions:**
+- Harmony patch on the OnGUI method
+- Analyse GUI.skin and GUIStyle
+- Your own tracking logic for UI state
 
-## Checkliste für alte Spiele
+## Checklist for old games
 
-- [ ] Unity-Version ermittelt
-- [ ] Architektur geprüft (32/64-bit)
-- [ ] Community-Lösungen recherchiert
-- [ ] Offizielles Mod-System geprüft
-- [ ] Mod-Loader in Reihenfolge versucht
-- [ ] Bei Fehlschlag: Assembly-Patching vorbereitet
-- [ ] Backup der Original-DLLs erstellt
+- [ ] Unity version determined
+- [ ] Architecture checked (32/64-bit)
+- [ ] Community solutions researched
+- [ ] Official mod system checked
+- [ ] Mod loaders tried in order
+- [ ] On failure: assembly patching prepared
+- [ ] Backup of the original DLLs created
