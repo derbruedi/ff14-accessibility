@@ -96,7 +96,14 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     Content to a repository containing notice of a license" - ohne LICENSE also
     gerade nicht. Ab jetzt greift sie automatisch. Für die Altbeiträge ist die
     übliche Praxis, die beiden kurz zu informieren und zustimmen zu lassen.
-    Vorbereitet, aber NICHT abgeschickt - nichts nach außen ohne Freigabe.
+    NACH FREIGABE DES USERS ABGESCHICKT: bilinguale Kommentare unter PR #7
+    (blindndangerous, beantwortet zugleich seine MIT-Frage) und unter PR #6
+    (bladestorm360, für seine fünf gemergten PRs). Beide um eine kurze
+    Bestätigung gebeten. ANTWORTEN STEHEN NOCH AUS.
+    OFFENE ZUSAGE: im Kommentar unter PR #7 steht, dass zum INHALT des PRs noch
+    eine Rückmeldung kommt (die Review von 2026-08-17: CLAUDE.de.md verweist an
+    vier Stellen weiter auf docs/game-api.md, und die Frage, welche der beiden
+    game-api-Fassungen künftig die führende ist). Noch nicht geschrieben.
 
 >>> EBENFALLS OFFEN: Beim nächsten Release LICENSE und THIRD-PARTY-NOTICES.md
     zusätzlich als eigene Release-Assets anhängen. Wer nur die Installer-EXE zieht
