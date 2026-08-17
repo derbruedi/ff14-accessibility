@@ -123,8 +123,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.86";
-    private const string PluginVersionTag = "Jagdziele im Objekt-Browser, Bestiarium-Raenge benannt";
+    private const string PluginVersion    = "5.87";
+    private const string PluginVersionTag = "Jagdziele: direkt zum Monster statt nur ins Gebiet";
 
     public Plugin()
     {
@@ -1793,6 +1793,33 @@ public sealed class Plugin : IDalamudPlugin
         var hunt = _navigation.SelectedHuntTarget;
         if (hunt != null)
         {
+            // A live specimen in range beats every marker: the habitat marker is
+            // the middle of an area, the monster is what the player wants to
+            // reach (user request 2026-08-17). Targeting it is part of the
+            // answer - a monster is reached in order to be attacked - and once
+            // the game holds it as the hard target, MarkerResolve.None hands the
+            // walk to the TARGET path, which re-reads the position every frame.
+            // That is what makes walking to a patrolling monster work at all;
+            // a fixed position would aim at where it stood at key-press time.
+            var live = _huntingLog.FindNearestLive(hunt.MonsterName);
+            if (live != null)
+            {
+                var accepted = _navigation.TargetFromBrowser(live);
+                Log.Info($"[Jagd] Lebendes '{hunt.MonsterName}' in " +
+                         $"{Vector3.Distance(ObjectTable.LocalPlayer?.Position ?? live.Position, live.Position):F1} m, " +
+                         $"id={live.GameObjectId:X}, anvisiert={accepted}");
+                if (accepted) return MarkerResolve.None;
+
+                // Game refused the target (quest-locked mobs do): walk to the
+                // position it was last seen at instead of falling back to the
+                // area marker, which would be much further off.
+                position = _autoWalk.ResolveFloorPoint(live.Position) ?? live.Position;
+                name = hunt.MonsterName;
+                stopRange = AutoWalkService.StopRange;
+                return MarkerResolve.Resolved;
+            }
+            _huntingLog.LogNearbyBattleNpcs(hunt.MonsterName);
+
             if (hunt.MapId != 0 && hunt.MapId != ClientState.MapId)
             {
                 var hop = _places.FindFirstHopToMap(hunt.MapId, out _);
@@ -1887,19 +1914,13 @@ public sealed class Plugin : IDalamudPlugin
         var player = ObjectTable.LocalPlayer;
         if (player == null) return;
 
-        IGameObject? nearest = null;
-        var nearestDist = float.MaxValue;
-        foreach (var obj in ObjectTable)
-        {
-            if (obj.ObjectKind != ObjectKind.BattleNpc) continue;
-            if (!string.Equals(obj.Name.TextValue, monsterName, StringComparison.OrdinalIgnoreCase)) continue;
-            if (obj is IBattleChara { CurrentHp: 0 }) continue; // dead ones don't count
-            var dist = System.Numerics.Vector3.Distance(player.Position, obj.Position);
-            if (dist < nearestDist) { nearest = obj; nearestDist = dist; }
-        }
+        // Same search as the browser's hunting category uses - one place that
+        // knows how a log entry is matched to a monster standing in the world.
+        var nearest = _huntingLog.FindNearestLive(monsterName);
 
         if (nearest == null)
         {
+            _huntingLog.LogNearbyBattleNpcs(monsterName);
             var habitat = _bestiary.GetHabitat(monsterName);
             _tolk.SpeakInterrupt(habitat != null
                 ? AccessibilityStrings.NoMonsterNearbyHabitat(monsterName, habitat)

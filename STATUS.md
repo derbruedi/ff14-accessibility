@@ -3,7 +3,40 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "RELEASE v5.86 - JAGDZIELE IM OBJEKT-BROWSER")
+## STAND JETZT (2026-08-17, "JAGDZIELE: DIREKT ZUM MONSTER STATT NUR INS GEBIET")
+
+>>> WUNSCH DES USERS: In der Browser-Kategorie "Jagdziele" soll Numpad3 zum
+    MONSTER laufen, nicht nur in dessen Gebiet.
+
+>>> GEBAUT (Debug deployt, IN-GAME NOCH NICHT GETESTET):
+    - HuntingLogService.FindNearestLive(name): naechstes lebendes Exemplar aus
+      der Objekttabelle (ObjectKind.BattleNpc, Name case-insensitive, CurrentHp
+      0 raus). Das ist jetzt die EINZIGE Suchstelle - der Bestiarium-Weg
+      (Plugin.TrackBestiaryMonster) benutzt dieselbe Methode statt einer
+      eigenen Kopie.
+    - Numpad3 auf einem Jagdziel: steht ein lebendes Exemplar in Reichweite,
+      wird es anvisiert und der Lauf laeuft ueber den ZIEL-Pfad (MarkerResolve.
+      None) - der liest die Position jeden Frame neu, deshalb funktioniert das
+      auch bei patrouillierenden Monstern. Lehnt das Spiel das Anvisieren ab,
+      wird auf die zuletzt gesehene Position gelaufen. Kein Exemplar da: alles
+      unveraendert wie bisher (Gebietsmarker bzw. Gebietsuebergang).
+    - Ansage beim Blaettern nennt in dem Fall Entfernung und Richtung zum
+      MONSTER ("in der Naehe, 23 Meter, Norden") statt zum Gebiet, und Ziele
+      mit lebendem Exemplar stehen vorne in der Liste.
+    - NavigationService.TargetFromBrowser() ist die gemeinsame Ziel-Setzung
+      (setzt _ownSelectionId, sonst verwirft der Ziel-Waechter die Auswahl).
+
+>>> OFFENE ANNAHME, bewusst so gebaut: die Zuordnung Log-Eintrag -> Monster in
+    der Welt laeuft ueber den NAMEN. Fuer [a]-Namen ist das gedeckt (V5.86),
+    fuer die Platzhalter [p]/[t] weiter unbewiesen. Findet die Suche nichts,
+    schreibt eine DEBUG-Sonde die acht naechsten Kampf-NPCs mit Name und NameId
+    ins Log - ein Schreibfehler faellt dort sofort auf.
+
+>>> ZU TESTEN: In einem Gebiet mit offenem Jagdziel die Kategorie oeffnen,
+    blaettern (sagt es "in der Naehe" mit plausibler Entfernung?) und Numpad3
+    (laeuft er zum Monster und ist es anvisiert?).
+
+## FRUEHERER STAND (2026-08-17, "RELEASE v5.86 - JAGDZIELE IM OBJEKT-BROWSER")
 
 >>> VEROEFFENTLICHT. Alles aus dem Block darunter ist damit oeffentlich:
     Bestiarium-Rangzeilen und die Kategorie "Jagdziele".

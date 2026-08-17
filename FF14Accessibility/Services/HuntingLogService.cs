@@ -1,4 +1,5 @@
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Lumina.Excel.Sheets;
@@ -296,6 +297,68 @@ public sealed class HuntingLogService
                    .Replace("[p]", string.Empty)
                    .Replace("[t]", string.Empty)
                    .Trim();
+    }
+
+    /// <summary>
+    /// The nearest LIVE specimen of a monster that the game currently has
+    /// loaded, or null when none is in range. This is what turns a hunting log
+    /// entry from a place into a target: the map marker is the centre of the
+    /// habitat, the monster is what the player actually wants to reach.
+    ///
+    /// Matched by NAME, the same way the bestiary window match has worked since
+    /// V5.86: the object table carries the displayed name, and that is exactly
+    /// what <see cref="ResolveMonsterName"/> rebuilds from the sheet. Case is
+    /// ignored - the sheet stem starts lowercase ("wuchernd[a] Efeuranke"),
+    /// the game displays it capitalised.
+    ///
+    /// Dead ones are skipped (CurrentHp 0): a corpse is not huntable, and a
+    /// respawn arrives as a new object anyway.
+    /// </summary>
+    public IGameObject? FindNearestLive(string monsterName)
+    {
+        if (monsterName.Length == 0) return null;
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return null;
+
+        IGameObject? nearest = null;
+        var nearestDist = float.MaxValue;
+        foreach (var obj in _objectTable)
+        {
+            if (obj.ObjectKind != Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc) continue;
+            if (!string.Equals(obj.Name.TextValue, monsterName, StringComparison.OrdinalIgnoreCase)) continue;
+            if (obj is IBattleChara { CurrentHp: 0 }) continue;
+            var dist = Vector3.Distance(player.Position, obj.Position);
+            if (dist < nearestDist) { nearest = obj; nearestDist = dist; }
+        }
+        return nearest;
+    }
+
+    /// <summary>
+    /// Debug probe for the one assumption the match above rests on: that the
+    /// name we rebuild from the sheet is spelled exactly like the one the game
+    /// puts on the object. When nothing was found, the battle NPCs actually
+    /// standing around are logged - a spelling mismatch shows up immediately as
+    /// a near-identical name in that list, where a genuinely absent monster
+    /// shows up as an unrelated one.
+    /// </summary>
+    public void LogNearbyBattleNpcs(string monsterName)
+    {
+#if DEBUG
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+
+        var names = _objectTable
+            .Where(o => o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)
+            .Select(o => (Name: o.Name.TextValue,
+                          NameId: (o as ICharacter)?.NameId ?? 0,
+                          Dist: Vector3.Distance(player.Position, o.Position)))
+            .OrderBy(x => x.Dist)
+            .Take(8)
+            .Select(x => $"'{x.Name}' (NameId={x.NameId}, {x.Dist:F0} m)");
+
+        _log.Info($"[JagdSonde] Kein lebendes '{monsterName}' gefunden. In der Naehe: " +
+                  string.Join(", ", names));
+#endif
     }
 
     /// <summary>

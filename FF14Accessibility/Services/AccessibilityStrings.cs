@@ -425,6 +425,11 @@ public static partial class AccessibilityStrings
             ? $"{monster}, {killed} von {required} erlegt"
             : $"{monster}, {killed} of {required} killed";
 
+    /// <summary>Said instead of the habitat when a live specimen is in range -
+    /// the distance and direction that follow lead to the monster itself.</summary>
+    public static string HuntingMonsterNearby =>
+        IsGerman ? "in der Nähe" : "nearby";
+
     /// <summary>The area a hunting log monster lives in, as the log names it.</summary>
     public static string HuntingArea(string area) =>
         area.Length == 0 ? string.Empty : (IsGerman ? $"lebt in {area}" : $"lives in {area}");

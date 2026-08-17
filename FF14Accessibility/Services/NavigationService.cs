@@ -1098,10 +1098,19 @@ public sealed class NavigationService
     // on the map.
     private void CycleHuntTarget(int direction, IGameObject player)
     {
+        // A monster the game currently has loaded outranks every marker: the
+        // habitat marker is the middle of an area, the live specimen is the
+        // thing to walk to and kill (user request 2026-08-17 - "das er direkt
+        // zum monster läuft und nicht nur in das gebiet"). Looked up once per
+        // entry here so the list can be ordered by it AND the announcement can
+        // name the real distance.
         var targets = _huntingLog.GetOpenTargets()
-            .OrderByDescending(t => t.InCurrentZone)
-            .ThenBy(t => t.Position is { } p ? Distance2D(player.Position, p) : float.MaxValue)
-            .ThenBy(t => t.MonsterName, StringComparer.Ordinal)
+            .Select(t => (Target: t, Live: _huntingLog.FindNearestLive(t.MonsterName)))
+            .OrderByDescending(x => x.Live != null)
+            .ThenBy(x => x.Live != null ? Distance2D(player.Position, x.Live.Position) : float.MaxValue)
+            .ThenByDescending(x => x.Target.InCurrentZone)
+            .ThenBy(x => x.Target.Position is { } p ? Distance2D(player.Position, p) : float.MaxValue)
+            .ThenBy(x => x.Target.MonsterName, StringComparer.Ordinal)
             .ToList();
 
         if (targets.Count == 0)
@@ -1113,7 +1122,7 @@ public sealed class NavigationService
 
         var count = targets.Count;
         _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
-        var target = targets[_cycleIndex];
+        var (target, live) = targets[_cycleIndex];
         SelectedHuntTarget = target;
 
         // Name plus what is still missing - the kill count is the whole point of
@@ -1121,7 +1130,15 @@ public sealed class NavigationService
         var text = AccessibilityStrings.HuntingTargetEntry(
             target.MonsterName, target.Killed, target.Required);
 
-        if (target.InCurrentZone && target.Position is { } pos)
+        if (live != null)
+        {
+            // Standing right there: the area name would only be noise, and the
+            // numbers must be the ones that lead to the monster.
+            text += ", " + AccessibilityStrings.HuntingMonsterNearby + ", " +
+                    $"{FormatDistance(Distance2D(player.Position, live.Position))}, " +
+                    $"{CalculateDirection(player, live.Position)}.";
+        }
+        else if (target.InCurrentZone && target.Position is { } pos)
         {
             text += ", " + AccessibilityStrings.HuntingArea(target.AreaName) + ", " +
                     $"{FormatDistance(Distance2D(player.Position, pos))}, " +
@@ -1244,16 +1261,26 @@ public sealed class NavigationService
             .FirstOrDefault();
         if (match.Obj == null) return false;
 
-        // Flags the change as ours: without this the target watcher would treat
-        // it as the player targeting something else and drop the very marker
-        // selection we are standing on.
-        _ownSelectionId = match.Obj.GameObjectId;
-        _targetManager.Target = match.Obj;
-
-        var accepted = (_targetManager.Target?.GameObjectId ?? 0) == match.Obj.GameObjectId;
+        var accepted = TargetFromBrowser(match.Obj);
         _log.Info($"[Orte] Objekt zum Marker '{place.Name}': id={match.Obj.GameObjectId:X}, " +
                   $"{match.Gap:F1} m vom Marker, anvisiert={accepted}");
         return accepted;
+    }
+
+    /// <summary>
+    /// Targets an object ON BEHALF of the browser and reports whether the game
+    /// accepted it (it can refuse - see CycleObject).
+    ///
+    /// The id is flagged as our own first: without that the target watcher in
+    /// <see cref="Update"/> would read the change as "the player targeted
+    /// something else" and drop the very browser selection this targeting came
+    /// from.
+    /// </summary>
+    public bool TargetFromBrowser(IGameObject obj)
+    {
+        _ownSelectionId = obj.GameObjectId;
+        _targetManager.Target = obj;
+        return (_targetManager.Target?.GameObjectId ?? 0) == obj.GameObjectId;
     }
 
     /// <summary>
