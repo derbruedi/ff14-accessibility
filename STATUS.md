@@ -3,12 +3,34 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "JAGDZIELE: DIREKT ZUM MONSTER STATT NUR INS GEBIET")
+## STAND JETZT (2026-08-17, "RELEASE v5.87 - JAGDZIELE: DIREKT ZUM MONSTER")
+
+>>> VEROEFFENTLICHT als v5.87, aber IN-GAME NOCH NICHT GETESTET - der User hat
+    den Release direkt nach dem Bauen verlangt. Der Test unten steht weiter aus.
+
+>>> VERSIONS-SYNC (alle drei Stellen auf 5.87): Plugin.cs PluginVersion "5.87",
+    csproj 5.87.0 / 5.87.0.0, repo.json "5.87.0.0". Die veroeffentlichte
+    repo.json auf main traegt 5.87.0.0 - ueber raw.githubusercontent.com
+    nachgeprueft, nicht nur lokal.
+
+>>> SECHS ASSETS am Release v5.87: latest.zip (972.384) und
+    FF14Accessibility-v5.87.0.zip (dieselbe Datei), FF14AccessibilityInstaller.
+    exe (162.517.183) + installer.json - Installer seit v5.86 UNVERAENDERT
+    (git log Installer/ leer), darum exe vom letzten Release wiederverwendet,
+    SHA256 gegen installer.json geprueft; dazu LICENSE und THIRD-PARTY-NOTICES.md.
+
+>>> VERIFIZIERT: gh release list zeigt v5.87 als "Latest", und
+    releases/latest/download/latest.zip liefert die 972.384 Bytes - ausgepackt,
+    die DLL darin traegt 5.87.0.0 und LICENSE/THIRD-PARTY liegen im Archiv.
+
+>>> HINWEIS ZUM ABLAUF: GitHub hatte waehrenddessen eine Stoerung ("Partial
+    System Outage", seit 13:40 UTC); der Releases-Endpunkt gab mehrfach 503.
+    Anlegen und Upload liefen erst per Wiederholungslauf durch.
 
 >>> WUNSCH DES USERS: In der Browser-Kategorie "Jagdziele" soll Numpad3 zum
     MONSTER laufen, nicht nur in dessen Gebiet.
 
->>> GEBAUT (Debug deployt, IN-GAME NOCH NICHT GETESTET):
+>>> GEBAUT:
     - HuntingLogService.FindNearestLive(name): naechstes lebendes Exemplar aus
       der Objekttabelle (ObjectKind.BattleNpc, Name case-insensitive, CurrentHp
       0 raus). Das ist jetzt die EINZIGE Suchstelle - der Bestiarium-Weg
