@@ -3,7 +3,38 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "BESTIARIUM: RANG-ZEILEN BENANNT, JAGDZIEL-KATEGORIE VORBEREITET")
+## STAND JETZT (2026-08-17, "RELEASE v5.86 - JAGDZIELE IM OBJEKT-BROWSER")
+
+>>> VEROEFFENTLICHT. Alles aus dem Block darunter ist damit oeffentlich:
+    Bestiarium-Rangzeilen und die Kategorie "Jagdziele".
+
+>>> VERSIONS-SYNC (alle drei Stellen auf 5.86, vor dem Release abgeglichen):
+    Plugin.cs PluginVersion "5.86", csproj 5.86.0 / 5.86.0.0, repo.json
+    "5.86.0.0". Die veroeffentlichte repo.json auf main traegt 5.86.0.0 -
+    nachgeprueft ueber raw.githubusercontent.com, nicht nur lokal.
+
+>>> SECHS ASSETS am Release v5.86 (die vier ueblichen plus die beiden, die seit
+    heute frueh offen waren):
+    - latest.zip (971.687) und FF14Accessibility-v5.86.0.zip (dieselbe Datei)
+    - FF14AccessibilityInstaller.exe (162.517.183) + installer.json - Installer
+      seit v5.85 UNVERAENDERT (git log Installer/ leer), darum die exe vom
+      letzten Release wiederverwendet; SHA gegen installer.json geprueft, passt.
+    - LICENSE und THIRD-PARTY-NOTICES.md nun auch als EIGENE Assets, damit sie
+      sieht, wer nur die Installer-EXE zieht. Damit ist der offene Punkt vom
+      Vormittag erledigt.
+
+>>> VERIFIZIERT, dass Spieler die neue Fassung bekommen: gh release list zeigt
+    v5.86 als "Latest", und releases/latest/download/latest.zip liefert
+    tatsaechlich 971.687 Bytes (v5.85 waren 949.395) mit der DLL vom 17.8. 18:31
+    und der LICENSE im Archiv - heruntergeladen und ausgepackt, nicht nur
+    angenommen.
+
+>>> WEITERHIN OFFEN (unveraendert): die zugesagte inhaltliche Rueckmeldung unter
+    PR #7 (CLAUDE.de.md verweist an vier Stellen auf docs/game-api.md; welche
+    der beiden game-api-Fassungen fuehrt kuenftig?) und die ausstehenden
+    Lizenz-Zustimmungen von bladestorm360 und blindndangerous.
+
+## FRUEHERER STAND (2026-08-17, "BESTIARIUM: RANG-ZEILEN BENANNT, JAGDZIEL-KATEGORIE GEBAUT")
 
 >>> ZWEI WUENSCHE DES USERS: (1) die Bestiarium-Zeilen, die nur "1, 10 von 10"
     heissen, sollen sagen, was sie sind. (2) Frage, ob eine Objekt-Browser-
