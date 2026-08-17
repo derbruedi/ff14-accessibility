@@ -490,6 +490,19 @@ Thank you.
   ([github.com/awgil/ffxiv_navmesh](https://github.com/awgil/ffxiv_navmesh))
   and is only linked/downloaded here, not redistributed.
 
+## Licence
+
+This project is released under the **GNU Affero General Public License,
+version 3** (`LICENSE`) — the same licence as Dalamud itself and as goatcorp's
+official plugin template. You may use, modify and redistribute the plugin;
+anyone distributing a modified version, or offering it over a network, must
+publish its source code as well.
+
+Third-party software shipped with the plugin is listed in
+`THIRD-PARTY-NOTICES.md`: **Tolk** (LGPL-3.0), the **NVDA Controller Client**
+(LGPL-2.1) and **NAudio** (MIT). That file is also inside the downloaded
+archive and must stay with it on redistribution.
+
 ## For developers
 
 - Plugin source code: `FF14Accessibility/`

@@ -3,7 +3,62 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-16, RELEASE v5.85 - "DREI FENSTER OHNE WORTE")
+## STAND JETZT (2026-08-17, "LIZENZ UND FREMDSOFTWARE-HINWEISE")
+
+>>> ANLASS: PR #7 (blindndangerous, Übersetzung der deutschen Dokumente) merkte
+    am Rande an, dass es keine LICENSE-Datei gibt. Beim Nachprüfen war das nicht
+    der eigentliche Fund.
+
+>>> DER EIGENTLICHE FUND: Das ausgelieferte ZIP enthält seit jeher DREI fremde
+    Bibliotheken OHNE jeden Lizenzhinweis - nachgezählt in
+    dist/FF14Accessibility-v5.85.0.zip:
+    - Tolk.dll -> LGPL-3.0, "(c) 2014-2019, Davy Kager" (aus der
+      Versionsressource der DLL selbst gelesen, nicht geraten)
+    - nvdaControllerClient64.dll -> LGPL-2.1 (NV Access; die DLL hat KEINE
+      Versionsressource, Copyright-Zeile daher nicht wörtlich belegbar)
+    - NAudio 2.2.1, sieben DLLs -> MIT, "Copyright 2020 Mark Heath" (aus
+      ~/.nuget/packages/naudio/2.2.1/license.txt)
+    MIT verlangt den Copyright-Vermerk "in all copies", LGPL einen Lizenzhinweis
+    samt Bezugsquelle. Beides fehlte 85 Versionen lang.
+
+>>> LIZENZWAHL AGPL-3.0, vom User beauftragt ("so dass wir keine Probleme
+    kriegen"), Begründung: Dalamud selbst ist AGPL-3.0, und goatcorps offizielles
+    SamplePlugin - die Vorlage für jedes Dalamud-Plugin - ebenfalls, mit dem
+    README-Hinweis, die Lizenz sei bereits passend gewählt. MIT (Vorschlag des
+    PR-Autors, gestützt auf docs/distribution-guide.md) stünde im
+    Spannungsverhältnis zu Dalamuds AGPL; der Ratgeber im Repo ist ein
+    generisches Setup-Template und kennt Dalamud nicht.
+
+>>> GEBAUT:
+    - LICENSE - AGPL-3.0-Volltext, per Invoke-WebRequest von
+      gnu.org/licenses/agpl-3.0.txt geholt (34.523 Bytes, 661 Zeilen). NICHT aus
+      dem Gedächtnis getippt - ein verfälschter Lizenztext wäre wertlos.
+    - THIRD-PARTY-NOTICES.md - Tolk, NVDA Controller Client, NAudio (MIT-Volltext),
+      Newtonsoft.Json + .NET-Runtime für den Installer, dazu die nur referenzierten
+      Dalamud-Assemblies und ein Square-Enix-Markenhinweis.
+    - FF14Accessibility.csproj: beide Dateien als <Content> mit <Link>, damit sie
+      flach im Output und damit IM ZIP landen. Im Repo allein zu liegen genügt
+      nicht - Nutzer bekommen nur das Archiv.
+    - README.md + README.en.md: Abschnitt "Lizenz" / "Licence".
+
+>>> VERIFIZIERT, nicht angenommen: Release-Build (0 Warnungen), danach das frische
+    latest.zip aufgelistet - LICENSE (34.523) und THIRD-PARTY-NOTICES.md (5.734)
+    sind drin.
+
+>>> OFFEN, BRAUCHT EINE ENTSCHEIDUNG DES USERS: Die sieben bereits gemergten PRs
+    von bladestorm360 und blindndangerous kamen in ein Repo OHNE Lizenz.
+    GitHubs ToS D.6 ("inbound=outbound") greift wörtlich nur "whenever you add
+    Content to a repository containing notice of a license" - ohne LICENSE also
+    gerade nicht. Ab jetzt greift sie automatisch. Für die Altbeiträge ist die
+    übliche Praxis, die beiden kurz zu informieren und zustimmen zu lassen.
+    Vorbereitet, aber NICHT abgeschickt - nichts nach außen ohne Freigabe.
+
+>>> EBENFALLS OFFEN: Beim nächsten Release LICENSE und THIRD-PARTY-NOTICES.md
+    zusätzlich als eigene Release-Assets anhängen. Wer nur die Installer-EXE zieht
+    (self-contained, enthält Newtonsoft + .NET-Runtime), sieht sonst keine
+    Hinweise, bevor er installiert hat.
+
+## FRUEHERER STAND (2026-08-16, RELEASE v5.85 - "DREI FENSTER OHNE WORTE")
 
 >>> VEROEFFENTLICHT. Alles unten aus diesem Tag ist damit oeffentlich:
     - Tauschfenster: Preis samt Waehrung, Beschreibung, eigener Bestand.

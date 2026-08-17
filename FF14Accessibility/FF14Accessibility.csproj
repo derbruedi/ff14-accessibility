@@ -36,6 +36,23 @@
     </Content>
   </ItemGroup>
 
+  <!-- Lizenzpflicht: das ausgelieferte ZIP enthaelt Tolk (LGPL-3.0),
+       nvdaControllerClient (LGPL-2.1) und NAudio (MIT). MIT verlangt, dass der
+       Copyright-Vermerk jeder Kopie beiliegt, LGPL einen Lizenzhinweis samt
+       Bezugsquelle. Beides steht in THIRD-PARTY-NOTICES.md, deshalb MUSS diese
+       Datei mit ins Archiv - im Repo allein zu liegen genuegt nicht, weil
+       Nutzer nur das ZIP bekommen. <Link> laesst sie flach im Output landen. -->
+  <ItemGroup>
+    <Content Include="..\LICENSE">
+      <Link>LICENSE</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\THIRD-PARTY-NOTICES.md">
+      <Link>THIRD-PARTY-NOTICES.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <PropertyGroup>
     <AppDataRoot>$([System.Environment]::GetFolderPath(System.Environment+SpecialFolder.ApplicationData))</AppDataRoot>
     <XIVLauncherRoot>$([System.IO.Path]::Combine('$(AppDataRoot)', 'XIVLauncher'))</XIVLauncherRoot>
