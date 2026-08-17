@@ -3,7 +3,124 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "CONTROLLER-BEDIENUNG: MACHBARKEIT GEPRÜFT, NICHTS GEBAUT")
+## STAND JETZT (2026-08-17, "BESTIARIUM: RANG-ZEILEN BENANNT, JAGDZIEL-KATEGORIE VORBEREITET")
+
+>>> ZWEI WUENSCHE DES USERS: (1) die Bestiarium-Zeilen, die nur "1, 10 von 10"
+    heissen, sollen sagen, was sie sind. (2) Frage, ob eine Objekt-Browser-
+    Kategorie moeglich ist, mit der man direkt zu den Monstern laufen kann,
+    "evtl auch map uebergreifend". Grundlage: frischer MonsterNote-Dump des
+    Users (Desktop\FFXIV_UI_Dump.txt, 16:10).
+
+>>> TEIL 1 GEBAUT UND DEPLOYT (Debug, 0 Warnungen), IN-GAME UNGETESTET:
+    Die Rang-Liste (Dump-Node 16, eine List AUSSERHALB der TreeList) rendert
+    ihre Zeilen als nackte Zahl + Zaehler. Neu gesprochen:
+    "Rang 1, alle 10 Eintraege erledigt" / "Rang 3, 0 von 10 Eintraegen erledigt".
+    - UIReaderService.TryFormatBestiaryRank, erkannt an der FORM (Zahl + genau
+      ein Fortschritts-Token), NICHT an Node-Ids - Ids wiederholen sich, und die
+      einzige andere Liste im Fenster (Klassenfilter) traegt Namen.
+    - IsSpokenProgress ist jetzt ein Aufsatz auf TryParseSpokenProgress, damit
+      die Zahlen nur an einer Stelle geparst werden.
+    - AccessibilityStrings.BestiaryRankRow, DE+EN.
+
+>>> WAS DER ZAEHLER ZAEHLT - GEMESSEN, NICHT GERATEN (das war die offene Frage:
+    Kopf sagt "Rang 3" und "3/48", die Rangzeile "10/10"):
+    Offline-Sheet-Tool (Scratchpad, Lumina gegen das installierte Spiel):
+    - MonsterNote hat 600 Zeilen in ZWOELF Bloecken zu 50 (neun Klassen + drei
+      Staatliche Gesellschaften), lueckenlos: Thaumaturg = 70001..70050.
+    - 5 Raenge zu je 10 Eintraegen. Rang 3 = 70021..70030.
+    - Die Kill-Zahlen dieser zehn Zeilen summieren sich auf GENAU 48 - das ist
+      die "3/48" im Fensterkopf. Damit ist bewiesen: die Rangzeile zaehlt
+      EINTRAEGE (10), der Kopf zaehlt KILLS (48).
+
+>>> TEIL 2: MACHBARKEIT GEKLAERT, VOM USER ENTSCHIEDEN, NOCH NICHT GEBAUT.
+    Gemessen (dasselbe Tool):
+    - 647 Lebensraum-Angaben im Jagdtagebuch, ALLE 647 lassen sich einer Karte
+      zuordnen. 590 (91 %) haben zusaetzlich einen Kartenmarker auf ihrer
+      eigenen Zonenkarte, also eine Koordinate. Die 40 ohne Marker sind
+      Dungeon-Gebiete (Halatali, Palast des Wanderers) - dorthin laeuft man
+      ohnehin nicht.
+    - ClassJob.MonsterNote ist KEIN Zeilenverweis, sondern der Klassen-Index des
+      Jagdtagebuchs (Gladiator 0 ... Thaumaturg 6, Hermetiker 7, Schurke 11;
+      Handwerker/Sammler 127, Jobs nach ARR -1). Exakt der classIndex-Parameter
+      von AgentMonsterNote.OpenWithData. Jobs erben den Index ihrer Klasse.
+    - Ein Block gehoert seiner Klasse ueber den NAMEN ("Thaumaturg 21"); fuer
+      alle neun Klassen-Bloecke gegen ClassJob.Name geprueft.
+    - Fortschritt liegt in MonsterNoteManager.RankData (12 Slots, je Rank/Index/
+      Flags und 10 Eintraege zu 4 Kill-Zaehlern; ilspycmd-geprueft).
+    ENTSCHEIDUNG DES USERS: Kategorie zeigt die noch OFFENEN Ziele des AKTUELLEN
+    RANGS der aktuellen Klasse; Ziele in anderen Zonen werden angesagt und
+    Numpad3 laeuft zum passenden Zonenuebergang (vorhandene Uebergangs-Route,
+    kein neuer Mechanismus).
+
+>>> GEBAUTES FUNDAMENT (Debug deployt, in-game ungetestet):
+    - HuntingLogService: Klassen-Index, Block-Zuordnung, die zehn Sheet-Zeilen
+      eines Rangs, Lebensraeume mit Koordinate.
+    - PlacesService.FindMapByPlaceName + FindMarkerPosition: Ort auf einer
+      FREMDEN Karte aufloesen. GetPlaces konnte bisher nur die Karte, auf der
+      der Spieler steht.
+
+>>> SPEICHERLAYOUT GEMESSEN (Log 2026-08-17 17:00, /acc huntprobe) - ALLE DREI
+    OFFENEN PUNKTE BEANTWORTET:
+    - RankData ist NACH DEM KLASSEN-INDEX indiziert: jeder der 12 Slots loggte
+      seine eigene Position im Feld Index (Slot 6 = Index 6 = Thaumaturg).
+    - Rank ist 0-BASIERT: der Charakter steht im Fenster auf Rang 3, der Slot
+      meldet Rank=2.
+    - Counts stehen in Sheet-Reihenfolge: Eintrag 0 las 0/2, waehrend das Fenster
+      Wuchernde Efeuranke 0/4 und Daemonenfliegenfalle 2/2 zeigt - Ziel 0 und 1
+      von Zeile 70021. Gegenprobe: die Zaehler des Rangs summieren sich auf 3,
+      exakt die "3/48" im Kopf.
+    - Zusatzbefund Gladiator (Slot 0, Rank=1 -> Rang 2): Eintraege 0/1/2 stehen
+      auf 3/3, 3, 3 - Zeile 10011 verlangt Bomber x3 + Kupfer-Kobalos x3, 10012
+      und 10013 je x3. Passt exakt, zweite unabhaengige Bestaetigung.
+    - Flags bleibt unangetastet: Bedeutung ungeklaert, "Eintrag fertig" folgt
+      ohnehin aus den Zaehlern. NICHT geraten.
+
+>>> VOM USER IN-GAME BESTAETIGT (17.8. abends, "ok funktioniert") - knapp
+    zurueckgemeldet, ohne Zahlen. Was er im Einzelnen geprueft hat (nur die
+    Rang-Zeilen, nur die Kategorie oder beides) ist damit NICHT belegt; die
+    vorausberechneten 13 Ziele sind nicht gegengezaehlt worden.
+
+>>> SONDE WIEDER ENTFERNT (Konvention: Sonden verschwinden mit dem Feature).
+    /acc huntprobe und HuntingLogService.ProbeHuntingLog sind raus, die
+    Messergebnisse stehen oben und als Kommentar an GetProgress.
+
+>>> TEIL 2 GEBAUT (Debug deployt):
+    - Neue Browser-Kategorie "Jagdziele" (NavCategory.HuntingTargets). Sie
+      erscheint NUR, wenn der aktuelle Rang noch etwas offen hat - Handwerker,
+      Jobs nach ARR und ein fertiger Rang liefern eine leere Liste, und eine
+      leere Kategorie ist im Durchblaettern nur Rauschen (Regel wie Angelplaetze
+      und FATEs).
+    - Ansage je Eintrag: Monster, "x von y erlegt", Gebiet. In der eigenen Zone
+      zusaetzlich Entfernung + Richtung; in einer anderen Zone deren Name plus
+      der Uebergang dorthin, wie bei den Quest-Zielen.
+    - Numpad3 laeuft zum Gebietsmarker bzw. zum ersten Zonenuebergang.
+    - Deklination geloest: BNpcName.Pronoun ist das Genus, also wird aus
+      "wuchernd[a] Efeuranke" ein sprechbares "wuchernde Efeuranke"
+      (0 = -er, 1 = -e, 2 = -es). Zwei der drei Formen sind gegen echte
+      UI-Namen belegt (Dump heute: "Wuchernde Efeuranke" bei Pronoun 1;
+      Log 19.7.: "Rostiger Kobalos" bei Pronoun 0), Neutrum ist deutsche
+      starke Deklination. UNBELEGT und darum ersatzlos entfernt: die
+      Platzhalter [p] (1195 Namen) und [t] (201) - Weglassen kann eine Endung
+      kosten, aber nie einen falschen Namen erfinden.
+
+>>> ERWARTUNGSWERTE FUER DEN ERSTEN TEST (offline vorausberechnet, Stand der
+    Sonde): Thaumaturg Rang 3 hat GENAU 13 OFFENE ZIELE, alle mit Marker:
+    Efeuranke 0/4 Ostwald/Neun Efeuranken; Wald-Yarzon 0/4 Oberes La Noscea/
+    Eichenwald; Aas-Yarzon 0/2 und Lachkroete 0/4 Westliches Thanalan/Tal der
+    Spuren; Rindenmolch 0/2 Suedwald/Obere Pfade; Haarmuecke 0/4 und
+    Gluehwuermchen 0/2 Ostwald/Brombeerlichtung; Fluss-Yarzon 0/4 Suedwald/
+    Florarium der Stille; Lehmfliegenschwarm 0/4 und Knoecheltaenzer 0/4
+    Suedliches Thanalan/Mordsdurst; Flausch 0/4 Oestliches Thanalan/
+    Wellwick-Forst; Feuer-Exergon 1/4 Suedliches Thanalan/Das Rote Labyrinth;
+    Todesweide 0/4 Tiefer Wald/Sauerampferweide.
+    Weicht die Ansage davon ab, stimmt die Auswertung nicht.
+
+>>> EINSCHRAENKUNG, DIE DER USER KENNT: Der Marker ist der MITTELPUNKT DES
+    GEBIETS, nicht das Monster. Die Kategorie fuehrt ins richtige Gebiet, das
+    Suchen davor uebernimmt die Gegner-Kategorie - derselbe Stand, den ein
+    sehender Spieler mit dem Jagdtagebuch hat.
+
+## FRUEHERER STAND (2026-08-17, "CONTROLLER-BEDIENUNG: MACHBARKEIT GEPRÜFT, NICHTS GEBAUT")
 
 >>> FRAGE DES USERS: Wie aufwendig wäre es, das Plugin auch mit Controller
     bedienbar zu machen - "wir müssten aber schauen auf welche Controlertasten

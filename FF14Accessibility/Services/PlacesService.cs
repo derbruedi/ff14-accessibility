@@ -269,6 +269,64 @@ public sealed class PlacesService
         return result;
     }
 
+    // ── Orte auf FREMDEN Karten (Jagdtagebuch, zonenübergreifende Ziele) ──
+    //
+    // GetPlaces above only ever answers for the map the player stands on. A
+    // hunting log habitat ("Zentrales La Noscea, Sommerfurt") is usually
+    // somewhere else, so both steps - zone name to map, and area name to
+    // position - have to work without being there.
+
+    // Zone PlaceName row -> map row. Sheet data, built once.
+    private Dictionary<uint, uint>? _mapByZonePlace;
+
+    /// <summary>
+    /// The map whose zone name is <paramref name="placeNameRowId"/>, or 0 when
+    /// no map carries that place name. Measured 2026-08-17: all 647 hunting log
+    /// zone entries resolve this way.
+    /// </summary>
+    public uint FindMapByPlaceName(uint placeNameRowId)
+    {
+        if (placeNameRowId == 0) return 0;
+        if (_mapByZonePlace == null)
+        {
+            _mapByZonePlace = [];
+            foreach (var map in _data.GetExcelSheet<Map>())
+            {
+                var pn = map.PlaceName.RowId;
+                if (pn == 0) continue;
+                // First map wins: later rows are the same zone re-issued for
+                // instances, and their markers are the same ones.
+                _mapByZonePlace.TryAdd(pn, map.RowId);
+            }
+            _log.Info($"[Orte] Zonen-Namenstabelle: {_mapByZonePlace.Count} Karten.");
+        }
+        return _mapByZonePlace.GetValueOrDefault(placeNameRowId);
+    }
+
+    /// <summary>
+    /// World position of the named area's map marker on the GIVEN map, or null
+    /// when that map has no marker for it. This is the centre of the area the
+    /// game labels on its map - the same spot a sighted player aims for when
+    /// the hunting log names a habitat, not the monster itself. Y is unknown
+    /// (map data is 2D) and resolved via navmesh before walking.
+    /// </summary>
+    public Vector3? FindMarkerPosition(uint mapId, uint placeNameRowId)
+    {
+        if (mapId == 0 || placeNameRowId == 0) return null;
+        if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map)) return null;
+        if (!_data.GetSubrowExcelSheet<MapMarker>().TryGetRow(map.MapMarkerRange, out var markers)) return null;
+
+        foreach (var m in markers)
+        {
+            if (m.PlaceNameSubtext.RowId != placeNameRowId) continue;
+            return new Vector3(
+                PixelToWorld(m.X, map.SizeFactor, map.OffsetX),
+                0f,
+                PixelToWorld(m.Y, map.SizeFactor, map.OffsetY));
+        }
+        return null;
+    }
+
     // ── Zonen-Routing: welcher Übergang führt Richtung Ziel-Karte? ──
 
     // Static transition graph (map id -> reachable map ids), built lazily

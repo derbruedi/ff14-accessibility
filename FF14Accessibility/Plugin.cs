@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly FateService        _fates;
     private readonly GatheringService   _gathering;
     private readonly BestiaryService    _bestiary;
+    private readonly HuntingLogService  _huntingLog;
     private readonly RouteService       _routes;
     private readonly ShopNpcService     _shops;
     private readonly ObjectNameService  _objectNames;
@@ -119,11 +120,11 @@ public sealed class Plugin : IDalamudPlugin
 
     // Single source of truth for the version: log line AND spoken announcement
     // derive from these (they diverged once - spoken 4.1 vs logged 4.2).
-    // 5.85 macht drei Fenster lesbar, in denen bisher nur nackte Zahlen standen
-    // (Tauschen, Vermoegen, Errungenschaften), und gibt den Chat-Kanaelen ein
-    // Menue. Der Tooltip-Leser liefert seither ueberall lesbaren Text.
-    private const string PluginVersion    = "5.85";
-    private const string PluginVersionTag = "Chat-Kanaele im Menue, Tauschfenster, Vermoegen, Errungenschaftspunkte";
+    // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
+    // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
+    // Rang noch verlangt - auch in andere Gebiete.
+    private const string PluginVersion    = "5.86";
+    private const string PluginVersionTag = "Jagdziele im Objekt-Browser, Bestiarium-Raenge benannt";
 
     public Plugin()
     {
@@ -263,6 +264,7 @@ public sealed class Plugin : IDalamudPlugin
         _fates        = new FateService(ClientState);
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
+        _huntingLog   = new HuntingLogService(DataManager, ObjectTable, ClientState, _places, Log);
         _routes       = new RouteService(PluginInterface, Log);
         _shops        = new ShopNpcService(DataManager, Log);
         // Shared by browser, target announcement, auto-walk and follow so all
@@ -271,7 +273,7 @@ public sealed class Plugin : IDalamudPlugin
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -1780,6 +1782,61 @@ public sealed class Plugin : IDalamudPlugin
             stopRange = place.IsZoneTransition
                 ? _config.AutoWalkTransitionStopRange
                 : _config.AutoWalkPlaceStopRange;
+            return MarkerResolve.Resolved;
+        }
+
+        // Jagdziel aus dem Browser. Same routing as a quest goal, for the same
+        // reason: the monster's home area is a place on the map, and in another
+        // zone the only thing worth walking to is the transition that leads
+        // there. Zone checked FRESH here - the flag stored at selection time is
+        // stale after a teleport.
+        var hunt = _navigation.SelectedHuntTarget;
+        if (hunt != null)
+        {
+            if (hunt.MapId != 0 && hunt.MapId != ClientState.MapId)
+            {
+                var hop = _places.FindFirstHopToMap(hunt.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.HuntingNoRoute(hunt.MonsterName, hunt.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = _autoWalk.ResolveFloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position = hopWalk.Value;
+                name = hop.Name;
+                stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            // 40 of the 647 habitats are dungeon areas the map never marks. Say
+            // so instead of walking somewhere arbitrary.
+            if (hunt.Position is not { } area)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.HuntingAreaUnknown(hunt.MonsterName, hunt.AreaName));
+                return MarkerResolve.Failed;
+            }
+
+            var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+            var areaWalk = _autoWalk.ResolveFloorPoint(area with { Y = areaY });
+            if (areaWalk == null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(hunt.AreaName));
+                return MarkerResolve.Failed;
+            }
+            position = areaWalk.Value;
+            // Both parts are spoken: the monster is what the player picked, the
+            // area is where they are actually being taken - the marker is the
+            // centre of the area, not the monster.
+            name = hunt.AreaName.Length > 0 ? $"{hunt.MonsterName}, {hunt.AreaName}" : hunt.MonsterName;
+            heightIsGuess = true;
+            stopRange = _config.AutoWalkPlaceStopRange;
             return MarkerResolve.Resolved;
         }
 

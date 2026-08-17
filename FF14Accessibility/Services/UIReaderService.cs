@@ -8569,7 +8569,7 @@ public sealed class UIReaderService : IDisposable
             // 2026-07-19). Rows OUTSIDE the tree list are the rank picker -
             // silencing those would make rank selection unusable.
             if (index >= 0 && total > 0) return;
-            _tolk.SpeakInterrupt(row);
+            _tolk.SpeakInterrupt(TryFormatBestiaryRank(row, out var rankRow) ? rankRow : row);
             return;
         }
 
@@ -8614,13 +8614,53 @@ public sealed class UIReaderService : IDisposable
     /// ("0 von 3" / "0 of 3"). The connector comes from the same place that
     /// PRINTS it - hard-coding "von" here made the whole hunting log vanish in
     /// English, because a row without a recognised progress token is skipped.</summary>
-    private static bool IsSpokenProgress(string part)
+    private static bool IsSpokenProgress(string part) => TryParseSpokenProgress(part, out _, out _);
+
+    /// <summary>The two numbers behind a spoken progress token ("3 von 48").</summary>
+    private static bool TryParseSpokenProgress(string part, out int done, out int total)
     {
+        done = 0;
+        total = 0;
         var pieces = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return pieces.Length == 3
             && pieces[0].All(char.IsDigit)
             && pieces[1] == AccessibilityStrings.CounterConnector
-            && pieces[2].All(char.IsDigit);
+            && pieces[2].All(char.IsDigit)
+            && int.TryParse(pieces[0], out done)
+            && int.TryParse(pieces[2], out total);
+    }
+
+    /// <summary>
+    /// Names the rank picker rows, which the window renders as bare numbers:
+    /// "1, 10 von 10" says neither what the 1 nor what the counter is (dump
+    /// 2026-08-17, MonsterNote node 16 - a List OUTSIDE the tree, text nodes
+    /// "1" and "10/10").
+    ///
+    /// The counter counts the rank's ENTRIES, not kills: every rank holds
+    /// exactly ten MonsterNote rows (sheet-verified 2026-08-17 - Thaumaturg is
+    /// rows 70001-70050, so rank 3 is 70021-70030). That those ten rows are one
+    /// rank is confirmed by the window header: their kill counts add up to 48,
+    /// exactly the "3/48" it shows for rank 3, while the rank row for the same
+    /// rank reads "0/10".
+    ///
+    /// Recognised by SHAPE - a bare number plus one progress token - not by node
+    /// id: ids repeat across components (see the tree list rows), and the only
+    /// other focusable list in this window is the class filter, whose rows carry
+    /// names ("Alle anzeigen"), never this shape.
+    /// </summary>
+    private static bool TryFormatBestiaryRank(string row, out string spoken)
+    {
+        spoken = string.Empty;
+        var parts = row.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2) return false;
+
+        var rank = parts.FirstOrDefault(p => p.Length > 0 && p.All(char.IsDigit));
+        var progress = parts.FirstOrDefault(p => IsSpokenProgress(p));
+        if (rank == null || progress == null) return false;
+        if (!TryParseSpokenProgress(progress, out var done, out var total)) return false;
+
+        spoken = AccessibilityStrings.BestiaryRankRow(rank, done, total);
+        return true;
     }
 
     /// <summary>

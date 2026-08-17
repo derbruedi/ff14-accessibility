@@ -45,6 +45,10 @@ internal enum NavCategory
     QuestEnemies,
     GatheringNodes,
     Fates,
+    // Jagdziele: die noch offenen Monster des aktuellen Jagdtagebuch-Rangs.
+    // Kommt weder aus der Objekttabelle noch aus der Zone - Quelle sind
+    // Jagdtagebuch-Fortschritt und Kartenmarker, siehe HuntingLogService.
+    HuntingTargets,
     FishingSpots,
     Aetherytes,
     QuestGoals,
@@ -82,6 +86,7 @@ public sealed class NavigationService
     private readonly FateService _fates;
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
+    private readonly HuntingLogService _huntingLog;
     private readonly ObjectNameService _objectNames;
     private readonly ObjectMemoryService _memory;
     private readonly Configuration _config;
@@ -108,6 +113,7 @@ public sealed class NavigationService
         FateService fates,
         RouteService routes,
         ShopNpcService shops,
+        HuntingLogService huntingLog,
         ObjectNameService objectNames,
         ObjectMemoryService memory,
         Configuration config,
@@ -128,6 +134,7 @@ public sealed class NavigationService
         _fates = fates;
         _routes = routes;
         _shops = shops;
+        _huntingLog = huntingLog;
         _objectNames = objectNames;
         _memory = memory;
         _config = config;
@@ -185,6 +192,7 @@ public sealed class NavigationService
                 SelectedQuestDestination  = null;
                 SelectedPlaceDestination  = null;
                 SelectedObjectDestination = null;
+                SelectedHuntTarget        = null;
                 _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
             }
             DeepDungeon.Poll(player);
@@ -208,12 +216,13 @@ public sealed class NavigationService
             _lastSeenHardTargetId = hardTargetId;
             if (hardTargetId != 0 && hardTargetId != _ownSelectionId
                 && (SelectedQuestDestination != null || SelectedPlaceDestination != null
-                    || SelectedObjectDestination != null))
+                    || SelectedObjectDestination != null || SelectedHuntTarget != null))
             {
                 _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
                 SelectedQuestDestination = null;
                 SelectedPlaceDestination = null;
                 SelectedObjectDestination = null;
+                SelectedHuntTarget = null;
             }
         }
 
@@ -304,6 +313,11 @@ public sealed class NavigationService
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
         // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
         (NavCategory.Fates,           null),
+        // Jagdziele: was der aktuelle Rang des Jagdtagebuchs noch verlangt, mit
+        // dem Gebiet, in dem das Monster lebt. Wie die Quest-Ziele auch dann,
+        // wenn es in einer anderen Zone liegt - dort fuehrt Numpad3 zum
+        // Uebergang statt ins Leere.
+        (NavCategory.HuntingTargets,  null),
         // Angelplätze kommen aus dem FishingSpot-Sheet (FishingService), nicht aus
         // der ObjectTable: das Sheet kennt ALLE Angelplätze der Zone (das Spiel
         // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
@@ -393,6 +407,7 @@ public sealed class NavigationService
     private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
     private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
+    private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -407,6 +422,15 @@ public sealed class NavigationService
     /// resolves the walkable height via navmesh before the auto-walk.
     /// </summary>
     public PlaceDestination? SelectedPlaceDestination { get; private set; }
+
+    /// <summary>
+    /// The hunting log target selected via the browser (Jagdziele category), or
+    /// null. Its position is the AREA the monster lives in, taken from the map
+    /// marker - 2D like every other marker, and in another zone it is only the
+    /// direction of travel, so Plugin.cs routes it over the zone transitions
+    /// exactly like a cross-zone quest goal.
+    /// </summary>
+    public HuntingTarget? SelectedHuntTarget { get; private set; }
 
     /// <summary>
     /// The world object selected via the browser (the plain object categories),
@@ -449,6 +473,7 @@ public sealed class NavigationService
         SelectedQuestDestination = null;
         SelectedPlaceDestination = null;
         SelectedObjectDestination = null;
+        SelectedHuntTarget = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -498,6 +523,14 @@ public sealed class NavigationService
             var fates = _fates.GetActiveFates();
             var preparing = fates.Count(f => f.IsPreparing);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryFateCount(fates.Count - preparing, preparing));
+            return;
+        }
+
+        if (IsHuntingCategory)
+        {
+            var targets = _huntingLog.GetOpenTargets();
+            var here = targets.Count(t => t.InCurrentZone);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(targets.Count, here));
             return;
         }
 
@@ -551,6 +584,12 @@ public sealed class NavigationService
         if (IsFateCategory)
         {
             CycleFateDestination(direction, player);
+            return;
+        }
+
+        if (IsHuntingCategory)
+        {
+            CycleHuntTarget(direction, player);
             return;
         }
 
@@ -1049,6 +1088,72 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Jagdziele: was der aktuelle Rang noch verlangt ──
+    //
+    // Targets come from the hunting log (HuntingLogService), not the object
+    // table: the log knows what is still missing even when the monster is three
+    // zones away, and THAT is the question this category answers. Same shape as
+    // the quest goals - in-zone first, cross-zone routed over the transitions -
+    // because it is the same problem: a named place a blind player cannot see
+    // on the map.
+    private void CycleHuntTarget(int direction, IGameObject player)
+    {
+        var targets = _huntingLog.GetOpenTargets()
+            .OrderByDescending(t => t.InCurrentZone)
+            .ThenBy(t => t.Position is { } p ? Distance2D(player.Position, p) : float.MaxValue)
+            .ThenBy(t => t.MonsterName, StringComparer.Ordinal)
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            SelectedHuntTarget = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoHuntingTargets);
+            return;
+        }
+
+        var count = targets.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var target = targets[_cycleIndex];
+        SelectedHuntTarget = target;
+
+        // Name plus what is still missing - the kill count is the whole point of
+        // the entry, and without it the list cannot be prioritised.
+        var text = AccessibilityStrings.HuntingTargetEntry(
+            target.MonsterName, target.Killed, target.Required);
+
+        if (target.InCurrentZone && target.Position is { } pos)
+        {
+            text += ", " + AccessibilityStrings.HuntingArea(target.AreaName) + ", " +
+                    $"{FormatDistance(Distance2D(player.Position, pos))}, " +
+                    $"{CalculateDirection(player, pos)}.";
+        }
+        else
+        {
+            // Another zone: name it, then the transition that leads there. The
+            // area alone would be useless - a blind player cannot look up where
+            // "Sommerfurt" is.
+            var zone = string.IsNullOrEmpty(target.ZoneName)
+                ? AccessibilityStrings.InAnotherArea
+                : AccessibilityStrings.InArea(target.ZoneName);
+            text += ", " + AccessibilityStrings.HuntingArea(target.AreaName) + zone;
+
+            var hop = _places.FindFirstHopToMap(target.MapId, out var hops);
+            if (hop != null)
+            {
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
+            }
+        }
+
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Jagd] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
     /// <summary>
     /// Quest objectives, nearest first. In-zone markers come first, sorted by
     /// straight-line distance. Cross-zone markers follow, sorted by the walking
@@ -1184,6 +1289,13 @@ public sealed class NavigationService
         // spots and leves).
         if (Categories[index].Cat == NavCategory.Fates)
             return _fates.GetActiveFates().Count > 0;
+
+        // Jagdziele nur, solange der Rang noch etwas verlangt: Klassen ohne
+        // Jagdtagebuch (Handwerker, Jobs nach ARR) und ein fertig gejagter Rang
+        // liefern beide eine leere Liste, und eine leere Kategorie ist im
+        // Durchblättern nur ein Tastendruck Rauschen (Regel wie oben).
+        if (Categories[index].Cat == NavCategory.HuntingTargets)
+            return _huntingLog.GetOpenTargets().Count > 0;
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;

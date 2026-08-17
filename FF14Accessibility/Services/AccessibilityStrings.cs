@@ -304,6 +304,7 @@ public static partial class AccessibilityStrings
         NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
         NavCategory.Fates            => "FATEs",
+        NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
         NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
         NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
@@ -407,6 +408,45 @@ public static partial class AccessibilityStrings
 
     public static string NoFatesInZone =>
         IsGerman ? "Keine FATEs in diesem Gebiet." : "No FATEs in this area.";
+
+    // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
+    public static string CategoryHuntingCount(int total, int here) =>
+        here > 0
+            ? (IsGerman
+                ? $"Jagdziele: {total} offen, {here} in diesem Gebiet."
+                : $"Hunting targets: {total} open, {here} in this area.")
+            : (IsGerman
+                ? $"Jagdziele: {total} offen, keines in diesem Gebiet."
+                : $"Hunting targets: {total} open, none in this area.");
+
+    /// <summary>One hunting log line: the monster and how many kills are still missing.</summary>
+    public static string HuntingTargetEntry(string monster, int killed, int required) =>
+        IsGerman
+            ? $"{monster}, {killed} von {required} erlegt"
+            : $"{monster}, {killed} of {required} killed";
+
+    /// <summary>The area a hunting log monster lives in, as the log names it.</summary>
+    public static string HuntingArea(string area) =>
+        area.Length == 0 ? string.Empty : (IsGerman ? $"lebt in {area}" : $"lives in {area}");
+
+    public static string HuntingNoRoute(string monster, string zone) =>
+        IsGerman
+            ? $"{monster} lebt in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
+            : $"{monster} lives in {zone}. No route there over zone transitions.";
+
+    public static string HuntingAreaUnknown(string monster, string area) =>
+        area.Length > 0
+            ? (IsGerman
+                ? $"{monster} lebt in {area}. Dieses Gebiet ist auf der Karte nicht verzeichnet."
+                : $"{monster} lives in {area}. That area is not marked on the map.")
+            : (IsGerman
+                ? $"Für {monster} ist kein Ort bekannt."
+                : $"No location known for {monster}.");
+
+    public static string NoHuntingTargets =>
+        IsGerman
+            ? "Keine offenen Jagdziele in diesem Rang."
+            : "No open hunting targets in this rank.";
 
     // ── Freibriefe (Levequests): Geber-NPCs + Ziele ──
     public static string CategoryLevequestCount(int givers, int goals) =>
@@ -735,6 +775,10 @@ public static partial class AccessibilityStrings
     public static string LivesIn(string habitat) => IsGerman ? $", lebt in {habitat}" : $", lives in {habitat}";
     public static string BestiaryOverview(int count, string rows) =>
         IsGerman ? $"Bestiarium, {count} Monster. {rows}" : $"Bestiary, {count} monsters. {rows}";
+    /// <summary>A rank picker row: which rank, and how many of its ten entries are done.</summary>
+    public static string BestiaryRankRow(string rank, int done, int total) => done >= total
+        ? (IsGerman ? $"Rang {rank}, alle {total} Einträge erledigt" : $"Rank {rank}, all {total} entries complete")
+        : (IsGerman ? $"Rang {rank}, {done} von {total} Einträgen erledigt" : $"Rank {rank}, {done} of {total} entries done");
 
     // ── Gegenstand abliefern (Request / delivery) ────────────────────
     // "Hand Over" is the EN client's button; verify against an EN dump in Teil 2.
