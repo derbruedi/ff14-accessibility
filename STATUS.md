@@ -3,7 +3,52 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "LIZENZ UND FREMDSOFTWARE-HINWEISE")
+## STAND JETZT (2026-08-17, "CONTROLLER-BEDIENUNG: MACHBARKEIT GEPRÜFT, NICHTS GEBAUT")
+
+>>> FRAGE DES USERS: Wie aufwendig wäre es, das Plugin auch mit Controller
+    bedienbar zu machen - "wir müssten aber schauen auf welche Controlertasten
+    wir die Mod-Tasten legen". Reine Recherche, kein Code geschrieben.
+
+>>> ERGEBNIS IN EINEM SATZ: Die Technik ist der einfache Teil, die Tastenknappheit
+    ist das Problem - 52 belegte Kombinationen im Plugin gegen 16 Knöpfe am
+    Controller, und die sind im Gamepad-Modus alle vom Spiel belegt.
+
+>>> VERIFIZIERT (ilspycmd gegen Dalamud.dll + FFXIVClientStructs.dll, Details in
+    docs/game-api.md -> "Gamepad-Eingabe"):
+    - Dalamud hat IGamepadState mit Pressed/Repeat/Released/Raw + beide Sticks.
+      Das ist genau die Flankenerkennung, die Plugin.cs für die Tastatur selbst
+      baut - müsste also nicht nachgebaut werden.
+    - GamepadButtons kennt exakt 16 Knöpfe (D-Pad 4, Gesichtstasten 4, L1/L2/L3,
+      R1/R2/R3, Start, Select).
+    - Keybind.GamepadSettings (2 Slots pro Aktion) steht in DERSELBEN Tabelle,
+      die KeybindService schon ausliest. Die Frage "welche Knöpfe sind frei"
+      lässt sich also messen statt raten - genau wie beim Tastatur-Dump 2026-07-10.
+    - Plugin-Seite: 52 Key-Felder in Configuration.cs, alle als Text über
+      ParseKeySpec. Ein zweiter Eingabeweg dockt zentral an, die 52 Funktionen
+      dahinter blieben unangetastet. SpokenMenu.cs (347 Zeilen, hierarchisch)
+      wäre das fertige Gerüst für ein Ringmenü.
+
+>>> DAS NADELÖHR, NICHT GEMESSEN: Einzelne Knöpfe schlucken geht über Dalamuds
+    öffentliche API NICHT. Bei der Tastatur genügt KeyState[key]=false; das
+    Gamepad-Interface ist rein lesend. Dalamud-intern gibt es nur alles-oder-
+    nichts (ImGui NavEnableGamepad -> ButtonsPressed=None). Ansatzpunkte wären
+    GamepadInputAddress oder die spieleigene UIInputData.FilterGamepadInputs,
+    aber ob ein gefilterter Knopf die Spiellogik wirklich nicht mehr erreicht,
+    steht in KEINER Quelle. Ohne diese Messung löst jeder Mod-Knopf zusätzlich
+    seine Spielfunktion aus.
+
+>>> VORGESCHLAGENE ETAPPEN (mit dem User noch nicht entschieden):
+    1. KeybindService um GamepadSettings erweitern -> Dump, welche Knöpfe belegt
+       sind. Klein, risikolos, Grundlage für alles Weitere. UNGEPRÜFT dabei: ob
+       die Key-Werte in GamepadSettings dieselben VK-Codes sind wie bei der
+       Tastatur oder eine eigene Nummerierung.
+    2. Schluck-Sonde: erreicht ein gefilterter Knopf das Spiel noch?
+    3. Eingabeschicht: Gamepad-Bindung neben jedem KeyXxx.
+    4. Bedienkonzept: modales Ringmenü über SpokenMenu, weil 52 > 16.
+    Etappe 1+2 je ein überschaubarer Happen, 3+4 zusammen in der Größenordnung
+    des Nachlese-Browsers.
+
+## FRUEHERER STAND (2026-08-17, "LIZENZ UND FREMDSOFTWARE-HINWEISE")
 
 >>> ANLASS: PR #7 (blindndangerous, Übersetzung der deutschen Dokumente) merkte
     am Rande an, dass es keine LICENSE-Datei gibt. Beim Nachprüfen war das nicht

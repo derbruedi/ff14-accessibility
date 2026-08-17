@@ -233,6 +233,46 @@ Namespace `FFXIVClientStructs.FFXIV.Client.System.Input` (+ `Client.UI.UIInputDa
   alle belegten Aktionen + Konflikt-Check gegen Plugin-Tasten nach
   `Desktop\FFXIV_Keybinds.txt`.
 
+## Gamepad-Eingabe (verifiziert per ilspycmd, 2026-08-17 — Machbarkeitsstudie, NICHTS davon gebaut)
+
+**Dalamud-Seite** (`Dalamud.Game.ClientState.GamePad`, Interface
+`Dalamud.Plugin.Services.IGamepadState`):
+
+- `Pressed(GamepadButtons)` → nur im ERSTEN Frame des Drucks; `Repeat(...)` in
+  Intervallen bei Halten; `Released(...)` im Frame nach dem Loslassen;
+  `Raw(...)` roher Zustand. Alle geben `float` (1 oder 0) zurück.
+  Damit ist die Flankenerkennung, die das Plugin für die Tastatur selbst baut
+  (`_keyWasDown`/`_keyJustPressed` in Plugin.cs), fertig vorhanden.
+- `LeftStick` / `RightStick` als `Vector2`.
+- `GamepadInputAddress` (nint) — Zeiger auf die GamepadInput-Struct.
+- **`GamepadButtons`** (Flags, ushort): DpadUp/Down/Left/Right, North/South/
+  West/East, L1/L2/L3, R1/R2/R3, Start, Select. **16 Stück, mehr gibt es nicht.**
+
+**Schlucken einzelner Knöpfe: NICHT über die öffentliche API möglich.**
+Für die Tastatur genügt `KeyState[key] = false`. Ein Gegenstück fehlt:
+
+- Das Interface ist rein lesend (nur Getter + die vier Abfragemethoden).
+- Dalamud-intern gibt es nur ALLES-ODER-NICHTS: ist
+  `ImGuiConfigFlags.NavEnableGamepad` gesetzt, setzt `GamepadState` beim
+  Framework-Update `gamepadInput->GamepadInputData.ButtonsPressed = None` und
+  blockt damit die gesamte Gamepad-Eingabe des Spiels.
+- Ansatzpunkte für selektives Filtern gäbe es: über `GamepadInputAddress`
+  direkt in die Struct schreiben (Dalamud macht genau das), oder die
+  spieleigene `UIInputData.FilterGamepadInputs(UIInputData*)`. Dazu kommen die
+  Felder `UIInputData.GamepadInputs` und `GamepadInputs2` (je `GamepadInputData`).
+- **OFFEN, MUSS GEMESSEN WERDEN:** ob ein so gefilterter Knopf die Spiellogik
+  wirklich nicht mehr erreicht — das hängt an der Reihenfolge von Dalamud-Hook
+  und Spiel-Frame und steht in keiner Quelle. Ohne belastbare Messung ist jede
+  Controller-Bedienung ein Blindflug: ein nicht geschluckter Knopf löst
+  zusätzlich seine Spielfunktion aus.
+
+**Welche Knöpfe belegt sind:** steht in derselben Keybind-Tabelle wie die
+Tastatur — `Keybind.GamepadSettings` (2 Slots pro Aktion, siehe Abschnitt
+darüber). `KeybindService` liest bisher nur `KeySettings`; für einen
+Gamepad-Dump muss dort `GamepadSettings` ergänzt werden. Ob die `Key`-Werte
+darin dieselben Windows-VK-Codes sind wie bei der Tastatur oder eine eigene
+Knopf-Nummerierung, ist NICHT geprüft.
+
 ## Offizielle Standard-Tastaturbelegung (Quelle: de.finalfantasyxiv.com/game_manual/operation, 2026-07-10)
 
 Zusammenfassung des offiziellen Handbuchs. VORBEHALT: Sonderzeichen-Tasten
