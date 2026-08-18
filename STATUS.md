@@ -5,6 +5,21 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
 
+>>> NACH DEM RELEASE GEMERGT, noch in KEINEM Release (waere v5.89):
+    - PR #8 (dnz3d4c): Jagdziel in anderer Zone klebte Lebensraum und Gebiet
+      zusammen ("lebt in Kaktusgrundim Gebiet Ost-Thanalan"). Gegengeprueft:
+      HuntingArea endet ohne Leerzeichen und liefert "" ohne Lebensraum,
+      InArea/InAnotherArea beginnen ohne eines, und die beiden anderen
+      InArea-Aufrufstellen (Quest :806, Freibrief :954) setzen ihr ", " selbst -
+      der Fix gehoert also an die Aufrufstelle, nicht in den String. Merge-
+      sauber, Build 0/0. Autor hat nur einen koreanischen Client, die deutsche
+      und englische Formulierung habe ich an den Strings selbst nachgesehen.
+    - Schwesterstelle gleich mitgezogen (NavigationService :1143): Jagdziel in
+      DERSELBEN Zone ohne Lebensraum ergab ", , 30 Meter, Norden". Andere
+      Aufrufstellen geprueft: HuntingAreaUnknown faengt den leeren Fall selbst
+      ab, HuntingMonsterNearby ist nie leer.
+    Beides in-game ungetestet.
+
 >>> ALS v5.88 VEROEFFENTLICHT (2026-08-18). Verifiziert: Tag v5.88 ist Latest,
     6 Assets dran, und die latest-Weiterleitung liefert byteweise dieselbe
     Datei wie der lokale Build (SHA 8F6B46D5...), Manifest im ZIP steht auf
