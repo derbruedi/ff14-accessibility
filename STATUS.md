@@ -5,6 +5,13 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## STAND JETZT (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
 
+>>> ALS v5.88 VEROEFFENTLICHT (2026-08-18). Verifiziert: Tag v5.88 ist Latest,
+    6 Assets dran, und die latest-Weiterleitung liefert byteweise dieselbe
+    Datei wie der lokale Build (SHA 8F6B46D5...), Manifest im ZIP steht auf
+    5.88.0.0. Antwort an den Spieler liegt in `antwort-spieler-fps-anzeige.txt`.
+    OFFEN BLEIBT: die Optionsmatrix im Grafik-Reiter ist weiter ungetestet,
+    ebenso die neue Seitenansage mit der Anzahl und F10 im Konfigurationsfenster.
+
 >>> AUSLOESER: User meldet "in den Einstellungen wird in einigen Menues nicht
     alles vorgelesen". Log 2026-08-18 13:26-13:31 + Dump (ConfigSystem, 593
     Nodes) ausgewertet. Vier verschiedene Fehler, alle belegt, alle gebaut.
