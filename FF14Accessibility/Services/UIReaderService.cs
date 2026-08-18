@@ -2505,6 +2505,16 @@ public sealed class UIReaderService : IDisposable
             // ~14 ms later with the raw number and cut the label off (log
             // 2026-07-27 15:42: "Hauptlautstärke, 100 %" interrupted by "100").
             if (IsBareNumber(text) && IsAddonVisible("ConfigSystem")) return;
+            // Dasselbe fuer Aufklappfelder, deren Wert KEINE blosse Zahl ist. Der
+            // erste Anlauf (TryReadConfigFocusRow schweigt) hat nur das falsche
+            // ", Schalter, aus" beseitigt - der allgemeine Pfad hier holte danach
+            // den Wert als nackten Text nach und sagte ihn ein zweites Mal an
+            // (Log 2026-08-18 13:53:34: "Grafik-Voreinstellungen, Auswahlliste,
+            // Mittel (Desktop)." und 6 ms spaeter nochmal "Mittel (Desktop)").
+            // Zustaendig ist allein AnnounceConfigGlobalFocus, das Beschriftung,
+            // Typ und Wert in EINER Ansage liefert.
+            if (FindAddonNameForNode(node) == "ConfigSystem"
+                && IsGlobalConfigControl("ConfigSystem", node)) return;
             // Charaktererstellung, Schritt Aussehen: der EINZIGE Eingriff dieses
             // Features in den Fokus-Leser. Gibt den Text unveraendert zurueck, solange
             // der Fokus nicht in _CharaMakeFeature oder einem CMF*-Waehler steht - dort
@@ -2522,7 +2532,11 @@ public sealed class UIReaderService : IDisposable
             // A shop row counts as well: its name comes from the row text, not
             // from an icon slot, but it is just as much an item name.
             _itemDwellArmed = itemBranchActive || _shopRowItemActive;
-            _tolk.SpeakInterrupt(text); // identische Doppel-Ansagen faengt der 0,5s-Debounce ab
+            // Der Knoten geht als Quelle mit: identische Doppel-Ansagen DESSELBEN
+            // Knotens faengt der 0,5s-Debounce weiterhin ab, ein Schritt auf einen
+            // ANDEREN Knoten mit gleichem Wort ("Einfach" -> "Einfach" in der
+            // naechsten Zeile der Optionsmatrix) darf er nicht mehr verschlucken.
+            _tolk.SpeakInterrupt(text, (nint)node);
         }
     }
 
@@ -3552,6 +3566,15 @@ public sealed class UIReaderService : IDisposable
             return true;
         }
 
+        // ConfigSystem: AnnounceConfigGlobalFocus has already spoken the slider or
+        // drop-down with its label ("Schattenauflösung, Auswahlliste, Mittel: 1024
+        // Pixel"). The climb below would reach the drop-down's INNER checkbox and
+        // add "Mittel: 1024 Pixel, Schalter, aus" 7 ms later - not just a
+        // duplicate, but a false statement: it announces an open list as a switch
+        // that is off (log 2026-08-18 13:30:55.977, and the same pattern under
+        // every drop-down of that session).
+        if (addonName == "ConfigSystem" && IsGlobalConfigControl(addonName, node)) return false;
+
         // Climb to the nearest component and remember its node (for the label).
         AtkComponentBase* comp = null;
         AtkResNode* compNode = null;
@@ -3581,6 +3604,32 @@ public sealed class UIReaderService : IDisposable
             case ComponentType.RadioButton:
                 var label = GetTextFromNodeTree(compNode).Trim();
                 if (string.IsNullOrWhiteSpace(label)) return false;
+                // Which ROW of an option matrix this is. The graphics tab has
+                // "Lebendige Körperdarstellung" as four rows (Selbst / Gruppe /
+                // Andere / Gegner) of three buttons each (Aus / Einfach / Voll,
+                // dump 2026-08-18 nodes 402-420); the button's own text is only
+                // the option, so twelve controls sounded identical and the row was
+                // unknowable. The row name is a top-level text node to the LEFT -
+                // it never applies to a checkbox, whose own text already is the
+                // full sentence, so only radio buttons ask for it.
+                if (comp->GetComponentType() == ComponentType.RadioButton)
+                {
+                    var rowPtr = _gameGui.GetAddonByName(addonName);
+                    if (!rowPtr.IsNull)
+                    {
+                        var row = ConfigLabelByGeometry((AtkUnitBase*)(nint)rowPtr, compNode, out var rowFrom);
+                        // Only a name to the LEFT: a heading above the block would
+                        // be prefixed onto every option of every row underneath it.
+                        if (rowFrom == ConfigLabelSource.RowLeft
+                            && !label.Contains(row, StringComparison.Ordinal))
+                            label = $"{row}, {label}";
+#if DEBUG
+                        _log.Info($"[CS-Zeile] Auswahlknopf id={compNode->NodeId} "
+                                  + $"@{compNode->ScreenX:0},{compNode->ScreenY:0} "
+                                  + $"{compNode->Width}x{compNode->Height} -> '{row}' (Quelle {rowFrom})");
+#endif
+                    }
+                }
                 var isChecked = ((AtkComponentButton*)comp)->IsChecked;
                 if (comp->GetComponentType() == ComponentType.CheckBox)
                     // Name the control type ("Schalter") so a toggle is not
@@ -3602,6 +3651,25 @@ public sealed class UIReaderService : IDisposable
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// True when the focused node belongs to a control that
+    /// <see cref="AnnounceConfigGlobalFocus"/> already describes on its own
+    /// (slider or drop-down). Decided from the TOP-LEVEL control, never from the
+    /// nearest component: a drop-down's display field is itself a CheckBox
+    /// component, which is exactly how it ended up being announced as a switch.
+    /// </summary>
+    private unsafe bool IsGlobalConfigControl(string addonName, AtkResNode* node)
+    {
+        var ptr = _gameGui.GetAddonByName(addonName);
+        if (ptr.IsNull) return false;
+        var owner = FindTopLevelOwner((AtkUnitBase*)(nint)ptr, node, out _);
+        if (owner == null || (int)owner->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)owner)->Component;
+        if (comp == null) return false;
+        var ct = comp->GetComponentType();
+        return ct is ComponentType.Slider or ComponentType.DropDownList;
     }
 
     /// <summary>
@@ -3636,7 +3704,7 @@ public sealed class UIReaderService : IDisposable
                 // 2026-07-16, same fields the system config uses).
                 var slider = (AtkComponentSlider*)comp;
                 var value  = slider->Value.ToString();
-                var label  = NearestPanelLabel(addon, ownerIdx);
+                var label  = ConfigControlLabel(addon, owner, ownerIdx, forwardFirst: true);
                 text = slider->MinValue == 0 && slider->MaxValue == 100
                     ? AccessibilityStrings.SliderPercent(label, value)
                     : AccessibilityStrings.SliderDesc(label, value, slider->MinValue, slider->MaxValue);
@@ -3646,7 +3714,7 @@ public sealed class UIReaderService : IDisposable
             case ComponentType.DropDownList:
             {
                 text = DescribeDropDown((AtkComponentDropDownList*)comp, node,
-                                        NearestPanelLabel(addon, ownerIdx)).Text;
+                                        ConfigControlLabel(addon, owner, ownerIdx, forwardFirst: true)).Text;
                 return text.Length > 0;
             }
 
@@ -4341,6 +4409,8 @@ public sealed class UIReaderService : IDisposable
         _csTabs.Clear();
         _csLastTabIndex = -1;
         _csLastTabText  = string.Empty;
+        _csTextChanges.Clear();
+        _csLiveTexts.Clear();
         _lastTitleMenuText = string.Empty; // Dedup zur�cksetzen ? TitleMenu-Button wird neu angesagt
 
         // Gespeichert oder verworfen?
@@ -4368,6 +4438,59 @@ public sealed class UIReaderService : IDisposable
         // Struktur ist analysiert: docs/game-api.md -> "ConfigSystem".
         // TODO: OK/Abbrechen-ButtonClick hier erkennen (_csPendingSave),
         // sobald die Button-NodeIds aus einem Klick-Log bekannt sind.
+    }
+
+    // Wie oft sich ein Text-Node zuletzt geaendert hat, und welche Nodes damit
+    // als LAUFENDE ANZEIGE ueberfuehrt sind. Beides gilt nur solange das
+    // Konfigurationsfenster offen ist (Reset beim Seitenwechsel).
+    private readonly Dictionary<uint, (long FirstTick, int Count)> _csTextChanges = [];
+    private readonly HashSet<uint> _csLiveTexts = [];
+
+    /// <summary>
+    /// True, wenn dieser Text-Node nicht angesagt werden darf, weil er eine
+    /// LAUFENDE ANZEIGE ist statt einer Meldung.
+    ///
+    /// Anlass: Spielermeldung 2026-08-18 (englischer Client) — "when I go to the
+    /// settings for configure the fps limit, nvda say all the time the fps
+    /// number, in all settings, and it cut the other infos". Das ist die
+    /// Bildfrequenz-Anzeige in der Ecke des Fensters (im deutschen Dump
+    /// NodeList[590], id 4, "59 fps"), die auf JEDER Seite mitlaeuft und sich
+    /// jede Sekunde aendert. <see cref="IsVolatileConfigText"/> erkennt sie
+    /// bisher am WORT "fps" — das faellt in jeder Sprache anders aus, und ein
+    /// Kommazahl-Zaehler ("59.9") rutscht auch im deutschen Client durch.
+    ///
+    /// Zwei sprachunabhaengige Kriterien statt weiterer Wortlisten:
+    /// 1. Der Node hat sich in kurzer Folge mehrfach geaendert — das tut keine
+    ///    Beschriftung und keine Meldung, nur ein Messwert. Ab dann dauerhaft
+    ///    stumm, mit einer Logzeile, damit der Fall nachweisbar bleibt.
+    /// 2. Der neue Text beginnt mit einer Ziffer. In einem AENDERUNGS-Scanner
+    ///    heisst das immer "gemessener Wert"; Werte von Bedienelementen sagt
+    ///    ohnehin der Fokus-Leser mit ihrer Beschriftung an. Beschriftungen, die
+    ///    mit einer Ziffer beginnen ("3D-Aufloesung"), sind davon nicht
+    ///    betroffen — sie aendern sich nicht und kommen hier nie an.
+    /// </summary>
+    private bool IsLiveConfigText(uint key, string text)
+    {
+        if (_csLiveTexts.Contains(key)) return true;
+
+        var now = Environment.TickCount64;
+        if (!_csTextChanges.TryGetValue(key, out var seen) || now - seen.FirstTick > 3000)
+        {
+            _csTextChanges[key] = (now, 1);
+        }
+        else
+        {
+            var count = seen.Count + 1;
+            _csTextChanges[key] = (seen.FirstTick, count);
+            if (count >= 3)
+            {
+                _csLiveTexts.Add(key);
+                _log.Info($"[CS] Text-Schluessel {key} aendert sich staendig ('{text}') - laufende Anzeige, ab jetzt stumm.");
+                return true;
+            }
+        }
+
+        return text.Length > 0 && char.IsDigit(text[0]);
     }
 
     private bool IsVolatileConfigText(string t)
@@ -4401,7 +4524,7 @@ public sealed class UIReaderService : IDisposable
                 if (!hasKey) continue; // Ersterscheinung ? nicht ansagen
 
                 // FPS-Filter und bekannte Ignorier-Nodes
-                if (n->NodeId != 169 && !IsVolatileConfigText(t))
+                if (n->NodeId != 169 && !IsVolatileConfigText(t) && !IsLiveConfigText(n->NodeId, t))
                     _tolk.SpeakInterrupt(t);
                 continue;
             }
@@ -4420,7 +4543,7 @@ public sealed class UIReaderService : IDisposable
                 if (hasKey && prev == t) continue;
                 _configSystemLastTexts[key] = t;
                 if (!hasKey) continue;
-                if (!IsVolatileConfigText(t))
+                if (!IsVolatileConfigText(t) && !IsLiveConfigText(key, t))
                     _tolk.SpeakInterrupt(t);
             }
         }
@@ -4462,17 +4585,27 @@ public sealed class UIReaderService : IDisposable
                 // Enter-Dispatch merkt sich den gedrueckten Reiter). Die
                 // child-4-Erkennung meldete "Tab 8 von 8" bei Seite 1
                 // (Log 2026-07-16 16:32:06) - unbestaetigt nicht sprechen.
+                // Wieviele Einstellungen die neue Seite traegt. Ohne diese Zahl
+                // meldet sich die Seite nur mit ihrer ersten Ueberschrift, und die
+                // heisst im Grafik-Reiter genauso wie die erste Einstellung
+                // darunter ("Grafik-Voreinstellungen") - der User konnte daran
+                // nicht erkennen, ob ueberhaupt noch etwas kommt (2026-08-18).
+                var pageOptions = CountVisibleConfigOptions(addon);
+                var pageLabel   = AccessibilityStrings.ConfigPageWithCount(tabLabel, pageOptions);
+
                 if (_csExpectedTabIdx >= 0)
                 {
-                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' [{_csExpectedTabIdx + 1}/{_csTabs.Count}] (per Enter)");
-                    _tolk.SpeakInterrupt(AccessibilityStrings.TabPosition(tabLabel, _csExpectedTabIdx + 1, _csTabs.Count));
+                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' [{_csExpectedTabIdx + 1}/{_csTabs.Count}] "
+                              + $"(per Enter), {pageOptions} Einstellungen");
+                    _tolk.SpeakInterrupt(AccessibilityStrings.TabPosition(pageLabel, _csExpectedTabIdx + 1, _csTabs.Count));
                     _csLastTabIndex   = _csExpectedTabIdx;
                     _csExpectedTabIdx = -1;
                 }
                 else
                 {
-                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' (Index unbestaetigt, child4 lieferte {tabIdx + 1})");
-                    _tolk.SpeakInterrupt(tabLabel);
+                    _log.Info($"[CS] Tab-Wechsel -> '{tabLabel}' (Index unbestaetigt, child4 lieferte {tabIdx + 1}), "
+                              + $"{pageOptions} Einstellungen");
+                    _tolk.SpeakInterrupt(pageLabel);
                 }
                 LogTabMarkerProbe(addon); // [CS-TAB]: welcher Reiter traegt den Aktiv-Marker?
             }
@@ -4480,6 +4613,9 @@ public sealed class UIReaderService : IDisposable
             // Cache zur�cksetzen: neue Texte des Tabs als Ersterscheinung behandeln
             _configSystemLastTexts.Clear();
             _csOptionFlags.Clear();
+            _csTextChanges.Clear();
+            // _csLiveTexts NICHT leeren: die Bildfrequenz-Anzeige laeuft auf
+            // allen Seiten mit, einmal ueberfuehrt bleibt sie stumm.
             ScanConfigSystemTexts(addon); // Cache bef�llen, nichts ansagen
             LogConfigOptionFlags(addon);  // [CS-OPT] Ausgangszustand protokollieren
             return;
@@ -4602,7 +4738,7 @@ public sealed class UIReaderService : IDisposable
                 // value-change branch above still detects changes reliably.
                 _csFocusPercent = slider->MinValue == 0 && slider->MaxValue == 100;
                 _csFocusValue = slider->Value.ToString();
-                var sliderLabel = NearestPrecedingLabel(addon, _csFocusTopIdx);
+                var sliderLabel = ConfigControlLabel(addon, top, _csFocusTopIdx, forwardFirst: false);
                 // Percentage sliders (volumes) get the SHORT form "label, value %"
                 // so it finishes speaking before the user moves on; other sliders
                 // keep the full form with their real min/max range.
@@ -4615,8 +4751,16 @@ public sealed class UIReaderService : IDisposable
             case ComponentType.DropDownList:
             {
                 var dropdown = DescribeDropDown((AtkComponentDropDownList*)comp, focus,
-                                                NearestPrecedingLabel(addon, _csFocusTopIdx));
-                if (dropdown.Text.Length == 0) return;
+                                                ConfigControlLabel(addon, top, _csFocusTopIdx, forwardFirst: false));
+                if (dropdown.Text.Length == 0)
+                {
+                    // Seit der Doppelansage-Fix greift, ist dieser Zweig die
+                    // EINZIGE Stelle, an der ein Aufklappfeld stumm bleibt - der
+                    // allgemeine Leser springt dafuer nicht mehr ein. Also ins Log,
+                    // sonst ist die Stille spaeter nicht zuzuordnen.
+                    _log.Info($"[CS] Aufklappfeld id={top->NodeId} ohne lesbaren Wert - stumm.");
+                    return;
+                }
                 _csFocusValue = dropdown.Value;
                 desc = dropdown.Text;
                 break;
@@ -4790,10 +4934,129 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
-    /// Label of a text-less control: the nearest visible top-level text node
-    /// BEFORE the control in the addon's node list (dump-verified layout,
-    /// e.g. "Transparenz" directly before its slider). Volatile texts (fps
-    /// counter) are skipped.
+    /// Label of a text-less configuration control (slider, drop-down, option
+    /// row), chosen by SCREEN GEOMETRY: the nearest visible text that shares the
+    /// control's row and starts to its LEFT, otherwise the nearest text directly
+    /// ABOVE it. That is the same thing a sighted player reads, and it does not
+    /// depend on the order the window happens to be authored in.
+    ///
+    /// WHY the node-list rules had to go: the list is ordered by descending node
+    /// id, not by layout, and the direction therefore differs per panel. Log
+    /// 2026-08-18 13:30:55 announced "Schattenkaskadierung, Auswahlliste,
+    /// Mittel: 1024 Pixel", but the dump of the same second has the drop-down at
+    /// NodeList[225] between "Schattenkaskadierung" (id 377, index 222) and its
+    /// REAL label "Schattenauflösung" (id 373, index 226) - the backward scan was
+    /// one setting off, so the player changes the wrong line without noticing.
+    /// Three more pairs in that tab shift the same way ("* Erfordert Neustart"
+    /// for Texturauflösung, "Lebendige Körperdarstellung" for Anisotropischer
+    /// Filter, "Blendeffekte (Glare)" for Raumtiefe betonen), while the
+    /// accessibility tab was accidentally correct (label at index 18, slider at
+    /// 19) - which is exactly why the bug survived so long.
+    ///
+    /// ScreenX/ScreenY are the engine's laid-out coordinates (AtkResNode offsets
+    /// 112/116, ilspycmd-verified against FFXIVClientStructs 2026-08-18), so no
+    /// parent chain has to be walked. Width/Height are local units and get the
+    /// window's Scale applied before they are compared to screen distances.
+    /// Returns "" when neither pass finds anything, so the caller can fall back.
+    /// </summary>
+    private unsafe string ConfigLabelByGeometry(AtkUnitBase* addon, AtkResNode* control, out ConfigLabelSource how)
+    {
+        how = ConfigLabelSource.None;
+        if (addon == null || control == null) return string.Empty;
+
+        var scale   = addon->Scale > 0f ? addon->Scale : 1f;
+        var cLeft   = control->ScreenX;
+        var cWidth  = control->Width  * scale;
+        var cHeight = control->Height * scale;
+        var cMidY   = control->ScreenY + cHeight / 2f;
+
+        var bestRow    = string.Empty;
+        var bestRowX   = float.MinValue;
+        var bestAbove  = string.Empty;
+        var bestAboveY = float.MinValue;
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            // EFFEKTIVE Sichtbarkeit, nicht die eigene: eine versteckte
+            // Konfigurationsseite loescht das Flag nur an ihrem Container, ihre
+            // Texte bleiben "sichtbar" (dump 2026-08-18: Farbschema-Text id 505
+            // traegt V, waehrend der Grafik-Reiter offen ist). Ohne diese Zeile
+            // koennte eine Beschriftung aus einem gar nicht sichtbaren Reiter
+            // gewinnen, weil sie zufaellig an derselben Bildschirmstelle liegt.
+            if (n == null || !IsEffectivelyVisible(n)) continue;
+            var t = ReadPanelLabelText(n);
+            if (t.Length == 0) continue;
+
+            var nLeft   = n->ScreenX;
+            var nWidth  = n->Width  * scale;
+            var nHeight = n->Height * scale;
+            var nMidY   = n->ScreenY + nHeight / 2f;
+
+            // Same row = the two boxes overlap vertically. Half of the taller box
+            // is the tolerance, so the rule carries its own measure instead of a
+            // pixel constant that would break at another UI scale.
+            if (Math.Abs(nMidY - cMidY) <= Math.Max(cHeight, nHeight) / 2f)
+            {
+                if (nLeft < cLeft && nLeft > bestRowX) { bestRowX = nLeft; bestRow = t; }
+                continue;
+            }
+
+            // Heading above: horizontally overlapping and the closest one up.
+            if (nMidY < cMidY && nLeft < cLeft + cWidth && nLeft + nWidth > cLeft && nMidY > bestAboveY)
+            {
+                bestAboveY = nMidY;
+                bestAbove  = t;
+            }
+        }
+
+        if (bestRow.Length > 0)   { how = ConfigLabelSource.RowLeft;      return bestRow; }
+        if (bestAbove.Length > 0) { how = ConfigLabelSource.HeadingAbove; return bestAbove; }
+        return string.Empty;
+    }
+
+    /// <summary>Where <see cref="ConfigLabelByGeometry"/> took a label from. The
+    /// caller needs the difference: a name to the LEFT of the control belongs to
+    /// that control, a heading ABOVE it belongs to a whole block and may not be
+    /// glued onto a single option.</summary>
+    private enum ConfigLabelSource
+    {
+        None,
+        RowLeft,
+        HeadingAbove,
+    }
+
+    /// <summary>
+    /// Label of a configuration control: geometry first (see
+    /// <see cref="ConfigLabelByGeometry"/>), node-list order only as a fallback
+    /// for windows where no text sits left of or above the control.
+    /// <paramref name="forwardFirst"/> picks the fallback direction that window
+    /// family was measured with.
+    /// </summary>
+    private unsafe string ConfigControlLabel(AtkUnitBase* addon, AtkResNode* control, int topIdx, bool forwardFirst)
+    {
+        var geo = ConfigLabelByGeometry(addon, control, out var how);
+        if (geo.Length > 0)
+        {
+#if DEBUG
+            _log.Info($"[CS-Label] '{geo}' (Quelle {how}) fuer id={control->NodeId} "
+                      + $"@{control->ScreenX:0},{control->ScreenY:0} {control->Width}x{control->Height}");
+#endif
+            return geo;
+        }
+
+        // Logged unconditionally: if this ever fires in a real window, the
+        // fallback is announcing a name nobody verified - that has to be visible
+        // in the log instead of sounding correct.
+        _log.Info($"[CS-Label] Geometrie ohne Treffer fuer id={control->NodeId} "
+                  + $"@{control->ScreenX:0},{control->ScreenY:0} - Listenreihenfolge als Rueckfall.");
+        return forwardFirst ? NearestPanelLabel(addon, topIdx) : NearestPrecedingLabel(addon, topIdx);
+    }
+
+    /// <summary>
+    /// Fallback only (see <see cref="ConfigControlLabel"/>): the nearest visible
+    /// top-level text node BEFORE the control in the addon's node list. Volatile
+    /// texts (fps counter) are skipped.
     /// </summary>
     private unsafe string NearestPrecedingLabel(AtkUnitBase* addon, int topIdx)
     {
@@ -4805,6 +5068,35 @@ public sealed class UIReaderService : IDisposable
             if (t.Length > 1 && !IsVolatileConfigText(t)) return t;
         }
         return AccessibilityStrings.NoLabel;
+    }
+
+    /// <summary>
+    /// Anzahl der Bedienelemente auf der GERADE SICHTBAREN Konfigurationsseite:
+    /// Ankreuzfeld, Auswahlknopf, Regler, Aufklappfeld, Zahlenfeld. Zaehlt ueber
+    /// die EFFEKTIVE Sichtbarkeit, sonst kaeme die Summe aller acht Seiten heraus
+    /// (versteckte Seiten behalten das Flag ihrer Kinder).
+    /// </summary>
+    private unsafe int CountVisibleConfigOptions(AtkUnitBase* addon)
+    {
+        var count = 0;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null) continue;
+            switch (comp->GetComponentType())
+            {
+                case ComponentType.CheckBox:
+                case ComponentType.RadioButton:
+                case ComponentType.Slider:
+                case ComponentType.DropDownList:
+                case ComponentType.NumericInput:
+                    count++;
+                    break;
+            }
+        }
+        return count;
     }
 
     /// <summary>
@@ -7450,7 +7742,14 @@ public sealed class UIReaderService : IDisposable
         for (var i = addon->UldManager.NodeListCount - 1; i >= 0; i--)
         {
             var node = addon->UldManager.NodeList[i];
-            if (node == null || !node->IsVisible()) continue;
+            // EFFEKTIVE Sichtbarkeit: im Konfigurationsfenster liegen alle acht
+            // Seiten gleichzeitig im Knotenbaum, versteckt wird nur ihr
+            // Container. Mit dem eigenen Flag las diese Funktion deshalb das
+            // ganze Fenster inklusive der sieben unsichtbaren Seiten vor - eine
+            // Textwand, aus der nicht hervorging, was auf der offenen Seite
+            // steht. Gilt fuer jedes Fenster: unsichtbaren Text vorzulesen war
+            // nie richtig.
+            if (node == null || !IsEffectivelyVisible(node)) continue;
             CollectWindowText(node, parts);
         }
 
@@ -7495,7 +7794,7 @@ public sealed class UIReaderService : IDisposable
         for (var j = comp->UldManager.NodeListCount - 1; j >= 0; j--)
         {
             var child = comp->UldManager.NodeList[j];
-            if (child != null && child->IsVisible()) CollectWindowText(child, parts);
+            if (child != null && IsEffectivelyVisible(child)) CollectWindowText(child, parts);
         }
     }
 
@@ -10308,7 +10607,13 @@ public sealed class UIReaderService : IDisposable
             }
         }
 
-        sb.AppendLine($"{indent}[{index}] id={node->NodeId} {typeName} F=0x{flags:X4} {vis}{extra}");
+        // Geometrie gehoert in den Dump: die Frage "welcher Text beschriftet
+        // dieses Bedienelement" ist eine LAYOUT-Frage, und ohne Koordinaten war
+        // sie am Dump nicht zu beantworten - die Beschriftungssuche lief deshalb
+        // jahrelang ueber die Knotenreihenfolge und lag im Grafik-Reiter
+        // durchgehend eine Einstellung daneben (siehe ConfigLabelByGeometry).
+        sb.AppendLine($"{indent}[{index}] id={node->NodeId} {typeName} F=0x{flags:X4} {vis} "
+                      + $"@{node->ScreenX:0},{node->ScreenY:0} {node->Width}x{node->Height}{extra}");
 
         if (depth >= MaxDepth || typeNum < 1000) return;
 

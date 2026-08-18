@@ -1,0 +1,55 @@
+Antwort an den Spieler (englisch) - Bildfrequenz-Anzeige in der Systemkonfiguration
+Anlass: "when I go to the settings for configure the fps limite, nvda say all the
+time the fps number, in all settings, and it cut the other infos said by nvda."
+Behoben in Version 5.88 (Release 2026-08-18).
+
+=== ENGLISCH, zum Verschicken =========================================
+
+Thanks for the report - I found it, and it is fixed in version 5.88.
+
+What you ran into is the live frame rate counter that FFXIV draws inside the
+System Configuration window itself. It sits in the corner of that window and
+keeps counting on every one of the eight pages, which is why you heard it in all
+settings and not only on the frame rate page. The mod announces changing texts in
+that window, and because those announcements interrupt, the counter was cutting
+off everything else NVDA was saying.
+
+There was a filter meant to hide it, but it recognised the counter by the English
+word "fps" and by whole numbers only. That depends on your client language and on
+the exact format - a translated unit or a decimal value like "59.9" slips right
+through it.
+
+Version 5.88 replaces that with two rules that do not depend on any language:
+
+- Any text in the configuration window that changes several times within a few
+  seconds is treated as a live readout and is never spoken again.
+- A changed text that starts with a digit is not announced either. You do not
+  lose anything by this: the value of a control is still announced together with
+  its name when you move onto it ("Strength, 100 %").
+
+Update through the plugin installer or your Dalamud repository and it should be
+quiet.
+
+Two things would help me make sure it really was that counter and nothing else:
+
+1. Which language does your game client run in?
+2. If it still happens, please send me your log file. You find it at
+   %APPDATA%\XIVLauncher\dalamud.log - just open the settings window, let the
+   problem happen for a few seconds, close the game and send the file.
+
+The same version also fixes something else in that window that you may notice:
+the drop-down lists and sliders were being announced with the name of the
+NEIGHBOURING setting, so you could change the wrong line without noticing. They
+now read their real name.
+
+=== DEUTSCH, nur zur Info fuer dich ===================================
+
+Kurzfassung: Es ist die laufende Bildfrequenz-Anzeige IM Konfigurationsfenster
+(im Dump Knoten id 4, Text "59 fps"), nicht eine bestimmte Seite. Sie laeuft auf
+allen acht Reitern mit. Der alte Filter haing am Wort "fps" bzw. an einer reinen
+Ganzzahl - beides sprach- und formatabhaengig. Neu: ein Text, der sich binnen
+drei Sekunden dreimal aendert, gilt als laufende Anzeige und bleibt dauerhaft
+stumm; zusaetzlich werden geaenderte Texte mit fuehrender Ziffer im
+Aenderungs-Scanner nicht mehr angesagt. Welche der beiden Luecken bei ihm
+zugeschlagen hat, wissen wir ohne sein Log nicht - deshalb die Rueckfrage nach
+Sprache und Logdatei.

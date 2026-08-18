@@ -810,6 +810,18 @@ public static partial class AccessibilityStrings
     public static string RandomAppearancePressed => IsGerman ? "Zufälliges Aussehen gedrückt." : "Random appearance pressed.";
 
     // ── Seitenwechsel / Reiter (generisch) ───────────────────────────
+    /// <summary>Konfigurationsseite mit der Anzahl ihrer Einstellungen. Die Zahl
+    /// ist die Antwort auf eine echte Frage des Users (2026-08-18): die Seite
+    /// meldete sich nur mit ihrer ersten Ueberschrift, die zufaellig genauso
+    /// heisst wie die erste Einstellung darunter — "ich frage mich obs noch
+    /// andere Menuepunkte ausser Grafik-Voreinstellungen gibt". Ein sehender
+    /// Spieler sieht die ganze Seite auf einen Blick; die Zahl ist das
+    /// Gegenstueck dazu.</summary>
+    public static string ConfigPageWithCount(string heading, int count) =>
+        IsGerman
+            ? $"{heading}, {count} {(count == 1 ? "Einstellung" : "Einstellungen")}"
+            : $"{heading}, {count} {(count == 1 ? "setting" : "settings")}";
+
     public static string TabPressedNoPageChange => IsGerman ? "Reiter gedrückt, aber kein Seitenwechsel erkannt." : "Tab pressed, but no page change detected.";
     public static string TabNotResponding => IsGerman ? "Reiter reagiert nicht." : "Tab not responding.";
 

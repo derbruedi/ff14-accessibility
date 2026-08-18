@@ -43,6 +43,7 @@ public sealed class TolkService : IDisposable
 
     private string _lastSpoken = string.Empty;
     private long   _lastSpokenTick;
+    private nint   _lastSpokenSource;
 
     // Every speech call is logged ([Speak]): silence in the log used to be
     // ambiguous - "nothing was spoken" vs "spoken but not logged" broke the
@@ -196,7 +197,14 @@ public sealed class TolkService : IDisposable
         Remember(text);
     }
 
-    public void SpeakInterrupt(string text)
+    /// <param name="source">Optional identity of what is being announced (the
+    /// focused node's address). Two DIFFERENT controls that happen to carry the
+    /// same word are a real announcement each, not a repetition - the option
+    /// matrix "Lebendige Körperdarstellung" has four rows of Aus/Einfach/Voll,
+    /// and stepping from one "Einfach" to the next was swallowed whole (log
+    /// 2026-08-18 13:31:00.598 and 13:31:01.584: DEBOUNCED, the user heard
+    /// nothing at all). Callers that pass nothing keep the old behaviour.</param>
+    public void SpeakInterrupt(string text, nint source = 0)
     {
         if (!IsAvailable || string.IsNullOrEmpty(text)) return;
         text = Sanitize(text);
@@ -205,7 +213,8 @@ public sealed class TolkService : IDisposable
         // Debouncing: Gleichen Text nicht innerhalb von 0,5 Sekunden wiederholen
         var now = Stopwatch.GetTimestamp();
         var elapsed = (double)(now - _lastSpokenTick) / Stopwatch.Frequency;
-        if (text == _lastSpoken && elapsed < 0.5)
+        var sameSource = source == 0 || _lastSpokenSource == 0 || source == _lastSpokenSource;
+        if (text == _lastSpoken && elapsed < 0.5 && sameSource)
         {
             _log.Info($"[Speak] DEBOUNCED '{Short(text)}'");
             return;
@@ -225,6 +234,7 @@ public sealed class TolkService : IDisposable
 
         _lastSpoken = text;
         _lastSpokenTick = now;
+        _lastSpokenSource = source;
 
         _log.Info($"[Speak] INT '{Short(text)}'");
         TolkNative.Tolk_Output(text, true); // speech + braille, see Speak()

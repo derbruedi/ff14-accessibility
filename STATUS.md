@@ -3,7 +3,243 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-17, "RELEASE v5.87 - JAGDZIELE: DIREKT ZUM MONSTER")
+## STAND JETZT (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
+
+>>> AUSLOESER: User meldet "in den Einstellungen wird in einigen Menues nicht
+    alles vorgelesen". Log 2026-08-18 13:26-13:31 + Dump (ConfigSystem, 593
+    Nodes) ausgewertet. Vier verschiedene Fehler, alle belegt, alle gebaut.
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> FEHLER 1, der schwerste: FALSCHE BESCHRIFTUNG bei Auswahllisten/Reglern.
+    Die Beschriftungssuche lief ueber die KNOTENREIHENFOLGE (rueckwaerts).
+    Die Liste ist aber nach absteigender NodeId sortiert, nicht nach Layout,
+    und die Richtung ist je Panel verschieden. Beweis aus demselben Dump:
+    Aufklappfeld id 374 (Wert "Mittel: 1024 Pixel") liegt auf NodeList[225],
+    davor [222] "Schattenkaskadierung", dahinter [226] "Schattenauflösung" —
+    angesagt wurde die falsche der beiden. Ebenso: "* Erfordert Neustart"
+    statt Texturauflösung, "Lebendige Körperdarstellung" statt
+    Anisotropischer Filter, "Blendeffekte (Glare)" statt Raumtiefe (SSAO).
+    Der Barrierefreiheits-Reiter war ZUFAELLIG richtig (Label davor) — deshalb
+    ist es nie aufgefallen.
+    GEBAUT: `ConfigLabelByGeometry` — Beschriftung ueber ScreenX/ScreenY
+    (gleiche Zeile, Text links; sonst naechste Ueberschrift darueber). Gilt
+    fuer ConfigSystem UND die ConfigChara*-Panels. Listenreihenfolge bleibt nur
+    als Rueckfall und LOGGT, wenn sie greift.
+
+>>> FEHLER 2: OPTIONSMATRIX ohne Zeilennamen. "Lebendige Körperdarstellung"
+    sind 4 Zeilen (Selbst/Gruppe/Andere/Gegner) mal 3 Knoepfe (Aus/Einfach/
+    Voll), Dump-Nodes 402-420. Angesagt wurde nur das Optionswort — zwoelf
+    Knoepfe klangen gleich. GEBAUT: Auswahlknoepfe bekommen den Zeilennamen
+    links vorangestellt ("Gegner, Einfach, ausgewählt"). Nur bei
+    RadioButton und nur aus der ZEILE (eine Ueberschrift darueber wuerde
+    sonst an jeder Option der ganzen Gruppe kleben).
+
+>>> FEHLER 3: DEBOUNCE VERSCHLUCKTE GANZE ANSAGEN. TolkService unterdrueckte
+    gleichen Text innerhalb 0,5 s — in der Matrix hiess das: Schritt auf einen
+    ANDEREN Knopf, und es kam gar nichts (Log 13:31:00.598 und 13:31:01.584,
+    beide "DEBOUNCED 'Einfach'"). GEBAUT: `SpeakInterrupt(text, source)` mit
+    dem Fokusknoten als Quelle. Gleicher Knoten = weiterhin unterdrueckt,
+    anderer Knoten = spricht. Aufrufer ohne Quelle verhalten sich unveraendert.
+
+>>> FEHLER 4: DOPPELANSAGE mit falscher Aussage. Nach dem CS-Leser sagte der
+    allgemeine Fokusleser 7 ms spaeter den Wert nochmal als "…, Schalter, aus"
+    — ein Aufklappfeld ist kein ausgeschalteter Schalter. Ursache: das
+    Anzeigefeld eines Aufklappfelds IST eine CheckBox-Komponente. Fuer
+    ConfigChara* war das schon gefixt, fuer ConfigSystem ausdruecklich nicht.
+    GEBAUT: `IsGlobalConfigControl` — in ConfigSystem schweigt der allgemeine
+    Leser bei Slider/DropDownList.
+
+>>> WERKZEUG: der Node-Dump (F5) schreibt jetzt `@ScreenX,ScreenY BreitexHoehe`
+    in jede Zeile. Ohne Koordinaten war die Layoutfrage am Dump gar nicht zu
+    beantworten — genau deshalb lief die Beschriftungssuche ueber die
+    Knotenreihenfolge. Neu dokumentiert in game-api.md.
+
+>>> ERSTER TESTLAUF (13:53-13:54) AUSGEWERTET:
+    - Beschriftungen: 14 von 14 ueber die Geometrie, Rueckfall auf die
+      Listenreihenfolge KEIN einziges Mal. Neu und richtig: Grafik-
+      Voreinstellungen, Auflösungstyp, Art der Hochskalierung, Gezackte Ränder
+      glätten, Durchscheinendes Licht, Reflexionseffekte in Echtzeit,
+      Hauptbildschirm wählen, Voreinstellungen, Standardgröße, Aktivieren bei.
+      Elf per RowLeft, drei per HeadingAbove.
+    - NACHGEBESSERT: die Doppelansage war nur halb weg. Das falsche
+      ", Schalter, aus" fiel weg, aber der allgemeine Pfad holte den Wert als
+      nackten Text nach (13:53:34.055 Ansage, 13:53:34.061 nochmal
+      "Mittel (Desktop)"). Jetzt schweigt der allgemeine Leser in ConfigSystem
+      komplett bei Regler/Aufklappfeld.
+    - Optionsmatrix noch NICHT getestet, der Block kam im Testlauf nicht vor.
+      Bei den beruehrten Auswahlknoepfen kam kein Zeilenname - dafuer loggt
+      jetzt `[CS-Zeile]` die Entscheidung.
+
+>>> ZWEI FRAGEN DES USERS, beide am Log geklaert:
+    - "man muss zwei mal auf grafik druecken": GEMESSEN, es ist das SPIEL.
+      Ein Tastendruck setzt den Fokus auf den Reiter, ~500 ms spaeter wechselt
+      die Seite von selbst (Event 29 param=14, dazwischen KEIN Eingabe-Event,
+      13:53:33.540 bis 13:53:34.040). Beim ERSTEN Besuch einer Seite bleibt der
+      Fokus dabei auf der Reiterleiste, beim zweiten springt er in die Seite -
+      zweimal reproduziert (Grafik 13:53:27 vs. 13:53:34, Anzeige 13:53:44 vs.
+      13:53:46). Plugin.cs fasst ConfigSystem nirgends an, schluckt also nichts.
+    - "gibts noch andere Menuepunkte ausser Grafik-Voreinstellungen": die
+      Seitenansage sprach nur die erste Ueberschrift, und die heisst dort
+      genauso wie die erste Einstellung. GEBAUT: Seitenansage nennt jetzt die
+      ANZAHL ("Grafik-Voreinstellungen, 21 Einstellungen",
+      `CountVisibleConfigOptions`).
+    - MITGEFUNDEN: F10 (ganzes Fenster vorlesen) las im Konfigurationsfenster
+      alle acht Seiten am Stueck vor - dieselbe Sichtbarkeitsfalle wie bei den
+      Beschriftungen (`TryReadWholeWindow` nahm das eigene Flag statt
+      IsEffectivelyVisible). Behoben, gilt fuer jedes Fenster.
+
+>>> SPIELERMELDUNG (englischer Client, 2026-08-18): "when I go to the settings
+    for configure the fps limit, nvda say all the time the fps number, in all
+    settings, and it cut the other infos". GEMEINT ist die laufende
+    Bildfrequenz-Anzeige IM Systemkonfigurations-Fenster (deutscher Dump:
+    NodeList[590], id 4, "59 fps") - sie laeuft auf allen acht Seiten mit und
+    aendert sich jede Sekunde. Der Aenderungs-Scanner sagte sie an und schnitt
+    dabei jede andere Ansage ab (SpeakInterrupt).
+    URSACHE: der Filter erkannte sie am WORT "fps" bzw. an einer reinen
+    Ganzzahl. Beides ist sprach- und formatabhaengig - "59.9" oder eine
+    uebersetzte Einheit rutschen durch. Welche der beiden Luecken es bei ihm
+    ist, ist UNBEKANNT (kein Log von ihm).
+    GEBAUT (`IsLiveConfigText`), zwei sprachunabhaengige Kriterien:
+    1. Ein Node, der sich binnen 3 s dreimal aendert, ist eine laufende
+       Anzeige - ab dann dauerhaft stumm, mit einer Logzeile als Beweis.
+    2. Ein geaenderter Text, der mit einer Ziffer beginnt, wird im
+       AENDERUNGS-Scanner nicht angesagt (Werte von Bedienelementen sagt der
+       Fokus-Leser ohnehin mit Beschriftung an).
+    Beschriftungen mit fuehrender Ziffer sind nicht betroffen: sie aendern sich
+    nicht und erreichen den Scanner nie.
+    OFFEN: Rueckmeldung des Spielers, ob damit Ruhe ist.
+
+>>> ZU TESTEN (in dieser Reihenfolge, alles im Systemkonfigurations-Fenster):
+    1. Reiter Grafik: ueber die Aufklappfelder blaettern. Erwartet sind jetzt
+       "Schattenauflösung", "Texturauflösung", "Anisotropischer Filter",
+       "Raumtiefe betonen (SSAO)" statt der Nachbarnamen. Und jeder Eintrag
+       darf nur EINMAL kommen, ohne "Schalter, aus" hinterher.
+    2. Reiter Grafik, Block "Lebendige Körperdarstellung": durch die 12
+       Knoepfe gehen. Erwartet "Selbst, Aus" / "Selbst, Einfach" / ... und
+       KEINE stille Stelle mehr.
+    3. Reiter Barrierefreiheit (war vorher schon richtig): "Stärke",
+       "Größe", "Transparenz" muessen genauso bleiben — das ist die
+       Gegenprobe, dass die Geometrie nichts kaputtmacht.
+    4. Charakterkonfiguration (ConfigChara*, z.B. Chatlog-Einstellungen):
+       stichprobenartig, dieselbe Umstellung greift dort auch.
+    5. OFFEN, noch nicht gebaut (Fehler 5): im Reiter Farbschema stehen zwei
+       Knoepfe komplett ohne Text (Dump-Nodes 503/504, nur Collision+Image,
+       Tooltip leer) — der Fokus landet drauf und es kommt nichts (Log
+       13:31:17.887 / 13:31:18.916, "STUMM"). Vermutung, NICHT belegt: Pfeile
+       neben der Farbschema-Auswahl. MESSUNG dazu: auf dem Reiter Farbschema
+       F5 druecken (Dump hat jetzt Koordinaten), dann auf einen der beiden
+       Knoepfe gehen und ihn druecken — aendert sich danach der Wert der
+       Auswahlliste "Farbschema wählen", ist die Funktion bewiesen und die
+       Knoepfe koennen benannt werden.
+
+## FRUEHERER STAND (2026-08-17, "v5.87 IN-GAME BESTAETIGT + LEBENSRAUM-LUECKE VERMESSEN")
+
+>>> v5.87 JAGDZIELE: VOM USER IN-GAME BESTAETIGT. Blaettern und Numpad3 zum
+    Monster funktionieren. Der offene Test aus den Bloecken darunter ist damit
+    ERLEDIGT.
+
+>>> RESTBESCHWERDE DES USERS: "manchmal, wenn er keine Monster in Reichweite
+    bzw. im Gebiet findet - da muesste man schauen, wo welche rumlaufen."
+
+>>> OFFLINE VERMESSEN (Scratchpad huntdump, Lumina gegen das installierte
+    Spiel - kein In-Game-Test noetig). Ueber ALLE 362 eindeutigen
+    Jagdtagebuch-Ziele, 368 Lebensraum-Zeilen:
+    - Zone ohne Karte:            0
+    - ohne Teilgebiet:            0
+    - Teilgebiet OHNE Marker:    20
+    - Teilgebiet MIT Marker:    348  (= laufbare Weltposition vorhanden)
+    Der Lebensraum-Rueckfall hat also in 95 % der Faelle schon eine
+    Koordinate. Die Marker-Kette PlaceNameLocation -> MapMarker.
+    PlaceNameSubtext -> Weltposition traegt breiter als gedacht.
+
+>>> DIE 20 AUSREISSER SIND ALLE DASSELBE, und zwar bewiesen, nicht vermutet:
+    Halatali (Karte 46), Versunkener Tempel von Qarn (42), Palast des
+    Wanderers (32), Saegerschrei (52). Jedes dieser Teilgebiete traegt eine
+    EIGENE Karte - es sind Instanzen/Dungeons, keine Orte im Freien. Deshalb
+    gibt es keinen Marker auf der Zonenkarte, und deshalb ist eine Koordinate
+    dort auch die falsche Antwort: man laeuft nicht hin, man geht hinein.
+    Erkennungsregel, generisch: Teilgebiet-PlaceName hat eine eigene Map
+    (mapByZonePlace) => Instanz.
+
+>>> NOCH NICHT GEKLAERT: welchen Fall der User konkret erlebt hat. Kandidaten:
+    (a) Monster lebt in einer ANDEREN Zone -> Lauf geht zum Gebietsuebergang,
+    (b) einer der 20 Dungeon-Faelle, (c) am Gebietsmarker angekommen, aber die
+    Monster stehen verstreut / ausserhalb der Streaming-Reichweite.
+    NICHT bauen, bevor das geklaert ist - sonst wird der falsche Fall gefixt.
+
+>>> GRENZE, ehrlich vermerkt: echte SPAWN-Koordinaten pro Monster liefern die
+    Excel-Sheets nicht. Das Level-Sheet fuehrt BNpcBase-Positionen (Type 9,
+    game-api.md:783), aber die Verbindung BNpcBase <-> BNpcName steht nicht in
+    den Sheets (siehe Warnung game-api.md:794). Ob es dafuer einen sauberen
+    Weg gibt, ist UNGEPRUEFT - keine Behauptung in beide Richtungen.
+
+## FRUEHERER STAND (2026-08-17, "ANALYSE: EIGENES WEGENETZ? - ERGEBNIS: NEIN, ALLES BLEIBT")
+
+>>> NICHTS GEBAUT, reine Untersuchung. Der In-Game-Test zu v5.87 aus dem Block
+    darunter STEHT WEITER AUS.
+
+>>> FRAGE DES USERS: vnavmesh koennte von den Entwicklern als Botting gewertet
+    werden - koennen wir ein eigenes Wegenetz bauen, die Wege irgendwo
+    extrahieren, lokal mitliefern (spart evtl. Ladezeiten)?
+
+>>> WOHER vnavmesh DIE WEGE NIMMT - am dekompilierten Code geprueft, nicht
+    geraten (ilspycmd gegen die installierte vnavmesh.dll):
+    - Es gibt KEINE Wege-Datenbank, weder im Spiel noch bei vnavmesh. Es rechnet.
+    - Quelle 1: das lebende Layout aus dem Spielspeicher, SceneDefinition.
+      FillFromActiveLayout (SceneDefinition.cs:35) liest aus LayoutWorld->
+      ActiveLayout, welche Terrains/Objekte/Kollisionsboxen wo stehen.
+    - Quelle 2: die .pcb-Kollisionsdateien aus dem sqpack ueber Lumina,
+      Service.DataManager.GetFile (SceneExtractor.cs:165/177/305).
+    - Danach voxelisiert Recast (DotRecast) die Geometrie zur begehbaren
+      Flaeche. Ergebnis ist eine FLAECHE, keine Route - Detour sucht den Weg
+      bei jeder Anfrage neu darauf.
+    => "Wege extrahieren" hat kein Ziel. Es existiert nur Kollisionsgeometrie.
+
+>>> VORBERECHNET MITLIEFERN - drei harte Waende (gemessen):
+    - Groesse: 57 Cache-Dateien auf dem Rechner des Users = 88 MB, und das sind
+      nur die besuchten Gebiete. Eine grosse Zone (r1f1) allein 11 MB, dieselbe
+      Zone liegt mehrfach vor (Festivals/ZoneSGs gehen in den Cache-Schluessel
+      ein, NavmeshManager.GetCacheKey). Unser Release-ZIP ist 972 KB.
+    - Rechtslage: abgeleitete Arbeit aus SE-Geometriedaten im eigenen Release
+      verteilen ist deutlich exponierter als lokal rechnen. Geht in die
+      FALSCHE Richtung, gemessen am Ziel.
+    - Patch-Haltbarkeit: Format Version 25 + CustomizationVersion + Layout-
+      abhaengiger Cache-Schluessel. Jeder Patch entwertet.
+
+>>> KERN-EINWAND, vom User akzeptiert: nach Botting sieht nicht das Wegenetz
+    aus, sondern die automatische Steuerung der Figur. Ein eigenes Netz senkt
+    das Risiko um null. Ausserdem ist aus SE-Sicht jedes Drittanbieter-Plugin
+    inklusive Dalamud selbst schon ausserhalb.
+
+>>> ZWEITE FRAGE: Auto-Lauf rausnehmen, nur manuell laufen? Befund:
+    - Die Gehhilfe (Umschalt+Numpad3, NavigationService.WalkGuideFrame:2250)
+      ist BEREITS eine vollstaendige Wegpunkt-Fuehrung ueber Nav.Pathfind
+      (reine Abfrage, bewegt nichts - RouteService.cs:71). Mit Vorschau in
+      Himmelsrichtungen, Neuberechnung, Hoehen-Hinweis, Netz-Ende-Erkennung.
+    - Beide Tasten laufen ueber dieselbe TryResolveMarkerDestination
+      (Plugin.cs:1384 vs. :1406) - der Auto-Lauf ist nur der Zwilling.
+    - Nur DREI Stellen haengen exklusiv am Auto-Lauf und muessten umgehaengt
+      werden: Bestiarium (Plugin.cs:1402), Sammelpunkt (:960), Tiefes
+      Gewoelbe (:954).
+    - FUND: die Gehhilfe kann bewegte Ziele schon - WalkGuideFrame:2253-2264
+      holt die Zielposition jeden Frame neu. Ein "Folgen per Ansage" waere ein
+      kleiner Umbau, keine neue Funktion.
+    - Echt verloren ginge nur die TrailWalking-Phase (aufgezeichnete Spuren
+      per Path.MoveTo) - die existiert gerade, WEIL das Netz dort keine
+      Verbindung kennt.
+
+>>> ENTSCHEIDUNG DES USERS: alles bleibt wie es ist. Begruendung: das Folgen
+    soll automatisch passieren, "das gibts ja vom Spiel auch so".
+
+>>> OFFEN, daraus entstanden: Hat FFXIV ein natives Folgen (Textbefehl
+    /follow)? Der Kommentar in Plugin.cs:1415 BEHAUPTET "FFXIV has no
+    plugin-callable native follow" - das ist NIE geprueft worden. Gaebe es
+    den Befehl, koennte unser vnavmesh-getriebenes Folgen durch den
+    spieleigenen ersetzt werden; dann bewegt das Spiel die Figur, nicht wir.
+    Pruefung waere das TextCommand-Sheet (Verfahren: Offline-Sheet-Dump).
+    Der User hat das zur Kenntnis genommen, aber noch nicht beauftragt.
+
+## FRUEHERER STAND (2026-08-17, "RELEASE v5.87 - JAGDZIELE: DIREKT ZUM MONSTER")
 
 >>> VEROEFFENTLICHT als v5.87, aber IN-GAME NOCH NICHT GETESTET - der User hat
     den Release direkt nach dem Bauen verlangt. Der Test unten steht weiter aus.

@@ -24,6 +24,31 @@ Zentrale, VERIFIZIERTE Fakten über Spiel-Strukturen. Quelle jeweils angegeben
   Minimieren/Overlays abdeckt oder nur den reinen Fokuswechsel — der
   VitalsService loggt jeden Flankenwechsel, das klärt es im Betrieb
 
+### Knoten-Geometrie: `AtkResNode.ScreenX/ScreenY` (ilspycmd 2026-08-18)
+
+- `AtkResNode`: `X`/`Y` @68/72 sind ELTERN-relativ, `ScreenX` @112 und
+  `ScreenY` @116 sind die vom Spiel gerechneten Bildschirmkoordinaten — damit
+  muss keine Elternkette aufaddiert werden. `Width`/`Height` @160/162 sind
+  dagegen lokale Einheiten; fuer den Vergleich mit Bildschirmabstaenden mit
+  `AtkUnitBase.Scale` multiplizieren.
+- **Die Knotenreihenfolge sagt NICHTS ueber das Layout.** `UldManager.NodeList`
+  ist nach absteigender NodeId sortiert, und ob die Beschriftung eines
+  Bedienelements davor oder dahinter steht, ist je Panel verschieden. In
+  ConfigSystem, Reiter Grafik, steht sie DAHINTER (Aufklappfeld id 374 zwischen
+  "Schattenkaskadierung" id 377 und der richtigen Beschriftung
+  "Schattenauflösung" id 373), im Reiter Barrierefreiheit DAVOR (Text id 581
+  "Stärke", Regler id 580). Wer die Beschriftung ueber die Liste sucht, liegt
+  also in der Haelfte aller Faelle eine Einstellung daneben. Richtig ist die
+  Geometrie: gleicher Zeilenbereich, Text links vom Bedienelement
+  (`ConfigLabelByGeometry`).
+- **Sichtbarkeit immer effektiv pruefen.** Eine versteckte Konfigurationsseite
+  loescht das Visible-Flag nur an ihrem Container; ihre Textknoten melden
+  weiterhin `IsVisible()==true` (Dump 2026-08-18: Text id 505 der
+  Farbschema-Seite ist V, waehrend Grafik offen ist). Dafuer gibt es
+  `IsEffectivelyVisible` (Knoten + gesamte Elternkette).
+- Der Node-Dump (F5) schreibt seit 2026-08-18 `@ScreenX,ScreenY BreitexHoehe`
+  in jede Zeile — Layoutfragen sind damit offline am Dump zu klaeren.
+
 ## Charaktererstellung (CharaMake)
 
 ### Addon-Liste (Live-Log 2026-07-10, alle öffnen gleichzeitig)
