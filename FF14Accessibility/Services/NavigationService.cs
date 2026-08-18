@@ -1152,7 +1152,10 @@ public sealed class NavigationService
             var zone = string.IsNullOrEmpty(target.ZoneName)
                 ? AccessibilityStrings.InAnotherArea
                 : AccessibilityStrings.InArea(target.ZoneName);
-            text += ", " + AccessibilityStrings.HuntingArea(target.AreaName) + zone;
+            // HuntingArea is empty when the log names no habitat. The separator
+            // has to go away with it, otherwise the sentence opens on a gap.
+            var habitat = AccessibilityStrings.HuntingArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + " " + zone : zone);
 
             var hop = _places.FindFirstHopToMap(target.MapId, out var hops);
             if (hop != null)
