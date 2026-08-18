@@ -1140,7 +1140,12 @@ public sealed class NavigationService
         }
         else if (target.InCurrentZone && target.Position is { } pos)
         {
-            text += ", " + AccessibilityStrings.HuntingArea(target.AreaName) + ", " +
+            // Gleiche Stelle wie im Zweig fuer andere Zonen unten (PR #8): ohne
+            // Lebensraum liefert HuntingArea "", und das feste ", " dahinter
+            // ergab zwei Kommas hintereinander (", , 30 Meter"). Das Trennzeichen
+            // muss mit dem Satzteil verschwinden, den es trennen soll.
+            var habitat = AccessibilityStrings.HuntingArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) +
                     $"{FormatDistance(Distance2D(player.Position, pos))}, " +
                     $"{CalculateDirection(player, pos)}.";
         }
