@@ -70,7 +70,12 @@ public static partial class AccessibilityStrings
     // Configuration und einen Dienst dahinter, der es liest - eine Beschriftung ohne
     // Funktion dahinter ist genau der Weg, auf dem eine tote Einstellung eine
     // Überarbeitung überlebt.
-    public static string OptBeacon => IsGerman ? "Gehhilfe-Beacon" : "Walk-guide beacon";
+    /// <summary>Schalter für den Peil-Ton auf das getrackte Ziel.</summary>
+    public static string OptTargetBeacon => IsGerman ? "Peil-Ton auf das Ziel" : "Target beacon";
+
+    // Heisst weiterhin so, weil es die LAUTSTAERKE desselben Tons ist - der jetzt
+    // nicht mehr nur bei der Gehhilfe laeuft, sondern bei jedem gewaehlten Ziel.
+    public static string OptBeacon => IsGerman ? "Lautstärke Peil-Ton" : "Target beacon volume";
     public static string OptRouteCues => IsGerman ? "Wegpunkt- und Ankunftston" : "Waypoint and arrival cues";
 
     public static string OptSkillReady => IsGerman ? "Fähigkeit bereit" : "Ability ready";
@@ -79,6 +84,9 @@ public static partial class AccessibilityStrings
     public static string OptTargetChanges => IsGerman ? "Zielwechsel" : "Target changes";
     public static string OptTargetHp => IsGerman ? "Ziel-Lebenspunkte" : "Target health";
     public static string OptEnemyCast => IsGerman ? "Gegner wirkt Aktion" : "Enemy casting";
+    public static string OptFineHpDuringLeve => IsGerman
+        ? "Feine Ziel-Lebenspunkte im Freibrief"
+        : "Fine target health during levequests";
     public static string OptMapFlag => IsGerman ? "Kartenmarkierung" : "Map flag";
     public static string OptErrorToasts => IsGerman ? "Fehlermeldungen" : "Error messages";
     public static string OptInfoToasts => IsGerman ? "Hinweismeldungen" : "Notice messages";

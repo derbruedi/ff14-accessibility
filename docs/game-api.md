@@ -392,6 +392,15 @@ Zeichen selbst (V4.90). Quelle:
   obendrein CAMERA_ZOOMOUT. ⇒ Numpad-Ziffern NIE mit Umschalt kombinieren,
   nur mit Strg. Strg+Numpad2/4/6/8 sind vom Spiel belegt (Allianz-/
   Gegnerlisten-Cursor); Strg+Numpad1/3/5/7/9 frei.
+- **⚠️ KORREKTUR 2026-08-19 zu der Zeile darüber: Strg+Numpad1/7/9 kommen in der
+  PRAXIS NICHT AN.** Der User hat die drei beim Test der Sonderaktionen gemeldet
+  („er nimmt die strg taste nicht"). Auf Nachfrage bestätigt: **Strg+Numpad3
+  funktioniert bei ihm**, es ist also keine allgemeine Strg-Schwäche, sondern
+  betrifft genau die Ziffern 1/7/9. Der Keybind-Dump meldet sie als frei — er
+  sagt aber nur, dass das SPIEL sie nicht belegt, nicht dass sie beim Plugin
+  ankommen. Ursache ungeklärt und bewusst NICHT geraten (Verdacht Screenreader
+  oder Tastaturtreiber, unbelegt). ⇒ Für neue Tasten nur Strg+Numpad0/3/5
+  verwenden, das sind die drei nachweislich funktionierenden.
 - Plugin-Tasten seit V4.21 (Config-Migration V1→V2): N=Objekte nah,
   Umschalt+N=Richtung, Strg+N=Ziel verfolgen, Strg+Umschalt+N=Verfolgung aus,
   Strg+F1=Hilfe, Strg+F2=Fenster, Strg+F5=UI-Dump, Strg+F10=Menü vorlesen,
@@ -828,6 +837,113 @@ Art, kein Einzelgegner.
 - Leere Slots: vermutlich MarkerData.Count==0 bzw. Label leer — per
   Probe verifizieren, nicht raten.
 
+### Laufender Freibrief + seine Gegner (ilspycmd + Sheet-Dump, 2026-08-18)
+Frage: „welche Gegner verlangt der Freibrief, der GERADE läuft?" Marker
+(`Map.LevequestMarkers`) zeigen nur die FLÄCHE, nicht die Monster.
+
+**Laufenden Freibrief finden — nur Felder der Director-BASIS lesen:**
+- `EventFramework.Instance()->DirectorModule` (@192) → `DirectorList` @64
+  (`StdVector<Pointer<Director>>`) = alle aktiven Directors.
+- `Director` erbt `EventHandler`: `Info`@32 (`EventHandlerInfo`) →
+  `EventId`@0 → `EntryId`@0 (ushort) + `ContentId`@2 (`EventHandlerContent`).
+- **`EventId.ContentId` nennt die DIRECTOR-ART, nicht das Event.** Die
+  Director-Werte liegen ab 0x8000: `BattleLeveDirector = 32769`,
+  `GatheringLeveDirector = 32770`, `CompanyLeveDirector = 32775`,
+  `FateDirector = 32794`. `GuildLeveAssignment = 6` ist der Geber-NPC-
+  Handler und kommt hier NIE vor (Fehlannahme 2026-08-18, im Log gefallen).
+- **Die Freibrief-Nummer steht in `Director.ContentId`@736 (uint)**, nicht in
+  `EventId.EntryId`. Gemessen 2026-08-18: `Content=BattleLeveDirector(32769)
+  Entry=537 DirectorContentId=528 Titel='Lästige Nager'` — und Leve 528 heißt
+  im Sheet „Lästige Nager". `EntryId` war bei zwei Läufen desselben
+  Freibriefs 537 bzw. 542, ist also eine Instanz-Nummer.
+- Weitere sichere Basis-Felder: `Sequence`@744, `Title`@760 (Utf8String,
+  = Freibrief-Name), `Objective`@864, `DirectorTodos`@1088
+  (`StdVector<DirectorTodo>` — `Text`, `Complete`, `CurrentCount`@120).
+- **FALLE:** `Director` ist exakt **1120 Byte** groß, `LeveDirector.LeveId`
+  liegt bei **@1120** — also direkt DAHINTER. `LeveDirector` = 1200,
+  `BattleLeveDirector` = 1680 (mit `LeveData`@1232). Es gibt KEIN Feld, an
+  dem man die Unterklasse eines `Director*` erkennt. Deshalb: alles ab 1120
+  ist ein Überlesen, solange nicht anderweitig feststeht, dass der Zeiger ein
+  Leve-Director ist. Die Freibrief-Nummer kommt daher aus
+  `Info.EventId.EntryId`, nicht aus `LeveDirector.LeveId`.
+- Gegenprobe gegen `QuestManager.Instance()->LeveQuests` (`_leveQuests`@3624,
+  16× `LeveWork`: `LeveId`@8, `Sequence`@10, `Flags`@12): nur eine Nummer,
+  die auch angenommen ist, wird verwendet. Gemessen: 528 stand in der Liste.
+- Der Director erscheint erst, wenn der Freibrief GESTARTET ist (Leve-Kugel
+  angesprochen), nicht schon beim Annehmen — im Log 21:38:51 stand nur noch
+  der FateDirector, 21:41:11 wieder der BattleLeveDirector.
+
+**Gegner des Freibriefs — reine Sheet-Abfrage (offline gemessen 2026-08-18):**
+- `Leve.DataId` ist ein Mehrfach-`RowRef` auf CraftLeve / CompanyLeve /
+  GatheringLeve / BattleLeve. Die vier Sheets benutzen **disjunkte
+  Zeilennummern** (Battle 65563–65764, Gathering 131080–131339,
+  Company 196619–196684, Craft 917505–918744), deshalb löst
+  `RowRef.Is<T>()` / `TryGetValue<T>()` hier eindeutig auf.
+- `LeveAssignmentType`: 1 = „Söldner" → BattleLeve (191 Leves);
+  2/3 = Minenarbeiter/Gärtner → GatheringLeve; 4–12 = Handwerk → CraftLeve;
+  13/14/15 = die drei Staatlichen Gesellschaften → CompanyLeve.
+- `BattleLeve.LeveData` (8 Slots): `BNpcName` (RowRef auf BNpcName),
+  `ToDoNumberInvolved` (Stückzahl), `EnemyLevel`, `NumOfAppearance`.
+  `CompanyLeve.CompanyLeveStruct` hat dieselben Felder ohne Stückzahl.
+- Beispiel: Leve 501 „Durstige Bestien" → BattleLeve 65602 →
+  BNpcName 198 „Nussknackerhörnchen" ×4, 199 „Stolper-Fungus" ×4.
+- **`ToDoNumberInvolved` taugt NICHT als „so viele musst du töten".** Ein
+  Monster füllt oft MEHRERE Slots: Leve 530 „Pralle Reben" listet Bienenwolke
+  viermal mit je 2, Leve 527 Wander-Mandragora mit 5 und mit 0; Leve 528
+  „Lästige Nager" hat bei allen drei Arten 0. Die Staffelung steckt in
+  `ToDoSequence`/`NumOfAppearance` und ist ungemessen — die Zahl nur ansagen,
+  wenn eine Art genau einen Slot belegt.
+- Namen IMMER über `MonsterNameText.Resolve` — die deutschen Sheet-Namen
+  enthalten Platzhalter (`wuchernd[a] Efeuranke`).
+
+**FALLE: der Freibrief spawnt KEINE eigene Art (gemessen 2026-08-18).**
+Der `BNpcName` im Slot ist ein Journal-Name, nicht der Name des Objekts:
+- Leve 528 Slot 0 nennt BNpcName **1096 „streunend[a] Dodo"**. Das Monster,
+  das 2,9 m vor dem Spieler erschien, hatte aber **NameId 393 „Dodo"** —
+  dieselbe Art wie die wilden Dodos 40 m weiter. Zuordnung über BNpcName oder
+  über den angezeigten Namen findet deshalb **nichts**.
+  **Nachtrag 2026-08-18:** der echte Leve-Spawn hieß in der späteren Messung
+  sehr wohl `'Streunender Dodo'` (mit Leve-EventId). Das Objekt von 2,9 m war
+  also vermutlich gar nicht der Leve-Gegner, sondern ein wildes Dodo —
+  ein weiterer Grund, die Zuordnung nie am Namen festzumachen.
+- Was zusammenpasst, ist `LeveDataStruct.BaseID` (BNpcBase **339**) mit
+  `IGameObject.BaseId` (**339**) des gespawnten Objekts. Die wilden Dodos
+  tragen 339 allerdings ebenso — die Art allein trennt also nicht.
+- **Auch tot (gemessen 2026-08-18):** `EventHandler.EventObjects`@8 am Director
+  ist bei laufendem Freibrief **leer** („0 Director-Objekte").
+- **Tot, und zwar gemessen (2026-08-18, zweite Runde):**
+  `GameObject.GetEventHandlersImpl` (virtual function 30, Puffer für 32 Zeiger)
+  meldet für JEDES Monster denselben zonenweiten Handler — `25770280390` für
+  den Leve-Träger-Marienkäfer genauso wie für die wilden Marienkäfer daneben —
+  **nie** die Director-Adresse. Die Kategorie fand darüber 0 Gegner, obwohl der
+  Freibrief lief und der Gegner 26 m entfernt stand. Nicht noch einmal versuchen.
+
+**SO GEHT ES: `GameObject.EventId` (gemessen 2026-08-18).**
+Das gespawnte Monster trägt die **EventId seines Freibrief-Directors**:
+- `'Streunender Dodo'` → `EventId=2147549737` (Content `BattleLeveDirector`
+  32769, Entry **553**), während Leve 528 lief.
+- `'Träger-Marienkäfer'` → `EventId=2147549739` (…, Entry **555**), während
+  Leve 512 lief.
+- Jedes normale Zonentier daneben liest `EventId=0` — auch die Dodos
+  **derselben Art**. Das ist die einzige gemessene Trennung von Leve-Spawn und
+  Wildwuchs.
+- `EventId` (ilspycmd, `FFXIVClientStructs...Game.Event.EventId`, Size 4,
+  `LayoutKind.Explicit`): `Id`@0 (uint, das Ganze), `EntryId`@0 (ushort),
+  `ContentId`@2 (`EventHandlerContent`). Es gibt `==`/`Equals` über `Id`.
+- Verglichen wird die **volle Id** gegen `Director.Info.EventId.Id`, nicht nur
+  die Director-Art: der Eintrag trennt den eigenen Freibrief von dem des
+  Spielers, der danebensteht. Offen (im Log sichtbar gemacht): ob Director und
+  Monster IMMER dieselbe Entry-Nummer führen — beide Messungen liegen nicht
+  zeitgleich vor.
+- **`NamePlateIconId` ist NICHT 0** (die frühere Notiz war falsch): beide
+  gemessenen Leve-Spawns trugen **71244**, das allgemeine Aufgabenziel-Symbol.
+  Es sagt aber nicht, zu WELCHER Aufgabe — als Freibrief-Bindung untauglich.
+  Es ist der Grund, warum diese Gegner ohnehin schon in der Kategorie
+  „Quest-Gegner" auftauchen (Filterbereich 71000–71999).
+- `ICharacter.NameId` **ist** die BNpcName-Zeile — bestätigt am selben Dump:
+  393 = „Dodo", 405 = „winzig[a] Mandragora", 115 = „Wind-Exergon", jeweils
+  identisch mit dem Sheet.
+
 ### FATE (ilspycmd-verifiziert 2026-07-31)
 Quelle: `FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager` (Singleton,
 `FateManager.Instance()`). Hält NUR die FATEs der aktuellen Zone; FATEs
@@ -971,6 +1087,40 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   Richtungen) und ob `Scale` Halb- oder Vollausdehnung ist. Sonde
   `/acc uebergang` loggt beide Lesarten. Eine falsche Laufrichtung würde die
   Figur von der Grenze WEG steuern — schlimmer als der heutige Zustand.
+
+### Inhalts-Eingänge der ganzen Welt (offline-Sheet-Dump 2026-08-19)
+- Frage: „wo sind ALLE Dungeon-/Prüfungs-/Raid-Türen, mit Stufe und Ort?" —
+  ohne dass das Objekt geladen sein muss. Grundlage der Browser-Kategorie
+  „Alle Inhalte" (`DutyEntranceService`).
+- **Tür → Inhalt** liefert `DungeonSide` (schon vorhanden, dort dokumentiert):
+  `EObj.Data` → Block 0x001D `InstanceContentGuide` bzw. 0x000D
+  `ArrayEventHandler` → `InstanceContent` → `ContentFinderCondition`
+  (Name, `ContentType`, `ClassJobLevelRequired`). 182 EObj im ganzen Spiel,
+  davon 155 mit ContentType 2 (Dungeons), 4 (Prüfungen) oder 5 (Raids).
+- **Tür → Ort** steht im `Level`-Sheet, NICHT in einem Marker-Sheet:
+  `Level.Object` = die EObj-Zeilennummer, `Territory`, `Map`, `X`/`Y`/`Z`.
+  Die Höhe ist ECHT (3D), anders als bei `MapMarker` — ein Kartenmarker ist
+  2D und braucht die Boden-Schätzung, diese Position nicht.
+- **`Level.Type` = 45 ist der EObj-Verweis**, gemessen über das ganze Sheet
+  (61.346 Zeilen): Typ 45 hat einen eigenen `Object`-Id-Bereich
+  2000002..2015509, der sich mit keinem anderen Typ überschneidet
+  (8 = 12275..1059814 ENpc, 9 = 1..20058, 14 = 30006..34748,
+  49 = konstant 5000000). Alle 175 auflösbaren Eingänge tragen Typ 45 —
+  der Join `Level.Object == EObj.RowId` ist damit eindeutig, keine
+  Zahlenkollision wie beim Low-Word-Weg in `DungeonSide`.
+- **3 der 155 haben KEINE Level-Zeile** („Sägerschrei", zwei Eingänge zu
+  „Verschlungene Schatten 3 - 1") — die werden weggelassen, nicht geraten.
+  7 Inhalte haben MEHRERE Eingänge, teils in verschiedenen Zonen
+  (z. B. „Götterdämmerung - Ravana": Dravanisches Vorland + Opferkammer).
+- **Freigeschaltet?** fragt `UIState.IsInstanceContentUnlocked(instanceContentId)`
+  (statisch, ohne this-Zeiger; gegen die installierte FFXIVClientStructs.dll
+  geprüft). Daneben gibt es `IsInstanceContentCompleted` und die
+  Public-Content-Paare. Der Schlüssel ist die `InstanceContent`-Zeile
+  (`ContentFinderCondition.Content.RowId`), NICHT die CFC-Zeile.
+- Erwartungswerte für den Test (offline vorausberechnet, deutscher Client):
+  152 Eingänge mit Ort, nach Entdopplung pro Inhalt **145 Listeneinträge**;
+  erster Eintrag Stufe 15 „Sastasha" (Westliches La Noscea), 7 Einträge
+  bis Stufe 30.
 
 ### Talk / TalkSubtitle (Log-verifiziert 2026-07-11)
 - AddonTalk hat nur UNBENANNTE Text-Node-Felder (AtkTextNode220/228/238/
@@ -1501,3 +1651,90 @@ ausloesen muss". Es sind ZWEI getrennte Mechaniken — nicht vermischen.
 Wann im Kampf der Gegenstand einzusetzen ist, steht in keiner der o. g.
 Strukturen — das ist Kampf-/Questlogik. Vorhandene Kanaele dafuer: Systemmeldung
 (ChatReaderService), Gegner-Zauber (CombatService), ToDo-Liste der Quest.
+
+## Inhaltssuche und ihre Einstellungen (ilspycmd + UI-Dump, 2026-08-19)
+
+### Zustand der Einstellungen: `Client::Game::UI::ContentsFinder`
+
+Die Duty-Finder-Einstellungen liegen als spieleigene Felder vor — nichts davon
+muss aus Symbolen abgeleitet werden. `ContentsFinder.Instance()` (StaticAddress,
+Size 176):
+
+- `LootRules@24` — `enum LootRule : byte { Normal, GreedOnly, Lootmaster }`
+- `IsUnrestrictedParty@25` — „Keine Beschränkungen"
+- `IsMinimalIL@26` — „Anpassung an Mindest-Gegenstandsstufe"
+- `IsSilenceEcho@27` — „Teilnahme ohne Kraft des Transzendierens"
+- `IsExplorerMode@28` — „Erkundungsmodus"
+- `IsLevelSync@29` — „Stufenanpassung"
+- `IsLimitedLevelingRoulette@30` — „Einschränkung für Zufallsinhalt: Stufensteigerung"
+- `QueueInfo@32` — `ContentsFinderQueueInfo` (Warteschlangenstand, Position,
+  `PoppedContent*`-Kopien derselben Schalter für den bereits zugeteilten Inhalt)
+
+NICHT in dieser Struktur, und auch sonst nirgends in FFXIVClientStructs gefunden:
+die Zeile **„An laufenden Einsätzen teilnehmen"**. In Dalamuds `UiConfigOption`
+gibt es `ContentsFinderSupplyEnable`, das inhaltlich passen könnte — UNGEPRÜFT,
+deshalb wird für diese Zeile bewusst kein Zustand angesagt.
+
+Ebenfalls in `UiConfigOption`, für die vier Sprach-Kästchen:
+`ContentsFinderUseLangTypeJA` / `…EN` / `…DE` / `…FR` (in dieser Reihenfolge).
+
+**GEMESSEN (2026-08-19, Log 19:29–19:31): diese Felder sind der GESPEICHERTE
+Stand, nicht der Stand im offenen Fenster.** Alle sechs blieben auf `False`,
+während der Spieler „Keine Beschränkungen" einschaltete; erst beim „Ok" schrieb
+das Spiel selbst in den Chat „Teilnahmebedingungen wurden wie folgt festgelegt:
+Keine Beschränkungen". Das Fenster arbeitet also auf einer Arbeitskopie.
+
+Für eine Ansage des Zustands im offenen Fenster taugen diese Felder deshalb
+NICHT.
+
+### Wo die Arbeitskopie steht (gemessen 2026-08-19, Log 19:36)
+
+Im Bedienelement selbst. Eine Sonde schrieb bei jeder Änderung alle Kandidaten
+mit, der Spieler schaltete „Keine Beschränkungen" einmal aus und einmal an, und
+die Richtung wurde beide Male gegen die Bestätigung des Spiels im Chat geprüft
+(„… festgelegt: -" bzw. „… festgelegt: Keine Beschränkungen"). Es flippen vier
+Dinge gemeinsam:
+
+- **AN:** Bild-`PartId` **0**, NineGrid 8 sichtbar / 9 versteckt, Text 6 sichtbar
+- **AUS:** Bild-`PartId` **1**, NineGrid 9 sichtbar / 8 versteckt, Text 7 sichtbar
+
+Gelesen wird die `PartId` des Zustandssymbols am **rechten Rand** der Zeile
+(über die Geometrie gefunden: das am weitesten rechts liegende Bild der Zeile,
+in deren rechter Hälfte). Die Zeile trägt links noch ein zweites Bild — das ist
+NICHT das Zustandssymbol.
+
+`AtkComponentButton.IsChecked` (Bit 18 in `Flags`) blieb bei jedem Umschalten
+`False` — genau wie FFXIVClientStructs es dokumentiert („used by
+AtkComponentCheckBox and AtkComponentRadioButton"). Für diese Zeilen unbrauchbar.
+`Flags` selbst blieb konstant `0x20810100`.
+
+Die Sprach-Kästchen sind echte CheckBox-Komponenten, ihr `IsChecked` stimmt
+(im Test bestätigt: Japanisch aus, Englisch aus, Deutsch an auf deutschem
+Client) — die Zuordnung JA/EN/DE/FR von links ist damit belegt.
+
+### Fensteraufbau `ContentsFinderSetting` (Dump 2026-08-19, 31 Knoten)
+
+- Knoten 4 bis 10 — die sieben Optionszeilen, `Comp(1012)` **Button** (kein
+  CheckBox!), Beschriftung im Textknoten 5. Alle bei x=90, Breite 390, y = 189,
+  224, 259, 294, 329, 364, 399. Knoten-Reihenfolge läuft der Bildschirmordnung
+  ENTGEGEN (id 10 steht unten) — deshalb wird über die Geometrie sortiert.
+- Knoten 14 — `Comp(1014)` **DropDownList** (Beuteregeln). Ihr Anzeigefeld ist
+  intern selbst eine CheckBox (`Comp(1013)`); ein Aufstieg zur nächstgelegenen
+  Komponente sagt sie deshalb fälschlich als Schalter an. `FindTopLevelOwner`
+  benutzen.
+- Knoten 20 bis 23 — die vier Sprach-Kästchen, `CheckBox`, alle bei y=473,
+  x = 342, 376, 410, 444. Kein Text, kein Tooltip.
+- Knoten 26 — `Comp(1016)` **Base**, das einzige seiner Art im Fenster: die
+  Erklärungs-Tafel rechts, Text im Kindknoten 4 (bis ~500 Zeichen).
+- Knoten 25 — Text, wiederholt den Namen des Bedienelements unter dem Fokus.
+- Knoten 2 — Unterzeile „Richte Bedingungen für die Teilnahme an Inhalten ein."
+  Wichtig, weil Inhaltssuche UND Einstellungen beide „INHALTSSUCHE" heißen.
+- Knoten 29/30 — „Ok" und „Schließen", `Comp(1005)`, x=634 bzw. 790, Breite 150.
+
+### Falle: das Kollisionsfeld über dem ganzen Fenster
+
+`Comp(1004)` (Fensterrahmen, Knoten 31) enthält ein Kollisionsfeld (Knoten 13),
+das die volle Fensterfläche abdeckt (880x440) und das Fokus-Bit trägt. Der
+generische `FindFocusedText` fand dadurch bei JEDEM Fokuswechsel den
+Fenstertitel statt des Bedienelements (`Key=31013` in jeder Zeile des Logs vom
+2026-08-19). Dasselbe Muster ist bei `ContentsFinder` zu sehen (`Key=76012`).

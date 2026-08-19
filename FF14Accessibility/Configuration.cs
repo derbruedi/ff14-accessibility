@@ -127,9 +127,35 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadBoard      = "Strg+Umschalt+F4"; // Kartenspiel: das 3x3-Brett vorlesen
     public string KeyReadHand       = "Strg+Umschalt+F5"; // Kartenspiel: die eigene Hand vorlesen
     public string KeyRecordTrail    = "Strg+Umschalt+F6"; // Spur aufzeichnen an/aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. Strg+Umschalt+F6 ist frei (F1-F5 dieses Clusters sind Goto/Copy-Coords, AoE-Toggle und Kartenspiel).
+    // Sonderaktionen eines Auftrags ("Duty Actions") - fangen, betaeuben, ausloesen.
+    //
+    // ERST AUF Strg+Numpad7/9/1 GELEGT, VOM USER AM 2026-08-19 VERWORFEN: "das mit
+    // strg+1 und 7 wird nicht funktionieren er nimmt die strg taste nicht". Auf
+    // Nachfrage bestaetigt: Strg+Numpad3 (Gehhilfe) FUNKTIONIERT bei ihm. Es ist
+    // also kein allgemeines Strg-Problem, sondern betrifft genau die Ziffern 1/7/9.
+    // Damit ist die Zeile "Strg+Numpad1/3/5/7/9 frei" in game-api.md fuer 1/7/9
+    // widerlegt - der Keybind-Dump hat sie als frei gemeldet, in der Praxis kommen
+    // sie nicht an. Ursache ungeklaert und NICHT geraten; dokumentiert.
+    //
+    // Umschalt+F10/F11 sind die letzten freien Plaetze im Umschalt+F-Cluster
+    // (F1/F2/F12 Plugin-Liste, F3 Gil, F4-F6 Emotes, F7/F8 Verlosung, F9
+    // Einstellungen). Einhaendig zu treffen - und das ist hier die Anforderung,
+    // die Taste wird MITTEN IM KAMPF im richtigen Moment gebraucht. Nur die
+    // Ansage, die nicht eilt, liegt im langsameren Dreifachgriff.
+    public string KeyDutyAction1    = "Umschalt+F10";      // Sonderaktion auf Platz 1 ausloesen
+    public string KeyDutyAction2    = "Umschalt+F11";      // Sonderaktion auf Platz 2 ausloesen
+    public string KeyDutyActionList = "Strg+Umschalt+F8";  // Vorhandene Sonderaktionen noch einmal ansagen (eilt nicht)
+    public string KeyReadTasks      = "Strg+Umschalt+F7"; // Aufgabenliste des laufenden Inhalts vorlesen (Freibrief, Dungeon, FATE) - die Zeilen, die ein sehender Spieler am Bildschirmrand liest. Strg+Umschalt+F7 ist der naechste freie Platz dieses Clusters (F1-F6 belegt).
     // [Einstellungsmenue] Oeffnet das gesprochene Einstellungsmenue. Umschalt+F9 ist
     // laut Live-Keybind-Dump frei (F9 bare ist TARGET_PET, mit Umschalt unbelegt).
     public string KeyOptionsMenu    = "Umschalt+F9";      // Einstellungen oeffnen
+
+    // [Peil-Ton] An/aus fuer den Ziel-Peilton. Strg+Umschalt+F9 ist frei: von
+    // diesem Cluster sind F1/F2 (Koordinaten), F3 (AoE-Warnton), F4/F5 (Triple
+    // Triad), F6 (Spuren), F7 (Aufgabenliste) und F8 (Sonderaktionen) belegt,
+    // F9-F12 nicht. Strg+F* ist laut Keybind-Dump spielfrei, Strg+Umschalt+F*
+    // erst recht.
+    public string KeyToggleBeacon   = "Strg+Umschalt+F9";  // Peil-Ton an/aus
     public string KeyDeepFloor      = "Strg+F";           // Tiefes Gewoelbe: welches Gewoelbe und welche Ebene. Die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur beilaeufig nennt.
 
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
@@ -178,6 +204,9 @@ public sealed class Configuration : IPluginConfiguration
         KeyOptionsMenu   = defaults.KeyOptionsMenu;     // [Einstellungsmenue]
         KeyReadBoard     = defaults.KeyReadBoard;
         KeyReadHand      = defaults.KeyReadHand;
+        KeyDutyAction1   = defaults.KeyDutyAction1;
+        KeyDutyAction2   = defaults.KeyDutyAction2;
+        KeyDutyActionList = defaults.KeyDutyActionList;
     }
 
     // ── [Chat-Puffer] Sprachschaltungen ───────────────────────────
@@ -290,7 +319,16 @@ public sealed class Configuration : IPluginConfiguration
     public bool AnnounceMapFlag = true;         // neu gesetzte Karten-Markierung ansagen
     public bool AnnounceHeading = true;         // beim Drehen die Himmelsrichtung ansagen, in die man schaut (nur nach Dreh-Ende + Sektorwechsel, siehe HeadingService). Umschaltbar mit KeyToggleHeading
     public bool AnnounceDeepRoomChange = true;  // Tiefes Gewoelbe: beim Betreten eines anderen Raumes ansagen, welcher es ist. Ein sehender Spieler liest seine Position fortlaufend von der Gewoelbe-Karte ab; eine Liste, die man abfragen muss, ist nicht dieselbe Information.
-    public float BeaconVolume = 0.35f;          // Gehhilfe-Ton: 0 = stumm, 1 = volle Lautstärke
+    public float BeaconVolume = 0.35f;          // Peil-Ton: 0 = stumm, 1 = volle Lautstärke
+
+    /// <summary>
+    /// Peil-Ton auf das getrackte Ziel (Spielerwunsch 2026-08-19). Läuft, sobald
+    /// im Objekt-Browser etwas gewählt oder ein Ziel anvisiert ist - nicht erst
+    /// mit der Gehhilfe. Klingt je Zielart anders, wird mit der Entfernung leiser
+    /// und VERSTUMMT, sobald man richtig ausgerichtet steht (Aufzüge, Plattformen).
+    /// Standard AN, abschaltbar mit <see cref="KeyToggleBeacon"/>.
+    /// </summary>
+    public bool TargetBeaconEnabled = true;
 
     // Auto-Lauf: "Noch X Meter" erst nach so vielen zurückgelegten Metern
     // wieder ansagen (0 = gar nicht). Früher alle 3 Sekunden - das war auf
@@ -319,7 +357,18 @@ public sealed class Configuration : IPluginConfiguration
 
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
+    // Feinere Ziel-HP-Stufen (alle 5 Prozent unter 30), solange ein FREIBRIEF laeuft.
+    // Fang-Auftraege wollen den Gegner geschwaecht statt tot; mit den groben Stufen
+    // 25/10 ist dieses Fenster nicht zu treffen (gemessen 2026-08-19: von 18 auf tot
+    // in sechs Sekunden). Abschaltbar, weil es auf einem Toetungs-Freibrief ein paar
+    // Ansagen mehr sind.
+    public bool FineTargetHpDuringLeve = true;
     public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
+    // Sonderaktionsleiste eines Auftrags. STANDARD AN, anders als die Flaechenwarnung:
+    // hier wird nichts berechnet und nichts behauptet - die Leiste ist da oder nicht,
+    // und ohne Ansage erfaehrt ein blinder Spieler ihr Auftauchen ueberhaupt nicht.
+    // Sie erscheint selten, die Ansage kann also nicht zur Dauerbeschallung werden.
+    public bool AnnounceDutyActions = true;
 
     // AoE-Ausweich-Warnung (User-Wunsch 2026-07-26): ein Dauerton, solange der
     // Spieler in der Gefahrenflaeche eines gerade laufenden Gegner-Casts steht.

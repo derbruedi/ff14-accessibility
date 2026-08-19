@@ -362,6 +362,42 @@ public sealed class PlacesService
     }
 
     /// <summary>
+    /// Wie viele Zonenwechsel von der aktuellen Karte bis zu jeder erreichbaren
+    /// Karte - EIN Breitensuchlauf ueber denselben Uebergangsgraphen, den
+    /// <see cref="FindFirstHopToMap"/> pro Ziel durchlaeuft.
+    ///
+    /// Warum es das gibt: die weltweite Inhaltsliste hat 155 Ziele, und mehrere
+    /// Inhalte haben Eingaenge in verschiedenen Zonen. "Welcher davon ist der
+    /// naechste" 155 mal einzeln zu fragen hiesse 155 Breitensuchen pro
+    /// Tastendruck; hier ist es einer, dessen Ergebnis alle beantwortet. Karten,
+    /// die kein Uebergang erreicht (Instanz-Gebiete, Faehre-nur-Inseln), fehlen
+    /// im Ergebnis - genau die Auskunft "da kommt man nicht hin laufend".
+    /// </summary>
+    public Dictionary<uint, int> GetHopDistances()
+    {
+        var distance = new Dictionary<uint, int>();
+        var start = _clientState.MapId;
+        if (start == 0) return distance;
+
+        distance[start] = 0;
+        var queue = new Queue<uint>();
+        queue.Enqueue(start);
+        // Dieselbe Schranke wie in FindFirstHopToMap: der Kartengraph ist klein,
+        // und eine Obergrenze haelt einen kaputten Sheet-Zyklus aus dem Frame.
+        while (queue.Count > 0 && distance.Count < 500)
+        {
+            var current = queue.Dequeue();
+            foreach (var next in GetTransitionTargets(current))
+            {
+                if (distance.ContainsKey(next)) continue;
+                distance[next] = distance[current] + 1;
+                queue.Enqueue(next);
+            }
+        }
+        return distance;
+    }
+
+    /// <summary>
     /// Finds the transition IN THE CURRENT MAP that is the first hop of the
     /// shortest transition route to the target map (BFS over the static
     /// map-transition graph). Null when no route exists (e.g. only reachable

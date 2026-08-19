@@ -264,40 +264,12 @@ public sealed class HuntingLogService
     }
 
     /// <summary>
-    /// The spoken name of a monster. German sheet names leave the adjective
-    /// ending as a placeholder the game fills in per case ("wuchernd[a]
-    /// Efeuranke"); read out raw, the brackets end up in the speech.
-    ///
-    /// BNpcName.Pronoun is the gender, so the nominative ending follows from it:
-    /// 0 masculine "-er", 1 feminine "-e", 2 neuter "-es". Two of the three are
-    /// confirmed against names the game itself displayed - Pronoun 1
-    /// "wuchernd[a] Efeuranke" shows as "Wuchernde Efeuranke" (window dump
-    /// 2026-08-17) and Pronoun 0 "rostig[a] Kobalos" as "Rostiger Kobalos" (log
-    /// 2026-07-19); the neuter form is plain German strong declension.
-    ///
-    /// The other two placeholders in the sheet, [p] (1195 names) and [t] (201),
-    /// are dropped without replacement. UNVERIFIED - no displayed name with one
-    /// of them has been seen yet. Dropping can only cost an ending, never
-    /// invent a wrong name, which is why it is the safe fallback.
-    ///
-    /// Only German gets endings: the placeholders are a property of the client
-    /// language, and guessing suffixes for a language whose rules have not been
-    /// measured would be worse than the bare stem.
+    /// The spoken name of a monster, sheet placeholders resolved. The rules and
+    /// what backs them live in <see cref="MonsterNameText"/> - the levequest
+    /// category reads the same sheet and must spell a monster the same way.
     /// </summary>
     private string ResolveMonsterName(BNpcName nameRow)
-    {
-        var text = nameRow.Singular.ExtractText().Trim();
-        if (!text.Contains('[')) return text;
-
-        var ending = _data.Language == Dalamud.Game.ClientLanguage.German
-            ? nameRow.Pronoun switch { 0 => "er", 1 => "e", 2 => "es", _ => string.Empty }
-            : string.Empty;
-
-        return text.Replace("[a]", ending)
-                   .Replace("[p]", string.Empty)
-                   .Replace("[t]", string.Empty)
-                   .Trim();
-    }
+        => MonsterNameText.Resolve(nameRow, _data.Language);
 
     /// <summary>
     /// The nearest LIVE specimen of a monster that the game currently has

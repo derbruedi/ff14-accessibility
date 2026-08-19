@@ -75,7 +75,13 @@ internal static class DungeonSide
     /// zugeordnete Art gesprochen statt verworfen wird - siehe
     /// <see cref="AccessibilityStrings.DutyEntrance"/>.
     /// </summary>
-    internal readonly record struct Duty(string Name, uint ContentType, ushort Level, string TypeName);
+    /// <param name="ContentId">
+    /// Die <c>InstanceContent</c>-Zeile hinter dem Inhalt. Nicht gesprochen -
+    /// sie ist der Schluessel, mit dem das SPIEL gefragt wird, ob der Inhalt
+    /// freigeschaltet ist (<c>UIState.IsInstanceContentUnlocked</c>), statt das
+    /// aus Stufe oder Questfortschritt zu erraten.
+    /// </param>
+    internal readonly record struct Duty(string Name, uint ContentType, ushort Level, string TypeName, uint ContentId);
 
     /// <summary>
     /// EObj-Zeilennummer -> der Inhalt, in den sie fuehrt. Wird beim ersten Zugriff
@@ -84,6 +90,17 @@ internal static class DungeonSide
     /// jedem Schritt des Objekt-Browsers gefragt wird.
     /// </summary>
     private static Dictionary<uint, Duty>? _byObject;
+
+    /// <summary>
+    /// Die ganze Tabelle EObj-Zeile -> Inhalt, ueber die ganze Welt und ohne dass
+    /// ein Objekt geladen sein muss. <see cref="Describe"/> beantwortet "wohin
+    /// fuehrt DIESE Tuer vor mir", diese Methode "welche Tueren gibt es
+    /// ueberhaupt" - die Grundlage der weltweiten Inhaltsliste im Objekt-Browser
+    /// (<see cref="DutyEntranceService"/>). Dieselbe einmal gebaute Map, es wird
+    /// nichts doppelt gelesen.
+    /// </summary>
+    internal static IReadOnlyDictionary<uint, Duty> All(IDataManager data, IPluginLog log)
+        => _byObject ??= Build(data, log);
 
     /// <summary>
     /// Der Inhalt, in den dieses Objekt fuehrt, oder null wenn es kein Eingang ist.
@@ -151,7 +168,8 @@ internal static class DungeonSide
                     name,
                     cfc.ContentType.RowId,
                     cfc.ClassJobLevelRequired,
-                    cfc.ContentType.ValueNullable?.Name.ToString() ?? string.Empty);
+                    cfc.ContentType.ValueNullable?.Name.ToString() ?? string.Empty,
+                    contentId);
         }
 
         // Eine Guide-Ereignis-Id -> der Inhalt, in den sie fuehrt.

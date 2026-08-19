@@ -656,12 +656,17 @@ public sealed class OptionsMenu
             //
             // BEWUSST NICHT DABEI: die Flaechenwarnung. Sie ist schon ueber
             // KeyToggleAoeWarning (Strg+Umschalt+F3) schaltbar, und ihr Ausloeser
-            // (CombatService.UpdateAoeWarning) filtert ueber Action.EffectRange und
+            // (CombatService.UpdateEnemyCastWarnings) filtert ueber Action.EffectRange und
             // CastType. Nach unserer Messung ist das zu weit gefasst: die Grafik des
             // Telegrafen haengt an Omen, und mehrere tausend Aktionen mit CastType 2
             // zeichnen ueberhaupt keine Flaeche. Eine zweite, bequemere Schaltung fuer
             // etwas, das oefter warnt als das Spiel zeigt, gehoert nicht ins Menue,
             // bevor der Ausloeser stimmt. Der bestehende Hotkey bleibt unangetastet.
+            // Der Peil-Ton hat BEIDES: einen Schalter (er ist die einzige
+            // Dauergeraeuschquelle des Mods) und die Lautstaerke darunter. Der
+            // Hotkey Strg+Umschalt+F9 macht dasselbe - er muss aber auch ohne
+            // Tastenwissen erreichbar sein.
+            Toggle(AccessibilityStrings.OptTargetBeacon,     () => _config.TargetBeaconEnabled, v => _config.TargetBeaconEnabled = v),
             Volume(AccessibilityStrings.OptBeacon,           () => _config.BeaconVolume,        v => _config.BeaconVolume = v),
             Volume(AccessibilityStrings.OptRouteCues,        () => _config.RouteCueVolume,      v => _config.RouteCueVolume = v),
             Toggle(AccessibilityStrings.OptSkillReady,       () => _config.AnnounceSkillReady,  v => _config.AnnounceSkillReady = v),
@@ -688,6 +693,11 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptTargetChanges, () => _config.AnnounceTargetChanges, v => _config.AnnounceTargetChanges = v),
             Toggle(AccessibilityStrings.OptTargetHp,      () => _config.AnnounceTargetHp,      v => _config.AnnounceTargetHp = v),
             Toggle(AccessibilityStrings.OptEnemyCast,     () => _config.AnnounceEnemyCast,     v => _config.AnnounceEnemyCast = v),
+            // Feine HP-Stufen im Freibrief: gehoert hier hin, weil es auf einem
+            // Toetungs-Auftrag ein paar Ansagen mehr sind und der Spieler das
+            // abwaehlen koennen muss, ohne die Ziel-HP ganz auszuschalten.
+            Toggle(AccessibilityStrings.OptFineHpDuringLeve, () => _config.FineTargetHpDuringLeve,
+                                                             v => _config.FineTargetHpDuringLeve = v),
             // FOUR ROWS ARE GONE FROM HERE, all for the same
             // reason: they switched chat channels, and chat membership is the game's
             // now. Leaving them would be four switches with nothing behind them.

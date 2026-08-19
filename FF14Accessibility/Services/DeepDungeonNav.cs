@@ -135,7 +135,9 @@ public sealed class DeepDungeonNav
         {
             _pollTick = 0;
             _floor.LogChestEvidence();
+#if DEBUG
             LogBattleNpcs(player);   // die Fallen-Sonde
+#endif
         }
 
         var line = RoomChangeLine(playerEntityId);
@@ -152,6 +154,7 @@ public sealed class DeepDungeonNav
     private int _pollTick;
     private const int ChestCheckEveryFrames = 30;
 
+#if DEBUG
     /// <summary>
     /// DER UMWEG UM FALLEN HAENGT SEIT DEM 2026-08-12 HIERAN, und er laesst sich ohne
     /// das, was diese Sonde misst, nicht bauen.
@@ -192,13 +195,29 @@ public sealed class DeepDungeonNav
     /// </summary>
     private void LogBattleNpcs(IGameObject player)
     {
+        // NUR IM TIEFEN GEWOELBE. Poll() laeuft ueberall, wo der Dienst haengt, nicht
+        // erst ab dem Betreten - ohne dieses Tor protokollierte eine FALLEN-Sonde die
+        // Dodos von Unter-La Noscea. Gemessen am 2026-08-19: 25.254 der 31.315
+        // Log-Zeilen einer Spielsitzung kamen von hier, 85 Prozent des ganzen Logs,
+        // und keine einzige davon stand in einem Tiefen Gewoelbe.
+        if (!_floor.IsActive) return;
+
         var npcs = _objects
             .Where(o => o.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)
             .Where(o => Vector3.Distance(o.Position, player.Position) <= TrapProbeRangeYalms)
             .OrderBy(o => Vector3.Distance(o.Position, player.Position))
             .ToList();
 
-        var signature = string.Join(",", npcs.Select(o => $"{o.GameObjectId:X}:{o.IsTargetable}"));
+        // Die Signatur wird nach Objekt-Id sortiert gebildet, NICHT in der
+        // Ausgabereihenfolge. Die Ausgabe steht nach Entfernung, und zwei Gegner in
+        // aehnlichem Abstand tauschen beim Laufen staendig die Plaetze - das allein
+        // machte die Signatur neu und trieb die Drossel zweimal pro Sekunde durch,
+        // obwohl sich an der MENGE nichts geaendert hatte. Die Sonde fragt nach
+        // "welche Objekte, und sind sie anvisierbar", und darauf hat die Reihenfolge
+        // keine Antwort.
+        var signature = string.Join(",", npcs
+            .OrderBy(o => o.GameObjectId)
+            .Select(o => $"{o.GameObjectId:X}:{o.IsTargetable}"));
         if (signature == _lastNpcSignature) return;
         _lastNpcSignature = signature;
 
@@ -222,6 +241,7 @@ public sealed class DeepDungeonNav
     /// beide dasselbe unter "in Reichweite" verstehen, wenn das Log neben einer
     /// Browser-Ansage gelesen wird.</summary>
     private const float TrapProbeRangeYalms = 100f;
+#endif
 
     /// <summary>Ob der Kategoriensatz des Tiefen Gewoelbes gelten soll.</summary>
     public bool IsActive => _floor.IsActive;

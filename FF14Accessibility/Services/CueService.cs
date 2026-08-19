@@ -64,6 +64,25 @@ public sealed class CueService : IDisposable
         _provider!.Trigger(_config.SkillReadyCueVolume, 784f, 1047f);
     }
 
+    /// <summary>
+    /// Peil-Ton eingerastet: EIN kurzer heller Doppelschlag auf derselben Note
+    /// (880 Hz), oberhalb des ganzen Peil-Tonvorrats (330-784 Hz) und dadurch
+    /// nicht mit ihm zu verwechseln.
+    ///
+    /// WARUM ES DEN TON GEBEN MUSS: der Peil-Ton schweigt, sobald die Ausrichtung
+    /// stimmt. Fuer einen blinden Spieler ist Stille aber nicht von "kaputt",
+    /// "Ziel verloren" oder "Ton aus" zu unterscheiden. Dieser eine Schlag beim
+    /// Uebergang von falsch auf richtig ist der Beweis, dass absichtlich
+    /// geschwiegen wird. Er haengt an derselben Lautstaerke wie die uebrigen
+    /// Wegtoene.
+    /// </summary>
+    public void PlayAlignedTone()
+    {
+        if (_config.RouteCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.RouteCueVolume, 880f, 880f);
+    }
+
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
     private bool EnsureOutput()
     {

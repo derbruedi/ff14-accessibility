@@ -8,7 +8,7 @@ namespace FF14Accessibility.Services;
 /// Continuous danger alarm for AoE dodging: a pulsing tone that plays for as long
 /// as the player is standing inside an active enemy cast's danger zone and goes
 /// silent the instant they step out (or the cast ends). Driven every frame by
-/// <see cref="CombatService.UpdateAoeWarning"/> via <see cref="SetActive"/>.
+/// <see cref="CombatService.UpdateEnemyCastWarnings"/> via <see cref="SetActive"/>.
 ///
 /// Deliberately a MONO pulsing buzzer so it cannot be confused with the walk
 /// guide's stereo directional beep (<see cref="BeaconService"/>): a fast pulse

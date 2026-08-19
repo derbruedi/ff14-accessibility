@@ -42,6 +42,26 @@ public static partial class AccessibilityStrings
     public static string CategoryLabel(string name) =>
         IsGerman ? $"Kategorie {name}." : $"Category {name}.";
 
+    /// <summary>
+    /// Rank tier button in the left column of the seal shop. Those buttons carry
+    /// no text at all - the game draws the rank insignia of the ranks they cover
+    /// (GCScripShopCategory.Tier 1-3, GrandCompanyRank.Tier; the node counts 4/4/3
+    /// match the ranks per tier exactly, dump 2026-08-19). The names come from the
+    /// player's own Grand Company rank sheet, so the announcement says what the
+    /// insignia show.
+    /// </summary>
+    public static string GcRankTier(int index, int count, string firstRank, string lastRank)
+    {
+        var range = firstRank.Length > 0 && lastRank.Length > 0
+            ? (IsGerman ? $", {firstRank} bis {lastRank}" : $", {firstRank} to {lastRank}")
+            : string.Empty;
+        return IsGerman ? $"Rangstufe {index} von {count}{range}"
+                        : $"Rank tier {index} of {count}{range}";
+    }
+
+    /// <summary>Appended to a tab/button announcement when it is the active one.</summary>
+    public static string SelectedSuffix => IsGerman ? ", ausgewählt" : ", selected";
+
     // ── Reittier-Verzeichnis (MountNoteBook) ─────────────────────────
     /// <summary>Active view tab of the mount guide (Favorites/Normal/Search).</summary>
     public static string MountViewFavorites => IsGerman ? "Favoriten." : "Favorites.";
@@ -70,6 +90,25 @@ public static partial class AccessibilityStrings
     /// <summary>Control is greyed out / not currently changeable (NodeFlags.Enabled
     /// cleared) - e.g. a sub-toggle while its master switch is off.</summary>
     public static string StateDisabled => IsGerman ? "ausgegraut" : "greyed out";
+
+    // ── Einstellungen der Inhaltssuche (ContentsFinderSetting) ───────
+    /// <summary>The four language boxes of the duty-finder settings. Named by
+    /// their position, which is the order the game's own configuration lists
+    /// them in (ContentsFinderUseLangTypeJA / EN / DE / FR).</summary>
+    public static string DutyLanguageJapanese => IsGerman ? "Japanisch" : "Japanese";
+    public static string DutyLanguageEnglish  => IsGerman ? "Englisch"  : "English";
+    public static string DutyLanguageGerman   => IsGerman ? "Deutsch"   : "German";
+    public static string DutyLanguageFrench   => IsGerman ? "Französisch" : "French";
+
+    /// <summary>Heading of the language row, so a box is not heard as a loose
+    /// switch ("Sprache Deutsch, Schalter, an").</summary>
+    public static string DutyLanguageGroup => IsGerman ? "Sprache" : "Language";
+
+    /// <summary>The window's own help text for the option under the focus,
+    /// spoken on its own after a short dwell - prefixed so the user knows what
+    /// is being read.</summary>
+    public static string SettingHelp(string help) =>
+        IsGerman ? $"Erklärung: {help}" : $"Explanation: {help}";
 
     // ── Sprachumschaltung (/acc lang) ────────────────────────────────
     public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
@@ -306,6 +345,11 @@ public static partial class AccessibilityStrings
         NavCategory.Fates            => "FATEs",
         NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
+        // Bewusst NICHT "Dungeons", obwohl der Wunsch so formuliert war: die Liste
+        // haelt auch Prüfungen und Raids. Und bewusst nicht noch einmal "Inhalte" -
+        // die Kategorie darüber heisst so und zeigt nur die Türen in der Nähe; das
+        // Wort "alle" ist genau der Unterschied zwischen beiden.
+        NavCategory.WorldDuties      => IsGerman ? "Alle Inhalte"      : "All duties",
         NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
         NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
         NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
@@ -453,20 +497,157 @@ public static partial class AccessibilityStrings
             ? "Keine offenen Jagdziele in diesem Rang."
             : "No open hunting targets in this rank.";
 
-    // ── Freibriefe (Levequests): Geber-NPCs + Ziele ──
-    public static string CategoryLevequestCount(int givers, int goals) =>
+    // ── Alle Inhalte: die weltweite Dungeon-, Prüfungs- und Raid-Liste ──
+
+    /// <summary>
+    /// Kategorie-Ansage der weltweiten Inhaltsliste. Beide Zahlen zählen: die
+    /// erste sagt, wie lang die Liste ist, die zweite, wie viel davon der Spieler
+    /// heute betreten darf. Die zweite fällt weg, wenn das Spiel die
+    /// Freischaltfrage nicht beantwortet - geraten wird sie nicht.
+    /// </summary>
+    public static string CategoryWorldDutyCount(int total, int unlocked) =>
         IsGerman
-            ? $"Freibriefe: {givers} Geber, {goals} Ziele."
-            : $"Levequests: {givers} givers, {goals} goals.";
+            ? $"Alle Inhalte: {total}, davon {unlocked} freigeschaltet."
+            : $"All duties: {total}, {unlocked} of them unlocked.";
+
+    /// <summary>Die Liste ist leer - kann nur passieren, wenn die Sheets nicht lesbar waren.</summary>
+    public static string NoWorldDuties =>
+        IsGerman
+            ? "Keine Inhalte in der Liste."
+            : "No duties in the list.";
+
+    /// <summary>
+    /// Dieser Inhalt ist noch nicht freigeschaltet. Steht früh im Satz, weil es
+    /// entscheidet, ob Entfernung und Weg den Spieler überhaupt interessieren.
+    /// Kommt aus der spieleigenen Prüfung, nicht aus einem Stufenvergleich.
+    /// </summary>
+    public static string DutyLocked =>
+        IsGerman ? "gesperrt" : "locked";
+
+    /// <summary>
+    /// Zu diesem Eingang führt kein Weg über Zonenübergänge - z.B. weil er selbst
+    /// in einer Instanz steht. Wird gesagt statt verschwiegen: sonst drückt der
+    /// Spieler eine Taste, die nichts tun kann.
+    /// </summary>
+    public static string DutyNoWalkingRoute =>
+        IsGerman
+            ? "kein Laufweg dorthin."
+            : "no walking route there.";
+
+    /// <summary>
+    /// Der Auto-Lauf wurde auf einen Inhalt in einer anderen Zone gedrückt, zu
+    /// der kein Übergang führt. Der Zonenname bleibt drin: er sagt dem Spieler,
+    /// wonach er suchen muss (Ätheryt, Schiff), statt ihn ratlos zu lassen.
+    /// </summary>
+    // ── Peil-Ton (BeaconService) ──
+
+    /// <summary>Peil-Ton eingeschaltet.</summary>
+    public static string TargetBeaconOn =>
+        IsGerman
+            ? "Peil-Ton an. Er verstummt, sobald du richtig stehst."
+            : "Target beacon on. It goes quiet once you are lined up.";
+
+    /// <summary>Peil-Ton ausgeschaltet.</summary>
+    public static string TargetBeaconOff =>
+        IsGerman ? "Peil-Ton aus." : "Target beacon off.";
+
+    /// <summary>
+    /// Name einer Zielart, gesprochen im Klangtest (/acc soundtest) vor der
+    /// zugehörigen Stimme - sonst hört man acht Töne und weiß nicht, welcher
+    /// wofür steht.
+    /// </summary>
+    public static string BeaconKindName(BeaconKind kind) => kind switch
+    {
+        BeaconKind.Enemy        => IsGerman ? "Gegner"          : "Enemy",
+        BeaconKind.Npc          => IsGerman ? "NPC"             : "NPC",
+        BeaconKind.Object       => IsGerman ? "Objekt"          : "Object",
+        BeaconKind.Gathering    => IsGerman ? "Sammelpunkt"     : "Gathering node",
+        BeaconKind.Transition   => IsGerman ? "Übergang"        : "Transition",
+        BeaconKind.Aetheryte    => IsGerman ? "Ätheryt"         : "Aetheryte",
+        BeaconKind.Quest        => IsGerman ? "Quest-Ziel"      : "Quest objective",
+        BeaconKind.DutyEntrance => IsGerman ? "Inhalts-Eingang" : "Duty entrance",
+        _                       => IsGerman ? "Ziel"            : "Target",
+    };
+
+    public static string DutyNoRouteTo(string dutyName, string zoneName) =>
+        IsGerman
+            ? $"{dutyName} liegt in {zoneName}. Dorthin führt kein Weg über Zonenübergänge."
+            : $"{dutyName} is in {zoneName}. No route there over zone transitions.";
+
+    // ── Freibriefe (Levequests): Geber-NPCs + Ziele + Gegner des laufenden Leves ──
+
+    /// <summary>Category count. The enemy part is only spoken while a battle leve
+    /// is running - outside that there are no leve enemies, and a permanent
+    /// "0 Gegner" would make the player look for something that cannot be there.</summary>
+    public static string CategoryLevequestCount(int givers, int goals, int enemies) =>
+        IsGerman
+            ? enemies > 0
+                ? $"Freibriefe: {enemies} Gegner, {givers} Geber, {goals} Ziele."
+                : $"Freibriefe: {givers} Geber, {goals} Ziele."
+            : enemies > 0
+                ? $"Levequests: {enemies} enemies, {givers} givers, {goals} goals."
+                : $"Levequests: {givers} givers, {goals} goals.";
 
     /// <summary>Spoken role prefix so the player knows whether a leve destination
-    /// is the Levemete (accept/hand in) or the objective (do the task).</summary>
+    /// is the Levemete (accept/hand in), the objective (do the task) or one of
+    /// the enemies the running leve asks them to kill.</summary>
     public static string LeveRolePrefix(QuestMarkerRole role) => role switch
     {
         QuestMarkerRole.LeveGiver     => IsGerman ? "Freibrief-Geber: " : "Levequest giver: ",
         QuestMarkerRole.LeveObjective => IsGerman ? "Freibrief-Ziel: "  : "Levequest goal: ",
+        QuestMarkerRole.LeveEnemy     => IsGerman ? "Freibrief-Gegner: " : "Levequest enemy: ",
         _                             => string.Empty,
     };
+
+    /// <summary>How many of this monster the leve wants, appended to an enemy
+    /// entry ("Freibrief-Gegner: Stolper-Fungus, 7 gesucht, 12 Meter ...").
+    /// The count is what the leve DEMANDS, not what is still missing: the
+    /// progress lives in the duty list, the demand in the leve data.</summary>
+    public static string LeveEnemyWanted(int required) =>
+        IsGerman ? $", {required} gesucht" : $", {required} wanted";
+
+    // ── Aufgabenliste des laufenden Inhalts (Freibrief, Dungeon, FATE) ──
+    //
+    // Diese Zeilen stehen bei einem sehenden Spieler am Bildschirmrand. Der Text
+    // selbst kommt vom Spiel und wird NICHT uebersetzt - nur der Fortschritt
+    // dahinter bekommt hier seine Worte.
+
+    public static string NoActiveTasks =>
+        IsGerman
+            ? "Keine laufende Aufgabe."
+            : "No task running.";
+
+    /// <summary>Header before a director's lines: its own name.</summary>
+    public static string TasksOf(string title) =>
+        IsGerman ? $"Aufgaben: {title}." : $"Tasks: {title}.";
+
+    /// <summary>Header when the director has no name of its own.</summary>
+    public static string TasksHeading =>
+        IsGerman ? "Aufgaben." : "Tasks.";
+
+    public static string TodoFraction(int current, int needed) =>
+        needed > 0
+            ? IsGerman ? $", {current} von {needed}" : $", {current} of {needed}"
+            : TodoCount(current);
+
+    public static string TodoCount(int current) =>
+        IsGerman ? $", {current}" : $", {current}";
+
+    public static string TodoPercent(int percent) =>
+        IsGerman ? $", {percent} Prozent" : $", {percent} percent";
+
+    /// <summary>Remaining time of a task line, minutes when it is worth it.</summary>
+    public static string TodoTimeLeft(int seconds)
+    {
+        var minutes = seconds / 60;
+        var rest = seconds % 60;
+        if (IsGerman)
+            return minutes > 0 ? $", noch {minutes} Minuten {rest} Sekunden" : $", noch {rest} Sekunden";
+        return minutes > 0 ? $", {minutes} minutes {rest} seconds left" : $", {rest} seconds left";
+    }
+
+    /// <summary>Marks a task line the game shows as done.</summary>
+    public static string TodoDone => IsGerman ? ", erledigt" : ", done";
 
     public static string NoLevequests =>
         IsGerman
@@ -671,6 +852,19 @@ public static partial class AccessibilityStrings
     public static string InArea(string zone)    => IsGerman ? $"im Gebiet {zone}." : $"in the area {zone}.";
     public static string InAnotherArea       => IsGerman ? "in einem anderen Gebiet." : "in another area.";
     public static string NumpadWalksToTransition => IsGerman ? " Nummernblock 3 läuft zum Übergang." : " Numpad 3 walks to the transition.";
+
+    /// <summary>
+    /// Whether the player stands inside the marker's goal circle. A sighted
+    /// player sees that circle on the map; without it, a distance like "75 Meter"
+    /// says nothing about being in the right place - and on a search leve the
+    /// enemies only appear once the player is inside.
+    /// </summary>
+    public static string InsideGoalCircle => IsGerman ? ", im Zielkreis" : ", inside the goal area";
+
+    /// <summary>How far the player still is from the EDGE of the goal circle.
+    /// <paramref name="distance"/> is already formatted.</summary>
+    public static string ToGoalCircle(string distance) =>
+        IsGerman ? $", noch {distance} bis zum Zielkreis" : $", {distance} to the goal area";
 
     /// <summary>The "get there via &lt;transition&gt;" clause of a cross-zone quest
     /// announcement, including the count of remaining transitions.</summary>
@@ -1101,7 +1295,104 @@ public static partial class AccessibilityStrings
     /// somewhere else.</summary>
     public static string NamedEnemyCasts(string enemy, string action) =>
         IsGerman ? $"{enemy} wirkt {action}." : $"{enemy} casts {action}.";
+
+    /// <summary>Cast warning for a spell aimed AT THE PLAYER. Since 2026-08-18 every
+    /// cast of the current target is announced, so the plain wording above no longer
+    /// implies "at you" - the aimed case has to say so explicitly.</summary>
+    public static string EnemyCastsAtYou(string action) =>
+        IsGerman ? $"Gegner wirkt {action} auf dich." : $"Enemy casts {action} on you.";
+
+    /// <summary>Cast warning naming the caster AND stating that it is aimed at the
+    /// player - the most urgent combination, so both facts are spoken.</summary>
+    public static string NamedEnemyCastsAtYou(string enemy, string action) =>
+        IsGerman ? $"{enemy} wirkt {action} auf dich." : $"{enemy} casts {action} on you.";
     public static string AnAbility => IsGerman ? "eine Fähigkeit" : "an ability";
+
+    // ── Gefahrenfläche eines Gegner-Casts (Form + Vorwarnung) ────────
+    // Wunsch des Users 2026-08-19: cactbot hat für Levelinhalte praktisch keine
+    // Trigger, also muss die Ansage selbst sagen, WAS auf den Boden kommt und ob
+    // man drinsteht. Form und Grösse stehen im Action-Sheet (CastType/EffectRange),
+    // werden also gelesen und nicht geraten - siehe CombatService.DescribeCastShape.
+    // Die Form hängt als eigener Satz hinter der Cast-Ansage, statt in sie hinein:
+    // "Gegner wirkt X auf dich." + " Kegel, 6 Meter." liest sich sonst als
+    // "6 Meter auf dich".
+
+    /// <summary>Form plus Ausdehnung. Das Formwort kommt von ActionShapeService, also
+    /// aus derselben Quelle wie im Fähigkeiten-Tooltip ("Kreis", "Kegel, 90 Grad",
+    /// "Linie"); hier kommt nur die Zahl dazu, weil im Kampf kein Tooltip danebensteht,
+    /// der sie schon genannt hätte.</summary>
+    public static string AoeShapeWithRange(string shape, int meters) =>
+        IsGerman ? $"{shape}, {meters} Meter" : $"{shape}, {meters} meters";
+
+    /// <summary>Form, die ausdrücklich AUF DEM SPIELER liegt - der Fall, in dem
+    /// Weglaufen und nicht Ausweichen die richtige Antwort ist.</summary>
+    public static string AoeShapeWithRangeOnYou(string shape, int meters) =>
+        IsGerman ? $"{shape} um dich, {meters} Meter" : $"{shape} on you, {meters} meters";
+
+    /// <summary>Der Spieler stand schon beim Beginn des Casts in der Fläche.
+    /// Hängt an der Cast-Ansage.</summary>
+    public static string AoeStandingInIt(float seconds) =>
+        IsGerman ? $"Du stehst drin, {AoeSeconds(seconds)}."
+                 : $"You are in it, {AoeSeconds(seconds)}.";
+
+    /// <summary>Der Spieler ist WÄHREND eines laufenden Casts in die Fläche
+    /// hineingelaufen. Eigener Satz mit "Achtung", weil hier keine Cast-Ansage
+    /// davorsteht, an der man ihn festmachen könnte.</summary>
+    public static string AoeEnteredZone(float seconds) =>
+        IsGerman ? $"Achtung, du stehst drin, {AoeSeconds(seconds)}."
+                 : $"Careful, you are in it, {AoeSeconds(seconds)}.";
+
+    /// <summary>Restliche Cast-Zeit als hörbares Zeitbudget. Aufgerundet, damit aus
+    /// 0,4 Sekunden nicht "0 Sekunden" wird; unter einer Sekunde bleibt nur noch
+    /// "sofort", weil eine Zahl dort nichts mehr nützt.</summary>
+    private static string AoeSeconds(float seconds)
+    {
+        var whole = (int)MathF.Ceiling(seconds);
+        if (whole <= 0) return IsGerman ? "sofort" : "now";
+        if (whole == 1) return IsGerman ? "1 Sekunde" : "1 second";
+        return IsGerman ? $"{whole} Sekunden" : $"{whole} seconds";
+    }
+
+    /// <summary>Setzt die Gefahren-Angaben hinter eine fertige Cast-Ansage. Beide
+    /// Teile sind eigene Sätze, damit die Sprachausgabe zwischen ihnen atmet und
+    /// der wichtigste Teil ("du stehst drin") ganz hinten als Letztes hängen
+    /// bleibt.</summary>
+    public static string CastWithDanger(string sentence, string shape, string standing)
+    {
+        if (!string.IsNullOrEmpty(shape))    sentence += $" {shape}.";
+        if (!string.IsNullOrEmpty(standing)) sentence += $" {standing}";
+        return sentence;
+    }
+
+    // ── Sonderaktionen im Auftrag (Duty Actions) ─────────────────────
+    // Die Leiste, die manche Auftraege einblenden und die das Spiel NUR per
+    // Mausklick anbietet (Tastenbelegungs-Dump 2026-08-09: keine Belegung).
+
+    /// <summary>Ein Platz der Leiste, mit seiner Nummer - die Nummer ist die Taste,
+    /// die ihn ausloest.</summary>
+    public static string DutyActionSlot(int slot, string action) =>
+        IsGerman ? $"{slot}: {action}" : $"{slot}: {action}";
+
+    /// <summary>Die Leiste ist aufgetaucht oder hat sich geaendert. Nennt die Taste
+    /// mit, weil sie selten gebraucht wird und man sie sonst genau dann sucht,
+    /// wenn keine Zeit dafuer ist.</summary>
+    public static string DutyActionsAvailable(string actions, string key) =>
+        IsGerman ? $"Sonderaktion verfügbar, {actions}. Taste {key}."
+                 : $"Duty action available, {actions}. Key {key}.";
+
+    /// <summary>Es gibt gerade keine Sonderaktionsleiste.</summary>
+    public static string NoDutyActions =>
+        IsGerman ? "Keine Sonderaktion vorhanden." : "No duty action available.";
+
+    /// <summary>Die Taste zeigt auf einen Platz, den dieser Auftrag nicht belegt.</summary>
+    public static string DutyActionSlotEmpty(int slot) =>
+        IsGerman ? $"Sonderaktion {slot} ist leer." : $"Duty action {slot} is empty.";
+
+    /// <summary>Das Spiel hat die Ausfuehrung abgelehnt. Bewusst OHNE Grund: den
+    /// nennt das Spiel selbst per Fehlermeldung, und den hier zu erfinden waere
+    /// eine Behauptung ueber Kampflogik.</summary>
+    public static string DutyActionRefused(string action) =>
+        IsGerman ? $"{action} geht gerade nicht." : $"{action} not possible right now.";
 
     // ── Level / Erfahrung ────────────────────────────────────────────
     public static string LevelReached(int level) => IsGerman ? $"Stufe {level} erreicht." : $"Reached level {level}.";
@@ -1338,6 +1629,7 @@ public static partial class AccessibilityStrings
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
           "Strg+Nummernblock 0, Skill-Menü öffnen: Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück. " +
           "Strg+Umschalt+F6, Spur aufzeichnen an oder aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. " +
+          "Strg+Umschalt+F7, Aufgabenliste des laufenden Inhalts vorlesen: Freibrief, Dungeon oder FATE. " +
           "Befehle: " +
           "/acc nav, Richtung zum Ziel. " +
           "/acc set, Aktuelles Ziel verfolgen. " +
@@ -1372,6 +1664,7 @@ public static partial class AccessibilityStrings
           "Ctrl+F8, random appearance in character creation. " +
           "Ctrl+Numpad 0, open the skill menu: Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back. " +
           "Ctrl+Shift+F6, record a trail on or off: walk a stretch the navmesh does not know once yourself. " +
+          "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
           "Commands: " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +

@@ -48,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly BeaconService      _beacon;
     private readonly CueService         _cue;
     private readonly CooldownService    _cooldown;
+    private readonly DutyActionService  _dutyActions;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
     private readonly LootRollService    _lootRolls;
@@ -60,6 +61,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GatheringService   _gathering;
     private readonly BestiaryService    _bestiary;
     private readonly HuntingLogService  _huntingLog;
+    private readonly DutyEntranceService _dutyEntrances;
+#if DEBUG
+    private readonly LiftProbe _liftProbe;
+#endif
+    private readonly LevequestEnemyService _leveEnemies;
+    private readonly DirectorTodoService _directorTodos;
     private readonly RouteService       _routes;
     private readonly ShopNpcService     _shops;
     private readonly ObjectNameService  _objectNames;
@@ -243,14 +250,31 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 11;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.Version < 12)
+        {
+            // V5.89: die Sonderaktionen lagen einen halben Tag lang auf
+            // Strg+Numpad7/9/1. Der User hat gemeldet, dass diese Kombis bei ihm
+            // nicht ankommen - waehrend Strg+Numpad3 sehr wohl funktioniert, es
+            // also keine allgemeine Strg-Schwaeche ist. Diese Fassung war nie
+            // veroeffentlicht, aber eine Sitzung mit Hot-Reload kann die alten
+            // Werte schon gespeichert haben. Nur die damaligen Vorgaben werden
+            // umgezogen, eine eigene Belegung bleibt stehen.
+            if (_config.KeyDutyAction1    == "Strg+Numpad7") _config.KeyDutyAction1    = "Umschalt+F10";
+            if (_config.KeyDutyAction2    == "Strg+Numpad9") _config.KeyDutyAction2    = "Umschalt+F11";
+            if (_config.KeyDutyActionList == "Strg+Numpad1") _config.KeyDutyActionList = "Strg+Umschalt+F8";
+            _config.Version = 12;
+            PluginInterface.SavePluginConfig(_config);
+        }
         // Language for all mod announcements (Auto = follow Windows). Must be set
         // before the first Speak below.
         Loc.Mode = _config.Language;
 
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
         _tolk       = new TolkService(Log);
-        _beacon       = new BeaconService(_config, _tolk, Log);
+        // Cue VOR Beacon: der Peil-Ton braucht ihn fuer den Einrast-Ton, der
+        // erklaert, warum er beim richtigen Stand schweigt.
         _cue          = new CueService(_config, Log);
+        _beacon       = new BeaconService(_config, _tolk, _cue, Log);
         _gearInfo     = new GearInfoService(DataManager, Log);
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
@@ -265,6 +289,23 @@ public sealed class Plugin : IDalamudPlugin
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _huntingLog   = new HuntingLogService(DataManager, ObjectTable, ClientState, _places, Log);
+        // Alle Dungeon-, Pruefungs- und Raid-Eingaenge der WELT mit Stufe und Ort,
+        // fuer die Browser-Kategorie "Alle Inhalte" (Spielerwunsch 2026-08-19:
+        // *"eine kategorie wo man zu den dungeons laufen kann ... nach stufe
+        // sortiert ... map uebergreifend hinlaufen"*). Braucht _places fuer die
+        // Zonenrouten und muss deshalb dahinter stehen.
+        _dutyEntrances = new DutyEntranceService(DataManager, ClientState, _places, Log);
+#if DEBUG
+        // Misst am Aufzug, was ein Aufzug ueberhaupt ist - siehe LiftProbe.
+        _liftProbe = new LiftProbe(ObjectTable, TargetManager, _tolk, Log);
+#endif
+        // Gegner des gerade LAUFENDEN Freibriefs, für die Freibrief-Kategorie
+        // des Objekt-Browsers (Spielerwunsch 2026-08-18).
+        _leveEnemies  = new LevequestEnemyService(DataManager, Log);
+        // Die Aufgabenliste, die ein sehender Spieler am Bildschirmrand liest -
+        // fuer Freibrief, Dungeon und FATE gleichermassen (Spielerwunsch
+        // 2026-08-18, aufgekommen bei der Freibrief-Suche).
+        _directorTodos = new DirectorTodoService(Log);
         _routes       = new RouteService(PluginInterface, Log);
         _shops        = new ShopNpcService(DataManager, Log);
         // Shared by browser, target announcement, auto-walk and follow so all
@@ -273,7 +314,7 @@ public sealed class Plugin : IDalamudPlugin
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -364,10 +405,11 @@ public sealed class Plugin : IDalamudPlugin
         // Anmeldung, und sofort nach einem Neuladen des Plugins, dem Fall, fuer den es da
         // ist.
         _chatBackfill = new ChatBackfill(_chatReader, _history, _chatFilters, Log);
-        _toasts     = new ToastService(ToastGui, _tolk, _config, Log);
+        _toasts     = new ToastService(ToastGui, TargetManager, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _leveEnemies, Log);
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
+        _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
@@ -550,6 +592,12 @@ public sealed class Plugin : IDalamudPlugin
             case "deepdungeon":
                 ProbeDeepDungeonUnlock();
                 break;
+            // Aufzug/Plattform: misst, ob man draufsteht und mitfaehrt, statt es
+            // aus Geometrie zu raten (Frage des Users 2026-08-19).
+            case "lift":
+            case "liftprobe":
+                _liftProbe.Start();
+                break;
 #endif
             case "cooldowns":
             case "cd":
@@ -664,6 +712,10 @@ public sealed class Plugin : IDalamudPlugin
             ("SP-Stand",       _config.KeySpStatus),
             ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
             ("Flächenwarnung an/aus", _config.KeyToggleAoeWarning),
+            ("Peil-Ton an/aus", _config.KeyToggleBeacon),
+            ("Sonderaktion 1", _config.KeyDutyAction1),
+            ("Sonderaktion 2", _config.KeyDutyAction2),
+            ("Sonderaktionen ansagen", _config.KeyDutyActionList),
             ("UI-Dump",        _config.KeyDumpUI),
             ("Aktives Fenster", _config.KeyWhereAmI),
             ("Aktionsleiste",  _config.KeyReadHotbar),
@@ -697,6 +749,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Kartenspiel Brett", _config.KeyReadBoard),
             ("Kartenspiel Hand",  _config.KeyReadHand),
             ("Spur aufzeichnen",  _config.KeyRecordTrail),
+            ("Aufgabenliste",     _config.KeyReadTasks),
         })
         {
             var parsed = ParseKeySpec(keyName);
@@ -1074,11 +1127,70 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
+    /// Reads out the task list of whatever is running - levequest, duty, FATE.
+    /// These are the lines a sighted player has permanently in the corner of the
+    /// screen; without them a blind player cannot tell what the content is
+    /// asking for, nor how far they have got (user request 2026-08-18).
+    ///
+    /// On a key and never automatic, on purpose: the list changes on every kill,
+    /// and a line spoken at each change would talk over the fight.
+    ///
+    /// The line TEXT is the game's own wording and is passed through untouched -
+    /// only the progress behind it is put into words here.
+    /// </summary>
+    private void AnnounceActiveTasks()
+    {
+        var tasks = _directorTodos.GetActiveTasks();
+        if (tasks.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoActiveTasks);
+            return;
+        }
+
+        var parts = new List<string>();
+        foreach (var task in tasks)
+        {
+            parts.Add(task.Title.Length > 0
+                ? AccessibilityStrings.TasksOf(task.Title)
+                : AccessibilityStrings.TasksHeading);
+
+            // The objective only when it adds something the lines do not already
+            // say - on many leves it repeats the single task line word for word.
+            if (task.Objective.Length > 0 && !task.Lines.Any(l => l.Text == task.Objective))
+                parts.Add($"{task.Objective}.");
+
+            foreach (var line in task.Lines)
+                parts.Add($"{line.Text}{line.Detail}{(line.Complete ? AccessibilityStrings.TodoDone : string.Empty)}.");
+        }
+
+        var text = string.Join(" ", parts);
+        Log.Info($"[Aufgaben] {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
     /// Turns the turn-by-turn compass announcement on or off and speaks the new
     /// state. When switching ON, the current facing is spoken once as immediate
     /// confirmation and the service is re-baselined so it does not echo the same
     /// direction again on its next frame.
     /// </summary>
+    /// <summary>
+    /// Peil-Ton an/aus. Er laeuft, sobald ein Ziel gewaehlt ist, und ist damit
+    /// die einzige Dauergeraeuschquelle des Mods - eine Taste, die ihn sofort
+    /// stumm schaltet, gehoert zwingend dazu.
+    /// </summary>
+    private void ToggleTargetBeacon()
+    {
+        _config.TargetBeaconEnabled = !_config.TargetBeaconEnabled;
+        PluginInterface.SavePluginConfig(_config);
+        // Sofort still, ohne auf den naechsten Frame zu warten: wer ihn
+        // abschaltet, will Ruhe jetzt.
+        if (!_config.TargetBeaconEnabled) _beacon.Stop();
+        _tolk.SpeakInterrupt(_config.TargetBeaconEnabled
+            ? AccessibilityStrings.TargetBeaconOn
+            : AccessibilityStrings.TargetBeaconOff);
+    }
+
     private void ToggleHeading()
     {
         _config.AnnounceHeading = !_config.AnnounceHeading;
@@ -1100,7 +1212,10 @@ public sealed class Plugin : IDalamudPlugin
     /// Toggles the AoE danger tone (a continuous sound while the player stands in an
     /// enemy cast's danger zone). Off by default because the geometry is not yet
     /// in-game confirmed; this key lets the player opt in and test it. Switching off
-    /// silences the tone on the next frame (UpdateAoeWarning honours the flag).
+    /// silences the tone on the next frame (UpdateEnemyCastWarnings honours the flag).
+    /// Since 2026-08-19 this switch also governs the spoken "du stehst drin" warning,
+    /// which is the same geometry put into words - the tone alone never said how much
+    /// time was left.
     /// </summary>
     private void ToggleAoeWarning()
     {
@@ -1317,6 +1432,13 @@ public sealed class Plugin : IDalamudPlugin
     private void OnFrameworkUpdate(IFramework framework)
     {
         UpdateKeyEdges();
+#if DEBUG
+        // UNGEGATTERT, mit Absicht: die Sonde sagt am Ende der Messung "fertig",
+        // und dieser letzte Aufruf faellt genau dann weg, wenn man ihn an
+        // IsTracking haengt. Kostet nichts - die Methode steigt in der ersten
+        // Zeile wieder aus, solange nichts laeuft.
+        _liftProbe.Update();
+#endif
 
         // Charaktererstellung: kostet nichts ausserhalb des Aussehen-Schritts -
         // die Methode steigt sofort wieder aus, wenn dessen Addon nicht sichtbar ist.
@@ -1364,9 +1486,13 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyCategory))
         {
             _navigation.NextCategory();
-            // Probe: quest-tracker structure for the objective reader
-            // (user wants quest DESCRIPTIONS announced; see UIReaderService)
-            _uiReader.ProbeAddonTexts("_ToDoList");
+            // ENTFERNT 2026-08-19: hier hing eine Sonde, die bei JEDEM
+            // Kategorie-Wechsel den ganzen Quest-Tracker ins Log schrieb (897
+            // Zeilen in einer Spielsitzung). Sie sollte den Aufbau des Trackers
+            // fuer den Ziel-Leser klaeren - der steht (QuestMarkerService liest
+            // _ToDoList, DirectorTodoService die Aufgabenliste), also faellt sie
+            // nach der Sonden-Konvention weg. ProbeAddonTexts selbst bleibt: sie
+            // ist das Werkzeug fuer die naechste unbekannte Oberflaeche.
         }
         if (IsJustPressed(_config.KeyCategoryPrev)) _navigation.PreviousCategory();
         if (IsJustPressed(_config.KeyWalkGuide))
@@ -1447,6 +1573,12 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
         if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
         if (IsJustPressed(_config.KeyToggleAoeWarning)) ToggleAoeWarning();
+        if (IsJustPressed(_config.KeyToggleBeacon))     ToggleTargetBeacon();
+        // Sonderaktionen des Auftrags. Auf dem Nummernblock, weil sie mitten im
+        // Kampf im richtigen Moment kommen muessen.
+        if (IsJustPressed(_config.KeyDutyAction1))    _dutyActions.Execute(1);
+        if (IsJustPressed(_config.KeyDutyAction2))    _dutyActions.Execute(2);
+        if (IsJustPressed(_config.KeyDutyActionList)) _dutyActions.Announce();
         if (IsJustPressed(_config.KeyReadHotbar))    _hotbar.ReadHotbar();
         if (IsJustPressed(_config.KeyReadInventory))
         {
@@ -1457,6 +1589,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadGil))       _inventoryReader.AnnounceGil();
         if (IsJustPressed(_config.KeyLevelExp))      _combat.AnnounceLevelExp();
         if (IsJustPressed(_config.KeyRestedStatus))  _combat.AnnounceRestedStatus();
+        if (IsJustPressed(_config.KeyReadTasks))     AnnounceActiveTasks();
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
@@ -1546,6 +1679,10 @@ public sealed class Plugin : IDalamudPlugin
 
         _combat.Update();
         _cooldown.Update();
+        // Sonderaktionsleiste eines Auftrags: sagt an, wenn sie auftaucht. Das
+        // Spiel bietet sie NUR per Mausklick an, ein blinder Spieler erfaehrt
+        // sonst nie, dass sie da ist.
+        _dutyActions.Update();
         // HP/MP tones on every 10 % step (pan = fill level). Independent of
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.
@@ -1750,7 +1887,16 @@ public sealed class Plugin : IDalamudPlugin
             position = _autoWalk.ResolveFloorPoint(quest.Position) ?? quest.Position;
             name = quest.QuestName;
             heightIsGuess = true;
-            stopRange = quest.Radius > 0f
+            // A LEVE goal is a search AREA, so its middle is the destination, not
+            // its rim: the enemies of a "Such am Zielort" leve only appear once
+            // the player moves around inside the circle, and the circle is wide
+            // (r=50 measured on the La Noscea leves 2026-08-18). Stopping at the
+            // rim left the player 50 m short with nothing to steer by, and a
+            // second Numpad 3 answered "angekommen" right away (log 22:41:25).
+            // Ordinary quest markers keep the rim stop: there the circle means
+            // "the objective is somewhere in here", and its middle is often a
+            // spot the player has no reason to stand on.
+            stopRange = quest.Radius > 0f && quest.Role != QuestMarkerRole.LeveObjective
                 ? MathF.Max(_config.AutoWalkPlaceStopRange, quest.Radius)
                 : _config.AutoWalkPlaceStopRange;
             return MarkerResolve.Resolved;
@@ -1867,6 +2013,49 @@ public sealed class Plugin : IDalamudPlugin
             return MarkerResolve.Resolved;
         }
 
+        // Inhalts-Eingang aus der Kategorie "Alle Inhalte". Dieselbe Wegfuehrung
+        // wie beim Quest-Ziel und aus demselben Grund: die Tuer ist ein fester Ort
+        // auf der Karte, und in einer anderen Zone ist das einzig Sinnvolle der
+        // Uebergang, der dorthin fuehrt. Zone FRISCH geprueft - das Merkmal aus
+        // dem Moment der Auswahl ist nach einem Teleport veraltet.
+        var duty = _navigation.SelectedDutyEntrance;
+        if (duty != null)
+        {
+            if (duty.TerritoryTypeId != ClientState.TerritoryType)
+            {
+                var hop = _places.FindFirstHopToMap(duty.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.DutyNoRouteTo(duty.Name, duty.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = _autoWalk.ResolveFloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position = hopWalk.Value;
+                name = hop.Name;
+                stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            // In dieser Zone: die Tuer steht mit VOLLER Hoehe im Level-Sheet, die
+            // Hoehe ist also nicht geraten (anders als bei jedem Kartenmarker).
+            // ResolveFloorPoint bleibt trotzdem davor - es setzt den Punkt auf die
+            // begehbare Flaeche, falls die Sheet-Stelle knapp daneben liegt.
+            position = _autoWalk.ResolveFloorPoint(duty.Position) ?? duty.Position;
+            name = duty.Name;
+            // Interaktionsreichweite wie bei einem Objekt: der Spieler will die
+            // Tuer benutzen, nicht in ihrer Naehe stehenbleiben.
+            stopRange = AutoWalkService.StopRange;
+            Log.Info($"[Inhalte] Laufe zu '{duty.Name}' in Zone {duty.TerritoryTypeId} auf {position}.");
+            return MarkerResolve.Resolved;
+        }
+
         var obj = _navigation.SelectedObjectDestination;
         if (obj != null)
         {
@@ -1948,23 +2137,55 @@ public sealed class Plugin : IDalamudPlugin
     {
         _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestRunning);
 
+        // Erst die STEUERUNG: von "voellig verkehrt herum" schrittweise auf das
+        // Ziel zu, damit man hoert, wie die Schlaege auseinandergehen und der Ton
+        // beim Einrasten in den kurzen Quittungston uebergeht. Alles mit der
+        // Objekt-Stimme, damit sich nur die Steuerung aendert.
+        // Alle Schritte der Steuerung tragen DIESELBE Kennung (1): sie zeigen ein
+        // und dasselbe Ziel, an das man sich herandreht.
         _beacon.Start();
-        _beacon.Update(0, 6f);                                             // ahead, close = high + loud + centered
-        Framework.RunOnTick(() => _beacon.Update(45, 12f),  delayTicks: 42);  // to the right
-        Framework.RunOnTick(() => _beacon.Update(120, 25f), delayTicks: 84);  // behind-right, lower
-        Framework.RunOnTick(() => _beacon.Update(180, 45f), delayTicks: 126); // directly behind, lowest + quiet
-        Framework.RunOnTick(() => _beacon.Stop(),           delayTicks: 168);
-        Framework.RunOnTick(() => _cue.PlayWaypointTone(),  delayTicks: 180);
-        Framework.RunOnTick(() => _cue.PlayArrivalTone(),   delayTicks: 220);
+        _beacon.Update(180, 60f, BeaconKind.Object, targetKey: 1);                                  // hinten, weit = dunkel und leise
+        Framework.RunOnTick(() => _beacon.Update(90, 40f, BeaconKind.Object, targetKey: 1),  delayTicks: 60);  // ganz rechts
+        Framework.RunOnTick(() => _beacon.Update(30, 20f, BeaconKind.Object, targetKey: 1),  delayTicks: 120); // fast passend, naeher
+        Framework.RunOnTick(() => _beacon.Update(12, 8f,  BeaconKind.Object, targetKey: 1),  delayTicks: 180); // knapp daneben, ruhig
+        Framework.RunOnTick(() => _beacon.Update(0, 6f,   BeaconKind.Object, targetKey: 1),  delayTicks: 240); // eingerastet -> Quittung, dann Stille
+
+        // Dann die STIMMEN: jede Zielart einmal, jeweils angesagt und leicht
+        // seitlich, damit sie sich vergleichen lassen.
+        var kinds = new[]
+        {
+            BeaconKind.Enemy, BeaconKind.DutyEntrance, BeaconKind.Transition, BeaconKind.Npc,
+            BeaconKind.Quest, BeaconKind.Object, BeaconKind.Gathering, BeaconKind.Aetheryte,
+        };
+        var tick = 300;
+        // Jede Stimme bekommt eine EIGENE Kennung, damit sie wie ein neues Ziel
+        // klingt: sauberer Anschlag statt Stimmenwechsel mitten im Takt.
+        ulong demoKey = 2;
+        foreach (var kind in kinds)
+        {
+            var voice = kind;
+            var at = tick;
+            var key = demoKey++;
+            Framework.RunOnTick(() => _tolk.SpeakInterrupt(AccessibilityStrings.BeaconKindName(voice)), delayTicks: at);
+            Framework.RunOnTick(() => _beacon.Update(35, 15f, voice, targetKey: key), delayTicks: at + 24);
+            tick += 78;
+        }
+        Framework.RunOnTick(() => _beacon.Stop(),          delayTicks: tick);
+        Framework.RunOnTick(() => _cue.PlayWaypointTone(), delayTicks: tick + 12);
+        Framework.RunOnTick(() => _cue.PlayArrivalTone(),  delayTicks: tick + 52);
+        tick += 90;
 
         // HP/MP tones: each case is announced, then the tone plays ~0.4 s later so
         // the label does not step on it. ~90 ticks (~1.5 s) between cases. Percent
         // drives the stereo position; the HP-critical case is <25 % so it pulses.
-        VitalsTestStep(delay: 300, AccessibilityStrings.SoundTestHpHeal,     health: true,  direction: +1, percent: 80);
-        VitalsTestStep(delay: 390, AccessibilityStrings.SoundTestHpDamage,   health: true,  direction: -1, percent: 55);
-        VitalsTestStep(delay: 480, AccessibilityStrings.SoundTestHpCritical, health: true,  direction: -1, percent: 15);
-        VitalsTestStep(delay: 570, AccessibilityStrings.SoundTestMpGain,     health: false, direction: +1, percent: 80);
-        VitalsTestStep(delay: 660, AccessibilityStrings.SoundTestMpSpend,    health: false, direction: -1, percent: 40);
+        // Abstaende relativ zu tick, nicht mehr fest: die Peil-Ton-Vorfuehrung
+        // oben ist laenger geworden, und feste Zahlen wuerden mitten in sie
+        // hineinsprechen.
+        VitalsTestStep(delay: tick,       AccessibilityStrings.SoundTestHpHeal,     health: true,  direction: +1, percent: 80);
+        VitalsTestStep(delay: tick + 90,  AccessibilityStrings.SoundTestHpDamage,   health: true,  direction: -1, percent: 55);
+        VitalsTestStep(delay: tick + 180, AccessibilityStrings.SoundTestHpCritical, health: true,  direction: -1, percent: 15);
+        VitalsTestStep(delay: tick + 270, AccessibilityStrings.SoundTestMpGain,     health: false, direction: +1, percent: 80);
+        VitalsTestStep(delay: tick + 360, AccessibilityStrings.SoundTestMpSpend,    health: false, direction: -1, percent: 40);
     }
 
     /// <summary>One HP/MP audition step: speak the label, then play the matching

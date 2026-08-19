@@ -24,6 +24,9 @@ public enum QuestMarkerRole
     LeveGiver,
     /// <summary>The objective location of an accepted levequest.</summary>
     LeveObjective,
+    /// <summary>A live enemy of the RUNNING levequest. Unlike the two above this
+    /// is a real world object, not a map marker - see LevequestEnemyService.</summary>
+    LeveEnemy,
 }
 
 /// <summary>

@@ -3,7 +3,1196 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
+## STAND JETZT (2026-08-19, "EINSTELLUNGEN DER INHALTSSUCHE: FERTIG UND BESTAETIGT")
+
+>>> VOM USER IN-GAME BESTAETIGT ("funktioniert"). Das Fenster ist damit
+    abgeschlossen. Was es kann:
+      - EINE Ansage je Bewegung statt vier sich abschneidender.
+      - "Keine Beschraenkungen, Schalter, an" - der Zustand geht beim Umschalten
+        SOFORT mit, weil er aus der Arbeitskopie in der Zeile kommt und nicht
+        aus dem gespeicherten Stand.
+      - "Beuteregeln, Auswahlliste, Standard.", "Sprache Deutsch, Schalter, an".
+      - "ausgegraut", wo der Inhalt eine Einstellung nicht zulaesst.
+      - Unterzeile beim Oeffnen (beide Fenster heissen "INHALTSSUCHE").
+      - Erklaerungstext nach 0,4 s Verweilen.
+
+>>> AUFGERAEUMT nach Konvention (Sonde nach Feature-Ende loeschen): die
+    Messsonde, die tote Spaltenlogik und die DEBUG-Protokollzeile sind raus.
+    Das Wissen steht in docs/game-api.md, nicht mehr im Code.
+    Build Debug 0/0 UND Release 0/0.
+
+>>> NOCH NICHT COMMITTET. Offen ist die Entscheidung, ob das zusammen mit der
+    bereits gemergten Arbeit aus PR #8 in ein Release geht.
+
+## FRUEHERER STAND (2026-08-19, "ARBEITSKOPIE GEFUNDEN - DER ZUSTAND IST ZURUECK, JETZT RICHTIG")
+
+>>> DIE SONDE HAT GELIEFERT (Log 19:36). Der Umschaltmoment steht zweimal im
+    Log, in BEIDE Richtungen, und beide Male ist die Richtung gegen die
+    Bestaetigung des Spiels selbst geprueft:
+      19:36:22  Fenster auf, gespeichert=True. Zeile zeigt Bild-Teil 0.
+      19:36:28  User schaltet AUS -> Bild-Teil springt auf 1.
+      19:36:33  Ok -> Spiel schreibt in den Chat "... festgelegt: -" (nichts).
+      19:36:39  Fenster auf, gespeichert=False. Zeile zeigt Bild-Teil 1.
+      19:36:46  User schaltet AN -> Bild-Teil springt auf 0.
+      19:36:48  Ok -> Spiel schreibt "... festgelegt: Keine Beschraenkungen".
+    Damit ist bewiesen: Bild-Teil 0 = AN, Bild-Teil 1 = AUS.
+
+>>> VIER DINGE FLIPPEN GEMEINSAM (alle in der Zeile selbst):
+      AN : Bild-Teil 0, NineGrid 8 sichtbar / 9 versteckt, Text 6 sichtbar
+      AUS: Bild-Teil 1, NineGrid 9 sichtbar / 8 versteckt, Text 7 sichtbar
+    Gelesen wird das ZUSTANDSSYMBOL am rechten Rand - das einzige davon, das
+    fuer sich eine Bedeutung hat: es ist das Kaestchen, auf das ein sehender
+    Spieler schaut. Gefunden ueber die GEOMETRIE (das am weitesten rechts
+    liegende Bild der Zeile, in deren rechter Haelfte), damit keine Knoten-Id
+    ueber Patches hinweg stillhalten muss. Die Zeile traegt links noch ein
+    zweites Bild - das ist NICHT der Zustand.
+
+>>> WIDERLEGT UND NOTIERT: AtkComponentButton.IsChecked (Bit 18 in Flags) blieb
+    bei jedem Umschalten False - genau wie FFXIVClientStructs es dokumentiert
+    ("used by AtkComponentCheckBox and AtkComponentRadioButton"). Flags selbst
+    blieb konstant 0x20810100. Beides taugt hier nicht.
+
+>>> GEBAUT: ContentsFinderSettingText.RowState liest das Symbol, die sieben
+    Zeilen sagen ihren Zustand wieder an - "Keine Beschraenkungen, Schalter, an".
+    Zeigt das Symbol je einen nie gemessenen Teil, sagt die Zeile den Zustand
+    NICHT und es gibt eine Warnung im Log. Zeilen ohne Symbol ("Ok",
+    "Schliessen" tragen ueberhaupt kein Bild) fallen durch zum generischen
+    Leser, der ihre Namen laengst richtig sagt.
+    Sonde und die tote Spaltenlogik sind wieder raus (Konvention: Sonde nach
+    Feature-Ende loeschen). Eine schlanke DEBUG-Zeile bleibt, sie schreibt bei
+    JEDER Zustandsaenderung angesagten Stand + Bild-Teil + gespeicherten Stand -
+    damit waere eine falsche Ansage ohne neue Messrunde zu diagnostizieren.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins.
+
+>>> ZU TESTEN: einmal durch die sieben Zeilen, eine umschalten, hoeren ob die
+    Ansage sofort mitgeht. Danach ist das Fenster fertig.
+
+## FRUEHERER STAND (2026-08-19, "GEMESSEN: DAS FENSTER ARBEITET AUF EINER KOPIE")
+
+>>> IN-GAME-TEST GELAUFEN (Log 19:29:52 bis 19:30:52). Das Fenster liest jetzt
+    sauber - EINE Ansage je Bewegung statt vier:
+      "An laufenden Einsaetzen teilnehmen, Schalter"
+      "Keine Beschraenkungen, Schalter, aus"
+      "Beuteregeln, Auswahlliste, Standard."
+      "Sprache Japanisch, Schalter, aus" / "Sprache Deutsch, Schalter, an"
+      "Richte Bedingungen fuer die Teilnahme an Inhalten ein." beim Oeffnen
+      "Erklaerung: ..." nach dem Verweilen
+    Kein "INHALTSSUCHE" mehr, keine Dopplung, nichts abgeschnitten.
+
+>>> PUNKT B GEKLAERT - die Sprach-Zuordnung STIMMT. Von links kamen
+    "Japanisch, aus", "Englisch, aus", "Deutsch, an" (19:30:38 bis 19:30:44).
+    Der User spielt auf deutschem Client mit Deutsch als einziger gewaehlter
+    Sprache - JA/EN/DE/FR von links ist damit belegt, nicht mehr angenommen.
+
+>>> PUNKT A GEKLAERT, UND ZWAR GEGEN MEINE ERWARTUNG: ContentsFinder.Instance()
+    fuehrt die GESPEICHERTEN Einstellungen, NICHT den Stand im offenen Fenster.
+    Beweis aus demselben Log:
+      - Alle sechs Felder blieben ueber die volle Minute auf False.
+      - Um 19:30:33 fragte das Spiel "Die Einstellungen wurden noch nicht
+        gespeichert. Verwerfen und schliessen?" - es hatte also sehr wohl eine
+        Aenderung. Der User antwortete "Nein" und drueckte um 19:30:51 Ok.
+      - Darauf schrieb das Spiel selbst in den Chat: "Teilnahmebedingungen
+        wurden wie folgt festgelegt: Keine Beschraenkungen" (19:30:52).
+    "Keine Beschraenkungen" war also EINGESCHALTET, waehrend Feld und Ansage
+    die ganze Zeit "aus" sagten. Das Fenster arbeitet auf einer Arbeitskopie und
+    schreibt sie erst beim Ok zurueck.
+
+>>> KONSEQUENZ, SOFORT GEZOGEN: die sechs Zeilen sagen ihren Zustand NICHT mehr.
+    Sie sagen nur noch "<Name>, Schalter". Ein "aus", das nach dem Umschalten
+    immer noch "aus" sagt, ist schlimmer als gar keine Angabe - der User kann es
+    nicht sehen und wuerde der falschen Auskunft glauben. Die Sprach-Kaestchen
+    und das Beuteregeln-Feld sind NICHT betroffen: die lesen ihren Stand direkt
+    aus dem Bedienelement (CheckBox.IsChecked bzw. der Auswahlwert) und waren im
+    Test korrekt.
+
+>>> NEUE SONDE, um die Arbeitskopie zu finden (ProbeDutySettingRow, #if DEBUG):
+    schreibt fuer die fokussierte Zeile alle in Frage kommenden Traeger mit -
+    Flags der Komponente samt IsChecked-Bit, die Knoten-Flags jedes Kindes und
+    die PartId der beiden Bilder (Umschalt-Symbol links, Haken rechts). Sie
+    schreibt bei JEDER AENDERUNG dieser Werte, nicht nur beim Fokuswechsel:
+    das Umschalten bewegt den Fokus nicht, und genau dieser Moment ist die
+    Messung. Eine Zeile je Aenderung, keine je Frame.
+
+>>> WAS DER USER JETZT TUN MUSS (kurz): Einstellungen oeffnen, auf "Keine
+    Beschraenkungen" stehenbleiben, EINMAL umschalten, kurz warten, noch einmal
+    umschalten. Dann Log schicken. Der Unterschied zwischen den beiden
+    "[Inhaltssuche-Sonde]"-Zeilen zeigt genau den Wert, der den Schalter fuehrt -
+    danach kann der Zustand wieder angesagt werden, dann richtig.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins.
+
+## FRUEHERER STAND (2026-08-19, "EINSTELLUNGEN DER INHALTSSUCHE: VIER ANSAGEN, DIE SICH GEGENSEITIG ABSCHNITTEN")
+
+>>> ANLASS: Der User schickte Log und UI-Dump ("da gibts ein menue was richtig
+    vorgelesen werden soll"). Der Dump vom 18:34:31 enthaelt drei Fenster:
+    _MainCommand, ContentsFinder und ContentsFinderSetting. Die Inhaltssuche
+    selbst liest sauber ("St. 16, Stufensteigerung", "Auswahl aufheben",
+    "Stufe aufsteigend" plus die Beschreibung aus JournalDetail). Kaputt war das
+    EINSTELLUNGS-Fenster - vom User bestaetigt.
+
+>>> BEFUND, aus dem Log belegt (18:34:18, und in jeder anderen Zeile gleich):
+    bei JEDEM Fokuswechsel feuerten VIER unterbrechende Ansagen in 2 ms.
+      1. "Standard"          - der Wert unter dem Fokus
+      2. "INHALTSSUCHE"      - Rauschen
+      3. "Stelle die Regeln fuer die Beuteverteilung ein..." - der Hilfetext
+      4. "Beuteregeln"       - derselbe Name noch einmal
+    Weil alle vier SpeakInterrupt benutzen, schnitt jede die vorige ab. Zu
+    hoeren war nur die letzte: das nackte Wort.
+
+>>> DREI URSACHEN, jede einzeln nachgewiesen:
+    1. Der Fenstertitel kam vom generischen FindFocusedText. Das Kollisionsfeld
+       ueber dem GANZEN Fenster (Comp(1004) Knoten 31, Kind 13, 880x440) traegt
+       das Fokus-Bit - der Leser fand also den Fensterrahmen statt des
+       Bedienelements. Im Log steht deshalb in JEDER Zeile derselbe Key=31013.
+       Dasselbe Muster bei ContentsFinder (Key=76012).
+    2. Name und Hilfetext doppelte der Text-Scanner aus dem rechten Feld
+       (key=260004 und id=25).
+    3. Der ZUSTAND wurde nie gesagt. Die sieben Zeilen sind Umschalter, angesagt
+       wurde nur ihr Name - in einem Einstellungs-Fenster die kleinere Haelfte
+       der Auskunft. Dazu waren die vier Sprach-Kaestchen voellig stumm
+       ("[Focus] STUMM", 18:34:19), und das Beuteregeln-Auswahlfeld nannte nur
+       seinen Wert, nicht wofuer er gilt.
+
+>>> ZUSTANDSQUELLE, mit ilspycmd gegen die installierte FFXIVClientStructs.dll
+    geprueft (NICHT geraten): Client::Game::UI::ContentsFinder.Instance() fuehrt
+    LootRules@24 (Normal/GreedOnly/Lootmaster), IsUnrestrictedParty@25,
+    IsMinimalIL@26, IsSilenceEcho@27, IsExplorerMode@28, IsLevelSync@29,
+    IsLimitedLevelingRoulette@30. Das deckt SECHS der sieben Umschalter ab.
+    Alles in docs/game-api.md notiert.
+
+>>> BEWUSST OHNE ZUSTAND GEBLIEBEN: die Zeile "An laufenden Einsaetzen
+    teilnehmen". Sie hat kein Feld in ContentsFinder, und in ganz
+    FFXIVClientStructs war keines zu finden. Dalamuds UiConfigOption kennt
+    ContentsFinderSupplyEnable, das inhaltlich passen KOENNTE - ungeprueft.
+    Ein falsches "an" kann ein blinder Spieler nicht selbst korrigieren,
+    deshalb sagt diese Zeile nur "Name, Schalter" ohne Stand.
+
+>>> GEBAUT:
+    - ContentsFinderSettingText.cs (neu): welche Zeile welche Einstellung ist
+      (ueber die BILDSCHIRMORDNUNG, nicht ueber die Knotenreihenfolge - die
+      laeuft hier rueckwaerts, id 10 steht unten), Zustand aus dem
+      ContentsFinder-Singleton, Namen der vier Sprachen.
+    - UIReaderService: TryReadContentsFinderSettingRow als erster Leser der
+      Fokus-Kette. Sagt jetzt "Keine Beschraenkungen, Schalter, aus",
+      "Beuteregeln, Auswahlliste, Standard", "Sprache Deutsch, Schalter, an".
+      Ausgegraute Zeilen ("Stufenanpassung" trug F=0x2013 gegen 0x2033 der
+      Nachbarn) werden als solche angesagt.
+    - ContentsFinderSetting in SpecialUpdateAddons: killt Titel-Rauschen und
+      die Scanner-Dopplung in einem Zug.
+    - Beim Oeffnen kommt die UNTERZEILE ("Richte Bedingungen fuer die Teilnahme
+      an Inhalten ein."), weil Inhaltssuche UND Einstellungen beide
+      "INHALTSSUCHE" heissen und sonst nicht zu unterscheiden waeren.
+    - Hilfetext nach kurzem Verweilen (0,4 s), Entscheidung des Users - genau
+      wie bei Gegenstands- und Skill-Beschreibungen. Beim schnellen Blaettern
+      hoert man ihn gar nicht.
+    - Das Auswahlfeld benutzt ReadFocusedControlValue: bei GEOEFFNETER Liste ist
+      der fokussierte Eintrag der Wert, sonst wuerde jeder Schritt den
+      gespeicherten Stand wiederholen.
+    - AccessibilityStrings: DutyLanguage* und SettingHelp, gleich zweisprachig.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> WAS DER USER TESTEN MUSS (eine Runde reicht fuer beides):
+    Inhaltssuche oeffnen (Taste U), "Inhaltssuche-Einstellungen oeffnen"
+    aktivieren, einmal durch alle Zeilen blaettern, dann EINE Option umschalten
+    und noch einmal darueber blaettern. Danach Log schicken.
+    Damit klaeren sich die zwei offenen Punkte:
+      a) Laufen die ContentsFinder-Felder LIVE mit, oder erst nach "Ok"? Die
+         DEBUG-Zeile "[Inhaltssuche] Zeile N '<Name>' (Feld …): …" schreibt bei
+         jedem Fokuswechsel alle sieben Werte mit.
+      b) Stimmt die Zuordnung der vier Sprach-Kaestchen (JA/EN/DE/FR von links)?
+         Ein Kaestchen umschalten und hoeren, welcher Name sich aendert.
+
+## FRUEHERER STAND (2026-08-19, "AUFZUEGE: ERST MESSEN, WAS EIN AUFZUG UEBERHAUPT IST")
+
+>>> MELDUNG DES USERS: "hm es gibt aufzuege aber ich weiss nicht ob ich richtig
+    stehe". Das ist der urspruengliche Anlass des Peil-Tons - und die Stelle, an
+    der ich NICHT weiterbauen kann, ohne zu raten.
+
+>>> WAS NACHGESEHEN WURDE, und was dabei herauskam:
+    - Die Layout-Engine kennt KEINEN Aufzug-Typ. Die vollstaendige
+      InstanceType-Liste der installierten FFXIVClientStructs.dll wurde
+      durchgesehen: ExitRange (41), DoorRange (58), CollisionBox (57),
+      ClickableRange (70), GimmickRange (67) - nichts, was eine Hebebuehne
+      benennt.
+    - Im EObj-Sheet gibt es Objekte mit Aufzug-Namen: "Aufzug zur Bruecke" und
+      "Aufzug zur Theaterwerkstatt" (Block 0x000D, mit Level-Position),
+      "Fahrstuhl zu den Wohnungen" und "Aufzug zum Dach" (Block 0x000B),
+      29 "Aufzugshebel"/"Aufzugsteuerpult" (Block 0x000F), zwei "Hexalift"
+      (gar kein Event). Die MEISTEN tragen keine Position im Level-Sheet - sie
+      werden zur Laufzeit gesetzt.
+    - Damit ist die entscheidende Frage offen: ist der Aufzug des Users ein
+      ANVISIERBARES OBJEKT (dann heisst "richtig stehen" nur "in Reichweite",
+      und der Peil-Ton genuegt schon heute), oder eine reine PLATTFORM, auf der
+      man physisch stehen muss?
+
+>>> DESHALB GEBAUT: /acc lift (LiftProbe.cs, #if DEBUG) - eine Messung statt
+    einer Vermutung.
+    - Momentaufnahme aller Objekte in 25 m, mit WAAGERECHTEM und SENKRECHTEM
+      Abstand GETRENNT. Genau darin steckt die Antwort: wer auf einer Plattform
+      steht, ist waagerecht fast ueber ihrem Mittelpunkt und senkrecht darueber.
+      Dazu je Objekt: anvisierbar ja/nein, DataId, Name.
+    - Danach 20 Sekunden Mitschrift der eigenen Position, zwei Zeilen je Sekunde,
+      mit dem jeweils naechsten Objekt. Faehrt der Aufzug los, waehrend man
+      draufsteht, wandert die eigene Hoehe mit - das ist der BEWEIS "ich stand
+      richtig", und aus dem Abstand in genau diesen Zeilen laesst sich ablesen,
+      welcher Abstand "drauf" bedeutet.
+    - Erkennt die Sonde eine senkrechte Bewegung ohne waagerechte, sagt sie das
+      SOFORT an ("Du faehrst, Hoehe steigt"). Der User soll die Antwort im Moment
+      des Geschehens hoeren, nicht erst im Log.
+
+>>> BEWUSST NICHT GEBAUT: das Auslesen der Layout-Instanzen (Kollisionsboxen).
+    Der Weg dorthin ist verifiziert und notiert - LayoutWorld.Instance() ->
+    ActiveLayout@32 -> Layers@552 (StdMap<ushort, Pointer<LayerManager>>) ->
+    LayerManager.Instances@40 (StdMap<uint, Pointer<ILayoutInstance>>), Typ in
+    ILayoutInstance.Id@24 (Identifier.Type@1), Position ueber die virtuelle
+    GetTranslation. Er fuehrt aber ausschliesslich ueber VTable-Aufrufe, und ein
+    Fehlgriff dort stuerzt das SPIEL ab. Das ist der zweite Schritt, falls die
+    Messung oben nicht reicht - nicht der erste.
+
+>>> WAS DER USER TUN MUSS: an einen Aufzug stellen, "/acc lift" eingeben, sich
+    daraufstellen und ihn ausloesen. Danach das Log schicken. Und mir sagen,
+    WELCHER Aufzug es ist (Gebiet/Stadt) - dann kann ich die Objekte dieser Zone
+    offline gegenpruefen.
+
+>>> GEAENDERT: LiftProbe.cs (neu, DEBUG), Plugin.cs (Sonde verdrahtet, /acc lift).
+    Build Debug 0/0 UND Release 0/0. IN-GAME UNGETESTET.
+
+## FRUEHERER STAND (2026-08-19, "STILLE HEISST RICHTIG - DER PEIL-TON WURDE UMGEDREHT")
+
+>>> WUNSCH DES USERS: "es waere gut wenn wir verschiedene ziele durch toene
+    hoerbar machen sobald sie getrackt sind objekte gegner uebergaenge usw aber
+    fuer jedes einen unterschiedlichen und nicht so nervent er soll auch
+    lautstaerke technisch und richtungsbezogen kommen um so weiter man weg ist um
+    so leiser und die richtung in die man sich drehen muss und wenn man 100%
+    richtig steht soller ausgehen es geht mir dabei auch um aufzuege bzw
+    plattformen ob man richtig steht".
+
+>>> DREI ENTSCHEIDUNGEN HAT ER SELBST GETROFFEN:
+    1. Der Ton laeuft auch OHNE Gehhilfe - dann aber NUR auf ein anvisiertes
+       Ziel. Nachgeschaerft von ihm: "die toene fuer getrackte sachen sollen auch
+       kommen wenn die gehhilfe aus ist aber dann nur wenn was anvisiert ist".
+       Eine blosse Browser-Auswahl loest also keinen Ton aus - der Browser
+       blaettert im Sekundentakt, und jeder Schritt wuerde sonst einen neuen
+       Dauerton starten. Dazu eine Taste, die ihn stumm schaltet.
+    2. Er verstummt bei richtiger AUSRICHTUNG (nicht erst bei Ankunft). Das ist
+       die Aufzug-/Plattform-Hilfe: drehen, bis es still ist.
+    3. Er ERSETZT den bisherigen Gehhilfe-Ton, statt daneben zu laufen.
+
+>>> DAS IST EINE UMKEHRUNG, kein Anbau. Bisher war "geradeaus" ein hoher,
+    mittiger Ton - jetzt ist geradeaus STILLE. Alles andere musste sich danach
+    richten.
+
+>>> DIE STILLE-FALLE, und wie sie geloest ist: fuer einen blinden Spieler ist
+    Stille nicht von "kaputt", "Ziel verloren" oder "Ton aus" zu unterscheiden.
+    Deshalb kommt beim UEBERGANG von falsch auf richtig EIN kurzer Quittungston
+    (CueService.PlayAlignedTone, 880 Hz - oberhalb des gesamten Peil-Tonvorrats
+    von 330 bis 784 Hz, also nicht verwechselbar). Die Stille ist damit belegt.
+
+>>> SIGNAL IM EINZELNEN (BeaconService):
+    - Stille-Zone 6 Grad, Rueckkehr erst ab 10 Grad (Hysterese) - ohne die
+      flattert der Ton am Rand im Takt der Mausbewegung.
+    - Je genauer gezielt, desto ruhiger: Schlagfolge 0,4 s (voellig daneben) bis
+      0,95 s (kurz vorm Einrasten). Das ist der Teil, der "nicht so nervent"
+      beantwortet - es wird ruhiger zum Ziel hin, nicht hektischer.
+    - Lautstaerke: voll bis 5 m, linear herunter auf 15% ab 150 m.
+    - Seite ueber Stereo, "hinter dir" ueber eine dunklere Tonlage (bei genau
+      180 Grad ist das Stereobild wieder mittig, Seite allein reicht also nicht).
+    - Ankunft (<= 2,5 m) schweigt unabhaengig von der Blickrichtung.
+
+>>> ACHT STIMMEN, je Zielart ein Grundton, zwei Schlaege fuer alles, wo etwas zu
+    TUN ist:
+      Gegner 330 Hz doppelt | Inhalts-Eingang 392 doppelt | Uebergang 440 doppelt
+      NPC 494 einfach | Quest-Ziel 523 doppelt | Objekt 587 einfach
+      Sammelpunkt 659 einfach | Aetheryt 784 einfach
+    Gegner und Verbuendete sind beide BattleNpc - getrennt ueber CombatSide,
+    dieselbe Unterscheidung wie in den Kategorien. Ein Trupp-Kollege darf nicht
+    wie eine Warnung klingen.
+
+>>> ZIELWECHSEL SCHNEIDET AB (nachgereichte Vorgabe: "wenn was anderes getrackt
+    wird bei den objekten und generell soll der ton fuer das vorher getrackte
+    aufhoeren"). Jeder Ton traegt jetzt eine Kennung - die Objekt-Id beim
+    anvisierten Ziel, eine laufende Nummer beim Gehhilfe-Ziel. Aendert sie sich,
+    bricht der alte Ton ab und der neue faengt mit vollem Anschlag an.
+    WARUM DAS MEHR IST ALS KOSMETIK: ohne den Schnitt schleppte der Ton den
+    Zustand des alten Ziels mit. Stand man auf das alte eingerastet (= still),
+    blieb er fuer das NEUE Ziel stumm, solange dieses zufaellig in der
+    Hysterese-Zone lag - der Spieler haette ein neues Ziel gehabt und die
+    Bestaetigung des alten gehoert. Beim Wechsel kommt bewusst KEIN Quittungston:
+    das Anvisieren quittiert das Spiel schon mit seinem eigenen Ton, und die
+    Zielansage sagt dazu, was es ist.
+    Die Kennungen der Gehhilfe starten bei 2^60, damit sie nie mit einer
+    Objekt-Id zusammenfallen.
+
+>>> ZIEL VERSCHWUNDEN = TON AUS (nachgereichte Vorgabe: "wenn das ziel
+    verschwindet soll der ton auch aufhoeren"). Drei Wege dorthin, weil es drei
+    verschiedene Arten von Verschwinden gibt:
+      - Anvisiertes Objekt entladen: das Spiel setzt sein Ziel selbst auf null,
+        darunter liegt jetzt IGameObject.IsValid() als Netz - ein Zeiger auf ein
+        entladenes Objekt lieferte sonst eine Position, die niemand besetzt.
+      - Gegner erlegt: IsDead, aber NUR fuer BattleNpc und Pc. Was IsDead an
+        einer Tuer oder Truhe bedeutet, ist nicht gemessen - eine Tuer, die sich
+        faelschlich fuer tot haelt, waere ein stummer Ton ohne Erklaerung.
+      - Zonenwechsel/Logout: LocalPlayer wird null, und dort verstummte der Ton
+        bisher NICHT - er lief mit dem letzten Stand ueber den Ladebildschirm
+        weiter. Das war ein echter Fehler, kein Feinschliff.
+    Die Gehhilfe hatte den Fall schon: verschwindet ihr Ziel, endet sie mit
+    "Ziel verloren", und ihr Ende schaltet den Ton still.
+
+>>> ZWEITE FOLGE DAVON, die im Blick bleiben muss: was das Spiel nicht
+    anvisieren laesst - Quest-Requisiten, Kartenmarker, Quest-Ziele, die
+    Eintraege der Dungeonliste - bekommt ohne Gehhilfe keinen Ton. Fuer die ist
+    die Gehhilfe der Weg, sie zeigt auch auf eine blosse Position. WENN EIN
+    AUFZUG SICH NICHT ANVISIEREN LAESST, faellt genau der Anlass des Wunsches in
+    diese Luecke - das ist der Punkt, den der Test zuerst klaeren muss.
+
+>>> BEWUSSTE GRENZE: Ziele in ANDEREN Zonen bekommen keinen Ton. Die Luftlinie
+    zeigt dort durch die Zonenwand, und der Spieler wuerde gegen Felsen laufen.
+    Sobald die Gehhilfe zum Uebergang laeuft, fuehrt sie den Ton wieder - und
+    zwar mit der Uebergangs-Stimme, nicht mit der des Ziels dahinter.
+
+>>> GEAENDERT: BeaconService.cs (neu geschrieben: BeaconKind, Stimmen, Stille-Zone,
+    Hysterese, Idle), CueService.cs (PlayAlignedTone), NavigationService.cs
+    (UpdateTargetBeacon, TryGetBeaconTarget, BeaconKindForObject/Selection,
+    Gehhilfe uebergibt Art + Ankunft), Configuration.cs (TargetBeaconEnabled +
+    KeyToggleBeacon = Strg+Umschalt+F9), Plugin.cs (Cue vor Beacon konstruiert,
+    ToggleTargetBeacon, Tastenuebersicht, /acc soundtest komplett neu),
+    OptionsMenu.cs (Schalter), AccessibilityStrings(.Chat).cs (DE+EN),
+    README.md, README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST:
+    1. ZUERST "/acc soundtest" - der fuehrt alles ohne Herumlaufen vor: erst die
+       Steuerung von 180 Grad schrittweise aufs Ziel (man muss hoeren, wie die
+       Schlaege auseinandergehen und dann der Quittungston kommt), danach die
+       acht Stimmen einzeln, jede vorher benannt.
+    2. Sind die acht Stimmen wirklich auseinanderzuhalten? Besonders Gegner
+       (330) gegen Inhalts-Eingang (392) - die liegen am dichtesten.
+    3. Ein Objekt im Browser waehlen und sich drehen: verstummt der Ton beim
+       richtigen Stand, kommt der Quittungston, meldet er sich beim Weiterdrehen
+       wieder?
+    4. AUFZUG/PLATTFORM - der eigentliche Anlass: LAESST SICH DER AUFZUG
+       UEBERHAUPT ANVISIEREN? Wenn ja, funktioniert der Ton dort direkt; wenn
+       nein, braucht es die Gehhilfe darauf - und dann muessen wir darueber
+       reden, ob solche Objekte doch ohne Anvisieren toenen sollen.
+    5. NERVT ER IM KAMPF? Im Kampf ist fast immer ein Gegner anvisiert, also
+       laeuft der Ton, sobald man nicht genau auf ihn zielt. Wenn das stoert:
+       Strg+Umschalt+F9 ist der Notausschalter - und dann bitte sagen, ob der
+       Ton im Kampf ganz schweigen soll (das waere eine bewusste Zusatzregel,
+       nicht geraten).
+    6. Gehhilfe: klingt sie jetzt wie die Zielart, zu der sie fuehrt?
+    7. ZIELWECHSEL: mit Tab durch mehrere Gegner schalten - hoert der Ton fuer
+       den vorigen wirklich sofort auf, und faengt der neue sauber an?
+    8. ZIEL WEG: einen anvisierten Gegner erlegen - hoert der Ton auf, ohne dass
+       man das Ziel von Hand abwaehlen muss? Und schweigt er beim Zonenwechsel?
+
+## FRUEHERER STAND (2026-08-19, "ALLE DUNGEONS DER WELT, NACH STUFE, MIT WEG DORTHIN")
+
+>>> WUNSCH DES USERS: "erstmal brauchen wir eine kategorie wo man zu den dungeons
+    laufen kann die kann man ja durch portale betreten sie sollen in der kategorie
+    nach stufe sortiert sein und man soll map uebergreifend hinlaufen koennen".
+
+>>> DREI ENTSCHEIDUNGEN HAT ER SELBST GETROFFEN (gefragt, weil sie das Ergebnis
+    veraendern, nicht weil sie unklar waren):
+    1. Umfang: Dungeons UND Pruefungen UND Raids (nicht nur Dungeons).
+    2. Filter: ALLE anzeigen, gesperrte mit dem Wort "gesperrt" - nicht nur die
+       freigeschalteten. Er will sehen, was noch kommt.
+    3. Neue Kategorie NEBEN der alten "Inhalte", die unveraendert bleibt.
+
+>>> GEBAUT: Kategorie "Alle Inhalte" im Objekt-Browser (Strg+Bild-ab), neuer
+    DutyEntranceService.cs.
+    - 145 Eintraege, nach Stufe aufsteigend, erster ist Stufe 15 "Sastasha".
+    - Ansage: "Dungeon: Sastasha, Stufe 15" + "gesperrt" wenn noch nicht
+      freigeschaltet + in dieser Zone Entfernung/Richtung, sonst Gebietsname und
+      der naechste Zonenuebergang dorthin + Zaehler.
+    - Numpad3 laeuft hin, ueber Zonengrenzen hinweg. Das ist KEINE neue Mechanik,
+      sondern genau der Weg, den Quest- und Jagdziele seit Wochen gehen:
+      PlacesService.FindFirstHopToMap fuehrt zum naechsten Uebergang, nach dem
+      Zonenwechsel zeigt die Liste den naechsten. In der Zielzone selbst laeuft er
+      auf die Tuer.
+
+>>> WOHER DIE DATEN KOMMEN, offline gegen das installierte sqpack gemessen (kein
+    Raten, kein In-Game-Test noetig fuer diesen Teil):
+    - Tuer -> Inhalt: DungeonSide (war schon da). 182 EObj, davon 155 Dungeon/
+      Pruefung/Raid.
+    - Tuer -> Ort: Level-Sheet. Level.Object = EObj-Zeile, dazu Territory, Map und
+      X/Y/Z. Die HOEHE IST ECHT - anders als bei jedem Kartenmarker, der 2D ist
+      und geschaetzt werden muss.
+    - Der Join ist eindeutig BEWIESEN, nicht plausibel: Level.Type 45 hat einen
+      eigenen Object-Id-Bereich (2000002..2015509), der sich mit keinem anderen
+      Typ ueberschneidet, und alle 175 auflaesbaren Eingaenge tragen ihn.
+    - 3 der 155 haben keine Level-Zeile ("Saegerschrei", zwei Eingaenge zu
+      "Verschlungene Schatten 3 - 1"). Die fallen RAUS statt geraten zu werden.
+    - 7 Inhalte haben mehrere Tueren, teils in verschiedenen Zonen. Gezeigt wird
+      die naechste: gleiche Zone gewinnt, sonst die wenigsten Zonenwechsel. Dafuer
+      gibt es PlacesService.GetHopDistances (EIN Breitensuchlauf statt 145).
+    - "gesperrt" fragt das SPIEL: UIState.IsInstanceContentUnlocked, gegen die
+      installierte FFXIVClientStructs.dll geprueft. Aus Stufe oder Quests wird
+      nichts abgeleitet; antwortet das Spiel nicht, schweigt die Ansage.
+    Alles in docs/game-api.md eingetragen.
+
+>>> GEAENDERT: DutyEntranceService.cs (neu), DungeonSide.cs (ContentId + All()),
+    PlacesService.cs (GetHopDistances), NavigationService.cs (Kategorie
+    WorldDuties, CycleWorldDuty, Auswahl-Property, Reset-Regel), Plugin.cs
+    (Service + Auto-Lauf-Zweig), AccessibilityStrings.cs (5 Bausteine DE+EN),
+    README.md, README.en.md, docs/game-api.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ERWARTUNGSWERTE FUER DEN TEST, offline vorausberechnet - damit der erste Blick
+    ins Log sofort zeigt, ob die Auswertung im Spiel dasselbe tut:
+    - Log beim ersten Oeffnen der Kategorie:
+      "[Inhalte] 152 Eingaenge zu Dungeons, Pruefungen und Raids mit Ort;
+       3 ohne Ortsangabe im Level-Sheet uebergangen."
+    - Kategorie-Ansage: "Alle Inhalte: 145, davon N freigeschaltet."
+    - Erste Eintraege beim Blaettern: Stufe 15 Sastasha, 16 Totenacker Tam-Tara,
+      17 Kupferglocken-Mine, 20 Das Grab der Lohe (Pruefung), 20 Halatali,
+      24 Tausend Loecher von Toto-Rak, 28 Haukke-Herrenhaus.
+    - Bis Stufe 30 sind es 7 Eintraege - der Charakter ist Stufe 30, die Zahl
+      "davon N freigeschaltet" sollte in dieser Groessenordnung liegen.
+
+>>> ZU PRUEFEN BEIM TEST:
+    1. Strg+Bild-ab bis "Alle Inhalte": kommt die Zahl 145?
+    2. Bild-ab blaettern: stimmen Reihenfolge und Stufen mit der Liste oben?
+    3. Sagt er bei hochstufigen Inhalten "gesperrt"? (Das ist die einzige
+       Angabe, die NUR im Spiel pruefbar ist - IsInstanceContentUnlocked laesst
+       sich offline nicht messen.)
+    4. Numpad3 auf einem Eintrag in einer ANDEREN Zone: laeuft er zum Uebergang?
+    5. Numpad3 auf einem Eintrag in der EIGENEN Zone: landet er an der Tuer?
+
+## FRUEHERER STAND (2026-08-19, "SONDERAKTIONEN AUF TASTEN - UND DER FANG-FREIBRIEF IST ETWAS ANDERES")
+
+>>> WUNSCH DES USERS: "in freibriefen oder bei quests gibt es sachen wo man
+    gegner fangen oder schwaechen muss, ich vermute da gibt es dann einen button
+    den man im richtigen moment druecken muss der wahrscheinlich erst sichtbar
+    wird wenns soweit ist - das muessen wir auf eine taste legen".
+
+>>> SEINE VERMUTUNG STIMMT, aber es sind DREI getrennte Mechaniken, und sein
+    konkreter Fall war die dritte:
+    1. SONDERAKTIONSLEISTE ("Duty Actions") - genau der beschriebene Knopf, der
+       nur auftaucht, wenn der Inhalt ihn braucht. GEBAUT (unten).
+    2. SCHLUESSELGEGENSTAND (EventItem) - liegt im Inventar, ist auf die Leiste
+       legbar. Weg steht in game-api.md, nicht Teil dieser Runde.
+    3. EMOTE - und DAS war sein Freibrief. Im Log (2026-08-19 09:33:23):
+       Systemmeldung "Besaenftige rasende Ziele, indem du das Emote
+       'Beruhigen' (/ruhig) auf sie anwendest", Tracker-Zeile "Schwaeche das
+       Ziel vorm Besaenftigen, aber schlag es nicht k. o.". Hier gibt es GAR
+       KEINE Sonderaktionsleiste - die Taste unten haette ihm bei den Dodos
+       also nicht geholfen.
+
+>>> GEBAUT: DutyActionService.cs (neu).
+    - Sagt mit einem Ton an, sobald die Leiste auftaucht oder sich aendert:
+      "Sonderaktion verfuegbar, 1: <Name>. Taste Strg+Numpad7."
+    - Umschalt+F10 / Umschalt+F11 loesen Platz 1 und 2 aus, Strg+Umschalt+F8
+      sagt die Leiste noch einmal an.
+    - TASTEN EINMAL GEWECHSELT, und der Grund gehoert ins Protokoll: zuerst lagen
+      sie auf Strg+Numpad7/9/1, weil der Nummernblock im Kampf schneller zu
+      treffen ist. Der User hat sofort widersprochen ("er nimmt die strg taste
+      nicht"). AUF NACHFRAGE BESTAETIGT: Strg+Numpad3 (Gehhilfe) FUNKTIONIERT bei
+      ihm - es ist also keine allgemeine Strg-Schwaeche, sondern betrifft genau
+      die Ziffern 1/7/9. Damit ist die Zeile "Strg+Numpad1/3/5/7/9 frei" in
+      game-api.md fuer 1/7/9 widerlegt: der Dump sagt nur, dass das SPIEL sie
+      nicht belegt, nicht dass sie beim Plugin ankommen. Ursache ungeklaert und
+      NICHT geraten - in game-api.md als Korrektur eingetragen, mit der Regel
+      "fuer neue Tasten nur Strg+Numpad0/3/5, die drei nachweislich
+      funktionierenden".
+      Umschalt+F10/F11 sind die letzten freien Plaetze des Umschalt+F-Clusters
+      und einhaendig zu treffen; nur die Ansage, die nicht eilt, liegt im
+      langsameren Dreifachgriff.
+    - Migration auf Version 12 mitgeliefert: wer die Zwischenfassung per
+      Hot-Reload schon gespeichert hat, bekommt die alten Vorgaben umgezogen -
+      eine eigene Belegung bleibt stehen.
+    - WARUM DAS UEBERHAUPT NOETIG IST: im Live-Tastenbelegungs-Dump vom
+      2026-08-09 (679 Eintraege) hat diese Leiste KEINE EINZIGE Belegung. Das
+      Spiel erwartet dort einen Mausklick - sie ist per Tastatur ueberhaupt
+      nicht erreichbar, und ihr Auftauchen ist rein visuell.
+    - Ausgeloest wird ueber RaptureHotbarModule.ExecuteDutyActionSlot, also die
+      spieleigene Methode; der Rueckgabewert wird AUSGEWERTET ("<Name> geht
+      gerade nicht"), statt ihn wie Dalamud beim Ziel-Setzen wegzuwerfen.
+    - Die API ist nicht nur der Doku entnommen, sondern vom COMPILER gegen die
+      echte FFXIVClientStructs.dll bestaetigt: GetInstanceIfReady, ActionId[],
+      NumValidSlots, ActionsPresent, ExecuteDutyActionSlot uebersetzen alle.
+    - Standard AN (AnnounceDutyActions): hier wird nichts berechnet und nichts
+      behauptet, die Leiste ist da oder nicht.
+
+>>> GEBAUT 2 - SONDE FUER DEN FANG-FREIBRIEF ([FangSonde], #if DEBUG).
+    Ab WANN ein Gegner "schwach genug" zum Besaenftigen ist, steht in KEINER
+    bekannten Struktur - weder Leve-Sheet noch Director fuehren eine Schwelle,
+    und Kampflogik raten ist hier verboten. Also wird gemessen: bei JEDER
+    Fehlermeldung landen HP-Anteil und die vollstaendige Statusliste des Ziels
+    im Log. Gelingt ein Versuch, klammern die Zeilen davor und danach die
+    Schwelle ein - und die Statusliste zeigt zugleich, ob es ueberhaupt an den
+    HP haengt oder an einem Zustand, den der Gegner erst bekommt.
+    Eng gehalten (Lehre vom selben Tag): nur bei Fehlern, nur mit Ziel, nur
+    Debug.
+
+>>> GEAENDERT: DutyActionService.cs (neu), AccessibilityStrings.cs (5 Bausteine
+    DE+EN), Configuration.cs (3 Tasten + AnnounceDutyActions + Reset-Block),
+    Plugin.cs (Verdrahtung, Tasten, Tastenuebersicht), ToastService.cs (Sonde +
+    ITargetManager), README.md, README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST:
+    1. Einen Inhalt mit Sonderaktionsleiste betreten: kommt Ton + Ansage?
+    2. Strg+Numpad7: loest sie aus? Bei Ablehnung die Ansage "geht gerade
+       nicht"?
+    3. Strg+Numpad1 ausserhalb: sagt "Keine Sonderaktion vorhanden."?
+    4. WICHTIG - stoert Umschalt+F10/F11 beim normalen Spielen? Der Dump meldet
+       sie als frei, aber genau darauf war bei Strg+Numpad1/7/9 kein Verlass.
+    5. Fang-Freibrief noch einmal versuchen und danach das Log schicken: die
+       [FangSonde]-Zeilen beantworten die Schwellenfrage.
+
+>>> NOCH OFFEN, BRAUCHT DIE MESSUNG AUS 5: die eigentliche Hilfe fuer den
+    Fang-Freibrief waere eine Ansage "jetzt besaenftigen" im richtigen Moment.
+    Ohne die gemessene Schwelle waere jede solche Ansage geraten.
+
+>>> ERSTER TEST GELAUFEN (User: "irgendwie hat er immer gesagt keine
+    sonderaktion vorhanden"). AUSWERTUNG:
+
+    1. DIE ANSAGE WAR RICHTIG, nicht kaputt. Er hat im Dodo-/Rattenmull-
+       Freibrief gedrueckt - genau dem Inhalt, der KEINE Sonderaktionsleiste hat
+       (Emote-Mechanik, siehe oben). Dass die Taste ueberhaupt spricht, beweist
+       zugleich: Strg+Umschalt+F8 kommt an. Die Leiste selbst ist damit WEITER
+       UNGETESTET - dafuer braucht es einen Inhalt, der wirklich eine hat.
+
+    2. MANGEL IM EIGENEN CODE, gefixt: Announce() hat NICHTS protokolliert. Aus
+       "keine Sonderaktion vorhanden" liess sich nicht ablesen, ob wirklich
+       keine Leiste da war oder ob der Zugriff daneben griff. Jetzt trennt das
+       Log die beiden Faelle ("GetInstanceIfReady ist null" vs. "Leiste
+       vorhanden, aber alle Plaetze leer").
+
+    3. DIE [FangSonde] LIEFERT - und sie widerlegt die naheliegende Annahme.
+       Gemessen am 2026-08-19:
+         11:01:22  'Kann noch nicht verwendet werden' -> Rattenmull   100 %
+         10:58:20  'Kann noch nicht verwendet werden' -> Rattenmull    48 %
+         11:00:51  'Kann noch nicht verwendet werden' -> Dodo          18 %, Status nur 'Blitz' (eigener DoT)
+       Bei 18 Prozent wird also NOCH IMMER abgelehnt, und der Gegner traegt
+       keinen eigenen Zustand. Damit liegt die Schwelle entweder unter 18
+       Prozent - oder die Meldung heisst gar nicht "zu stark". NICHT ENTSCHIEDEN,
+       es fehlt der eine Datenpunkt, der alles klaeren wuerde: ein GELUNGENER
+       Versuch. Der Zaehler stand die ganze Sitzung auf 0/3.
+
+    4. WARUM ER NIE DAHIN KOMMT, und das ist der eigentliche Befund:
+         11:00:51  Ziel HP: 18 Prozent   (Schwelle 25 unterschritten)
+         11:00:54  Ziel HP:  2 Prozent   (Schwelle 10 unterschritten)
+         11:00:57  "Du hast den verwilderten Dodo besiegt."
+       Sechs Sekunden von 18 auf tot. Die Tracker-Zeile sagt woertlich "schlag
+       es nicht k. o." - er schlaegt es k. o., weil zwischen den Ansagen bei 25
+       und 10 Prozent nichts mehr kommt und sein Blitz-DoT weitertickt. Die
+       HP-Stufen 75/50/25/10 sind fuer den normalen Kampf richtig und fuer
+       einen Fang-Auftrag zu grob.
+       ABHILFE VOM USER FREIGEGEBEN UND GEBAUT (siehe unten).
+
+>>> GEBAUT: FEINE ZIEL-HP IM FREIBRIEF (CombatService.ThresholdsFor).
+    Solange ein Freibrief laeuft, gilt unterhalb von 30 Prozent die Reihe
+    30/25/20/15/10/5 statt 75/50/25/10. Die Zahl im Satz war immer schon der
+    ECHTE Wert - die Stufe entscheidet nur, WANN gesprochen wird.
+    Gegenprobe an der Messung von 11:00:51: mit den groben Stufen kam zwischen
+    18 Prozent und dem Tod genau EINE Ansage, mit den feinen sind es die
+    Uebergaenge bei 15, 10 und 5.
+    WARUM JEDER FREIBRIEF UND NICHT NUR FANG-AUFTRAEGE: ob ein Freibrief fangen
+    oder toeten will, steht in keinem Feld, das dieses Projekt nachgemessen hat.
+    Die Aufgabenzeile sagt es in WORTEN ("besaenftige") - darauf zu pruefen
+    wuerde im englischen Client sofort brechen. Also gilt die feine Reihe fuer
+    jeden laufenden Freibrief; der Preis sind ein paar Ansagen mehr auf einem
+    Toetungs-Auftrag, und dafuer gibt es den Schalter.
+    KOSTEN IM NORMALEN KAMPF: keine. Die Freibrief-Abfrage (GetRunningLeve liest
+    frisch die Director-Liste) laeuft ERST unterhalb von 30 Prozent - darueber
+    sind beide Reihen ohnehin gleich.
+    Neuer Schalter FineTargetHpDuringLeve (Standard AN), im gesprochenen
+    Einstellungsmenue unter "Feine Ziel-Lebenspunkte im Freibrief".
+
+>>> GEAENDERT: CombatService.cs (HpThresholdsFine, FineBandCeiling,
+    ThresholdsFor, LevequestEnemyService injiziert), Configuration.cs,
+    Plugin.cs (Konstruktor), OptionsMenu.cs, AccessibilityStrings.Chat.cs
+    (DE+EN), DutyActionService.cs (Abfrage protokolliert jetzt), README.md,
+    README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> RAT AN DEN USER FUER DEN NAECHSTEN VERSUCH: den DoT (Blitz) weglassen und
+    mit Grundzaubern arbeiten. Der DoT tickt weiter, waehrend er das Emote
+    versucht, und genau das hat den Dodo zweimal ueber die Schwelle geschoben.
+
+## FRUEHERER STAND (2026-08-19, "DIE FREIBRIEF-MELDUNG LAS SICH IM SEKUNDENTAKT SELBST VOR")
+
+>>> MELDUNG DES USERS: "wenn ich einen gegner fangen oder schwaechen soll kann
+    man mit der numpad 1 auf die meldung gehen die wird aber ununterbrochen
+    vorgelesen".
+
+>>> IM LOG NACHGEMESSEN, nicht vermutet (dalamud.log 2026-08-19, 09:38:34 bis
+    09:39:52, ueber eine Minute am Stueck):
+      [Focus] addon='_ToDoList' id=13 ptr=0x2A1E4C10950
+        Text='Schwaeche den Gegner und besaenftige ihn mit dem Emote
+              "Beruhigen", St. 14, 19:38, Dodos an Bord'
+      ... dieselbe Zeile mit 19:37, 19:36, 19:35, 19:34 ...
+    Der Knoten-Zeiger ist IMMER derselbe - der Fokus hat sich nie bewegt.
+    Geaendert hat sich nur die RESTZEIT des Freibriefs.
+
+>>> URSACHE: der Fokus-Leser entdoppelt ueber
+      if (ptr == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
+    Die Tracker-Zeile ist aber aus mehreren Knoten ZUSAMMENGESETZT (Ziel,
+    Stufe, Restzeit, Freibrief-Name). Mit dem Countdown darin ist der Text
+    jede Sekunde ein anderer, also greift die Entdopplung nie.
+    Der vorhandene Zaehler-Schutz `IsBareNumber` half hier NICHT: er prueft
+    einen Text, der NUR aus Ziffern und ':' besteht. Als eigener Knoten wurde
+    der Timer korrekt geschluckt (Log: "[Scan] _ToDoList key=40005: '19:51'
+    (Zaehler, nicht gesprochen)") - in einem Satz mitgeschleift eben nicht.
+
+>>> GEFIXT: die Entdopplung vergleicht jetzt den Text OHNE laufende Uhren
+    (`StripLiveClocks`, neuer Vergleichsschluessel `_lastFocusedNodeStable`).
+    Die Zeit wird weiterhin GESPROCHEN - auf einem Freibrief mit Frist ist sie
+    echte Information und steht beim ersten Landen auf der Zeile mit drin.
+    Nur ihr Ticken zaehlt nicht mehr als neuer Eintrag.
+    BEWUSST ENG GEHALTEN: nur Wortformen h:mm / m:ss / h:mm:ss, beidseitig von
+    Nicht-Ziffern begrenzt. Breiter waere gefaehrlich - ein Reglerwert, den der
+    Spieler gerade mit links/rechts aendert ("40" -> "50"), sitzt auf demselben
+    Knoten und MUSS weiter ansagen.
+    Die fuenf Stellen, die den Fokus-Zustand zuruecksetzen, setzen den neuen
+    Schluessel mit zurueck.
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST: auf die Freibrief-Meldung gehen. Erwartet: EINMAL
+    vorgelesen, inklusive Restzeit, danach Ruhe, solange der Fokus dort steht.
+    Weggehen und wieder hin -> wieder einmal.
+
+>>> SONDEN AUFGERAEUMT (Auftrag des Users direkt danach). Nicht pauschal
+    geloescht - je Sonde geprueft, ob ihre Frage beantwortet ist:
+
+    GEFIXT STATT GELOESCHT - [DeepTraps] (25.254 von 31.315 Zeilen, 85 Prozent
+    des ganzen Logs). Loeschen waere falsch gewesen: an dieser Sonde haengt der
+    OFFENE Fallen-Umweg (Wunsch vom 2026-08-13). Sie hatte ZWEI echte Fehler:
+    1. SIE LIEF UEBERALL. NavigationService ruft DeepDungeon.Poll bei jedem
+       Frame, sobald der Dienst existiert - nicht erst im Tiefen Gewoelbe. Eine
+       FALLEN-Sonde protokollierte damit die Dodos von Unter-La Noscea. Jetzt
+       steht `if (!_floor.IsActive) return;` davor. Keine einzige der 25.254
+       Zeilen stand in einem Tiefen Gewoelbe.
+    2. IHRE DROSSEL WAR WIRKUNGSLOS. Die Signatur entstand aus der nach
+       ENTFERNUNG sortierten Liste; zwei Gegner in aehnlichem Abstand tauschen
+       beim Laufen staendig die Plaetze, also war die Signatur immer neu.
+       Signatur jetzt nach Objekt-Id sortiert - die Sonde fragt nach "welche
+       Objekte, anvisierbar ja/nein", und darauf hat die Reihenfolge keine
+       Antwort.
+    3. Ausserdem war sie NICHT `#if DEBUG` gekapselt, lief also in jedem
+       veroeffentlichten Release mit. Jetzt gekapselt (Methode, Feld, Konstante
+       und Aufrufstelle), Release baut 0/0.
+
+    GELOESCHT, weil die Frage beantwortet und das Feature gebaut ist:
+    - [ShopProbe] (ProbeShopRow): sollte messen, wo in der Zeile der Preis
+      steht. Preis + "du hast N" stehen seit 2026-08-16 in der Ansage. Im
+      Quelltext stand woertlich "Faellt raus, sobald der Preis gebaut ist".
+    - Die ProbeAddonTexts("_ToDoList")-Sonde am Kategorie-Wechsel (897 Zeilen
+      je Sitzung, weil sie bei JEDEM Wechsel den ganzen Tracker dumpte). Der
+      Ziel-Leser steht (QuestMarkerService liest _ToDoList, DirectorTodoService
+      die Aufgabenliste). ProbeAddonTexts SELBST bleibt - sie ist das Werkzeug
+      fuer die naechste unbekannte Oberflaeche.
+
+    BEWUSST STEHEN GEBLIEBEN, weil ihre Messung laut diesem Dokument NOCH
+    OFFEN ist:
+    - [RestedProbe] - "solange bleibt RestedProbe drin" (zweite Messung bei
+      anderem EXP-Stand fehlt).
+    - [GatherProbe] - ueberwacht, ab welcher Entfernung ein Sammelpunkt auf
+      nutzbar umspringt. Loggt nur Zustandswechsel, 17 Zeilen je Sitzung.
+    - [NavDirProbe] - der Richtungsbeweis steht noch aus. Feuert nur je
+      Tastendruck.
+    - [ListProbe] - laufende Diagnose fuer stumme Listen.
+    - [UiProbe] (ProbeFocusContext) - SocialList ist noch offen. Feuerte in
+      dieser Sitzung 0 mal.
+    - [NavDiag] - eine Zeile je Sekunde, nur waehrend eines Auto-Laufs. Der
+      Auto-Lauf hat gerade eine ungetestete Aenderung (Stopp in der Mitte bei
+      Freibrief-Zielen), also bleibt die Diagnose diese Runde noch drin.
+
+    ERWARTUNG FUER DIE NAECHSTE SITZUNG: statt 31.315 noch rund 5.100
+    Log-Zeilen. Build Debug 0/0 UND Release 0/0.
+
+>>> URSPRUENGLICHER BEFUND: der Log besteht zu 85 Prozent aus
+    Debug-Sonden (26.688 von 31.315 Zeilen). Der schlimmste Einzeltaeter ist
+    [DeepTraps]: 31 Kampf-NPCs, ZWEIMAL PRO SEKUNDE, komplett mit Position.
+    Dazu [Probe] _ToDoList, [GatherProbe], [NavDirProbe], [ShopProbe],
+    [ListProbe], [NavDiag]. Nach der Sonden-Konvention gehoeren die nach
+    Feature-Ende raus. Sie kosten Bildfrequenz und machen jede kuenftige
+    Diagnose muehsam - die Suche nach dieser Meldung war zu 90 Prozent
+    Wegfiltern. VORSCHLAG: aufraeumen, sobald die offenen Tests durch sind.
+
+## FRUEHERER STAND (2026-08-19, "FORMANSAGE + VORWARNUNG - UND WARUM DER BOSS SCHWIEG")
+
+>>> AUSLOESER: User ueberlegt, cactbot wieder rauszunehmen - "es hilft mir in
+    meiner quest bei dem boss nicht weil es da nichts spricht". Vorschlag von
+    ihm: "wenn wir wuessten wie die ganzen bossmechaniken funktionieren
+    koennte man was eigenes bauen". Auftrag danach: "bau die formansage und
+    die vorwarnung".
+
+>>> DER EIGENTLICHE FUND, und er ist aelter als cactbot: DIE BOSS-CAST-ANSAGE
+    VOM 2026-08-18 WAR TOT AUSGELIEFERT. `UpdateAoeWarning` begann mit
+      if (!_config.AnnounceAoeWarning) { _aoeWarn.SetActive(false); return; }
+    und `AnnounceAoeWarning` ist STANDARD AUS (bewusst, seit 2026-07-26 Opt-in).
+    Die Cast-Ansage war am 2026-08-18 in genau diese Methode gewandert, haengt
+    aber an `AnnounceEnemyCast` (Standard AN). Ergebnis: wer nicht zufaellig
+    Strg+Umschalt+F3 gedrueckt hatte, bekam KEINE Gegner-Cast-Ansage - egal wie
+    die Option stand. Damit erklaert sich das Schweigen beim Boss ohne cactbot.
+    GEFIXT: die Methode heisst jetzt `UpdateEnemyCastWarnings`, laeuft sobald
+    EINE der beiden Optionen an ist, und jede Option steuert nur noch ihre
+    eigene Ausgabe.
+    ACHTUNG BEIM TEST: das heisst auch, dass die 08-18er Aenderung ("alle
+    Zauber des Ziels") in Wahrheit noch NIE gelaufen ist. Sie wird jetzt zum
+    ersten Mal wirklich getestet, nicht ein zweites Mal.
+
+>>> GEBAUT 1 - FORMANSAGE. Hinter der Cast-Ansage steht jetzt Form + Groesse:
+    "Gegner wirkt Frostatem. Kegel, 90 Grad, 6 Meter."
+    Das Formwort kommt NICHT aus neuem Code, sondern aus dem vorhandenen
+    `ActionShapeService` - demselben Describer, der die Form im Faehigkeiten-
+    Tooltip nennt. Damit gibt es weiter genau EINE Stelle, die CastType zu
+    einem Wort macht, und Tooltip und Kampf koennen nicht auseinanderlaufen.
+    Neu ist hier nur die ZAHL: im Kampf steht kein Tooltip daneben, der die
+    Reichweite schon genannt haette.
+    Der Describer schweigt bei jedem CastType ohne nachgemessene Form
+    (`AoeShape.HasProvenShape`) - dieses Schweigen wird durchgereicht. Ein
+    geratenes "Fläche, 30 Meter" waere die schlimmere Auskunft: bei Kegel und
+    Linie ist EffectRange die LAENGE, nicht ein Radius.
+    Sonderfall mitgenommen: Kreis, dessen Ziel der Spieler selbst ist ->
+    "Kreis um dich, 5 Meter". Dort hilft Ausweichen nicht, nur Abstand.
+
+>>> GEBAUT 2 - VORWARNUNG "du stehst drin", zwei Faelle:
+    - Beim Cast-Beginn schon drin: haengt an derselben Ansage.
+      "Gegner wirkt Frostatem. Kegel, 90 Grad, 6 Meter. Du stehst drin, 3 Sekunden."
+    - Waehrend des Casts hineingelaufen: eigener Satz "Achtung, du stehst
+      drin, 2 Sekunden."
+    Restzeit = `TotalCastTime - CurrentCastTime`, also die spieleigene
+    Cast-Leiste, nicht geschaetzt. Aufgerundet; unter einer Sekunde "sofort".
+    Doppelansage ausgeschlossen: wer den Satz an der Cast-Ansage bekommt, ist
+    in `_aoeInside` vermerkt und wird vom Einlauf-Waechter uebersprungen.
+    Verlaesst man die Flaeche, faellt der Vermerk - Wiedereintritt warnt erneut.
+    HAENGT AN `AnnounceAoeWarning` (Standard AUS), weil es die noch nicht
+    bestaetigte Geometrie in Worte fasst. -> USER MUSS Strg+Umschalt+F3
+    DRUECKEN, sonst kommt nur Name + Form.
+
+>>> NEBENBEI KORRIGIERT: `IsPlayerInAoe` schaltete auf die nackten Zahlen
+    2/3/4, obwohl `AoeShape` seit 2026-08-09 sieben bestaetigte CastTypes
+    kennt. Eine 30-Meter-LINIE mit CastType 8/12 landete damit im
+    default-Zweig und wurde als 30-Meter-KREIS um den Gegner gerechnet -
+    genau der V1-Fehler, und eine Erklaerung fuer einen Ton, obwohl man
+    hinter dem Gegner sicher steht. Jetzt ueber die AoeShape-Konstanten,
+    inkl. 5 (Kreis), 8/12 (Linie), 13 (Kegel).
+
+>>> GEAENDERT: CombatService.cs (Optionsgatter getrennt + umbenannt,
+    DescribeCastShape, RemainingCastTime, TrackAoeEntry, _aoeInside,
+    IsPlayerInAoe auf AoeShape), AccessibilityStrings.cs (AoeShapeWithRange,
+    AoeShapeWithRangeOnYou, AoeStandingInIt, AoeEnteredZone, AoeSeconds,
+    CastWithDanger - alle DE+EN), AoeWarningService.cs / Plugin.cs /
+    OptionsMenu.cs (Verweise auf den alten Methodennamen), README.md,
+    README.en.md.
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST (Reihenfolge wichtig):
+    1. ERST Strg+Umschalt+F3 druecken (Flaechenwarnung an), sonst fehlt die
+       halbe Ansage.
+    2. Irgendein Gegner anvisieren, der castet: kommt ueberhaupt eine
+       Cast-Ansage? Das ist der Test des Options-Fixes.
+    3. Kommt Form + Meterzahl dahinter, und klingt die Zahl plausibel?
+    4. In eine Flaeche hineinstellen: kommt "Du stehst drin, N Sekunden"?
+    5. Waehrend eines laufenden Casts hineinlaufen: kommt "Achtung ..."?
+    6. WICHTIGE STOERFRAGE: redet es im Bosskampf jetzt zu viel? Der Satz ist
+       deutlich laenger geworden, und jeder Cast unterbricht per
+       SpeakInterrupt. Falls ja: die Form kuerzen (Winkel weg) oder die
+       Vorwarnung von der Form trennen.
+
+>>> ZU CACTBOT, ENTSCHEIDUNG VERTAGT: nicht rausgeworfen. Belegt bleibt, dass
+    es fuer Levelinhalte fast nichts hat (Stein-Vigil: 1 Trigger, nichts fuer
+    den Endboss). Der eigene Weg oben deckt jeden Gegner im Spiel ab, aber
+    NICHT die Bedeutung ("zusammenstehen", "auseinander", "Tankbuster") -
+    das ist Handarbeit je Boss und steht in keinem Sheet. Erst testen, dann
+    entscheiden.
+
+## FRUEHERER STAND (2026-08-18, "DAS SPIEL SAGT SELBST, WEM DER GEGNER GEHOERT")
+
+>>> TESTERGEBNIS DES USERS: die Freibrief-Gegner tauchten in der Kategorie NICHT
+    auf. Dazu seine Beobachtung: "in der normalen gegner liste stehen sie mit
+    einem quest symbol". Diese Beobachtung hat den Fall geloest.
+
+>>> IM LOG NACHGEMESSEN (dalamud.log 2026-08-18, 22:09 und 22:21) - das Objekt
+    traegt die EventId SEINES Freibrief-Directors:
+      'Streunender Dodo'    EventId=2147549737 (BattleLeveDirector/32769, Eintrag 553)
+      'Traeger-Marienkaefer' EventId=2147549739 (BattleLeveDirector/32769, Eintrag 555)
+    Jedes normale Zonentier daneben - auch die Dodos DERSELBEN Art - liest
+    EventId=0. Damit trennt genau ein Feld Freibrief-Spawn von Wildwuchs.
+    EventId-Struktur per ilspycmd geprueft: Id@0 (ganze 4 Byte), EntryId@0,
+    ContentId@2. Verglichen wird die VOLLE Id, nicht nur die Director-Art -
+    der Eintrag unterscheidet unseren Freibrief vom Freibrief des Spielers,
+    der danebensteht.
+
+>>> DIE ALTE ANNAHME WAR AN ZWEI STELLEN FALSCH, beides jetzt im Code korrigiert:
+    - "Namensschild-Symbol ist 0 auf Leve-Monstern" - NEIN, beide gemessenen
+      Spawns trugen Symbol 71244. Genau das hoert der User als "Quest" in der
+      Gegner-Liste.
+    - GetEventHandlersImpl ist eine SACKGASSE: es meldet fuer jedes Monster
+      denselben zonenweiten Handler (25770280390 fuer den Leve-Marienkaefer UND
+      fuer die wilden Marienkaefer), nie die Director-Adresse. Deshalb fand die
+      Kategorie 0 Gegner, obwohl der Freibrief lief und der Gegner 26 m weit weg
+      stand. Raus aus dem Code, als Sackgasse dokumentiert.
+
+>>> ZUM VORSCHLAG "die Gegner mit in die Quest-Gegner schmeissen": das tut die
+    Kategorie BEREITS. Der Quest-Gegner-Filter nimmt jedes Kampf-NPC mit einem
+    Symbol aus 71000-71999, und 71244 liegt darin. Im Log ist der Beweis, dass
+    der Weg traegt: "Quest-Gegner: 1 von 33 (per Symbol 1). Symbole:
+    Randalranke=71244". Bei der Messung um 22:24 stand nur deshalb 0 da, weil
+    der markierte Marienkaefer zwei Minuten vorher gefallen war (HP 0 Prozent
+    um 22:22:11). Es wird also NICHTS doppelt gebaut.
+
+>>> GEAENDERT: LevequestEnemyService.cs (BelongsToDirector -> BelongsToLeve ueber
+    EventId, LayoutIdOf raus, RunningLeve traegt DirectorEventId),
+    NavigationService.cs (Bindung + Doku-Kommentare richtiggestellt, Log nennt
+    jetzt Director-EventId und listet Spawns eines FREMDEN Freibriefs).
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> NACHTRAG DESSELBEN ABENDS: "ich sehe die gegner nicht die ich finden sollte
+    und der freibrief fuehrt mich nur in die naehe - bin ich genau in dem kreis?"
+    Antwort aus dem Log: NEIN. Der Zielkreis 'Gefraessige Puks' hat r=50 um
+    (162,1|47,5|179,8); der Spieler stand 75 m von der Mitte, also 25 m
+    DRAUSSEN. Und er konnte es nicht wissen - die Ansage nannte den Kreis nie.
+
+>>> URSACHE DES "nur in die Naehe" (Log 22:41:18 und 22:41:25):
+    "Auto-Lauf: gestartet zu Gefraessige Puks (stopRange=50,0, dist=74,8)"
+    -> "beendet (angekommen, dist=51,4)", und der zweite Druck meldete sofort
+    "angekommen, dist=51,3". Die Stopp-Reichweite ist der KREISRADIUS, der Lauf
+    endet also 50 m vor der Mitte. Bei einem "Such am Zielort"-Freibrief ist der
+    Rand wertlos: die Gegner erscheinen erst, wenn man IM Kreis heruemlaeuft.
+
+>>> ZWEI AENDERUNGEN DARAUS (beide gebaut, Build 0/0, in devPlugins):
+    - Ansage nennt den Kreis: "im Zielkreis" bzw. "noch 25 Meter bis zum
+      Zielkreis" (GoalCircleHint, aus QuestDestination.Radius, DE+EN). Gilt fuer
+      Quest- UND Freibrief-Ziele; bei Punkt-Markern (Radius 0) bleibt es still.
+    - Numpad 3 laeuft bei FREIBRIEF-Zielen bis zur Mitte statt zum Rand
+      (Rolle LeveObjective). Vom User auf Nachfrage so entschieden. Normale
+      Quest-Marker behalten den Rand-Stopp - dort war das eine bewusste
+      Entscheidung vom 2026-08-03.
+
+>>> WEITER OFFEN: die Gegner selbst. Der neue EventId-Weg LAEUFT (Log 22:37 bis
+    22:41: "Director-EventId 2147549742, Eintrag 558"), findet aber 0 - und
+    meldet zugleich "Spawns eines FREMDEN Freibriefs: keine". Also trug KEIN
+    einziges Objekt der Zone eine Leve-EventId: die Gegner waren schlicht nicht
+    da. Passt zu 'Fortschritt' Zaehler=0 und dazu, dass der Spieler ausserhalb
+    des Kreises stand. Naechster Test: erst in den Kreis (jetzt laeuft Numpad 3
+    dorthin), dann die Kategorie.
+
+>>> OFFEN: Strg+Umschalt+F7 (Aufgabenliste) hat im ganzen Log kein einziges Mal
+    ausgeloest - kein "[Aufgaben]"-Eintrag. Wurde die Taste ueberhaupt gedrueckt?
+    Erst danach laesst sich sagen, ob die Ansage oder die Tastenerkennung haengt.
+
+## FRUEHERER STAND (2026-08-18, "AUFGABENLISTE WIRD VORGELESEN")
+
+>>> AUFTRAG DES USERS nach der Freibrief-Messreihe: "bau die aufgabenliste als
+    ansage ein". Dazu der Hinweis, er muesse den Freibrief mit seiner Klasse
+    vielleicht gar nicht machen - er testet das noch.
+
+>>> GEBAUT: Strg+Umschalt+F7 liest die Aufgabenliste des LAUFENDEN INHALTS vor.
+    Nicht nur Freibrief - dieselben Felder tragen Dungeon und FATE, also gilt
+    die Taste ueberall. Das sind genau die Zeilen, die ein sehender Spieler
+    dauerhaft am Bildschirmrand stehen hat und auf die der User bisher KEINEN
+    Zugriff hatte.
+    Beispiel aus dem Log: "Aufgaben: Laestige Nager. Abgesuchte Gebiete.
+    Streunender Dodo."
+
+>>> AUF EINER TASTE UND NIE AUTOMATISCH, mit Absicht: die Liste aendert sich
+    bei jedem Kill, eine Ansage je Aenderung wuerde in den Kampf hineinreden.
+
+>>> QUELLE (ilspycmd-verifiziert): Director.Title@760, Objective@864,
+    DirectorTodos@1088. Je Zeile: Enabled@0, Type@4 (TodoType), Text@8,
+    Complete@112 und eine UNION @120/@124 - CurrentCount/NeededCount bei den
+    Bruch-Arten, CurrentPercentage bei den Balken-Arten, EndTimestamp@128 bei
+    der Zeit-Art. Der Typ wird ausgewertet, statt ein Feld blind zu lesen:
+    ein Prozentwert als Anzahl vorgelesen waere eine Zahl ohne Bedeutung.
+    Alles liegt in der 1120-Byte-Basis, also ohne Unterklassen-Erkennung.
+    Der TEXT kommt vom Spiel und wird NICHT uebersetzt - nur der Fortschritt
+    dahinter bekommt hier seine Worte (DE+EN).
+
+>>> GEAENDERT: DirectorTodoService.cs (neu), AccessibilityStrings.cs (Ansage-
+    Bausteine + Hilfetext DE/EN), Configuration.cs (KeyReadTasks),
+    Plugin.cs (Verdrahtung + AnnounceActiveTasks), README.md, README.en.md.
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins. IN-GAME UNGETESTET.
+
+## FRUEHERER STAND (2026-08-18, "FREIBRIEF-GEGNER IN DER FREIBRIEF-KATEGORIE")
+
+>>> WUNSCH DES USERS: "kategorie einbauen fuer freibrief ziele? wenn man
+    gegner toeten muss dass man sie ueber die freibriefe kategorie direkt
+    anlaufen kann". Die Kategorie "Freibriefe" gab es schon (Geber + Ziel-
+    Marker), aber ein Marker zeigt nur die FLAECHE. Ein sehender Spieler
+    sieht dort die Monster stehen - der blinde Spieler stand im Kreis und
+    hatte nichts mehr, woran er sich orientieren konnte.
+
+>>> GEBAUT: Die Kategorie fuehrt jetzt zusaetzlich die LEBENDEN Gegner des
+    gerade LAUFENDEN Freibriefs, naechster zuerst, VOR Geber und Ziel.
+    Auswahl setzt das Spielziel (angreifen) UND merkt das Objekt (Numpad 3
+    laeuft hin, auch wenn das Spiel das Anvisieren ablehnt).
+    Ansage: "Freibrief-Gegner: Stolper-Fungus, 7 gesucht, 12 Meter, vorne
+    rechts, Stufe 1, 100 Prozent, 2 von 5."
+    Zaehl-Ansage der Kategorie nennt die Gegner nur, wenn es welche gibt.
+
+>>> NUR WAEHREND DER FREIBRIEF LAEUFT, mit Absicht: die Gegner eines Freibriefs
+    heissen wie ganz normales Wild ("Nussknackerhoernchen"). Aus einem
+    angenommenen, aber nicht gestarteten Freibrief gelistet, wuerde die
+    Kategorie auf zufaellige Viecher zeigen, deren Toeten nicht zaehlt.
+
+>>> BELEGT (ilspycmd + Offline-Sheet-Dump, steht in docs/game-api.md):
+    - Laufender Freibrief = Director in EventFramework->DirectorModule.
+      DirectorList mit Info.EventId.ContentId == GuildLeveAssignment(6);
+      die Nummer wird gegen QuestManager.LeveQuests gegengeprueft.
+    - FALLE umgangen: Director ist exakt 1120 Byte, LeveDirector.LeveId liegt
+      bei 1120. Es gibt kein Feld, an dem man die Unterklasse erkennt - also
+      wird NICHTS ab 1120 gelesen. Freibrief-Nummer kommt aus EventId.EntryId.
+    - Gegner kommen aus den Sheets: Leve.DataId -> BattleLeve (Typ 1
+      "Soeldner") bzw. CompanyLeve (Typ 13-15), je Slot BNpcName +
+      Stueckzahl. Zeilennummern der vier Leve-Sheets sind disjunkt, deshalb
+      loest RowRef eindeutig auf (offline an den Spieldaten gemessen).
+
+>>> ERSTE ANNAHME IST GEFALLEN - und das Log hat sie gefaellt (21:38/21:41):
+    "Content=BattleLeveDirector(32769) Entry=537 DirectorContentId=528
+     Titel='Laestige Nager'"
+    - Die Director-Art steht in EventId.ContentId, aber mit Werten ab 0x8000:
+      BattleLeveDirector 32769, GatheringLeveDirector 32770,
+      CompanyLeveDirector 32775. GuildLeveAssignment(6) ist der Geber-NPC-
+      Handler und kommt hier NIE vor. MEINE ANNAHME WAR FALSCH.
+    - Die Freibrief-Nummer steht in Director.ContentId@736 (528, stand in der
+      Liste der angenommenen; Leve 528 heisst im Sheet "Laestige Nager").
+      EventId.EntryId war bei zwei Laeufen 537 bzw. 542 - eine Instanz-Nummer.
+    - Der Director erscheint erst beim STARTEN des Freibriefs, nicht beim
+      Annehmen (21:38:51 nur FateDirector, 21:41:11 wieder BattleLeveDirector).
+    Beides korrigiert, Erwartungswerte fuer die 9 angenommenen Freibriefe
+    offline vorausgerechnet: der laufende (528) verlangt streunender Dodo
+    (1096), Buschratte (1101), Rattenmull (1083).
+
+>>> ZWEITE RUNDE, ZWEITER BEFUND (Log 21:46-21:50): Director und Gegnerarten
+    wurden erkannt, aber 0 Objekte gefunden. Der Objekt-Dump des Users hat es
+    aufgeklaert - DER FREIBRIEF SPAWNT KEINE EIGENE ART:
+    - Leve 528 Slot 0 nennt BNpcName 1096 "streunender Dodo". Das Monster, das
+      2,9 m vor dem Spieler erschien, trug NameId 393 "Dodo" - dieselbe Art wie
+      die wilden Dodos 40 m weiter. Zuordnung ueber BNpcName oder ueber den
+      Namen findet deshalb NICHTS. Genau das tat der erste Bau.
+    - Was zusammenpasst: Slot.BaseID (BNpcBase 339) mit obj.BaseId (339). Die
+      wilden Dodos tragen 339 aber auch - die Art allein trennt nicht.
+    - Nebenbei bestaetigt: ICharacter.NameId IST die BNpcName-Zeile
+      (393 "Dodo", 405 "winzige Mandragora", 115 "Wind-Exergon").
+
+>>> DRITTE RUNDE (Log 21:57): BEIDE Signale gemessen TOT.
+    - "0 Director-Objekte": EventHandler.EventObjects ist bei laufendem
+      Freibrief LEER. Weg (1) faellt aus.
+    - Jeder Dodo hat "Symbol=0", auch die zwei direkt beim Spieler (5 m, 9 m).
+      Der Nameplate-Weg faellt auch aus. Die Notiz vom 2026-07-28, Freibrief-
+      Gegner trugen ein Quest-Symbol, trifft auf diesen Fall nicht zu.
+    - Damit ist belegt: 17 Dodos in 130 m, alle BaseId 339, alle Symbol 0 -
+      ueber Art und Symbol sind die zwei Freibrief-Dodos nicht auffindbar.
+
+>>> VIERTE RUNDE (Log 22:04) - FELD-ABZUG DA, UND ER SAGT ETWAS ANDERES:
+    'Dodo' 4m  Handler=[257DF5AFC80] EventId=0 LayoutId=3766591 OwnerId=E0000000
+    'Dodo' 9m  Handler=[257DF5AFC80] EventId=0 LayoutId=3766592 OwnerId=E0000000
+    'Dodo' 44m Handler=[257DF5AFC80] EventId=0 LayoutId=3766584 OwnerId=E0000000
+    - GetEventHandlers LIEFERT etwas, aber fuer ALLE Dodos denselben Handler
+      (257DF5AFC80), und der ist NICHT der Director (25777735EE0).
+    - Alle Felder identisch: EventId 0, EventState 0, FateId 0, Symbol 0,
+      GimmickId 0, OwnerId E0000000.
+    - Das EINZIGE, was sich unterscheidet, ist LayoutId - und die liegt bei den
+      nahen wie bei den fernen Dodos im selben zusammenhaengenden Block
+      (3766581..3766596). Das ist die Signatur von ZONEN-Objekten.
+    >>> DARAUS FOLGT DER VERDACHT, DEN ICH NICHT SELBST PRUEFEN KANN: die
+        Freibrief-Gegner waren zum Messzeitpunkt GAR NICHT in der Objekttabelle.
+        Kein einziger Buschratte (BaseId 37) oder Rattenmull (BaseId 205) war je
+        in Reichweite, und die Dodos sehen alle nach Zonen-Wild aus.
+        Leve 528 ist Rule 8 "BattleLeveRound", Ziel "Beseitige die Gegner im
+        Zielgebiet" - moeglicherweise erscheinen die Gegner erst IM Zielkreis.
+
+>>> FUENFTE RUNDE (Log 22:09) - DER VERDACHT IST BESTAETIGT:
+    "Aufgabenzeilen: 'Abgesuchte Gebiete' fertig=False Zaehler=1 /
+     'Streunender Dodo' fertig=False Zaehler=1.
+     Ohne Layout-Eintrag (also nachtraeglich gesetzt): keine."
+    - Der Freibrief VERLANGT einen "Streunenden Dodo" - die Aufgabenzeile des
+      Spiels sagt es woertlich.
+    - Es gibt aber KEIN einziges Objekt ohne Layout-Eintrag, also nichts, was
+      der Director nachtraeglich gesetzt haette. Und kein Objekt traegt
+      NameId 1096 (streunender Dodo); alle Dodos in Reichweite sind NameId 393.
+    >>> Der gesuchte Gegner war zu keinem Messzeitpunkt in der Objekttabelle.
+        Leve 528 ist Rule 8 "BattleLeveRound": man sucht GEBIETE ab
+        ("Abgesuchte Gebiete" ist die erste Aufgabenzeile), und die Gegner
+        erscheinen erst dort. Der Code hat also vermutlich die ganze Zeit
+        richtig gearbeitet und nur nichts zu finden gehabt.
+
+>>> STAND: HIER WIRD NICHT WEITER GERATEN (Regel "Stuck -> stop and report").
+    Vier Erkennungswege gemessen: BNpcName/Name tot, EventObjects leer,
+    NamePlateIcon 0, GetEventHandlers liefert fuer alle denselben Nicht-
+    Director-Handler. Der fuenfte Abzug legt nahe, dass gar kein Gegner da war.
+    OFFENE FRAGE AN DEN USER: kam bei den Laeufen ueberhaupt ein Gegner?
+    ERST danach ist zu entscheiden, ob die Erkennung noch ein Problem hat.
+
+>>> NEBENERGEBNIS, DAS ETWAS TAUGT: Director.DirectorTodos liefert genau die
+    Zeilen, die ein sehender Spieler in der Aufgabenliste liest
+    ("Abgesuchte Gebiete", "Streunender Dodo"). Der User hat darauf bisher
+    KEINEN Zugriff. Als eigene Ansage anzubieten.
+
+>>> MESSUNG ERWEITERT (kein neuer Rateversuch):
+    - Director.DirectorTodos wird protokolliert - die spieleigene Aufgabenzeile
+      ("... 0/4"). Die sagt, ob der Freibrief ueberhaupt Gegner erwartet.
+    - Jeder Kampf-NPC OHNE Layout-Eintrag (LayoutId 0) wird protokolliert,
+      unabhaengig von der Art. Ein vom Director gesetzter Gegner sollte keinen
+      Zonen-Layout-Eintrag haben - das ist das einzige Feld, das im Abzug
+      ueberhaupt variiert hat.
+
+>>> ZWEI FEHLGRIFFE, ALSO KEIN DRITTER BLIND: jetzt fragt das Plugin das SPIEL.
+    GameObject.GetEventHandlersImpl (virtual function 30) fuellt ein Array mit
+    den Event-Handlern, zu denen ein Objekt gehoert. Der Leve-Director ist
+    darunter oder nicht - das ist die spieleigene Antwort auf "wessen Objekt
+    ist das". Vergleich ueber die Director-Adresse.
+    ABSICHERUNG FUER DEN FALL, DASS AUCH DAS NICHTS BRINGT: fuer die vier
+    naechsten Artgenossen OHNE Director-Bindung schreibt das Log jetzt den
+    vollen Feld-Abzug (EventId inkl. Content/Entry, LayoutId, EventState,
+    OwnerId, FateId, Symbol, GimmickId) plus die gemeldeten Handler-Adressen.
+    Damit faellt die Entscheidung beim naechsten Mal an einem Abzug, nicht an
+    einer weiteren Vermutung.
+
+>>> AUCH GEMESSEN: BattleLeve.ToDoNumberInvolved taugt NICHT als Stueckzahl.
+    Ein Monster fuellt oft mehrere Slots (Leve 530: Bienenwolke 4x mit je 2;
+    Leve 527: Wander-Mandragora 5 und 0), Leve 528 hat ueberall 0. Die Zahl
+    wird deshalb nur angesagt, wenn eine Art genau einen Slot belegt.
+
+>>> GEAENDERT: LevequestEnemyService.cs (neu), MonsterNameText.cs (neu -
+    Namensaufloesung aus HuntingLogService herausgezogen, beide nutzen sie
+    jetzt), NavigationService.cs (Gegner in der Freibrief-Kategorie),
+    QuestMarkerService.cs (Rolle LeveEnemy), AccessibilityStrings.cs (DE+EN),
+    Plugin.cs (Verdrahtung), docs/game-api.md.
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins.
+    IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST (Kampf-Freibrief annehmen UND starten):
+    - Sagt die Kategorie beim Aufrufen "Freibriefe: N Gegner, ..."?
+    - Kommen die Gegner beim Blaettern vor Geber und Ziel?
+    - Laeuft Numpad 3 wirklich zum Gegner?
+    - Falls nichts kommt: die beiden [Leve]-Zeilen aus dem Log schicken.
+
+## FRUEHERER STAND (2026-08-18, "BOSS-ZAUBER WERDEN ANGESAGT")
+
+>>> AUSLOESER: User meldet, cactbot sage ausser dem einen Satz nichts mehr,
+    beim Drachen am Ende von Stein-Vigil komme gar keine Meldung. Frage des
+    Users: "was soll es alles ansagen?"
+
+>>> ZWEI URSACHEN, beide am Quelltext belegt, nicht vermutet:
+    1. cactbot HAT FUER DEN DRACHEN NICHTS. In
+       `ui/common/raidboss_data.bundle.js` (dort liegen die Trigger, NICHT in
+       raidboss.bundle.js) steht fuer `the_stone_vigil.ts` genau EIN Trigger:
+       `Stone Vigil Swinge`, id 387, source Chudo-Yudo. Kein Eintrag fuer den
+       Endboss, in keiner Sprache. Muster ueber alle ARR-Dungeons: 0 bis 6
+       Trigger je Instanz, meist 1 bis 3. cactbot zielt auf aktuelle Raids,
+       nicht auf Levelinhalte - da ist nichts nachzujustieren.
+    2. UNSER Kampfteil schwieg AUS REGEL, nicht aus Fehler. CombatService
+       sprach nur bei `CastTargetObjectId == playerId` (Entscheid 2026-07-25).
+       Ein Boss wirft aber fast alles auf den Boden oder auf den Tank, also
+       kam nichts. Der AoE-Ton greift erst, wenn man SCHON in der Flaeche
+       steht - als Vorwarnung taugt er damit nicht.
+
+>>> ENTSCHEIDUNG DES USERS: "alle zauber des bosses". Umgesetzt als: jeder
+    Zauber des ANVISIERTEN Gegners wird angesagt, dazu weiterhin jeder Zauber
+    auf den Spieler von beliebigen Gegnern. Warum das Ziel und nicht "jeder
+    Gegner": das Ziel ist der eine Gegner, den der Spieler bewusst gewaehlt
+    hat - in der Praxis der Boss -, waehrend Trash-Gruppen still bleiben. Ein
+    verlaessliches "ist ein Boss"-Kennzeichen gibt es auf IBattleChara nicht.
+
+>>> WORTLAUT GEAENDERT, das ist die Falle fuer den Nutzer: "Gegner wirkt X."
+    hiess bisher IMMER "auf dich". Jetzt bedeutet es das Gegenteil. Deshalb
+    bekommt der gezielte Fall den Zusatz: "Gegner wirkt X auf dich." bzw.
+    "<Name> wirkt X auf dich." (EnemyCastsAtYou / NamedEnemyCastsAtYou, DE+EN).
+    Ohne den Zusatz klaenge der gefaehrliche Fall wie der harmlose.
+
+>>> GEAENDERT: CombatService.cs (AnnounceCastAtMe + Bedingung in
+    UpdateAoeWarning), AccessibilityStrings.cs (zwei neue Strings).
+    Build Debug 0 Warnungen / 0 Fehler, liegt in devPlugins.
+    IN-GAME UNGETESTET.
+
+>>> ZU PRUEFEN BEIM TEST:
+    - Redet es im Bosskampf zu viel? Jeder Boss-Cast unterbricht per
+      SpeakInterrupt die laufende Ausgabe.
+    - Trash-Gegner, die man anvisiert, casten auch - stoert das beim Leveln?
+    - Kommt "auf dich" hoerbar rueber, oder ist es zu spaet im Satz?
+
+## FRUEHERER STAND (2026-08-18, "CACTBOT SPRICHT - KAMPFANSAGEN STEHEN")
+
+>>> ERGEBNIS: cactbot sagt Boss-Mechaniken an und SPRICHT. Vom User in-game
+    bestaetigt. Damit ist die Frage aus dem Spielerwunsch beantwortet: der
+    Stapel traegt, und zwar ohne ACT, rein ueber Dalamud.
+
+>>> KETTE (alle Glieder am laufenden System gemessen):
+    Spiel -> IINACT 2.10.3.6 (devPlugins) -> WebSocket 127.0.0.1:10501
+    -> cactbot 0.37.5 im Browsingway-Overlay 1.7.2 -> Handler `cactbotSay`
+    zurueck an IINACT -> SAPI. IINACT erkennt den Client korrekt als Deutsch
+    (`Parsing Plugin Language: de`), der WebSocket-Server laeuft von Haus aus.
+
+>>> WICHTIG: die Stimme ist NICHT NVDA, sondern die SAPI-Standardstimme
+    (hier Microsoft Hedda, de-DE). IINACT bietet zwar Dalamud-IPC an
+    (`IINACT.CreateSubscriber`, `IINACT.Server.*`), aber KEINEN Draht fuer den
+    gesprochenen Text. Es gibt also keine Abstimmung mit unseren Ansagen -
+    cactbot redet, wann cactbot will. Ob das stoert, ist ungetestet.
+
+>>> FALLE 1, der eigentliche Blocker: BROWSINGWAY WARTET AUF EINEN IMGUI-KLICK.
+    Chromium (159,5 MB) wird erst nach „Install missing dependencies" geladen -
+    fuer einen blinden Nutzer ein toter Punkt. Symptom im Log: gar keine
+    Renderer-Zeile, kein cef-Ordner. UMGANGEN: URL, Version und SHA256 stehen
+    fest in `DependencyManager.cs` (`_dependencies`); selbst laden und nach
+    `pluginConfigs\Browsingway\dependencies\cef` entpacken. Browsingway prueft
+    nur, ob die Datei `VERSION` dort die Versionszeichenkette enthaelt.
+    Pruefsumme wurde abgeglichen und stimmte.
+
+>>> FALLE 2: `Options.DefaultAlertOutput = 'ttsOnly'` IST IN NUTZERDATEIEN
+    WIRKUNGSLOS. Der Wert ist nur die Anzeige der Einstellungsseite;
+    `setOptionsFromOutputValue` (raidboss_config.ts) uebersetzt ihn in drei
+    echte Schalter, aber ausschliesslich ueber die GESPEICHERTE Konfiguration.
+    In `user/raidboss.js` muessen die Schalter direkt stehen:
+    TextAlertsEnabled=false, SoundAlertsEnabled=true, SpokenAlertsEnabled=true.
+    `SpokenAlertsEnabled` ist standardmaessig FALSE (user_config.ts,
+    getDefaultBaseOptions) - Symptom war exakt „Ton kommt, Stimme nicht".
+
+>>> WAS INSTALLIERT WURDE (alles devPlugins, wie vnavmesh):
+    - IINACT 2.10.3.6, GPL-3.0, eigenes Repo
+      raw.githubusercontent.com/marzent/IINACT/main/repo.json
+    - Browsingway 1.7.2, GPL-3.0, OFFIZIELLES Dalamud-Repo. Achtung: der Host
+      heisst `kamori.goats.dev`, NICHT goatcorp.io (loest gar nicht auf).
+    - cactbot 0.37.5, Apache-2.0, Release-ZIP nach
+      %AppData%\XIVLauncher\cactbot (gebaute raidboss.html liegt bei)
+    - dalamudConfig-Eintrag ueber ein Hilfsprogramm im Scratchpad
+      (DevPluginPatch), das die Logik aus InstallerService.cs spiegelt.
+      Backup: dalamudConfig.json.bak-cactbot. Eigene Eintraege unberuehrt.
+
+>>> NUTZERDATEIEN liegen in `pluginConfigs\IINACT\cactbot_user\` (Handler
+    `cactbotLoadUser`). Eigene Auslöser mit `zoneId: ZoneId.MatchAll` gelten
+    ueberall - cactbots eingebauter Testsatz dagegen NUR in Mittleres La
+    Noscea, deshalb brauchte es einen eigenen. `/bw overlay cactbot reload`
+    liest die Nutzerdateien neu, ohne Spielneustart (so wurde es bestaetigt).
+
+>>> IN ECHTEM INHALT BESTAETIGT (2026-08-18, 17:39-17:41): Stein-Vigil,
+    Bosskampf Chudo-Yudo. cactbot sagte SECHSMAL „Weg von Vorne" - auf
+    DEUTSCH und als VORWARNUNG. Auslöser `Stone Vigil Swinge`,
+    type StartsUsing, Fähigkeit 387, Quelle Chudo-Yudo. Damit sind Punkt 1
+    und 2 der alten Offen-Liste erledigt: es traegt in echtem Inhalt, und die
+    deutsche Ausgabe kommt.
+    ABER die ABDECKUNG in alten Inhalten ist duenn und das ist jetzt gemessen,
+    nicht vermutet: Stein-Vigil normal hat bei cactbot GENAU EINEN Auslöser,
+    die schwere Fassung drei. Kein Eintrag fuer Kupferglocken-Mine, Totorak,
+    Klaue. Vorhanden: Sastasha, Tam-Tara, Halatali, Haukke, Brayflox, Qarn,
+    Ifrit, Titan. Der Nutzen waechst stark mit neuerem/schwererem Inhalt.
+
+>>> MITSCHRIFT-WERKZEUG, hat sich bewaehrt: `Options.TransformTts` in der
+    Nutzerdatei schickt jede gesprochene Zeile per fetch (mode no-cors) an
+    einen kleinen TcpListener auf 127.0.0.1:8777, der sie mit Uhrzeit in eine
+    Datei schreibt (scratchpad/ttslog.ps1). Sechs echte Ereignisse lueckenlos
+    erfasst, ohne die Sprachausgabe zu beeinflussen (try/catch).
+    WICHTIG FUER SPAETER: das ist genau der Draht, ueber den cactbots Ansagen
+    bei NVDA statt bei SAPI landen koennten. Browsingway leitet die
+    Browser-Konsole NICHT weiter und hat kein Remote-Debugging - dieser Weg
+    ist also der einzige, der ohne Aenderung an Fremdcode funktioniert.
+
+>>> NOCH OFFEN:
+    1. Stoert die zweite Stimme neben NVDA? Beim Chudo-Yudo-Kampf gab es
+       keine Beschwerde, aber auch keine gezielte Beobachtung.
+    2. Einbau in unseren Installer. Der Wunsch des Users war „beim Updaten
+       automatisch mit". EMPFEHLUNG STEHT: einmal fragen statt still
+       mitinstallieren, weil IINACT ein Netzwerk-Parser ist und damit eine
+       andere Kategorie als unser Fenster-Vorleser. Danach vollautomatisch.
+       Alle noetigen Schritte sind jetzt bekannt und erprobt.
+
+## FRUEHERER STAND (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
 
 >>> NACH DEM RELEASE GEMERGT, noch in KEINEM Release (waere v5.89):
     - PR #8 (dnz3d4c): Jagdziel in anderer Zone klebte Lebensraum und Gebiet

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -193,6 +193,18 @@ public sealed class UIReaderService : IDisposable
         // (OnContentsFinderConfirmUpdate, eigener Listener) sagt ihn alle 10 s
         // an. Oeffnungs-Ansage (Dungeon-Name) bleibt (kommt aus OnAnyAddonOpen).
         "ContentsFinderConfirm",
+        // Einstellungen der Inhaltssuche: JEDER Fokuswechsel loeste hier VIER
+        // unterbrechende Ansagen innerhalb von 2 ms aus, von denen nur die
+        // letzte zu hoeren war (Log 2026-08-19 18:34:18) - Name, dann der
+        // Fenstertitel "INHALTSSUCHE", dann der lange Hilfetext, dann derselbe
+        // Name noch einmal. Der Titel kam vom generischen Fokus-Leser: das
+        // Kollisionsfeld ueber dem GANZEN Fenster (Knoten 31, Kind 13, 880x440)
+        // traegt das Fokus-Bit, also fand FindFocusedText den Fensterrahmen
+        // statt des Bedienelements (Key=31013 in jeder einzelnen Zeile). Name
+        // und Hilfetext doppelte danach der Text-Scanner aus dem rechten Feld.
+        // Der globale Fokus-Leser (UpdateGlobalFocus) sagt jede Zeile weiterhin
+        // an - jetzt einmal, mit Zustand (TryReadContentsFinderSettingRow).
+        "ContentsFinderSetting",
         // Gil-Depot (Gil beim Gehilfen anvertrauen/entnehmen): der generische
         // Scanner las beim Oeffnen alle Texte als eine Wortkette (Labels von
         // Werten getrennt) und gab beim Tippen des Betrags kein Echo. Der eigene
@@ -347,6 +359,8 @@ public sealed class UIReaderService : IDisposable
         _config         = config;
         _data           = data;
         _actionShape    = new ActionShapeService(data, log);
+        _gcRanks        = new GrandCompanyRankText(data, log);
+        _dutySettings   = new ContentsFinderSettingText(log);
         _specialShops   = new SpecialShopService(data, log);
         RegisterHooks();
     }
@@ -678,6 +692,25 @@ public sealed class UIReaderService : IDisposable
         // so the window title further up is all that goes out here. Only the
         // OPENING readout is skipped - the text cache above is still initialised,
         // so change detection in PostUpdate keeps working.
+        // Die Einstellungen der Inhaltssuche sind genauso ein Formular. Ihre
+        // Sammel-Ansage war zudem in sich unverstaendlich, weil ReadAllTexts die
+        // Beschriftungen aus ihrem Zusammenhang reisst: "An laufenden Einsaetzen
+        // teilnehmen. Sprache. Beuteregeln. Richte Bedingungen fuer die
+        // Teilnahme an Inhalten ein..." (Log 2026-08-19 18:33:53.208) - drei
+        // Ueberschriften ohne die Optionen, die dazugehoeren.
+        //
+        // Statt dessen kommt die UNTERZEILE des Fensters (Knoten 2), denn der
+        // Titel allein unterscheidet es nicht: Inhaltssuche UND ihre
+        // Einstellungen heissen beide "INHALTSSUCHE" (Log 18:33:38 und
+        // 18:33:53). Speak statt SpeakInterrupt, damit sie sich hinter den
+        // Titel stellt statt ihn abzuschneiden.
+        if (name == "ContentsFinderSetting")
+        {
+            var subtitle = ReadTopLevelText(addon, 2);
+            _log.Info($"[Accessibility] {name}: Formular-Fenster, Unterzeile '{subtitle}'.");
+            if (!string.IsNullOrWhiteSpace(subtitle)) _tolk.Speak(subtitle);
+            return;
+        }
         if (name.StartsWith("Config", StringComparison.Ordinal))
         {
             _log.Info($"[Accessibility] {name}: Formular-Fenster, keine Sammel-Ansage beim Oeffnen.");
@@ -1812,6 +1845,10 @@ public sealed class UIReaderService : IDisposable
     // Active category tab last announced, so switching speaks it once.
     private string _lastGcCategory = string.Empty;
 
+    // Rank names behind the textless tier buttons of the seal shop.
+    private readonly GrandCompanyRankText _gcRanks;
+    private readonly ContentsFinderSettingText _dutySettings;
+
     /// <summary>
     /// Announces the active category tab of the seal shop (Waffen, Rüstung,
     /// Militärbedarf, Materialien, Besondere Artikel) when it changes. Unlike
@@ -1831,6 +1868,10 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+#if DEBUG
+        GcNavigationProbe(addon);
+#endif
+
         var category = ReadCheckedGcCategory(addon);
         if (string.IsNullOrEmpty(category) || category == _lastGcCategory) return;
 
@@ -1842,6 +1883,39 @@ public sealed class UIReaderService : IDisposable
         if (isSwitch) _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLabel(category));
         else          _tolk.Speak(AccessibilityStrings.CategoryLabel(category));
     }
+
+#if DEBUG
+    // Last probe line, so the state is logged on change instead of every frame.
+    private string _lastGcProbe = string.Empty;
+
+    /// <summary>
+    /// Debug probe for the seal shop: which node the window considers marked and
+    /// what the item list reports. OPEN QUESTION IT ANSWERS: in the log of
+    /// 2026-08-19 the focus only ever moved between the three rank tier buttons and
+    /// the list never reported an index change (one "[ListProbe] Basis" line, Sel=-1,
+    /// nothing after it) - so it is unclear whether the keyboard can reach the wares
+    /// at all, or whether the plugin just cannot see it. CursorTarget/FocusNode/
+    /// ComponentFocusNode are the window's own fields (AtkUnitBase, ilspycmd
+    /// 2026-08-19), independent of the AtkStage focus the reader uses.
+    /// </summary>
+    private unsafe void GcNavigationProbe(AtkUnitBase* addon)
+    {
+        static string Id(AtkResNode* n) => n == null ? "-" : n->NodeId.ToString();
+
+        var list  = FindListInAddon(addon);
+        var lines = list == null
+            ? "Liste=keine"
+            : $"Liste: Sel={list->SelectedItemIndex} Hov={list->HoveredItemIndex} "
+              + $"Hov2={list->HoveredItemIndex2} Hov3={list->HoveredItemIndex3} "
+              + $"Held={list->HeldItemIndex} Len={list->ListLength}";
+
+        var probe = $"cursor={Id(addon->CursorTarget)} fokus={Id(addon->FocusNode)} "
+                    + $"compfokus={Id(addon->ComponentFocusNode)} {lines}";
+        if (probe == _lastGcProbe) return;
+        _lastGcProbe = probe;
+        _log.Info($"[GcProbe] {probe}");
+    }
+#endif
 
     /// <summary>Label of the currently checked category RadioButton, or "" if
     /// none is checked yet. Scans the addon's top-level nodes; the checked
@@ -1860,6 +1934,70 @@ public sealed class UIReaderService : IDisposable
             if (!string.IsNullOrWhiteSpace(label)) return label;
         }
         return string.Empty;
+    }
+
+    /// <summary>
+    /// Label for the textless rank tier buttons in the left column of the seal shop,
+    /// or "" when the focus is somewhere else. Those buttons hold only Collision and
+    /// NineGrid children (dump 2026-08-19, Comp(1016) NodeIds 37-42) and the game
+    /// binds no tooltip to them, so without this every step through the column was
+    /// silent.
+    ///
+    /// The position decides which tier a button is, taken from the GEOMETRY: the
+    /// nodes sit in the tree in reverse order (42 down to 37), while the player sees
+    /// them top to bottom as tier 1..n. The rank sheet knows how many tiers exist -
+    /// if the window ever shows a different number of buttons than the sheet has
+    /// tiers, the mapping is no longer certain and only the position is announced.
+    /// </summary>
+    private unsafe string ReadGcRankTierButton(AtkResNode* node)
+    {
+        if (node == null || FindAddonNameForNode(node) != "GrandCompanyExchange") return string.Empty;
+        var addon = FindAddonForNode(node);
+        if (addon == null) return string.Empty;
+
+        // The focus sits on the Collision child - climb to the RadioButton around it.
+        AtkResNode*       button = null;
+        AtkComponentBase* comp   = null;
+        for (var cur = node; cur != null && button == null; cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var c = ((AtkComponentNode*)cur)->Component;
+            if (c == null || c->GetComponentType() != ComponentType.RadioButton) continue;
+            // The category tabs on top carry their label as text node 2 and are
+            // announced by OnGrandCompanyUpdate; only the textless ones belong here.
+            if (!string.IsNullOrWhiteSpace(ReadComponentTextById(c, 2))) return string.Empty;
+            button = cur;
+            comp   = c;
+        }
+        if (button == null || comp == null) return string.Empty;
+
+        var tiers = new List<(nint Ptr, float Y)>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var c = ((AtkComponentNode*)n)->Component;
+            if (c == null || c->GetComponentType() != ComponentType.RadioButton) continue;
+            if (!string.IsNullOrWhiteSpace(ReadComponentTextById(c, 2))) continue;
+            tiers.Add(((nint)n, n->ScreenY));
+        }
+        tiers.Sort((a, b) => a.Y.CompareTo(b.Y));
+
+        var index = tiers.FindIndex(t => t.Ptr == (nint)button);
+        if (index < 0) return string.Empty;
+
+        var expected = _gcRanks.TierCount();
+        var first    = string.Empty;
+        var last     = string.Empty;
+        if (tiers.Count == expected) (first, last) = _gcRanks.TierRange(index + 1);
+        else _log.Warning($"[GC] Stufenknoepfe: {tiers.Count} sichtbar, Rangtabelle kennt {expected} Stufen "
+                          + "- Zuordnung unsicher, es wird nur die Position angesagt.");
+
+        var text = AccessibilityStrings.GcRankTier(index + 1, tiers.Count, first, last);
+        if (((AtkComponentButton*)comp)->IsChecked) text += AccessibilityStrings.SelectedSuffix;
+        _log.Info($"[GC] Rangstufe {index + 1}/{tiers.Count} (Knoten {button->NodeId}): '{text}'");
+        _gcRanks.LogSource();
+        return text;
     }
 
     // -- Inventory: Taschen-Reiter -----------------------------------
@@ -2079,6 +2217,10 @@ public sealed class UIReaderService : IDisposable
     // times and NEITHER our key handler NOR any node flag registered it.
     private nint   _lastFocusedNodePtr;
     private string _lastFocusedNodeText = string.Empty;
+    // Same text with every running clock blanked out - see StripLiveClocks. This
+    // and NOT _lastFocusedNodeText is what the dedup below compares, so a ticking
+    // countdown inside an otherwise unchanged line cannot re-trigger the reader.
+    private string _lastFocusedNodeStable = string.Empty;
     private string _lastFocusedItemName = string.Empty;
     // Item sheet row of the focused slot (0 = focus is not on a resolved item);
     // set by ResolveFocusedItemName so the description dwell can look it up.
@@ -2122,6 +2264,18 @@ public sealed class UIReaderService : IDisposable
     private uint _spokenCurrencyId;
     private int  _spokenCurrencyCount = -1;
 
+    // Einstellungen der Inhaltssuche: das Fenster schreibt zu jedem Bedienelement
+    // einen Erklaerungstext ins rechte Feld - bis zu 500 Zeichen. Bisher sprach
+    // ihn der Text-Scanner SOFORT und unterbrechend, wodurch er die gerade
+    // begonnene Namensansage abschnitt und selbst vom naechsten Text abgeschnitten
+    // wurde (Log 2026-08-19 18:34:18, vier Ansagen in 2 ms). Jetzt kommt zuerst
+    // Name und Zustand, der Text folgt nach kurzem Verweilen (Wunsch des Users
+    // 2026-08-19) - genau wie bei Gegenstands- und Skill-Beschreibungen.
+    private nint _settingHelpOwner;      // top-level control the focus stands on (0 = none)
+    private nint _settingHelpDwellOwner; // control the dwell clock is timing
+    private long _settingHelpTick;       // Stopwatch timestamp the focus reached it
+    private bool _settingHelpSpoken;     // help already queued for this dwell?
+
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
     {
         // While the HUD builds after login the game moves focus across freshly
@@ -2139,7 +2293,8 @@ public sealed class UIReaderService : IDisposable
         if (node == null)
         {
             _lastFocusedNodePtr  = 0;
-            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
             _lastFocusedItemName = string.Empty;
             return;
         }
@@ -2152,7 +2307,8 @@ public sealed class UIReaderService : IDisposable
         if (IsAddonVisible("MonsterNote"))
         {
             _lastFocusedNodePtr  = 0;
-            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
             _lastFocusedItemName = string.Empty;
             return;
         }
@@ -2167,7 +2323,8 @@ public sealed class UIReaderService : IDisposable
         if (IsFocusInRecipeNoteRow(node))
         {
             _lastFocusedNodePtr  = (nint)node;
-            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
             _lastFocusedItemName = string.Empty;
             return;
         }
@@ -2181,7 +2338,8 @@ public sealed class UIReaderService : IDisposable
         if (IsFocusInsideNameField(node))
         {
             _lastFocusedNodePtr  = (nint)node;
-            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
             _lastFocusedItemName = string.Empty;
             return;
         }
@@ -2192,7 +2350,8 @@ public sealed class UIReaderService : IDisposable
         if (IsChatInputActive())
         {
             _lastFocusedNodePtr  = (nint)node;
-            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
             _lastFocusedItemName = string.Empty;
             return;
         }
@@ -2229,18 +2388,24 @@ public sealed class UIReaderService : IDisposable
                     _shopRowItemActive = true;
                     _log.Info($"[Shop] Zeile verknuepft mit Gegenstand {linked}.");
                 }
-#if DEBUG
-                // Was in der Zeile SONST noch steht - der Preis eines Tauschladens
-                // ist bisher in keiner Ansage enthalten, und wo er im Knotenbaum
-                // liegt, ist nicht gemessen. Eine Zeile pro Fokuswechsel.
-                ProbeShopRow(node);
-#endif
             }
         }
 
         string text;
         var itemBranchActive = false; // set true only when the item name is what gets announced
-        if (TryReadPlayerSearchFocus(node, out var searchRow))
+        // Cleared every frame: the reader below re-arms it while the focus stands
+        // on a duty-finder setting, so leaving that window ends the help dwell by
+        // itself instead of leaving a stale control behind.
+        _settingHelpOwner = 0;
+        if (TryReadContentsFinderSettingRow(node, out var dutySetting))
+        {
+            // Einstellungen der Inhaltssuche: Name UND Zustand ("Keine
+            // Beschraenkungen, Schalter, aus"). Vor dem allgemeinen Pfad, der
+            // hier nur die Beschriftung fand - und bei den Sprach-Kaestchen
+            // ueberhaupt nichts (Log 2026-08-19 18:34:19, "[Focus] STUMM").
+            text = dutySetting;
+        }
+        else if (TryReadPlayerSearchFocus(node, out var searchRow))
         {
             // Spielersuche: das Ankreuzfeld "Welt" sagt jetzt auch, OB es
             // angekreuzt ist, und die Stufenfelder ihren Wert statt gar nichts.
@@ -2366,6 +2531,13 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrEmpty(text))
                 text = _tooltips.TryGetTooltipDeep(node) ?? string.Empty;
 
+            // Seal shop: the rank tier buttons in the left column have neither text
+            // nor tooltip, so every step through them was silent (log 2026-08-19,
+            // 15 focus changes in a row, all "[Focus] STUMM"). Below the tooltip on
+            // purpose - if the game ever binds one, its own words win.
+            if (string.IsNullOrEmpty(text))
+                text = ReadGcRankTierButton(node);
+
             if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
                 text = iconRow;
         }
@@ -2392,9 +2564,24 @@ public sealed class UIReaderService : IDisposable
         // one of the suppressions further down (quest-reward auto-cycling).
         HandleItemDescriptionDwell((itemBranchActive || _shopRowItemActive) && _itemDwellArmed);
 
-        if ((nint)node == _lastFocusedNodePtr && text == _lastFocusedNodeText) return;
-        _lastFocusedNodePtr  = (nint)node;
-        _lastFocusedNodeText = text;
+        // Deferred help text of a duty-finder setting - same reason it runs
+        // before the dedup return as the two dwells above.
+        HandleSettingHelpDwell();
+
+        // Dedup on the text WITHOUT its running clocks. Straight text comparison
+        // let a levequest objective read itself out once per second: the tracker
+        // line composes objective + level + REMAINING TIME + leve name, so the
+        // string was different on every tick while the focus never moved
+        // (log 2026-08-19 09:38:34-09:39:52: "Schwäche den Gegner ..., St. 14,
+        // 19:38, Dodos an Bord", then 19:37, 19:36 ... for over a minute).
+        // The time itself is still SPOKEN - it is real information on a timed leve,
+        // and it is in the line the first time the focus lands there. Only its
+        // ticking no longer counts as a new item.
+        var stable = StripLiveClocks(text);
+        if ((nint)node == _lastFocusedNodePtr && stable == _lastFocusedNodeStable) return;
+        _lastFocusedNodePtr    = (nint)node;
+        _lastFocusedNodeText   = text;
+        _lastFocusedNodeStable = stable;
         // Real focus change: the new item counts as unannounced until the speak
         // below is actually reached (every return between here and there is a
         // suppression, and a suppressed name must not get a description).
@@ -2907,6 +3094,84 @@ public sealed class UIReaderService : IDisposable
         return hasDigit;
     }
 
+    /// <summary>
+    /// The same text with every running clock blanked out, e.g.
+    /// <c>"Schwäche den Gegner ..., St. 14, 19:38, Dodos an Bord"</c> becomes
+    /// <c>"Schwäche den Gegner ..., St. 14, #, Dodos an Bord"</c>. Used ONLY as the
+    /// dedup key of the focus reader - never for anything that gets spoken.
+    /// <para>
+    /// WHY: <see cref="IsBareNumber"/> already keeps a timer that sits in its OWN
+    /// text node quiet, but the focus reader composes a whole tracker line out of
+    /// several nodes, and the countdown then rides along INSIDE a sentence. A plain
+    /// string comparison saw a different sentence every second while the focus had
+    /// not moved at all, so the levequest objective read itself out once per second
+    /// (log 2026-08-19 09:38:34-09:39:52, user: "die wird aber ununterbrochen
+    /// vorgelesen"). Blanking the clock in the KEY keeps the time in the
+    /// announcement - it matters on a timed leve - while its ticking stops counting
+    /// as a new item.
+    /// </para>
+    /// <para>
+    /// Deliberately narrow: only h:mm / m:ss / h:mm:ss shaped tokens, bounded by
+    /// non-digits. Anything wider would start swallowing real changes - a value the
+    /// player just altered with left/right (a slider reading "40" then "50") lives
+    /// on the same node too, and that one MUST still speak.
+    /// </para>
+    /// </summary>
+    private static string StripLiveClocks(string text)
+    {
+        // Fast path: no colon, no clock. Costs one scan and allocates nothing,
+        // which matters because this runs on every frame the focus is read.
+        if (string.IsNullOrEmpty(text) || text.IndexOf(':') < 0) return text;
+
+        StringBuilder? sb = null;
+        var i = 0;
+        while (i < text.Length)
+        {
+            var end = ClockTokenEnd(text, i);
+            if (end < 0)
+            {
+                sb?.Append(text[i]);
+                i++;
+                continue;
+            }
+            sb ??= new StringBuilder(text.Length).Append(text, 0, i);
+            sb.Append('#');
+            i = end;
+        }
+        return sb?.ToString() ?? text;
+    }
+
+    /// <summary>
+    /// Index just past a clock token starting at <paramref name="start"/>, or -1
+    /// when none starts there. A clock is one or two digits, a colon, and one or two
+    /// further two-digit groups; it must be bounded by non-digits on both sides so
+    /// that a ratio inside a longer number is not mistaken for one.
+    /// </summary>
+    private static int ClockTokenEnd(string text, int start)
+    {
+        if (start > 0 && char.IsDigit(text[start - 1])) return -1;
+
+        var i = start;
+        var lead = 0;
+        while (i < text.Length && char.IsDigit(text[i])) { i++; lead++; }
+        if (lead is < 1 or > 2) return -1;               // "123:45" is not a clock
+        if (i >= text.Length || text[i] != ':') return -1;
+        i++;
+
+        for (var groups = 0; ; groups++)
+        {
+            var j = i;
+            var digits = 0;
+            while (j < text.Length && char.IsDigit(text[j])) { j++; digits++; }
+            if (digits != 2) return -1;                  // ":5" and ":123" are not
+            i = j;
+            if (groups == 0 && i < text.Length && text[i] == ':') { i++; continue; }
+            break;
+        }
+
+        return i < text.Length && char.IsDigit(text[i]) ? -1 : i;
+    }
+
     /// <summary>Whether a named addon currently exists and is visible.</summary>
     private unsafe bool IsAddonVisible(string addonName)
     {
@@ -3139,29 +3404,10 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    /// <summary>
-    /// SONDE: every text node of the focused shop row, with its id, its raw text
-    /// and the item it links to. Answers the one open question this window still
-    /// has - WHERE the price stands. A currency exchange charges tokens, and no
-    /// announcement carries that number today (log 2026-08-16 00:16: names only).
-    /// Falls raus, sobald der Preis gebaut ist (siehe debug_probe_convention).
-    /// </summary>
-    private unsafe void ProbeShopRow(AtkResNode* node)
-    {
-        var row = FindShopRow(node);
-        if (row == null) return;
-        var comp = ((AtkComponentNode*)row)->Component;
-        if (comp == null || !IsReadable(comp)) return;
-
-        var parts = new List<string>();
-        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
-        {
-            var child = comp->UldManager.NodeList[i];
-            if (child == null || child->Type != NodeType.Text) continue;
-            parts.Add($"id={child->NodeId} '{AtkText.ReadClean((AtkTextNode*)child).Trim()}'");
-        }
-        _log.Info($"[ShopProbe] Zeile {row->NodeId}: {string.Join(" | ", parts)}");
-    }
+    // ENTFERNT 2026-08-19: ProbeShopRow. Sie sollte messen, WO in der Zeile der
+    // Preis eines Tauschladens steht - das ist beantwortet und gebaut (Preis +
+    // "du hast N" stehen seit 2026-08-16 in der Ansage). Nach der
+    // Sonden-Konvention faellt sie damit raus.
 #endif
 
 
@@ -3654,6 +3900,139 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
+    /// One control of the duty-finder settings (ContentsFinderSetting), named
+    /// AND with its state: "Keine Beschränkungen, Schalter, aus", "Beuteregeln,
+    /// Auswahlliste, Standard", "Sprache Deutsch, Schalter, an".
+    ///
+    /// WHY: the window used to announce nothing but the bare label of each
+    /// control (log 2026-08-19 18:33:53 onwards). For a settings window that is
+    /// the smaller half of the information - whether an option is SET is what
+    /// the player came for - and the four language boxes carry no text at all,
+    /// so stepping onto them was completely silent ("[Focus] STUMM", 18:34:19).
+    ///
+    /// The control is identified from the TOP-LEVEL node that owns the focus,
+    /// never from the nearest component: the loot-rule drop-down embeds a
+    /// CheckBox as its display field (dump 2026-08-19, Comp(1014) holds
+    /// Comp(1013)), so a climb to the nearest component would announce an open
+    /// list as a switch - the exact mistake already documented for the
+    /// configuration windows in <see cref="TryReadConfigFocusRow"/>.
+    ///
+    /// Labels come from the window itself (the control's own text, or the text
+    /// sharing its row via <see cref="ConfigLabelByGeometry"/>), so they arrive
+    /// in the client's language without a table of translations here.
+    /// </summary>
+    private unsafe bool TryReadContentsFinderSettingRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (FindAddonNameForNode(node) != "ContentsFinderSetting") return false;
+        var addon = FindAddonForNode(node);
+        if (addon == null) return false;
+
+        var owner = FindTopLevelOwner(addon, node, out _);
+        if (owner == null || (int)owner->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)owner)->Component;
+        if (comp == null) return false;
+
+        var label = string.Empty;
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.Button:
+            {
+                label = GetTextFromNodeTree(owner).Trim();
+                if (label.Length == 0) return false;
+
+                // Der Zustand steht in der Zeile selbst, NICHT in
+                // ContentsFinder.Instance() - dessen Felder sind der
+                // GESPEICHERTE Stand und blieben im Test unveraendert, waehrend
+                // der User umschaltete (Messung und Beweis siehe
+                // ContentsFinderSettingText). Zeilen ohne Zustandssymbol - "Ok"
+                // und "Schliessen" tragen ueberhaupt kein Bild - fallen hier
+                // durch zum generischen Leser, der ihre Namen laengst richtig
+                // sagt.
+                var state = _dutySettings.RowState(owner, comp, out var part);
+                if (state == null && part == ushort.MaxValue) return false;
+
+                text = state == null
+                    ? $"{label}, {AccessibilityStrings.SwitchControl}"
+                    : $"{label}, {AccessibilityStrings.SwitchControl}, "
+                      + $"{(state.Value ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff)}";
+                break;
+            }
+
+            case ComponentType.CheckBox:
+            {
+                // The language boxes: icon-only, so the name comes from their
+                // position and the row heading next to them ("Sprache").
+                var boxes = RowSiblings(addon, owner, ComponentType.CheckBox);
+                var index = boxes.FindIndex(b => b.Ptr == (nint)owner);
+                var name  = _dutySettings.LanguageAt(index, boxes.Count);
+                var group = ConfigLabelByGeometry(addon, owner, out var how);
+                if (how != ConfigLabelSource.RowLeft || group.Length == 0)
+                    group = AccessibilityStrings.DutyLanguageGroup;
+
+                label = name.Length > 0 ? $"{group} {name}" : $"{group} {index + 1}";
+                var isChecked = ((AtkComponentButton*)comp)->IsChecked;
+                text = $"{label}, {AccessibilityStrings.SwitchControl}, "
+                       + $"{(isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff)}";
+                break;
+            }
+
+            case ComponentType.DropDownList:
+            {
+                // Loot rules. Its value ("Standard") was all the reader said, so
+                // the line named a setting without naming WHICH setting.
+                // ReadFocusedControlValue, not the plain one: while the list is
+                // OPEN the focused option is the value, otherwise every step
+                // through it would repeat the stored setting.
+                var value = ReadFocusedControlValue(owner, node).Trim();
+                var name  = ConfigLabelByGeometry(addon, owner, out var how);
+                if (how != ConfigLabelSource.RowLeft || name.Length == 0) return false;
+                text = value.Length > 0
+                    ? AccessibilityStrings.DropdownDesc(name, value)
+                    : name;
+                break;
+            }
+
+            default:
+                return false;
+        }
+
+        // Greyed out (NodeFlags.Enabled cleared): the settings of a duty that
+        // forbids them are announced as unchangeable, the same cue a sighted
+        // player gets from the dimmed row. Verified present in this window -
+        // "Stufenanpassung" carried F=0x2013 while its neighbours had 0x2033
+        // (dump 2026-08-19).
+        if (((ushort)owner->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+            text = $"{text}, {AccessibilityStrings.StateDisabled}";
+
+        // The window's own help text for this control belongs to the SAME focus
+        // change, but it is up to 500 characters long - it is queued by the
+        // dwell (see HandleSettingHelpDwell) so quick stepping stays quick.
+        _settingHelpOwner = (nint)owner;
+        return true;
+    }
+
+
+    /// <summary>Top-level components of one kind that share a ROW with
+    /// <paramref name="member"/> (same top edge), ordered left to right.</summary>
+    private static unsafe List<(nint Ptr, float X)> RowSiblings(
+        AtkUnitBase* addon, AtkResNode* member, ComponentType kind)
+    {
+        var found = new List<(nint Ptr, float X)>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var c = ((AtkComponentNode*)n)->Component;
+            if (c == null || c->GetComponentType() != kind) continue;
+            if (Math.Abs(n->ScreenY - member->ScreenY) > 1f) continue;
+            found.Add(((nint)n, n->ScreenX));
+        }
+        found.Sort((a, b) => a.X.CompareTo(b.X));
+        return found;
+    }
+
+    /// <summary>
     /// True when the focused node belongs to a control that
     /// <see cref="AnnounceConfigGlobalFocus"/> already describes on its own
     /// (slider or drop-down). Decided from the TOP-LEVEL control, never from the
@@ -3977,6 +4356,78 @@ public sealed class UIReaderService : IDisposable
         _itemDwellDescSpoken = true; // one-shot per dwell, even if desc is empty
         var desc = FlattenDescription(_inventory.ResolveItemDescription(id));
         if (!string.IsNullOrEmpty(desc)) _tolk.Speak(AccessibilityStrings.ItemDescription(desc));
+    }
+
+    /// <summary>
+    /// Queues the duty-finder settings window's own explanation of the focused
+    /// control once the focus has dwelled on it for ActionDescDwellSeconds. Name
+    /// and state were already spoken when the focus landed, so this only adds the
+    /// paragraph - and only for someone who stopped to read it. Mirrors
+    /// <see cref="HandleItemDescriptionDwell"/>.
+    ///
+    /// The text is taken from the window's single Base component, the scrolling
+    /// panel on the right (dump 2026-08-19: Comp(1016), the only one of its kind
+    /// in the window). Reading it by SHAPE rather than by node id keeps the
+    /// heading above the panel - which repeats the control's own name and was
+    /// half of the old double announcement - out of it.
+    /// </summary>
+    private unsafe void HandleSettingHelpDwell()
+    {
+        var owner = _settingHelpOwner;
+        if (owner == 0)
+        {
+            _settingHelpDwellOwner = 0;
+            return;
+        }
+
+        if (owner != _settingHelpDwellOwner)
+        {
+            _settingHelpDwellOwner = owner;
+            _settingHelpTick       = System.Diagnostics.Stopwatch.GetTimestamp();
+            _settingHelpSpoken     = false;
+            return;
+        }
+
+        if (_settingHelpSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _settingHelpTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _settingHelpSpoken = true; // one-shot per dwell, even when there is no text
+        var help = ReadContentsFinderSettingHelp();
+        if (help.Length > 0) _tolk.Speak(AccessibilityStrings.SettingHelp(help));
+    }
+
+    /// <summary>Explanation text of the control under the focus, from the duty-finder
+    /// settings window's description panel; "" when the window is gone or the panel
+    /// is not the single Base component it was measured as.</summary>
+    private unsafe string ReadContentsFinderSettingHelp()
+    {
+        var ptr = _gameGui.GetAddonByName("ContentsFinderSetting");
+        if (ptr.IsNull) return string.Empty;
+        var addon = (AtkUnitBase*)(nint)ptr;
+
+        AtkComponentBase* panel = null;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var c = ((AtkComponentNode*)n)->Component;
+            if (c == null || c->GetComponentType() != ComponentType.Base) continue;
+            if (panel != null) return string.Empty; // not unique any more - say nothing rather than the wrong thing
+            panel = c;
+        }
+        if (panel == null) return string.Empty;
+
+        var parts = new List<string>();
+        for (var i = 0; i < panel->UldManager.NodeListCount; i++)
+        {
+            var n = panel->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || !n->IsVisible()) continue;
+            var t = AtkText.ReadClean((AtkTextNode*)n).Trim();
+            if (t.Length > 0) parts.Add(t);
+        }
+        return FlattenDescription(string.Join(" ", parts));
     }
 
     private unsafe bool TryReadActionMenuFocusRow(AtkResNode* node, out string text)
@@ -8544,6 +8995,22 @@ public sealed class UIReaderService : IDisposable
             }
         }
         return false;
+    }
+
+    /// <summary>First visible, non-empty text node with the given id directly in
+    /// an addon's own node list (not inside one of its components).</summary>
+    private static unsafe string ReadTopLevelText(AtkUnitBase* addon, uint textNodeId)
+    {
+        if (addon == null) return string.Empty;
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || node->Type != NodeType.Text || node->NodeId != textNodeId) continue;
+            if (!node->IsVisible()) continue;
+            var text = AtkText.ReadClean((AtkTextNode*)node).Trim();
+            if (text.Length > 0) return text;
+        }
+        return string.Empty;
     }
 
     /// <summary>First visible, non-empty text node with the given id inside a

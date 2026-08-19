@@ -22,6 +22,16 @@ public sealed class CombatService
     private readonly AoeWarningService     _aoeWarn;
     private readonly IPluginLog            _log;
 
+    // Shape describer, built here rather than injected - the same pattern
+    // UIReaderService uses, and it needs nothing this service does not already hold.
+    // Sharing the describer is what keeps an enemy cast and an ability tooltip from
+    // naming the same geometry two different ways.
+    private readonly ActionShapeService    _actionShape;
+
+    // Nur fuer die Frage "laeuft gerade ein Freibrief?" - davon haengt ab, wie fein
+    // die Ziel-HP im unteren Band angesagt werden (siehe ThresholdsFor).
+    private readonly LevequestEnemyService _leveEnemies;
+
     private bool _wasInCombat   = false;
     private int  _lastHpPercent = 100;
 
@@ -61,7 +71,29 @@ public sealed class CombatService
     private readonly HashSet<ulong> _castsAtMeAlive = new();
     private readonly List<ulong>    _castsAtMeStale = new();
 
+    // "You are standing in it" state, per CASTER: casterId -> the cast for which
+    // that fact has already been spoken. Keyed the same way as _castsAtMe so both
+    // are cleaned up in the same sweep. The entry is dropped the moment the player
+    // leaves the zone, so walking out and back in warns again - which is the point,
+    // the second entry is as deadly as the first.
+    private readonly Dictionary<ulong, uint> _aoeInside = new();
+
     private static readonly int[] HpThresholds = [75, 50, 25, 10];
+
+    // FEINE STUFEN FUER FANG-AUFTRAEGE. Manche Freibriefe wollen den Gegner
+    // GESCHWAECHT, nicht tot ("schlag es nicht k. o."), und mit den groben Stufen
+    // oben ist das nicht zu treffen: gemessen am 2026-08-19 lagen zwischen der
+    // Ansage bei 25 Prozent (tatsaechlich 18) und der bei 10 Prozent (tatsaechlich
+    // 2) genau drei Sekunden, danach war der Dodo besiegt und der Freibrief-Zaehler
+    // stand weiter auf 0/3. Unterhalb von 30 Prozent wird deshalb alle 5 Prozent
+    // angesagt - die Zahl im Satz ist ohnehin immer der ECHTE Wert, die Stufe
+    // entscheidet nur, WANN gesprochen wird.
+    private static readonly int[] HpThresholdsFine = [75, 50, 30, 25, 20, 15, 10, 5];
+
+    // Ab hier unterscheiden sich die beiden Stufenreihen. Oberhalb davon muss also
+    // gar nicht erst nachgesehen werden, ob ein Freibrief laeuft - das haelt die
+    // Abfrage aus dem normalen Kampf heraus.
+    private const int FineBandCeiling = 30;
 
     public CombatService(
         IObjectTable objectTable,
@@ -72,6 +104,7 @@ public sealed class CombatService
         Configuration config,
         MessageHistoryService history,
         AoeWarningService aoeWarn,
+        LevequestEnemyService leveEnemies,
         IPluginLog log)
     {
         _objectTable   = objectTable;
@@ -82,7 +115,9 @@ public sealed class CombatService
         _config        = config;
         _history       = history;
         _aoeWarn       = aoeWarn;
+        _leveEnemies   = leveEnemies;
         _log           = log;
+        _actionShape   = new ActionShapeService(data, log);
     }
 
     // Wird jeden Frame aus Plugin.OnFrameworkUpdate aufgerufen
@@ -98,9 +133,10 @@ public sealed class CombatService
         RestedProbe();
 #endif
 
-        // AoE danger tone. Runs regardless of the InCombat flag: a cast telegraph can
-        // appear the instant before combat officially starts, and the flag lags.
-        UpdateAoeWarning(player.GameObjectId, player.Position);
+        // Enemy cast announcements + AoE danger tone. Runs regardless of the InCombat
+        // flag: a cast telegraph can appear the instant before combat officially
+        // starts, and the flag lags.
+        UpdateEnemyCastWarnings(player.GameObjectId, player.Position);
 
         var inCombat = (player.StatusFlags & StatusFlags.InCombat) != 0;
 
@@ -155,7 +191,7 @@ public sealed class CombatService
         if (inCombat && _config.AnnounceTargetHp)
         {
             var hp = HpPercent(target.CurrentHp, target.MaxHp);
-            foreach (var threshold in HpThresholds)
+            foreach (var threshold in ThresholdsFor(hp))
             {
                 if (_lastTargetHpPercent > threshold && hp <= threshold)
                 {
@@ -169,22 +205,60 @@ public sealed class CombatService
     }
 
     /// <summary>
-    /// Announces enemy casts aimed AT THE PLAYER - from ANY nearby enemy, not
-    /// just the current target (user 2026-08-06: "wenn ein gegner auf mich
-    /// zielt bzw einen zauber auf mich zaubert, so dass man ausweichen kann").
-    /// Casts on other people stay silent, as decided 2026-07-25.
+    /// Welche HP-Stufenreihe fuer das Ziel gilt. Feiner, solange ein FREIBRIEF
+    /// laeuft und das Ziel schon im unteren Band ist - dort entscheidet sich, ob ein
+    /// Fang-Auftrag gelingt oder der Gegner k. o. geht.
+    /// <para>
+    /// WARUM JEDER FREIBRIEF UND NICHT NUR DIE FANG-AUFTRAEGE: ob ein Freibrief
+    /// fangen oder toeten will, steht in keinem Feld, das dieses Projekt
+    /// nachgemessen hat. Die Aufgabenzeile sagt es in Worten ("besaenftige"), aber
+    /// auf uebersetzten Text zu pruefen wuerde im englischen Client sofort brechen.
+    /// Also gilt die feine Reihe fuer jeden laufenden Freibrief; der Preis sind ein
+    /// paar zusaetzliche Ansagen unter 30 Prozent auf einem Toetungs-Auftrag, und
+    /// den kann der Spieler mit <c>FineTargetHpDuringLeve</c> abschalten.
+    /// </para>
+    /// <para>
+    /// Die Abfrage laeuft ERST unterhalb von <see cref="FineBandCeiling"/>. Darueber
+    /// sind beide Reihen gleich, und <c>GetRunningLeve</c> liest jedes Mal frisch
+    /// die Director-Liste - das gehoert nicht in jeden Frame eines normalen Kampfes.
+    /// </para>
+    /// </summary>
+    private int[] ThresholdsFor(int targetHpPercent)
+    {
+        if (targetHpPercent > FineBandCeiling) return HpThresholds;
+        if (!_config.FineTargetHpDuringLeve)   return HpThresholds;
+        return _leveEnemies.GetRunningLeve() != null ? HpThresholdsFine : HpThresholds;
+    }
+
+    /// <summary>
+    /// Announces enemy casts in two cases: every cast of the player's CURRENT TARGET
+    /// (user 2026-08-18 "alle zauber des bosses"), and casts aimed AT THE PLAYER from
+    /// any nearby enemy (user 2026-08-06: "wenn ein gegner auf mich zielt bzw einen
+    /// zauber auf mich zaubert, so dass man ausweichen kann").
+    /// <para>
+    /// WHY the target and not "every enemy": a boss throws most of its spells at the
+    /// ground or at the tank, so the old aimed-at-me rule (2026-07-25) left boss fights
+    /// almost silent - measured on the Stone Vigil dragon, which announced nothing at
+    /// all because cactbot has no trigger for it either. The target is the one enemy
+    /// the player deliberately picked, so it is the boss in practice, while trash packs
+    /// the player is not fighting stay quiet. There is no reliable "is a boss" flag on
+    /// IBattleChara to key off instead.
+    /// </para>
     /// <para>
     /// The caster's name is only spoken when it is NOT the player's current
     /// target: for the target the player already knows who is meant, and the
     /// short form keeps the warning fast - it has to arrive while there is still
-    /// time to move.
+    /// time to move. "auf dich" is appended whenever the cast targets the player,
+    /// because the plain sentence used to mean exactly that and now no longer does -
+    /// without the suffix the dangerous case would sound like the harmless one.
     /// </para>
     /// Fires once per cast (rising edge per caster, or a new action while still
     /// casting), which also catches an enemy swinging an in-progress cast onto
     /// the player. Runs off the same enemy sweep as the AoE tone, so no extra
     /// per-frame scan is added.
     /// </summary>
-    private void AnnounceCastAtMe(IBattleChara caster, ulong playerId, ulong targetId)
+    private void AnnounceCastAtMe(IBattleChara caster, ulong playerId, ulong targetId,
+                                  LuminaAction? shapeRow, bool inZone)
     {
         var castId = caster.CastActionId;
         var known = _castsAtMe.TryGetValue(caster.GameObjectId, out var announced);
@@ -194,13 +268,107 @@ public sealed class CombatService
 
         var action = CastActionName(castId);
         var casterName = caster.Name.TextValue;
-        var text = caster.GameObjectId == targetId || string.IsNullOrWhiteSpace(casterName)
-            ? AccessibilityStrings.EnemyCasts(action)
-            : AccessibilityStrings.NamedEnemyCasts(casterName, action);
+        var atMe = caster.CastTargetObjectId == playerId;
+        var anonymous = caster.GameObjectId == targetId || string.IsNullOrWhiteSpace(casterName);
+        var text = anonymous
+            ? (atMe ? AccessibilityStrings.EnemyCastsAtYou(action)
+                    : AccessibilityStrings.EnemyCasts(action))
+            : (atMe ? AccessibilityStrings.NamedEnemyCastsAtYou(casterName, action)
+                    : AccessibilityStrings.NamedEnemyCasts(casterName, action));
 
-        _tolk.SpeakInterrupt(text);
-        _log.Info($"[Combat] Gegner-Cast auf mich: caster='{casterName}' id={castId} name='{action}' " +
-                  $"unterbrechbar={caster.IsCastInterruptible} istZiel={caster.GameObjectId == targetId}");
+        // Shape and size of the ground danger, straight from the action row. Only
+        // present when the action actually has a ground shape (EffectRange > 0).
+        var shape = shapeRow is { } row ? DescribeCastShape(caster, row, playerId) : string.Empty;
+
+        // Standing-in-it warning. Gated by the AoE option, not by the cast option:
+        // it is the geometry feature speaking, and that geometry is the part still
+        // awaiting in-game confirmation. Marking it as spoken here is what keeps
+        // TrackAoeEntry from repeating the same fact one frame later.
+        var standing = string.Empty;
+        if (inZone && _config.AnnounceAoeWarning)
+        {
+            standing = AccessibilityStrings.AoeStandingInIt(RemainingCastTime(caster));
+            _aoeInside[caster.GameObjectId] = castId;
+        }
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.CastWithDanger(text, shape, standing));
+        _log.Info($"[Combat] Gegner-Cast: caster='{casterName}' id={castId} name='{action}' " +
+                  $"aufMich={atMe} unterbrechbar={caster.IsCastInterruptible} " +
+                  $"istZiel={caster.GameObjectId == targetId} " +
+                  $"form='{shape}' drin={inZone} rest={RemainingCastTime(caster):F1}s");
+    }
+
+    /// <summary>
+    /// Spoken description of a cast's danger zone: shape plus size, e.g. "Kegel,
+    /// 90 Grad, 6 Meter".
+    /// <para>
+    /// The shape WORD comes from <see cref="ActionShapeService"/>, the same describer
+    /// the ability tooltip uses - so the geometry is named identically whether the
+    /// player reads a skill in a window or hears an enemy cast it, and there is only
+    /// one place where a CastType is mapped to a word. That service stays SILENT for
+    /// every CastType this project has not measured against the telegraph graphic
+    /// (AoeShape.HasProvenShape), and that silence is carried through here on purpose:
+    /// naming a shape we have not proven would send the player dodging INTO it. For an
+    /// unproven type the cast is still announced, just without geometry.
+    /// </para>
+    /// <para>
+    /// The SIZE is added here and not in the tooltip path because no tooltip is on
+    /// screen during a fight to have said it already. It matters even when the player
+    /// is standing in the zone: it says how FAR they have to move. A 5-metre circle is
+    /// two steps, a 30-metre line is not something you outrun sideways.
+    /// </para>
+    /// </summary>
+    private string DescribeCastShape(IBattleChara caster, LuminaAction row, ulong playerId)
+    {
+        var shape = _actionShape.Describe(row.RowId);
+        if (string.IsNullOrEmpty(shape)) return string.Empty;
+
+        int meters = row.EffectRange;
+
+        // A circle centred on the player: say so, because then no DIRECTION is safe -
+        // only distance is, and "Kreis, 5 Meter" alone would suggest sidestepping.
+        var onYou = caster.CastTargetObjectId == playerId
+                    && row.CastType is AoeShape.CastTypeCircle or AoeShape.CastTypeCircle5;
+
+        return onYou
+            ? AccessibilityStrings.AoeShapeWithRangeOnYou(shape, meters)
+            : AccessibilityStrings.AoeShapeWithRange(shape, meters);
+    }
+
+    /// <summary>
+    /// Seconds left on a running cast. <c>TotalCastTime</c>/<c>CurrentCastTime</c> are
+    /// the game's own cast-bar values (game-api.md "Kampf"), so this is the same clock
+    /// a sighted player watches fill up - it is read, never estimated. Clamped at 0
+    /// because the bar can sit a frame past its total before the spell resolves.
+    /// </summary>
+    private static float RemainingCastTime(IBattleChara caster) =>
+        MathF.Max(0f, caster.TotalCastTime - caster.CurrentCastTime);
+
+    /// <summary>
+    /// Speaks the moment the player WALKS INTO a danger zone whose cast is already
+    /// running. The tone alone cannot carry this: it says "danger now" but never how
+    /// long there is left, and a player who moved into a zone they never heard
+    /// announced has no idea a cast is even in progress.
+    /// <para>
+    /// Only called for casts that are announced anyway (current target, or aimed at
+    /// the player). That bound is deliberate and it is also what keeps the cost down:
+    /// the geometry check would otherwise run per frame for every casting enemy in
+    /// the zone.
+    /// </para>
+    /// </summary>
+    private void TrackAoeEntry(IBattleChara caster, bool inZone)
+    {
+        var id = caster.GameObjectId;
+        if (!inZone) { _aoeInside.Remove(id); return; }
+
+        var castId = caster.CastActionId;
+        if (_aoeInside.TryGetValue(id, out var warned) && warned == castId) return;
+        _aoeInside[id] = castId;
+
+        var remaining = RemainingCastTime(caster);
+        _tolk.SpeakInterrupt(AccessibilityStrings.AoeEnteredZone(remaining));
+        _log.Info($"[Combat] In Flaeche gelaufen: caster='{caster.Name.TextValue}' " +
+                  $"id={castId} rest={remaining:F1}s");
     }
 
     private string CastActionName(uint actionId)
@@ -570,26 +738,40 @@ public sealed class CombatService
     }
 
     /// <summary>
-    /// Drives the AoE danger tone: ON while the player stands inside the danger zone
-    /// of any nearby enemy that is currently casting, OFF the instant they leave it
-    /// or the cast ends. Because it keys off <c>IsCasting</c>, the tone naturally
-    /// begins with the cast bar and stops when the spell resolves.
+    /// One sweep over the nearby casting enemies that drives BOTH combat warnings:
+    /// the spoken cast announcement (<c>AnnounceEnemyCast</c>) and the AoE danger tone
+    /// plus its standing-in-it speech (<c>AnnounceAoeWarning</c>). They share a pass
+    /// because they read the same three things - who is casting, what, and where.
     ///
-    /// GEOMETRY MODEL V1 (WORKAROUND): the danger zone is treated as a CIRCLE centred
-    /// on the caster with radius = <c>Action.EffectRange</c> yalms. The clean solution
-    /// is to read the real telegraph shape and origin from the cast's Omen/VFX object
-    /// (a circle may be ground-placed, and cones/lines need the caster's facing) - but
-    /// that data is not yet decoded (hard research path, see game-api.md "AoE-Form").
-    /// This V1 is verified in-game against the Hall of the Novice circle. The debug
-    /// probe that logged the true Omen shape was removed on 2026-08-09 (its unfiltered
-    /// object-table pass threw inside OnFrameworkUpdate); if cones/lines are modelled
-    /// next, it has to come back with the BattleNpc filter in place from the start.
-    /// Distance is horizontal (XZ) only - AoE telegraphs are ground planes, so a
-    /// height difference must not hide or fake danger.
+    /// BUG FIXED 2026-08-19: this method used to bail out on the very first line when
+    /// <c>AnnounceAoeWarning</c> was off - and that option ships OFF by default. Since
+    /// the cast announcement lives inside this same sweep (moved here 2026-08-18), it
+    /// was dead for every player who had not turned on an unrelated option. That is
+    /// why the Stone Vigil boss announced nothing. Each option now gates only its own
+    /// output; the sweep itself runs whenever either one is on.
+    ///
+    /// The tone is ON while the player stands inside the danger zone of any nearby
+    /// enemy that is currently casting, OFF the instant they leave it or the cast
+    /// ends. Because it keys off <c>IsCasting</c>, the tone naturally begins with the
+    /// cast bar and stops when the spell resolves. Zone shapes come from
+    /// <see cref="IsPlayerInAoe"/> (circle/cone/line, measured 2026-07-26). Distance
+    /// is horizontal (XZ) only - AoE telegraphs are ground planes, so a height
+    /// difference must not hide or fake danger.
     /// </summary>
-    private void UpdateAoeWarning(ulong playerId, Vector3 playerPos)
+    private void UpdateEnemyCastWarnings(ulong playerId, Vector3 playerPos)
     {
-        if (!_config.AnnounceAoeWarning) { _aoeWarn.SetActive(false); return; }
+        var castOn = _config.AnnounceEnemyCast;
+        var aoeOn  = _config.AnnounceAoeWarning;
+        if (!castOn && !aoeOn)
+        {
+            _aoeWarn.SetActive(false);
+            // Drop the memos too: with both features off nothing maintains them, and
+            // a stale entry would swallow the first warning after they are switched
+            // back on - exactly when the player is listening for it.
+            _castsAtMe.Clear();
+            _aoeInside.Clear();
+            return;
+        }
 
         var sheet = _data.GetExcelSheet<LuminaAction>();
         var inDanger = false;
@@ -606,27 +788,59 @@ public sealed class CombatService
             {
                 // Cast over: forget it, so the same spell warns again next time.
                 _castsAtMe.Remove(bc.GameObjectId);
+                _aoeInside.Remove(bc.GameObjectId);
                 continue;
             }
 
-            // Spoken warning for a cast aimed at the player. Checked BEFORE the
-            // EffectRange filter below - a single-target spell has no ground
-            // shape but is exactly what the player wants to hear about.
-            if (_config.AnnounceEnemyCast && bc.CastTargetObjectId == playerId)
-                AnnounceCastAtMe(bc, playerId, targetId);
-            else if (bc.CastTargetObjectId != playerId)
+            var relevant = bc.GameObjectId == targetId || bc.CastTargetObjectId == playerId;
+
+            // Ground geometry of this cast, evaluated BEFORE the announcement now:
+            // the sentence carries the shape, and it can only carry what has already
+            // been worked out. The row lookup is cheap and only needs the cast option;
+            // the position maths is the expensive half (IsPlayerInAoe walks the object
+            // table for target-centred circles), so it runs only when the AoE feature
+            // is on AND somebody still needs the answer.
+            var wantShape = castOn && relevant;
+            var wantZone  = aoeOn  && (!inDanger || relevant);
+
+            LuminaAction? shapeRow = null;
+            var inZone = false;
+            if ((wantShape || wantZone)
+                && sheet.TryGetRow(bc.CastActionId, out var row)
+                && row.EffectRange > 0)         // single-target / self-buff: no ground danger
+            {
+                shapeRow = row;
+                if (wantZone)
+                {
+                    inZone = IsPlayerInAoe(bc, row, playerPos);
+                    if (inZone) inDanger = true;
+                }
+            }
+
+            // Spoken warning for every cast of the current target, plus any cast
+            // aimed at the player from elsewhere. Fires regardless of EffectRange -
+            // a single-target spell has no ground shape but is exactly what the
+            // player wants to hear about; it just goes out without a shape.
+            if (wantShape)
+                AnnounceCastAtMe(bc, playerId, targetId, shapeRow, inZone);
+            else if (!relevant)
+            {
+                // Not worth announcing right now: drop the memos so the same spell
+                // speaks again if this enemy later becomes the target or aims at us.
                 _castsAtMe.Remove(bc.GameObjectId);
+                _aoeInside.Remove(bc.GameObjectId);
+            }
 
-            if (inDanger) continue;             // tone already decided, keep announcing casts
-            if (!sheet.TryGetRow(bc.CastActionId, out var row)) continue;
-            if (row.EffectRange == 0) continue; // single-target / self-buff: no ground danger
-
-            if (IsPlayerInAoe(bc, row, playerPos)) inDanger = true;
+            // Player walked into the zone of a cast that was already running. Only
+            // for casts we announce anyway: an unannounced enemy 30 m away is not
+            // worth a per-frame geometry pass, and its zone is covered by the tone.
+            if (relevant && aoeOn) TrackAoeEntry(bc, inZone);
         }
 
         // Drop entries of casters that left the object table entirely (pulled out
-        // of range, died), so the dictionary cannot grow without bound.
-        if (_castsAtMe.Count > 0)
+        // of range, died), so the dictionaries cannot grow without bound. _aoeInside
+        // is keyed the same way and rides along in the same sweep.
+        if (_castsAtMe.Count > 0 || _aoeInside.Count > 0)
         {
             _castsAtMeAlive.Clear();
             foreach (var obj in _objectTable)
@@ -639,6 +853,11 @@ public sealed class CombatService
             foreach (var id in _castsAtMe.Keys)
                 if (!_castsAtMeAlive.Contains(id)) _castsAtMeStale.Add(id);
             foreach (var id in _castsAtMeStale) _castsAtMe.Remove(id);
+            _castsAtMeStale.Clear();
+
+            foreach (var id in _aoeInside.Keys)
+                if (!_castsAtMeAlive.Contains(id)) _castsAtMeStale.Add(id);
+            foreach (var id in _castsAtMeStale) _aoeInside.Remove(id);
             _castsAtMeStale.Clear();
         }
 
@@ -653,6 +872,14 @@ public sealed class CombatService
     /// The caster's facing (sin rot, cos rot) uses the project's verified rotation
     /// convention. Unknown CastTypes fall back to a caster-centred circle so we
     /// over-warn rather than miss - a false alarm is safer than a silent hit.
+    /// <para>
+    /// The CastType numbers come from <see cref="AoeShape"/> rather than being written
+    /// out here, so the tone and the spoken shape can only ever agree. That also pulled
+    /// in the four types measured on 2026-08-09 (5, 8, 12, 13): a 30-metre LINE used to
+    /// land in the default branch and be judged as a 30-metre circle around the caster -
+    /// the exact V1 mistake, and the reason the tone could sound for a player standing
+    /// safely behind the enemy.
+    /// </para>
     /// </summary>
     private bool IsPlayerInAoe(IBattleChara caster, LuminaAction row, Vector3 playerPos)
     {
@@ -668,7 +895,8 @@ public sealed class CombatService
             // is a real object we can resolve; otherwise fall back to the caster.
             // ASSUMPTION: ground-targeted circles whose centre lives only in the VFX
             // are not yet solvable (telegraph-reading step) - flagged, verify in-game.
-            case 2:
+            case AoeShape.CastTypeCircle:
+            case AoeShape.CastTypeCircle5:
             {
                 var center = casterPos;
                 var tid = caster.CastTargetObjectId;
@@ -684,7 +912,8 @@ public sealed class CombatService
 
             // Cone from the caster along its facing. Half-angle parsed from the fan
             // number in the Omen path (gl_fan090 -> 90 deg total -> 45 deg half).
-            case 3:
+            case AoeShape.CastTypeCone:
+            case AoeShape.CastTypeCone13:
             {
                 if (horiz2 > range * range) return false;
                 var rel = Math.Abs(RelBearingDeg(casterPos, caster.Rotation, playerPos));
@@ -694,7 +923,9 @@ public sealed class CombatService
             // Line/rectangle from the caster along its facing. Length = EffectRange,
             // ASSUMPTION half-width = XAxisModifier (verify in-game). Project the
             // player onto the facing axis: ahead within length, lateral within width.
-            case 4:
+            case AoeShape.CastTypeLine:
+            case AoeShape.CastTypeLine8:
+            case AoeShape.CastTypeLine12:
             {
                 var fx = MathF.Sin(caster.Rotation);
                 var fz = MathF.Cos(caster.Rotation);

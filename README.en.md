@@ -69,19 +69,41 @@ cues — including braille display output and automatic walking.
 
 - **Object browser**: cycle through nearby objects with a single key
   (NPCs, merchants, enemies, **allies**, players, objects, **duties**,
-  quest objectives, levequests, FATEs, gathering points, fishing spots,
-  aetherytes, map waypoints such as zone exits). Announces name, kind,
-  distance and direction; the object is targeted at the same time.
+  **all duties**, quest objectives, levequests, FATEs, gathering points,
+  fishing spots, aetherytes, map waypoints such as zone exits). Announces
+  name, kind, distance and direction; the object is targeted at the same
+  time.
 - The **allies** category collects everything fighting on your side: trust
   and duty-support NPCs, party and alliance, carbuncle, fairy, companion
   chocobo. **Duties** lists only the doors leading into a dungeon, trial,
   raid or PvP instance — such a door is a destination, not furniture.
   (Contributed by [bladestorm360](https://github.com/bladestorm360), PR #3)
+- The **all duties** category goes further: it lists **every dungeon, trial
+  and raid entrance in the game**, sorted by level — including those in
+  other zones. It announces name, kind, level and, when the content is not
+  unlocked yet, a "locked" (the game itself is asked; this is never guessed
+  from your level). If the entrance is in your zone you also get distance
+  and direction, otherwise the name of its zone and the next transition
+  leading there. **Numpad 3 walks there** — across zone borders, one
+  transition at a time, exactly like a quest objective in another zone.
 - **Housing furnishings** can be found too: chocobo stable, mailbox, garden
   beds. Objects the game labels with an icon instead of a word are given the
   word its own interface uses for them.
-- **Audio beacon**: a stereo tone indicates the direction to the target
-  (panning and pitch), the volume follows the distance.
+- **Target beacon**: as soon as you **acquire a target**, a tone
+  points at it — the side through stereo, "behind you" through a darker
+  pitch, the distance through volume (closer = louder). **Every kind of
+  target sounds different**: enemy, NPC, object, gathering node,
+  transition, aetheryte, quest objective and duty entrance each have their
+  own base note, with enemies and objectives adding a second beat. The
+  closer you aim, the further the beats drift apart — and **once you are
+  lined up it goes silent altogether**; a short acknowledging tone on
+  locking in tells you the silence is intended, not a failure. That is what
+  makes it work for lifts and platforms: turn until it goes quiet. Merely
+  selecting something in the object browser does not start a tone — only
+  targeting does; for destinations the game will not let you target (quest
+  objectives, map markers, duty entrances from the list) the **walk guide**
+  carries the tone instead. Toggle: **Ctrl+Shift+F9**, volume in the
+  options menu. All tones can be auditioned with `/acc soundtest`.
 - **Walk guide**: guided manual walking along the navigation mesh, around
   obstacles — with waypoint tones, direction announcements relative to
   where you are facing, and an arrival tone.
@@ -123,14 +145,34 @@ cues — including braille display output and automatic walking.
   the **shape** of its effect area (circle, cone, line …) — the game's text
   only gives the range and draws the shape. (Contributed by
   [bladestorm360](https://github.com/bladestorm360), PR #2)
-- **Cast warning**: when an enemy casts a spell **at you** it is announced
-  — from any nearby enemy, not just the one you have targeted. If it is
-  someone other than your target, their name is included. Spells cast at
-  other players stay silent.
+- **Cast warning**: **every** spell your current target casts is announced —
+  in a boss fight, that is the boss's whole routine. Plus any spell aimed
+  **at you**, even from an enemy standing next to it; then their name is
+  included. When the spell is aimed at you, the announcement says so
+  explicitly. Spells cast at other players stay silent.
+- **Shape and size of the area**: appended to the cast announcement whenever
+  the spell puts an area on the ground — "cone, 90 degrees, 6 meters",
+  "line, 30 meters", "circle on you, 5 meters". That tells you **which way**
+  to dodge and how far. Shapes this project has never measured stay silent
+  rather than guess.
 - **Danger tone for area attacks** (AoE): a pulsing tone for as long as you
   stand inside a telegraphed area; it stops the moment you step out. The
   shape (circle, cone, line) comes from the spell's own data. Off by
   default, see the key overview.
+- **"You are in it" pre-warning**: if you are already standing in the area
+  when the cast begins, the announcement says so — including how much time
+  is left ("You are in it, 3 seconds."). Walk into it while the cast is
+  running and you get "Careful, you are in it, 2 seconds." Part of the AoE
+  warning, so it is switched on and off together with it.
+- **Fine target health during levequests**: while a levequest is running, target
+  health is announced every 5 percent below 30 instead of only at 25 and 10.
+  Capture leves want the enemy *weakened*, not defeated — that window is hard to
+  hit with the coarse steps. Can be switched off in the options menu.
+- **Duty actions**: some duties show a small extra bar (capture, stun, trigger
+  a device) that only appears when it is needed. The game offers it **by mouse
+  click only** — it has no entry at all in the keybind dump. The mod plays a
+  tone and announces it the moment it appears, and puts it on Shift+F10 and
+  Shift+F11; Ctrl+Shift+F8 announces it again.
 - **Ability ready**: a tone plus the name as soon as an ability comes off
   cooldown (`/acc cd`).
 - HP and MP also as stereo tones (at every 10-percent step the stereo
@@ -308,9 +350,9 @@ navigation keys above the arrow block.
 - **Page Down** — announce and target the next nearby object
 - **Page Up** — previous object
 - **Ctrl+Page Down** — next object category (NPCs, merchants, enemies,
-  allies, players, objects, duties, quest objectives, levequests, FATEs,
-  gathering points, fishing spots, aetherytes, waypoints; inside a deep
-  dungeon: treasure, cairns, rooms instead)
+  allies, players, objects, duties, all duties, quest objectives,
+  levequests, FATEs, gathering points, fishing spots, aetherytes,
+  waypoints; inside a deep dungeon: treasure, cairns, rooms instead)
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance
@@ -321,6 +363,7 @@ navigation keys above the arrow block.
 - **+** — follow your current target continuously, on/off (needs vnavmesh).
   This is the regular plus key, **not** the one on the numpad. On keyboard
   layouts where plus requires Shift, rebind it in the settings
+- **Ctrl+Shift+F9** — target beacon on/off
 - **Ctrl+Numpad 5** — route preview: hear the path without walking
 - **Ctrl+Shift+F1** — walk to coordinates from the clipboard (e.g. copy
   "24.1 21.0", then press the key)
@@ -343,6 +386,9 @@ navigation keys above the arrow block.
 - **Ctrl+L** — level and missing experience
 - **Shift+L** — rested area and rested bonus
 - **Ctrl+F** — deep dungeon: which dungeon, which floor
+- **Ctrl+Shift+F7** — read the task list of whatever is running (levequest,
+  duty, FATE): exactly the lines shown at the edge of the screen, with
+  counter or remaining time
 - **Shift+F9** — open the settings menu (spoken and keyboard-operable)
 - **Ctrl+F3** — read the inventory (bag and key items)
 - **Shift+F3** — gil

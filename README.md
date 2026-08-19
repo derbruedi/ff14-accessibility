@@ -70,21 +70,44 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 - **Objekt-Browser**: mit einer Taste durch Objekte in der Nähe blättern
   (NPCs, Händler, Gegner, **Verbündete**, Spieler, Objekte, **Inhalte**,
-  Quest-Ziele, Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten,
-  Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit Name, Art, Entfernung
-  und Richtung; das Objekt wird gleichzeitig anvisiert.
+  **Alle Inhalte**, Quest-Ziele, Freibriefe, FATEs, Sammelpunkte,
+  Angelplätze, Ätheryten, Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit
+  Name, Art, Entfernung und Richtung; das Objekt wird gleichzeitig
+  anvisiert.
 - Die Kategorie **Verbündete** sammelt alles, was auf deiner Seite kämpft:
   Trupp-NPCs, Gruppe und Allianz, Karfunkel, Fee, Begleitchocobo.
   **Inhalte** listet nur die Türen, die in einen Dungeon, eine Prüfung,
   einen Raid oder eine PvP-Instanz führen — eine solche Tür ist ein Ziel,
   kein Möbelstück. (Beitrag von
   [bladestorm360](https://github.com/bladestorm360), PR #3)
+- Die Kategorie **Alle Inhalte** geht darüber hinaus: sie listet **jeden
+  Dungeon-, Prüfungs- und Raid-Eingang des Spiels**, nach Stufe sortiert —
+  auch die in anderen Gebieten. Angesagt werden Name, Art, Stufe und, wenn
+  der Inhalt noch nicht freigeschaltet ist, ein „gesperrt" (das fragt das
+  Spiel selbst, es wird nicht aus deiner Stufe geraten). Liegt der Eingang
+  in deinem Gebiet, kommen Entfernung und Richtung dazu, sonst der Name des
+  Gebiets und der nächste Zonenübergang dorthin. **Numpad 3 läuft hin** —
+  über Gebietsgrenzen hinweg, Übergang für Übergang, genau wie bei einem
+  Quest-Ziel in einer anderen Zone.
 - Auch **Einrichtung** in Wohngebieten ist auffindbar: Chocobo-Stall,
   Briefkasten, Beete. Objekte, die das Spiel nur mit einem Symbol statt mit
   einem Wort beschriftet, bekommen das Wort, das die Oberfläche dafür
   benutzt.
-- **Audio-Beacon**: Stereo-Ton zeigt die Richtung zum Ziel (Seite und
-  Tonhöhe), die Lautstärke folgt der Entfernung.
+- **Peil-Ton**: sobald du etwas **anvisiert** hast, zeigt ein Ton
+  die Richtung dorthin — die Seite über das Stereobild, „hinter dir" über
+  eine dunklere Tonlage, die Entfernung über die Lautstärke (näher =
+  lauter). **Jede Zielart klingt anders**: Gegner, NPC, Objekt,
+  Sammelpunkt, Übergang, Ätheryt, Quest-Ziel und Inhalts-Eingang haben je
+  einen eigenen Grundton, Gegner und Aufträge zusätzlich einen Doppelschlag.
+  Je genauer du zielst, desto weiter gehen die Schläge auseinander — und
+  **wenn du richtig stehst, verstummt er ganz**; ein kurzer Quittungston
+  beim Einrasten sagt dir, dass die Stille gewollt ist und nichts kaputt.
+  Genau dafür ist er bei Aufzügen und Plattformen da: drehen, bis es still
+  wird. Eine bloße Auswahl im Objekt-Browser löst noch keinen Ton aus —
+  erst das Anvisieren; für Ziele, die das Spiel gar nicht anvisieren lässt
+  (Quest-Ziele, Kartenmarker, Dungeon-Eingänge in der Liste), führt ihn die
+  **Gehhilfe**. Schalter: **Strg+Umschalt+F9**, Lautstärke im
+  Einstellungsmenü. Alle Töne lassen sich mit `/acc soundtest` anhören.
 - **Gehhilfe**: geführtes manuelles Laufen entlang des Wegenetzes, um
   Hindernisse herum — mit Wegpunkt-Tönen, Richtungsansagen relativ zur
   Blickrichtung und Ankunftston.
@@ -127,14 +150,35 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   die **Form** des Wirkbereichs (Kreis, Kegel, Linie …) — das Spiel nennt
   im Text nur die Reichweite und zeichnet die Form. (Beitrag von
   [bladestorm360](https://github.com/bladestorm360), PR #2)
-- **Zauber-Warnung**: wirkt ein Gegner einen Zauber **auf dich**, wird er
-  angesagt — von jedem Gegner in der Nähe, nicht nur vom anvisierten. Ist
-  es ein anderer als dein Ziel, fällt sein Name mit. Zauber auf andere
-  Spieler bleiben still.
+- **Zauber-Warnung**: **jeder** Zauber deines anvisierten Gegners wird
+  angesagt — im Bosskampf also der ganze Ablauf des Bosses. Dazu jeder
+  Zauber, der **auf dich** zielt, auch von einem Gegner daneben; dann fällt
+  sein Name mit. Zielt der Zauber auf dich, sagt die Ansage das ausdrücklich
+  dazu. Zauber auf andere Spieler bleiben still.
+- **Form und Grösse der Fläche**: hängt an der Zauber-Ansage, sobald der
+  Zauber eine Fläche auf den Boden legt — „Kegel, 90 Grad, 6 Meter",
+  „Linie, 30 Meter", „Kreis um dich, 5 Meter". Damit weisst du, **wohin**
+  du ausweichen musst und wie weit. Formen, die dieses Projekt nie
+  nachgemessen hat, bleiben still statt zu raten.
 - **Warnton für Schadensflächen** (AoE): pulsierender Ton, solange du in
   einer angekündigten Fläche stehst; er verstummt, sobald du heraustrittst.
   Die Form (Kreis, Kegel, Linie) kommt aus den Daten des jeweiligen Zaubers.
   Standardmäßig ausgeschaltet, siehe Tastenübersicht.
+- **Vorwarnung „du stehst drin"**: stehst du beim Beginn eines Zaubers in
+  seiner Fläche, sagt die Ansage es mit dazu — samt der Zeit, die dir noch
+  bleibt („Du stehst drin, 3 Sekunden."). Läufst du erst während des
+  Zaubers hinein, kommt „Achtung, du stehst drin, 2 Sekunden." Gehört zur
+  Flächenwarnung und ist deshalb mit ihr zusammen ein-/ausschaltbar.
+- **Feine Ziel-Lebenspunkte im Freibrief**: Solange ein Freibrief läuft, wird
+  unterhalb von 30 Prozent alle 5 Prozent angesagt statt nur bei 25 und 10.
+  Fang-Aufträge wollen den Gegner *geschwächt*, nicht besiegt — mit den groben
+  Stufen ist dieses Fenster kaum zu treffen. Im Einstellungsmenü abschaltbar.
+- **Sonderaktionen im Auftrag**: Manche Aufträge blenden eine kleine
+  Extra-Leiste ein (fangen, betäuben, ein Gerät auslösen), die erst
+  auftaucht, wenn sie gebraucht wird. Das Spiel bietet sie **nur per
+  Mausklick** an — im Tastenbelegungs-Dump hat sie keine einzige Belegung.
+  Der Mod sagt mit einem Ton an, sobald sie da ist, und legt sie auf
+  Umschalt+F10 und Umschalt+F11; Strg+Umschalt+F8 sagt sie noch einmal an.
 - **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
   einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
@@ -315,9 +359,9 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Bild-ab** — nächstes Objekt ansagen und anvisieren
 - **Bild-auf** — vorheriges Objekt
 - **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
-  Verbündete, Spieler, Objekte, Inhalte, Quest-Ziele, Freibriefe, FATEs,
-  Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im Tiefen Gewölbe
-  stattdessen Truhen, Leuchten, Räume)
+  Verbündete, Spieler, Objekte, Inhalte, Alle Inhalte, Quest-Ziele,
+  Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
+  Tiefen Gewölbe stattdessen Truhen, Leuchten, Räume)
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung
@@ -327,6 +371,7 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
   Laufen, folgt dem Wegenetz um Hindernisse)
 - **+** — dem anvisierten Ziel fortlaufend folgen an/aus (braucht vnavmesh).
   Gemeint ist die normale Plus-Taste, **nicht** die des Nummernblocks
+- **Strg+Umschalt+F9** — Peil-Ton an/aus
 - **Strg+Nummernblock 5** — Routen-Vorschau: Weg ansagen, ohne zu laufen
 - **Strg+Umschalt+F1** — zu Koordinaten aus der Zwischenablage laufen
   (z. B. „24.1 21.0" kopieren, dann Taste)
@@ -350,6 +395,9 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+L** — Stufe und fehlende Erfahrung
 - **Umschalt+L** — Ruhebereich und Erholungsbonus
 - **Strg+F** — Tiefes Gewölbe: welches Gewölbe, welche Ebene
+- **Strg+Umschalt+F7** — Aufgabenliste des laufenden Inhalts vorlesen
+  (Freibrief, Dungeon, FATE): genau die Zeilen, die am Bildschirmrand
+  stehen, mit Zähler bzw. Restzeit
 - **Umschalt+F9** — Einstellungsmenü öffnen (gesprochen bedienbar)
 - **Strg+F3** — Inventar vorlesen (Tasche und Schlüsselgegenstände)
 - **Umschalt+F3** — Gil-Stand

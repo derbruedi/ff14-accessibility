@@ -50,6 +50,12 @@ internal enum NavCategory
     // Jagdtagebuch-Fortschritt und Kartenmarker, siehe HuntingLogService.
     HuntingTargets,
     FishingSpots,
+    // Dungeonliste: JEDER Eingang zu Dungeon, Pruefung oder Raid im Spiel, nach
+    // Stufe sortiert - nicht nur die Tuer in Sichtweite (das ist Duties). Quelle
+    // sind die Sheets, deshalb steht hier auch das Ziel drei Zonen weiter, und
+    // Numpad3 fuehrt wie bei den Quests ueber die Zonenuebergaenge dorthin. Siehe
+    // DutyEntranceService.
+    WorldDuties,
     Aetherytes,
     QuestGoals,
     AcceptableQuests,
@@ -87,6 +93,8 @@ public sealed class NavigationService
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
     private readonly HuntingLogService _huntingLog;
+    private readonly DutyEntranceService _dutyEntrances;
+    private readonly LevequestEnemyService _leveEnemies;
     private readonly ObjectNameService _objectNames;
     private readonly ObjectMemoryService _memory;
     private readonly Configuration _config;
@@ -114,6 +122,8 @@ public sealed class NavigationService
         RouteService routes,
         ShopNpcService shops,
         HuntingLogService huntingLog,
+        DutyEntranceService dutyEntrances,
+        LevequestEnemyService leveEnemies,
         ObjectNameService objectNames,
         ObjectMemoryService memory,
         Configuration config,
@@ -135,6 +145,8 @@ public sealed class NavigationService
         _routes = routes;
         _shops = shops;
         _huntingLog = huntingLog;
+        _dutyEntrances = dutyEntrances;
+        _leveEnemies = leveEnemies;
         _objectNames = objectNames;
         _memory = memory;
         _config = config;
@@ -163,6 +175,10 @@ public sealed class NavigationService
         if (player == null)
         {
             _lastSeenTargetId = 0;
+            // Zonenwechsel oder Logout: es gibt keine Richtung mehr, auf die der
+            // Ton zeigen koennte. Ohne das laeuft er mit dem letzten Stand weiter,
+            // waehrend der Ladebildschirm liegt.
+            if (_beacon.IsRunning) _beacon.Idle();
             if (_walkGuideActive)
             {
                 // Player gone (logout/zone change) - the tracked object is
@@ -216,13 +232,15 @@ public sealed class NavigationService
             _lastSeenHardTargetId = hardTargetId;
             if (hardTargetId != 0 && hardTargetId != _ownSelectionId
                 && (SelectedQuestDestination != null || SelectedPlaceDestination != null
-                    || SelectedObjectDestination != null || SelectedHuntTarget != null))
+                    || SelectedObjectDestination != null || SelectedHuntTarget != null
+                    || SelectedDutyEntrance != null))
             {
                 _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
                 SelectedQuestDestination = null;
                 SelectedPlaceDestination = null;
                 SelectedObjectDestination = null;
                 SelectedHuntTarget = null;
+                SelectedDutyEntrance = null;
             }
         }
 
@@ -253,7 +271,116 @@ public sealed class NavigationService
         }
 
         if (_walkGuideActive) WalkGuideFrame(player);
+        else UpdateTargetBeacon(player);
     }
+
+    // ── Peil-Ton auf das anvisierte Ziel ──
+    //
+    // Wunsch des Users (2026-08-19): der Ton soll je nach Zielart anders klingen,
+    // mit der Entfernung leiser werden und verstummen, sobald man richtig
+    // ausgerichtet steht (Aufzuege, Plattformen). Die ganze Signallogik sitzt in
+    // BeaconService; hier wird nur beantwortet: WORAUF zielt er gerade?
+    //
+    // ZWEI QUELLEN, und die Trennung ist seine Vorgabe ("die toene fuer getrackte
+    // sachen sollen auch kommen wenn die gehhilfe aus ist aber dann nur wenn was
+    // anvisiert ist"):
+    //   Gehhilfe AN  -> WalkGuideFrame fuettert den Ton. Sie kennt den naechsten
+    //                   WEGPUNKT, also die Richtung, in die man wirklich laufen
+    //                   muss, und sie kann auch auf eine blosse Position zeigen.
+    //   Gehhilfe AUS -> diese Methode, und NUR auf ein anvisiertes Ziel. Eine
+    //                   Auswahl im Browser allein loest keinen Ton aus.
+    private void UpdateTargetBeacon(IGameObject player)
+    {
+        if (!_config.TargetBeaconEnabled)
+        {
+            if (_beacon.IsRunning) _beacon.Stop();
+            return;
+        }
+
+        if (!TryGetBeaconTarget(out var position, out var kind, out var targetKey))
+        {
+            // Kein Ziel: schweigen, aber das Audiogeraet offen lassen - beim
+            // Durchblaettern wechselt das Ziel im Sekundentakt.
+            if (_beacon.IsRunning) _beacon.Idle();
+            return;
+        }
+
+        _beacon.Start();   // folgenlos, wenn schon offen
+        // 2D: Hoehe zaehlt weder fuer die Drehung noch fuer "stehe ich drauf",
+        // und Markerpositionen fuehren ohnehin keine (Y = 0).
+        var distance = Distance2D(player.Position, position);
+        _beacon.Update(RelativeAngle(player, position), distance, kind,
+                       arrived: distance <= AutoWalkService.StopRange, targetKey: targetKey);
+    }
+
+    /// <summary>
+    /// Worauf der Peil-Ton zeigt, solange die Gehhilfe AUS ist: auf das
+    /// anvisierte Ziel - und nur darauf.
+    ///
+    /// Vorgabe des Users (2026-08-19): *"die toene fuer getrackte sachen sollen
+    /// auch kommen wenn die gehhilfe aus ist aber dann nur wenn was anvisiert
+    /// ist"*. Eine blosse Auswahl im Objekt-Browser reicht also NICHT. Der
+    /// Unterschied ist hoerbar und gewollt: der Browser blaettert im
+    /// Sekundentakt durch die Umgebung, und jeder Schritt wuerde sonst einen
+    /// neuen Dauerton starten. Anvisieren ist die bewusste Entscheidung "DAS da".
+    ///
+    /// FOLGE, die im Blick bleiben muss: was das Spiel nicht anvisieren laesst
+    /// (Quest-Requisiten, Kartenmarker, Quest- und Inhalts-Ziele, die gar kein
+    /// Objekt sind), bekommt hier keinen Ton. Fuer die ist die Gehhilfe der Weg -
+    /// sie fuehrt den Ton auf eine Position, ganz ohne anvisiertes Objekt.
+    ///
+    /// KEIN SOFT-TARGET: das wandert beim Vorbeilaufen von NPC zu NPC, und der
+    /// Ton wuerde die Stimme wechseln, ohne dass der Spieler etwas getan haette.
+    /// </summary>
+    private bool TryGetBeaconTarget(out Vector3 position, out BeaconKind kind, out ulong targetKey)
+    {
+        position = default;
+        kind = BeaconKind.Object;
+        targetKey = 0;
+
+        if (_targetManager.Target is not { } target) return false;
+
+        // Verschwundenes Ziel: der Ton hoert auf (Vorgabe des Users 2026-08-19).
+        // Normalerweise raeumt das Spiel selbst auf und setzt das Ziel auf null -
+        // IsValid ist das Netz darunter, denn ein Zeiger auf ein entladenes
+        // Objekt liefert sonst eine Position, die niemand mehr besetzt.
+        if (!target.IsValid()) return false;
+
+        // Erlegter Gegner: fuer den Spieler ist er weg, auch solange die Leiche
+        // noch anvisiert bleibt. Die Pruefung gilt NUR fuer Lebewesen - was
+        // IsDead an einer Tuer oder Truhe bedeutet, ist nicht gemessen, und eine
+        // Tuer, die sich faelschlich fuer tot haelt, waere ein stummer Ton ohne
+        // Erklaerung.
+        if (target.ObjectKind is ObjectKind.BattleNpc or ObjectKind.Pc && target.IsDead) return false;
+
+        position = target.Position;
+        kind = BeaconKindForObject(target);
+        // Die Objekt-Id ist die Kennung: wird ein anderes Ziel anvisiert, bricht
+        // der Ton fuer das alte ab, statt mitten im Takt die Stimme zu wechseln.
+        targetKey = target.GameObjectId;
+        return true;
+    }
+
+    /// <summary>
+    /// Die Stimme, mit der ein Objekt gepeilt wird. Gegner und Verbuendete sind
+    /// beide BattleNpc - getrennt wird ueber <see cref="CombatSide"/>, dieselbe
+    /// Unterscheidung, die auch die Kategorien Gegner und Verbuendete benutzen;
+    /// ein Trupp-Kollege darf nicht wie eine Warnung klingen.
+    /// </summary>
+    private BeaconKind BeaconKindForObject(IGameObject obj) => obj.ObjectKind switch
+    {
+        ObjectKind.BattleNpc     => CombatSide.IsAlly(obj) ? BeaconKind.Npc : BeaconKind.Enemy,
+        ObjectKind.EventNpc      => BeaconKind.Npc,
+        ObjectKind.Pc            => BeaconKind.Npc,
+        ObjectKind.GatheringPoint => BeaconKind.Gathering,
+        ObjectKind.Aetheryte     => BeaconKind.Aetheryte,
+        // Eine Inhalts-Tuer sieht in der Objekttabelle aus wie jedes andere
+        // EventObj - erst das Sheet sagt, dass sie in einen Dungeon fuehrt.
+        ObjectKind.EventObj      => DungeonSide.Describe(obj, _data, _log) != null
+                                        ? BeaconKind.DutyEntrance
+                                        : BeaconKind.Object,
+        _                        => BeaconKind.Object,
+    };
 
     // ── Objekt-Browser: mit einer Taste durch Objekte in der Nähe blättern ──
 
@@ -323,6 +450,10 @@ public sealed class NavigationService
         // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
         // kann ich angeln" nutzlos) - genau wie bei den Ätheryten (User 2026-07-25).
         (NavCategory.FishingSpots,    null),
+        // Dungeonliste: kommt aus DutyEntranceService (Sheets), nicht aus der
+        // ObjectTable. Genau das ist der Punkt - die Kategorie "Inhalte" darueber
+        // kennt nur geladene Tueren, diese kennt jede Tuer der Welt samt Stufe.
+        (NavCategory.WorldDuties,     null),
         // Ätheryten kommen aus den Kartendaten (PlacesService), nicht aus der
         // ObjectTable: die Marker kennen ALLE Ätheryten + Aethernet-Splitter
         // der Zone, die Objektsuche nur die in ~100 m (User-Wunsch 2026-07-13).
@@ -408,6 +539,7 @@ public sealed class NavigationService
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
     private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
     private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
+    private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -431,6 +563,14 @@ public sealed class NavigationService
     /// exactly like a cross-zone quest goal.
     /// </summary>
     public HuntingTarget? SelectedHuntTarget { get; private set; }
+
+    /// <summary>
+    /// Der Inhalts-Eingang, den der Browser in der Dungeonliste gewaehlt hat,
+    /// oder null. Seine Position ist die feste Stelle der Tuer aus den Sheets -
+    /// VOLLE 3D, anders als bei Kartenmarkern; liegt sie in einer anderen Zone,
+    /// fuehrt Plugin.cs Numpad3 wie bei einem Quest-Ziel ueber die Zonenuebergaenge.
+    /// </summary>
+    public DutyEntrance? SelectedDutyEntrance { get; private set; }
 
     /// <summary>
     /// The world object selected via the browser (the plain object categories),
@@ -474,6 +614,7 @@ public sealed class NavigationService
         SelectedPlaceDestination = null;
         SelectedObjectDestination = null;
         SelectedHuntTarget = null;
+        SelectedDutyEntrance = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -492,7 +633,10 @@ public sealed class NavigationService
             var leves = GetLevequestDestinations();
             var givers = leves.Count(d => d.Role == QuestMarkerRole.LeveGiver);
             var goals  = leves.Count(d => d.Role == QuestMarkerRole.LeveObjective);
-            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestCount(givers, goals));
+            // Enemies exist only while a leve is actually running - see
+            // GetLevequestEnemies; outside that this is 0 and stays unspoken.
+            var enemies = _objectTable.LocalPlayer is { } p ? GetLevequestEnemies(p).Count : 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestCount(givers, goals, enemies));
             return;
         }
 
@@ -531,6 +675,30 @@ public sealed class NavigationService
             var targets = _huntingLog.GetOpenTargets();
             var here = targets.Count(t => t.InCurrentZone);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(targets.Count, here));
+            return;
+        }
+
+        if (IsWorldDutyCategory)
+        {
+            // Zwei Zahlen, weil sie zwei verschiedene Fragen beantworten: wie
+            // lang die Liste ist, und wie viel davon der Spieler heute betreten
+            // darf. Bleibt die Freischaltfrage unbeantwortet, wird nur gezaehlt.
+            var entries  = _dutyEntrances.GetReachableSorted();
+            var unlocked = 0;
+            var known    = false;
+            // Eine Schleife, nicht zwei: die Freischaltfrage geht in eine
+            // Spielfunktion, und sie zweimal pro Eintrag zu stellen waere der
+            // doppelte Preis fuer dieselbe Antwort.
+            foreach (var entry in entries)
+            {
+                var state = _dutyEntrances.IsUnlocked(entry.ContentId);
+                if (state == null) continue;
+                known = true;
+                if (state == true) unlocked++;
+            }
+            _tolk.SpeakInterrupt(known
+                ? AccessibilityStrings.CategoryWorldDutyCount(entries.Count, unlocked)
+                : AccessibilityStrings.CategoryObjectCount(CurrentCategoryLabel, entries.Count));
             return;
         }
 
@@ -590,6 +758,12 @@ public sealed class NavigationService
         if (IsHuntingCategory)
         {
             CycleHuntTarget(direction, player);
+            return;
+        }
+
+        if (IsWorldDutyCategory)
+        {
+            CycleWorldDuty(direction, player);
             return;
         }
 
@@ -794,7 +968,8 @@ public sealed class NavigationService
         {
             text = $"{level}{story}{dest.QuestName}{todo}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
-                   $"{CalculateDirection(player, dest.Position)}.{detail}";
+                   $"{CalculateDirection(player, dest.Position)}" +
+                   $"{GoalCircleHint(dest, player)}.{detail}";
         }
         else
         {
@@ -912,20 +1087,141 @@ public sealed class NavigationService
         return result;
     }
 
+    /// <summary>
+    /// The live enemies of the RUNNING levequest, nearest first.
+    ///
+    /// Why they belong in this category at all (user request 2026-08-18): a leve
+    /// marker points at the AREA the task happens in, not at the monsters. A
+    /// sighted player then sees the enemies standing there; a blind player stood
+    /// in the circle with nothing left to steer by. The enemies of the leve are
+    /// the actual destination, so they are offered right where the leve is.
+    ///
+    /// HOW a leve monster is told apart from ordinary wildlife: the object carries
+    /// the event id of the leve director that spawned it (GameObject.EventId), and
+    /// the wildlife around it carries 0. See LevequestEnemyService.BelongsToLeve
+    /// for the two measurements this rests on.
+    ///
+    /// The dead ends before that are written down so they are not tried again
+    /// (logs 2026-08-18):
+    ///   (a) Species matching finds nothing reliable. Leve 528 slot 0 names
+    ///       BNpcName 1096 "streunender Dodo", but seventeen wild Dodos in the
+    ///       same zone carry the slot's BNpcBase 339 as well.
+    ///   (b) The director's own EventObjects set is EMPTY on a running leve.
+    ///   (c) GetEventHandlersImpl reports one zone-wide handler for every monster,
+    ///       leve spawn and wildlife alike - never the director.
+    /// The nameplate icon (71244 on both leve spawns that were measured) is NOT
+    /// used here: it is the game's "this is a task target" marker in general, so
+    /// it says nothing about WHICH task. It is what already carries these monsters
+    /// into the quest-enemy category.
+    ///
+    /// The species list still runs, but only to decide WHOSE fields get dumped
+    /// into the log - if the event-id link ever misses, the next decision comes
+    /// off a field dump instead of another pick.
+    ///
+    /// Dead monsters are dropped: a corpse is not a destination.
+    /// </summary>
+    private List<(IGameObject Obj, LeveEnemySpec? Spec)> GetLevequestEnemies(IGameObject player)
+    {
+        var leve = _leveEnemies.GetRunningLeve();
+        if (leve == null) return new List<(IGameObject, LeveEnemySpec?)>();
+
+        var owned = new HashSet<nint>(leve.EventObjectAddresses);
+
+        var result = new List<(IGameObject Obj, LeveEnemySpec? Spec, float Dist)>();
+        var candidates = new List<(string Trace, float Dist)>();
+        // Spawns of a leve that is NOT the one we matched: the entry number in
+        // the event id differs. Either another player's leve stands next to ours
+        // (then ignoring them is right), or our assumption that director and
+        // monster share the entry number is wrong (then this line says so).
+        var foreignLeve = new List<(string Trace, float Dist)>();
+
+        foreach (var obj in _objectTable)
+        {
+            if (obj.ObjectKind != ObjectKind.BattleNpc) continue;
+            if (obj is IBattleChara { CurrentHp: 0 }) continue;
+
+            var dist = Vector3.Distance(player.Position, obj.Position);
+            var spec = leve.Enemies.FirstOrDefault(e => e.BaseId == obj.BaseId);
+            var mine = _leveEnemies.BelongsToLeve(
+                           obj.Address, leve.DirectorEventId, out var objEventId, out var anyLeve)
+                    || owned.Contains(obj.Address);
+
+            if (mine)
+            {
+                result.Add((obj, spec, dist));
+                continue;
+            }
+
+            if (anyLeve)
+                foreignLeve.Add(($"'{obj.Name.TextValue}' {dist:F0}m EventId={objEventId} " +
+                                 $"(Eintrag {(ushort)objEventId})", dist));
+
+            // Same species, but not bound to our leve: exactly the case that has
+            // to be readable in the log if the link ever stops working.
+            if (spec != null)
+                candidates.Add(($"'{obj.Name.TextValue}' {dist:F0}m " +
+                                _leveEnemies.DescribeObjectFields(obj.Address), dist));
+        }
+
+        // Only the nearest few, and only when the picture changed - seventeen
+        // full field dumps on every keypress would bury the log.
+        candidates.Sort((a, b) => a.Dist.CompareTo(b.Dist));
+        foreignLeve.Sort((a, b) => a.Dist.CompareTo(b.Dist));
+        var todos = _leveEnemies.GetTodoLines(leve.DirectorAddress);
+        var trace = $"[Leve] Gegner des laufenden Freibriefs '{leve.LeveName}': {result.Count} gefunden " +
+                    $"(Director-EventId {leve.DirectorEventId}, Eintrag {(ushort)leve.DirectorEventId}, " +
+                    $"{leve.EventObjectAddresses.Count} Director-Objekte). " +
+                    $"Aufgabenzeilen: {(todos.Count > 0 ? string.Join(" / ", todos) : "keine")}. " +
+                    $"Spawns eines FREMDEN Freibriefs: " +
+                    (foreignLeve.Count > 0
+                        ? string.Join(" | ", foreignLeve.GetRange(0, Math.Min(4, foreignLeve.Count)).ConvertAll(c => c.Trace))
+                        : "keine") + ". " +
+                    $"Naechste Artgenossen ohne Freibrief-Bindung: " +
+                    (candidates.Count > 0
+                        ? string.Join(" | ", candidates.GetRange(0, Math.Min(3, candidates.Count)).ConvertAll(c => c.Trace))
+                        : "keine");
+        if (trace != _lastLeveEnemyTrace)
+        {
+            _lastLeveEnemyTrace = trace;
+            _log.Info(trace);
+        }
+
+        return result
+            .OrderBy(e => e.Dist)
+            .Select(e => (e.Obj, e.Spec))
+            .ToList();
+    }
+
+    // Last leve-enemy diagnosis written, so a held key does not repeat it.
+    private string _lastLeveEnemyTrace = string.Empty;
+
     private void CycleLevequestDestination(int direction, IGameObject player)
     {
+        // Enemies of the running leve come FIRST: while a leve runs they are the
+        // task, and the giver one is walking away from is not.
+        var enemies = GetLevequestEnemies(player);
         var dests = GetLevequestDestinations();
-        if (dests.Count == 0)
+        var count = enemies.Count + dests.Count;
+        if (count == 0)
         {
             SelectedQuestDestination = null;
+            SelectedObjectDestination = null;
             _tolk.SpeakInterrupt(AccessibilityStrings.NoLevequests);
             return;
         }
 
-        var count = dests.Count;
         _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
-        var dest = dests[_cycleIndex];
+        if (_cycleIndex < enemies.Count)
+        {
+            AnnounceLevequestEnemy(enemies[_cycleIndex], player, count);
+            return;
+        }
+
+        var dest = dests[_cycleIndex - enemies.Count];
         SelectedQuestDestination = dest;
+        // A marker is not an object: drop a leve enemy picked a keypress ago, or
+        // Numpad 3 would still steer at the monster.
+        SelectedObjectDestination = null;
 
         // Role tells the player what this destination IS: the Levemete to accept
         // a leve, or the spot to carry an accepted one out (user request).
@@ -942,7 +1238,8 @@ public sealed class NavigationService
         {
             text = $"{role}{level}{dest.QuestName}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
-                   $"{CalculateDirection(player, dest.Position)}.{detail}";
+                   $"{CalculateDirection(player, dest.Position)}" +
+                   $"{GoalCircleHint(dest, player)}.{detail}";
         }
         else
         {
@@ -965,6 +1262,77 @@ public sealed class NavigationService
         }
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Leve] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
+    /// Says whether the player stands INSIDE the marker's goal circle, and how
+    /// far the edge still is when they do not.
+    ///
+    /// The distance alone is not usable information: "Gefräßige Puks, 75 Meter"
+    /// leaves open whether that is inside or outside, because the circle is 50 m
+    /// wide (MarkerInfo.Radius, measured 2026-08-18 - leve goals in La Noscea
+    /// carry r=50). A sighted player reads that circle straight off the map. It
+    /// also explains what Numpad 3 does: the walk stops at the RIM, so
+    /// "angekommen" at 51 m is the rim, not the middle.
+    ///
+    /// Empty for point markers (radius 0) - there the plain distance already is
+    /// the whole truth.
+    /// </summary>
+    private string GoalCircleHint(QuestDestination dest, IGameObject player)
+    {
+        if (dest.Radius <= 0f) return string.Empty;
+
+        var dist = Vector3.Distance(player.Position, dest.Position);
+        return dist <= dest.Radius
+            ? AccessibilityStrings.InsideGoalCircle
+            : AccessibilityStrings.ToGoalCircle(FormatDistance(dist - dest.Radius));
+    }
+
+    /// <summary>
+    /// Announces one enemy of the running leve and makes it the pick.
+    ///
+    /// Same two steps as the ordinary object browser, and for the same reasons:
+    /// the game target so the player can attack it right away, and
+    /// SelectedObjectDestination so Numpad 3 still walks there when the game
+    /// refuses the target (out of range, line of sight). SelectedQuestDestination
+    /// is cleared because the walk key checks it FIRST - left standing, it would
+    /// send the player to the leve marker while the announcement named a monster.
+    /// </summary>
+    private void AnnounceLevequestEnemy(
+        (IGameObject Obj, LeveEnemySpec? Spec) entry, IGameObject player, int count)
+    {
+        var (obj, spec) = entry;
+
+        SelectedQuestDestination = null;
+
+        _ownSelectionId = obj.GameObjectId;
+        _targetManager.Target = obj;
+
+        SelectedObjectDestination = new ObjectDestination(
+            obj.GameObjectId, _objectNames.Describe(obj), obj.Position);
+
+        var actualId = _targetManager.Target?.GameObjectId ?? 0;
+        var rejected = actualId != obj.GameObjectId;
+        if (rejected)
+            _log.Info($"[Leve] Target-Set ABGELEHNT: wollte {obj.GameObjectId:X} " +
+                      $"({obj.Name.TextValue}), ist weiterhin {actualId:X}");
+
+        // Level and HP only when the game accepted the target: only then is the
+        // target bar filled, and only then would a sighted player see the values.
+        var stats = rejected ? string.Empty : DescribeTargetHp(obj);
+        var wanted = spec is { Required: > 0 }
+            ? AccessibilityStrings.LeveEnemyWanted((int)spec.Required)
+            : string.Empty;
+
+        var text = $"{AccessibilityStrings.LeveRolePrefix(QuestMarkerRole.LeveEnemy)}" +
+                   $"{_objectNames.Describe(obj)}{wanted}, " +
+                   $"{FormatDistance(Vector3.Distance(player.Position, obj.Position))}, " +
+                   $"{CalculateDirection(player, obj.Position)}" +
+                   $"{stats}, " +
+                   $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
+                   (rejected ? AccessibilityStrings.NotTargetedSuffix : "");
+        _log.Info($"[Leve] Auswahl: {text} (id={obj.GameObjectId:X})");
         _tolk.SpeakInterrupt(text);
     }
 
@@ -1179,6 +1547,75 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Dungeonliste: jede Tuer der Welt, nach Stufe ──
+    //
+    // Der Gegenentwurf zur Kategorie "Inhalte": die zeigt, was hier steht, diese
+    // zeigt, was es GIBT. Deshalb kommt sie aus den Sheets (DutyEntranceService)
+    // und nicht aus der Objekttabelle, und deshalb ist die Reihenfolge die Stufe
+    // und nicht die Entfernung - der User will wissen, was als naechstes dran
+    // ist, nicht was zufaellig in der Naehe liegt (Wunsch 2026-08-19).
+    private void CycleWorldDuty(int direction, IGameObject player)
+    {
+        var entries = _dutyEntrances.GetReachableSorted();
+        if (entries.Count == 0)
+        {
+            SelectedDutyEntrance = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoWorldDuties);
+            return;
+        }
+
+        var count = entries.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var entry = entries[_cycleIndex];
+        SelectedDutyEntrance = entry;
+
+        // Name, Art und Stufe in genau der Form, die die Kategorie "Inhalte"
+        // schon spricht - dieselbe Sache darf nicht zweimal anders klingen.
+        var text = AccessibilityStrings.DutyEntrance(entry.Name, entry.ContentType, entry.Level, entry.TypeName);
+
+        // Die Sperre steht frueh im Satz: sie entscheidet, ob der Rest den
+        // Spieler ueberhaupt interessiert.
+        if (_dutyEntrances.IsUnlocked(entry.ContentId) == false)
+            text += ", " + AccessibilityStrings.DutyLocked;
+
+        if (entry.TerritoryTypeId == _clientState.TerritoryType)
+        {
+            text += $", {FormatDistance(Vector3.Distance(player.Position, entry.Position))}, " +
+                    $"{CalculateDirection(player, entry.Position)}.";
+        }
+        else
+        {
+            // Andere Zone: erst wohin, dann ueber welchen Uebergang - genau wie
+            // bei Quest- und Jagdzielen, denn es ist dieselbe Frage.
+            var zone = string.IsNullOrEmpty(entry.ZoneName)
+                ? AccessibilityStrings.InAnotherArea
+                : AccessibilityStrings.InArea(entry.ZoneName);
+            text += ", " + zone;
+
+            var hop = _places.FindFirstHopToMap(entry.MapId, out var hops);
+            if (hop != null)
+            {
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
+            }
+            else
+            {
+                // Kein Uebergang dorthin: das ist eine Auskunft und wird gesagt.
+                // Zu schweigen hiesse, den Spieler eine Taste druecken zu lassen,
+                // die nichts tun kann.
+                text += ", " + AccessibilityStrings.DutyNoWalkingRoute;
+            }
+        }
+
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Inhalte] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
     /// <summary>
     /// Quest objectives, nearest first. In-zone markers come first, sorted by
     /// straight-line distance. Cross-zone markers follow, sorted by the walking
@@ -1316,8 +1753,13 @@ public sealed class NavigationService
         // NPC nearby or an accepted leve) - no empty "0 Freibriefe" in zones
         // without any. An empty answer inside the category is still a real
         // answer once it IS offered, exactly like the gathering category.
+        //
+        // A running leve also keeps the category available on its own: its
+        // enemies are in it, and they must never become unreachable just because
+        // the marker list happens to be empty at that moment.
         if (Categories[index].Cat == NavCategory.Levequests)
-            return _questMarkers.GetLevequestDestinations().Count > 0;
+            return _questMarkers.GetLevequestDestinations().Count > 0
+                || _leveEnemies.GetRunningLeve() != null;
 
         // FATEs only where the zone actually has an active/preparing one - no
         // empty "0 FATEs" category in zones without any (same rule as fishing
@@ -2005,6 +2447,25 @@ public sealed class NavigationService
     private DateTime _guideLastMoveAt;
     private float _guideBestDistance;
     private DateTime _guideLastApproachAt;
+    /// <summary>Stimme des Peil-Tons fuer das aktuelle Gehhilfe-Ziel.</summary>
+    private BeaconKind _walkBeaconKind = BeaconKind.Object;
+
+    /// <summary>
+    /// Kennung des laufenden Gehhilfe-Ziels fuer den Peil-Ton. Eine laufende
+    /// Nummer und nicht die Objekt-Id, weil die Gehhilfe auch auf blosse
+    /// Positionen zeigt (Marker, Zonenuebergaenge) - und weil zweimal dieselbe
+    /// Tuer hintereinander trotzdem zwei getrennte Laeufe sind.
+    /// </summary>
+    private ulong _walkBeaconKey;
+
+    /// <summary>
+    /// Vergibt die Kennungen aus <see cref="_walkBeaconKey"/>. Startet weit
+    /// oberhalb jeder Objekt-Id, damit eine Gehhilfe-Kennung nie zufaellig mit
+    /// der Id eines anvisierten Ziels zusammenfaellt - sonst bliebe genau der
+    /// Uebergang zwischen beiden unbemerkt, den der Neustart abfangen soll.
+    /// </summary>
+    private static ulong _walkBeaconKeyCounter = 1UL << 60;
+
     private bool _guideMeshEndAnnounced;
 
     /// <summary>Arrival distance for the walk guide, in yalms/meters.</summary>
@@ -2085,6 +2546,7 @@ public sealed class NavigationService
             return;
         }
 
+        _walkBeaconKind = BeaconKindForObject(target);
         StartWalkGuide(target.GameObjectId, target.Name.TextValue, target.Position, ArrivalDistance);
     }
 
@@ -2096,11 +2558,38 @@ public sealed class NavigationService
     /// height). Callers turn a running guide off before starting a new one.
     /// </summary>
     public void StartWalkGuideToPosition(Vector3 position, string name, float arrivalRange)
-        => StartWalkGuide(0, name, position, MathF.Max(ArrivalDistance, arrivalRange));
+    {
+        // Die Stimme kommt aus der Browser-Auswahl, die diesen Lauf ausgeloest
+        // hat: der Aufrufer loest genau diese Auswahl gerade in eine Position
+        // auf, also ist sie hier noch gueltig. Fuehrt der Weg in eine andere
+        // Zone, ist das Laufziel ein Uebergang - und der klingt dann auch wie
+        // einer, nicht wie das Ziel dahinter.
+        _walkBeaconKind = SelectedQuestDestination is { } q && q.TerritoryTypeId != _clientState.TerritoryType
+                       || SelectedDutyEntrance is { } d && d.TerritoryTypeId != _clientState.TerritoryType
+                       || SelectedHuntTarget is { InCurrentZone: false }
+            ? BeaconKind.Transition
+            : BeaconKindForSelection();
+        StartWalkGuide(0, name, position, MathF.Max(ArrivalDistance, arrivalRange));
+    }
+
+    /// <summary>Die Stimme der aktuellen Browser-Auswahl, ohne Zonen- oder Positionspruefung.</summary>
+    private BeaconKind BeaconKindForSelection()
+    {
+        if (SelectedQuestDestination != null) return BeaconKind.Quest;
+        if (SelectedHuntTarget != null) return BeaconKind.Enemy;
+        if (SelectedDutyEntrance != null) return BeaconKind.DutyEntrance;
+        if (SelectedPlaceDestination is { } p)
+            return p.IsZoneTransition ? BeaconKind.Transition
+                 : p.TypeLabel is "Ätheryt" or "Aethernet" ? BeaconKind.Aetheryte
+                 : p.IsWaterSpot ? BeaconKind.Gathering
+                 : BeaconKind.Object;
+        return BeaconKind.Object;
+    }
 
     private void StartWalkGuide(ulong targetId, string name, Vector3 destination, float arrivalRange)
     {
         _walkGuideActive = true;
+        _walkBeaconKey = ++_walkBeaconKeyCounter;
         _walkTargetId = targetId;
         _walkTargetName = name;
         _walkDestPosition = destination;
@@ -2126,7 +2615,11 @@ public sealed class NavigationService
     private void StopWalkGuide()
     {
         _walkGuideActive = false;
-        _beacon.Stop();
+        // Idle statt Stop: das Ziel bleibt in aller Regel gewaehlt, und im
+        // naechsten Frame uebernimmt der Ziel-Peilton (UpdateTargetBeacon). Das
+        // Audiogeraet dazwischen zu schliessen und sofort wieder zu oeffnen
+        // kostet nur einen hoerbaren Aussetzer.
+        _beacon.Idle();
         ClearRoute();
     }
 
@@ -2300,7 +2793,10 @@ public sealed class NavigationService
         var relAngle = RelativeAngle(player, guidePoint);
         // Steering (pitch/pan) follows the waypoint; loudness follows the
         // remaining distance to the DESTINATION (see BeaconService.Update).
-        _beacon.Update(relAngle, distance);
+        // Die Steuerung (Seite, Stille-Zone) folgt dem WEGPUNKT, die Lautstaerke
+        // der Reststrecke zum Ziel - siehe BeaconService.Update.
+        _beacon.Update(relAngle, distance, _walkBeaconKind,
+                       arrived: distance <= _walkArrivalRange, targetKey: _walkBeaconKey);
 
         // Reassurance repeat between waypoint events; the beacon carries the
         // direction continuously in the frames between. After the mesh ended we
