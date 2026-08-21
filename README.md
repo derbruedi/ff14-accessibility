@@ -242,10 +242,13 @@ Dieser ganze Abschnitt ist ein Beitrag von
 [bladestorm360](https://github.com/bladestorm360) (PR #6).
 
 Ein Tiefes Gewölbe ist in sich geschlossen, und der Objekt-Browser stellt
-sich darin um: statt sechzehn Weltkategorien gibt es vier Antworten.
+sich darin um: statt sechzehn Weltkategorien gibt es fünf Antworten.
 
 - **Kategorien drinnen**: Gegner (aufgedeckte Fallen zählen mit — das Spiel
-  führt sie selbst als Gegner), Truhen, die beiden Leuchten und die Räume.
+  führt sie selbst als Gegner), Verbündete, Truhen, die beiden Leuchten und
+  die Räume. Verbündete werden auch dann angeboten, wenn gerade niemand da
+  ist — „ist jemand bei mir?" ist eine echte Frage, deren leere Antwort
+  ebenfalls echt ist.
 - **Räume statt Objekte**: Der Inhalt einer Ebene wird beim Content-Director
   des Spiels abgefragt, nicht in der Objekttabelle. Deshalb verschwindet ein
   Ziel nicht mehr, sobald du weit genug weggehst, dass das Spiel es entlädt —
@@ -375,7 +378,7 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
   Verbündete, Spieler, Objekte, Inhalte, Alle Inhalte, Quest-Ziele,
   Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
-  Tiefen Gewölbe stattdessen Truhen, Leuchten, Räume)
+  Tiefen Gewölbe stattdessen nur Gegner, Verbündete, Truhen, Leuchten, Räume)
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung

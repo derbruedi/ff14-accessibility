@@ -232,10 +232,12 @@ This entire section was contributed by
 [bladestorm360](https://github.com/bladestorm360) (PR #6).
 
 A deep dungeon is self-contained, and the object browser adapts to it:
-instead of sixteen world categories there are four answers.
+instead of sixteen world categories there are five answers.
 
 - **Categories inside**: enemies (revealed traps included — the game itself
-  lists them as enemies), treasure, the two cairns and the rooms.
+  lists them as enemies), allies, treasure, the two cairns and the rooms.
+  Allies are offered even when nobody is around — "is anyone with me?" is a
+  real question, and its empty answer is real too.
 - **Rooms instead of objects**: the contents of a floor are read from the
   game's content director, not from the object table. So a destination no
   longer disappears once you walk far enough away for the game to unload it —
@@ -366,7 +368,8 @@ navigation keys above the arrow block.
 - **Ctrl+Page Down** — next object category (NPCs, merchants, enemies,
   allies, players, objects, duties, all duties, quest objectives,
   levequests, FATEs, gathering points, fishing spots, aetherytes,
-  waypoints; inside a deep dungeon: treasure, cairns, rooms instead)
+  waypoints; inside a deep dungeon: only enemies, allies, treasure, cairns,
+  rooms instead)
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance

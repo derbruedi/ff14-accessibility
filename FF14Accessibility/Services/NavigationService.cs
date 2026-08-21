@@ -549,22 +549,21 @@ public sealed class NavigationService
         (NavCategory.DeepTreasure, new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         (NavCategory.DeepCairns,   new[] { ObjectKind.EventObj }),
         (NavCategory.Enemies,      new[] { ObjectKind.BattleNpc }),
-        // BEWUSST NICHT ENTHALTEN: die Kategorie Verbuendete. Sie gehoert einem
-        // anderen offenen PR ("Zwei neue Objekt-Kategorien"), der NavCategory.Allies,
-        // Services/CombatSide.cs und den passenden Zweig in GetCategoryObjects
-        // mitbringt. Beides hier ebenfalls anzulegen wuerde beim Zusammenfuehren an
-        // vier Stellen kollidieren, statt Arbeit zu sparen.
+        // Verbuendete: dieselben Arten wie im Weltsatz - BattleNpc, solange der Trupp
+        // aus Trust/Duty-Support besteht, Pc, sobald es echte Mitspieler sind. Der
+        // Filter in GetCategoryObjects bleibt unveraendert: CombatSide.IsAlly sagt nur
+        // dann ja, wenn das SPIEL etwas als Begleiter oder Gruppenmitglied fuehrt, und
+        // eine Ebene, auf der man allein ist, antwortet damit von selbst mit "0".
         //
-        // Wenn jener PR zuerst landet, ist das hier EINE Zeile - der vorhandene Filter
-        // passt unveraendert, weil CombatSide.IsAlly nur dann ja sagt, wenn das SPIEL
-        // etwas als Begleiter oder Gruppenmitglied fuehrt; eine Ebene, auf der man
-        // allein ist, antwortet also von selbst mit "0":
+        // SIE WIRD AUCH LEER ANGEBOTEN, anders als Schaetze oder Leuchten, weil "ist
+        // jemand bei mir?" eine echte Frage ist, deren leere Antwort ebenfalls echt
+        // ist. Dafuer war nichts zu tun: IsCategoryAvailable kennt fuer Verbuendete
+        // keine Regel und laesst sie deshalb stehen.
         //
-        //     (NavCategory.Allies,   new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
-        //
-        // Sie wird auch dann angeboten, wenn sie leer ist - anders als Schaetze oder
-        // Leuchten - weil "ist jemand bei mir?" eine echte Frage ist, deren leere
-        // Antwort ebenfalls echt ist.
+        // Nachgetragen 2026-08-21 beim Merge von PR #6. Der hatte sie ausgelassen,
+        // solange NavCategory.Allies noch einem anderen offenen PR gehoerte - jener
+        // (#3, "Zwei neue Objekt-Kategorien") liegt seit dem 10.08. in main.
+        (NavCategory.Allies,       new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
     };
 
     /// <summary>

@@ -45,16 +45,31 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     Stellen, per grep auffindbar); jetzt, wo der Merge durch ist, bleibt es als
     Herkunftsvermerk stehen statt halb da und halb weg zu sein.
 
->>> EIN OFFENER PUNKT AUS DEM PR SELBST, NICHT ERLEDIGT: der Kommentarblock in
-    DeepDungeonCategories sagt, die Kategorie "Verbuendete" fehle bewusst, weil
-    sie einem anderen PR gehoere - und nennt die EINE Zeile, die sie nachtraegt,
-    falls jener zuerst landet:
+>>> EIN PUNKT AUS DEM PR SELBST, AUF ANSAGE DES USERS NACHGETRAGEN: der
+    Kommentarblock in DeepDungeonCategories sagte, die Kategorie "Verbuendete"
+    fehle bewusst, weil sie einem anderen PR gehoere - und nannte die EINE Zeile,
+    die sie nachtraegt, falls jener zuerst landet. Jener PR (#3) liegt seit dem
+    10.08. in main, die Zeile steht jetzt drin:
 
-        (NavCategory.Allies,   new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
+        (NavCategory.Allies,       new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
 
-    Jener PR (#3) IST inzwischen gemergt. Die Zeile ist also faellig, aber sie
-    aendert Verhalten im Gewoelbe und ist NICHT ohne Rueckfrage eingefuegt
-    worden.
+>>> BEIDE BEHAUPTUNGEN DES BEITRAGENDEN SIND VORHER GEGEN DEN CODE GEPRUEFT
+    WORDEN, nicht geglaubt:
+    1. "Der vorhandene Filter passt unveraendert" - stimmt: der Zweig
+       `cat == NavCategory.Allies` in GetCategoryObjects haengt am Kategoriewert,
+       nicht am Satz, und CombatSide.IsAlly nimmt nur heraus, was das SPIEL als
+       Begleiter oder Gruppenmitglied fuehrt.
+    2. "Sie wird auch leer angeboten" - stimmt ebenfalls, und zwar von selbst:
+       IsCategoryAvailable hat Sonderregeln nur fuer Angelplaetze, Freibriefe,
+       FATEs, Jagdziele und Sammelpunkte. Verbuendete faellt durch und bekommt
+       `return true`. Es war also NICHTS zusaetzlich zu tun - haette ich die
+       Regel nicht nachgelesen, waere eine ueberfluessige Ausnahme entstanden.
+    Die Arten sind zeichengleich mit dem Weltsatz (BattleNpc + Pc), damit der
+    Browser Trust-Trupp und echte Mitspieler unter einer Kategorie findet.
+
+>>> MITGEZOGEN: README.md und README.en.md zaehlen die Kategorien drinnen auf -
+    aus "vier Antworten" sind fuenf geworden, an beiden Stellen je Sprache
+    (Abschnitt "Tiefe Gewoelbe" und die Tastenliste).
 
 >>> AUSSERDEM COMMITTET (b5fdc0e), was seit dem 19.08. unversioniert herumlag:
     Fluchtrichtung, Warnton-Auswahl, Fang-Zustand, aufgeraeumte Inhaltssuche.
