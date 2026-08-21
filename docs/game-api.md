@@ -1799,3 +1799,63 @@ das die volle Fensterfläche abdeckt (880x440) und das Fokus-Bit trägt. Der
 generische `FindFocusedText` fand dadurch bei JEDEM Fokuswechsel den
 Fenstertitel statt des Bedienelements (`Key=31013` in jeder Zeile des Logs vom
 2026-08-19). Dasselbe Muster ist bei `ContentsFinder` zu sehen (`Key=76012`).
+
+## Boss-Attacken: NICHT aus den Spieldaten ableitbar (gemessen 2026-08-21)
+
+Frage des Users: *"kriegen wir raus welche boss welche attacken macht?"* — also
+im Voraus, statt erst beim Cast. Offline gegen die Sheets gemessen (Lumina,
+deutscher Client), Ergebnis negativ. Damit die Frage nicht erneut recherchiert
+wird, hier der vollständige Befund.
+
+### Was es gibt: das `Behavior`-Sheet
+
+Ein **Subrow-Sheet**, 6636 Zeilen (lückenlos 30000..36635), 17 Spalten, 1 bis
+256 Subrows je Zeile. **Spalte 4 (Int32) ist eine Action-Id** — belegt, nicht
+vermutet: von 82.498 Werten ungleich 0 lösen 71.960 zu einem echten
+Aktionsnamen im `Action`-Sheet auf ("Einherjar", "Welle der Düsternis",
+"Nichts-Feuga", "Steinsprenger", "Windschlag"). Eine Zeile ist damit die
+Aktionsliste **eines Verhaltens**, im Median 5 Aktionen, höchstens 81.
+
+Lesen: `GetSubrowSheet<RawSubrow>(null, "Behavior")` — `GetSheet` wirft
+`NotSupportedException: Specified sheet variant Subrows is not supported`.
+
+### Warum es trotzdem nicht trägt — zwei unabhängige Gründe
+
+**1. Es deckt nur 1,88 Prozent der Aktionen ab.** Das `Behavior`-Sheet führt
+4749 verschiedene Action-Ids, davon 836 benannte. Das `Action`-Sheet hat 44.448
+benannte Zeilen. Was drinsteht, sind durchweg niedrige Ids, also
+ARR-Feldgegner — es ist das Standardverhalten einfacher Welt-Mobs, kein
+Boss-Skript. Stichprobe:
+
+- "Frostatem" (id 16445, die Boss-Aktion aus unserem eigenen Beispiel): **NEIN**
+- "Schwanzschlag" (11 Ids, von 935 bis 41579): **keine einzige** enthalten
+- "Einherjar" 785: ja — 3144 und 24036 dagegen nicht
+- "Steinsprenger" 787: ja — die anderen acht Ids nicht
+
+**2. Es gibt keinen Weg vom Gegner zu seiner Behavior-Zeile.** Geprüft:
+
+- `BNpcBase` (20402 Zeilen, 27 Spalten): KEINE Spalte zeigt in den Bereich
+  30000..36635. Der scheinbare Volltreffer beim Test „Feld + 30000" ist
+  wertlos — das Sheet ist lückenlos, also trifft dort **jeder** kleine Wert.
+- `BNpcName`, `BNpcCustomize`, `BNpcState`, `BNpcParts`, `ModelChara`,
+  `NotoriousMonster`: keine Spalte mit auch nur einem auflösenden Treffer.
+- `FFXIVClientStructs`: die Zeichenkette `BehaviorId` kommt in der DLL **nicht**
+  vor. Kein bekanntes Laufzeitfeld.
+
+**Der Rückwärtsweg trägt ebenfalls nicht.** Idee: eine beobachtete Attacke
+identifiziert die Behavior-Zeile, und die kennt dann die übrigen. Gemessen an
+den 836 benannten Aktionen: nur 249 stehen in genau einer Zeile, 271 in 6 bis
+50, und 84 in mehr als 50. "Einherjar" steht in 158 Zeilen, "Steinsprenger" in
+113. Der Median liegt bei 4, der Höchstwert bei 3857.
+
+### Schlussfolgerung
+
+Boss-Mechaniken stehen in keiner Excel-Tabelle. Genau deshalb erzeugt die
+gesamte Community ihre Timelines aus **aufgezeichneten Kämpfen** (cactbot,
+FFLogs) und nicht aus den Sheets. Der einzige gangbare Weg für dieses Projekt
+ist derselbe: selbst mitschreiben, was ein Gegner wirft.
+
+Was das Spiel dagegen **sofort** hergibt, sobald ein Cast beginnt, und was das
+Plugin bereits nutzt: Aktionsname, `CastType` (Form) und `EffectRange` aus dem
+`Action`-Sheet, dazu `TotalCastTime - CurrentCastTime` als verbleibende Zeit.
+Siehe `ActionShapeService` und `CombatService.UpdateEnemyCastWarnings`.
