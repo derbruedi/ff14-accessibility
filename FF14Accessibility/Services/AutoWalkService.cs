@@ -131,7 +131,7 @@ public sealed class AutoWalkService : IDisposable
     private readonly IPluginLog _log;
     private readonly NavmeshIpc _nav;
 
-    /// <summary>Die eine Tuer zu vnavmesh, geteilt statt ein zweites Mal geoeffnet - das
+    /// <summary>[Tiefes Gewoelbe] Die eine Tuer zu vnavmesh, geteilt statt ein zweites Mal geoeffnet - das
     /// Tiefe Gewoelbe braucht Nav.Rebuild bei einem Ebenenwechsel. Nur lesend; jeder
     /// Aufruf laeuft weiterhin durch die Absicherungen von NavmeshIpc.</summary>
     public NavmeshIpc Navmesh => _nav;
@@ -202,7 +202,7 @@ public sealed class AutoWalkService : IDisposable
     // ── Höhen auf dem Netz suchen ────────────────────────────────────
 
     /// <summary>
-    /// Legt einen Punkt auf eine Stelle, die auf dem Netz auch wirklich ERREICHBAR ist -
+    /// [Tiefes Gewoelbe] Legt einen Punkt auf eine Stelle, die auf dem Netz auch wirklich ERREICHBAR ist -
     /// nicht bloss auf die naechstgelegene Stelle darauf.
     ///
     /// Der aufgezeichnete Punkt eines Gewoelbe-Raumes ist der Ursprung des Raum-Moduls in

@@ -61,7 +61,7 @@ internal enum NavCategory
     AcceptableQuests,
     Levequests,
     Waypoints,
-    // Nur INNERHALB eines Tiefen Gewoelbes angeboten, wo sie den Weltsatz
+    // [Tiefes Gewoelbe] Nur INNERHALB eines Tiefen Gewoelbes angeboten, wo sie den Weltsatz
     // vollstaendig ersetzen - siehe DeepDungeonCategories. Fallen bekommen keine
     // eigene Kategorie: das Spiel fuehrt eine aufgedeckte Falle als BattleNpc, sie
     // steht also bereits unter Gegner.
@@ -197,7 +197,7 @@ public sealed class NavigationService
 
         PollMapFlag(player);
 
-        // Das Betreten oder Verlassen eines Tiefen Gewoelbes tauscht den gesamten
+        // [Tiefes Gewoelbe] Das Betreten oder Verlassen tauscht den gesamten
         // Kategoriensatz, also faengt der Browser von vorne an, statt auf dem Index zu
         // landen, den der andere Satz hinterlassen hat. Hier wird ausserdem der
         // Ebenen-Schnappschuss geholt - ein reiner Lesevorgang, der nur ins Log
@@ -526,7 +526,7 @@ public sealed class NavigationService
     };
 
     /// <summary>
-    /// Der Kategoriensatz INNERHALB eines Tiefen Gewoelbes. Er ersetzt den Weltsatz
+    /// [Tiefes Gewoelbe] Der Kategoriensatz INNERHALB eines Gewoelbes. Er ersetzt den Weltsatz
     /// vollstaendig, solange der Spieler in einem Gewoelbe ist.
     ///
     /// Eine Ebene enthaelt genau diese Arten von Dingen; sich durch sechzehn
@@ -549,10 +549,26 @@ public sealed class NavigationService
         (NavCategory.DeepTreasure, new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         (NavCategory.DeepCairns,   new[] { ObjectKind.EventObj }),
         (NavCategory.Enemies,      new[] { ObjectKind.BattleNpc }),
+        // BEWUSST NICHT ENTHALTEN: die Kategorie Verbuendete. Sie gehoert einem
+        // anderen offenen PR ("Zwei neue Objekt-Kategorien"), der NavCategory.Allies,
+        // Services/CombatSide.cs und den passenden Zweig in GetCategoryObjects
+        // mitbringt. Beides hier ebenfalls anzulegen wuerde beim Zusammenfuehren an
+        // vier Stellen kollidieren, statt Arbeit zu sparen.
+        //
+        // Wenn jener PR zuerst landet, ist das hier EINE Zeile - der vorhandene Filter
+        // passt unveraendert, weil CombatSide.IsAlly nur dann ja sagt, wenn das SPIEL
+        // etwas als Begleiter oder Gruppenmitglied fuehrt; eine Ebene, auf der man
+        // allein ist, antwortet also von selbst mit "0":
+        //
+        //     (NavCategory.Allies,   new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
+        //
+        // Sie wird auch dann angeboten, wenn sie leer ist - anders als Schaetze oder
+        // Leuchten - weil "ist jemand bei mir?" eine echte Frage ist, deren leere
+        // Antwort ebenfalls echt ist.
     };
 
     /// <summary>
-    /// Der gerade gueltige Kategoriensatz. Der Wechsel zwischen beiden Saetzen wird in
+    /// [Tiefes Gewoelbe] Der gerade gueltige Kategoriensatz. Der Wechsel zwischen beiden Saetzen wird in
     /// <see cref="Update"/> erkannt, das jeden Frame laeuft; die Begrenzung hier ist nur
     /// eine Absicherung, damit ein Index aus dem anderen Satz nie ausserhalb liest.
     /// </summary>
@@ -567,13 +583,13 @@ public sealed class NavigationService
     }
 
     /// <summary>
-    /// Der Gewoelbe-Leser, oder null, solange er nicht gesetzt ist - dann verhaelt sich
+    /// [Tiefes Gewoelbe] Der Gewoelbe-Leser, oder null, solange er nicht gesetzt ist - dann verhaelt sich
     /// diese Datei exakt wie in der offenen Welt. Eine Property statt eines
     /// Konstruktor-Arguments, damit die Signatur unveraendert bleibt.
     /// </summary>
     public DeepDungeonNav? DeepDungeon { get; set; }
 
-    /// <summary>Ob der Gewoelbe-Satz im vorigen Frame galt, damit das Betreten oder
+    /// <summary>[Tiefes Gewoelbe] Ob der Gewoelbe-Satz im vorigen Frame galt, damit das Betreten oder
     /// Verlassen eines Gewoelbes den Browser zuruecksetzen kann.</summary>
     private bool _deepCategoriesActive;
 
@@ -586,7 +602,7 @@ public sealed class NavigationService
         var cat                  => AccessibilityStrings.CategoryLabel(cat),
     };
 
-    /// <summary>Ob der Browser gerade auf der Raumliste steht.</summary>
+    /// <summary>[Tiefes Gewoelbe] Ob der Browser gerade auf der Raumliste steht.</summary>
     private bool IsDeepRoomCategory => Categories[_categoryIndex].Cat == NavCategory.DeepRooms;
 
     private bool IsQuestCategory           => Categories[_categoryIndex].Cat == NavCategory.QuestGoals;
@@ -760,7 +776,7 @@ public sealed class NavigationService
             return;
         }
 
-        // Die Raumliste wird aus dem Content-Director gezaehlt, nicht aus der
+        // [Tiefes Gewoelbe] Die Raumliste wird aus dem Content-Director gezaehlt, nicht aus der
         // Objekttabelle - sie antwortet also auch dort, wo nichts geladen ist, und
         // genau dafuer gibt es sie.
         if (IsDeepRoomCategory)
@@ -926,7 +942,7 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
-    // ── Tiefes Gewoelbe: durch die Raeume der aktuellen Ebene blaettern ──
+    // ── [Tiefes Gewoelbe] Durch die Raeume der aktuellen Ebene blaettern ──
 
     /// <summary>
     /// Blaettert durch die Raeume der aktuellen Ebene.
@@ -2363,7 +2379,7 @@ public sealed class NavigationService
             return node + _memory.NumberSuffix(obj, node) + _memory.VisitedSuffix(obj);
         }
 
-        // Eine Gewoelbe-Truhe nennt ihre FARBE, wo das Spiel eine gibt - im spieleigenen
+        // [Tiefes Gewoelbe] Eine Truhe nennt ihre FARBE, wo das Spiel eine gibt - im spieleigenen
         // Wort dafuer ("Silberne Schatztruhe", Addon 10421). Die Farbe kommt aus der
         // Daten-Id des Objekts selbst und NICHT daraus, es mit dem Truhen-Array des
         // Directors zu paaren: dieses Array enthaelt nur die entdeckten und noch nicht
@@ -2433,7 +2449,7 @@ public sealed class NavigationService
         if (cat == NavCategory.Duties)
             return objects.Where(o => DungeonSide.Describe(o, _data, _log) != null).ToList();
 
-        // Die beiden Objekt-Kategorien des Tiefen Gewoelbes. Beide ordnen nach den
+        // [Tiefes Gewoelbe] Die beiden Objekt-Kategorien. Beide ordnen nach den
         // spieleigenen WORTEN fuer die Dinge ein (Addon 10113 fuer eine Truhe,
         // 10418/10419 fuer die beiden Leuchten), gelesen aus den Sheets in der Sprache
         // des Clients - siehe DeepDungeonNav. Jede hier verworfene Truhe wird mit ihrer

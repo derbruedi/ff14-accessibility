@@ -2824,6 +2824,13 @@ public static partial class AccessibilityStrings
     /// <summary>Eine laufende Pomander-Wirkung.</summary>
     public static string DeepKindItemEffect => IsGerman ? "Gegenstand" : "Item effect";
 
+    /// <summary>Eine Zeile der Gewoelbe-Wirkungen: woher sie kommt und wie das Spiel sie
+    /// nennt. Nur der NAME, nicht die Beschreibung - diese Zeilen haengen an der
+    /// Ebenen-Taste, und die soll eine Antwort geben und keinen Vortrag halten. Die
+    /// vollstaendige Beschreibung steht im Fenster Charakterinfo an dem Platz, zu dem sie
+    /// gehoert.</summary>
+    public static string DeepEffectRow(string kind, string name) => $"{kind}: {name}";
+
     /// <summary>
     /// Welches Gewoelbe und welche Ebene davon. Beide Hauptwoerter gehoeren dem SPIEL -
     /// der Name des Gewoelbes und das Wort, mit dem der Ergebnisschirm die Zahl

@@ -38,7 +38,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGameInteropProvider    Interop         { get; init; } = null!;
     // IGameConfig steht weiter oben - drei Nutzer, eine Deklaration (Chat-Filter,
     // Bewegungsmodus). PR #6 brachte eine zweite mit, die hier entfallen ist.
-    // Loest die Makros in Sheet-Texten so auf, wie das Spiel es tut. Die
+    // [Tiefes Gewoelbe] Loest die Makros in Sheet-Texten so auf, wie das Spiel es tut. Die
     // Pomander-Beschreibungen brauchen das: dort steckt das Wort fuer eine Ebene in
     // einem Switch-Makro, und ExtractText() allein wirft es weg (siehe DeepDungeonText).
     [PluginService] private ISeStringEvaluator      SeStringEval    { get; init; } = null!;
@@ -118,7 +118,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginsService _dalamudPlugins;
     private readonly TooltipService _tooltips;
     private readonly TripleTriadService _tripleTriad;
-    // ── Tiefes Gewoelbe ──
+    // ── [Tiefes Gewoelbe] ──
     private readonly DeepDungeonText    _deepText;
     private readonly DeepDungeonState   _deepState;
     private readonly DeepDungeonRoomMap _deepRoomMap;
@@ -433,7 +433,7 @@ public sealed class Plugin : IDalamudPlugin
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
                                       _tolk, Log, _heading, _chatFilters, _aoeWarn);
 
-        // ── Tiefes Gewoelbe ──────────────────────────────────────────
+        // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
         // (darunter das Wort, das das jeweilige Gewoelbe fuer eine Ebene benutzt), die
         // ExtractText() wegwirft - der Auswerter des Spiels loest sie auf.
@@ -1117,9 +1117,19 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Sagt, in welchem Tiefen Gewoelbe der Spieler ist und auf welcher Ebene davon -
-    /// die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur
-    /// beilaeufig nennt.
+    /// [Tiefes Gewoelbe] Sagt, in welchem Gewoelbe der Spieler ist, auf welcher Ebene davon, und was
+    /// diese Ebene gerade mit ihm macht.
+    ///
+    /// DIE EBENE ist die eine Zahl, in der der ganze Lauf gemessen wird, und das Spiel
+    /// nennt sie nur beilaeufig. DIE WIRKUNGEN stehen NICHT in der StatusList des
+    /// Spielers - ein Gewoelbe fuehrt seine ebenenweiten Zustaende, seine Verbote und
+    /// seine Pomander-Wirkungen auf dem Content-Director, und ein Effekt-Leser, der nur
+    /// die StatusList kennt, sieht davon nichts (siehe DeepDungeonState fuer die
+    /// Messung, die das belegt).
+    ///
+    /// Beides auf einer Taste, weil es eine Frage ist: "wo stecke ich, und was liegt
+    /// gerade auf mir". Laeuft nichts, wird auch nichts angehaengt - die Taste antwortet
+    /// dann einfach mit der Ebene, statt "keine Wirkungen" zu sagen.
     ///
     /// Unterbrechend, wie jede andere Antwort auf eine gedrueckte Taste: der Spieler
     /// wartet darauf. Ausserhalb eines Gewoelbes sagt sie das, statt still zu bleiben -
@@ -1128,7 +1138,24 @@ public sealed class Plugin : IDalamudPlugin
     private void AnnounceDeepFloor()
     {
         var line = _deepFloor.DescribeFloor();
-        _tolk.SpeakInterrupt(line ?? AccessibilityStrings.DeepFloorOutside);
+        if (line == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.DeepFloorOutside);
+            return;
+        }
+
+        // Nur die NAMEN, und die sind alle vom Spiel. Die Beschreibung dazu steht im
+        // Fenster Charakterinfo an dem Platz, zu dem sie gehoert (Strg+F10 dort).
+        var effects = _deepState.CollectEffects();
+        if (effects.Count > 0)
+        {
+            var rows = new List<string>(effects.Count);
+            foreach (var effect in effects)
+                rows.Add(AccessibilityStrings.DeepEffectRow(effect.Kind, effect.Name));
+            line += ". " + string.Join(", ", rows);
+        }
+
+        _tolk.SpeakInterrupt(line);
     }
 
     /// <summary>
