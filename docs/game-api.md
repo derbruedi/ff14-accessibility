@@ -1859,3 +1859,33 @@ Was das Spiel dagegen **sofort** hergibt, sobald ein Cast beginnt, und was das
 Plugin bereits nutzt: Aktionsname, `CastType` (Form) und `EffectRange` aus dem
 `Action`-Sheet, dazu `TotalCastTime - CurrentCastTime` als verbleibende Zeit.
 Siehe `ActionShapeService` und `CombatService.UpdateEnemyCastWarnings`.
+
+### Nebenbefund: die Ansage ist länger als der Cast (gemessen 2026-08-21)
+
+Bei derselben Untersuchung mitgemessen, weil die eigentliche Frage des Users
+„mehr Zeit zum Reagieren" war. **Nicht umgesetzt** — der User hat entschieden,
+es vorerst so zu lassen. Die Zahlen stehen hier, damit sie nicht neu erhoben
+werden müssen.
+
+**Wirkzeit der Aktionen** (`Action`, Spalte 38 = Zehntelsekunden; abgelesen an
+„Frostatem" id 16445 → 30, was der Restzeit-Ansage von 3 s entspricht). Über
+27.959 benannte Aktionen mit Wirkzeit > 0:
+
+- Median 4,0 s; 25. Perzentil 3,0 s; 75. Perzentil 5,0 s
+- 40 Prozent liegen bei ≤ 3,0 s, 10 Prozent bei ≤ 2,0 s
+
+**Sprechdauer unserer Warnungen** (SAPI, Microsoft Hedda, Tempo 2 = Standard;
+lautlos über `SetOutputToAudioStream` gemessen, 16 kHz/16 Bit/Mono):
+
+- „Gegner wirkt Frostatem. Kegel, 90 Grad, 6 Meter. Du stehst drin, 3 Sekunden."
+  → **7,95 s**
+- nur Cast + Form → 5,33 s
+- „Achtung, du stehst drin, 2 Sekunden." → 3,43 s
+- „Drin! Rechts raus, 7 Meter." → 3,45 s
+- „Raus, rechts." → 1,85 s
+
+Die volle Warnung dauert also rund doppelt so lang wie der mediane Cast, und
+sie beginnt mit dem Zaubernamen — der Angabe, die zum Ausweichen am wenigsten
+beiträgt. Ein möglicher Umbau wäre, die Ansage am verbleibenden Zeitbudget
+auszurichten (`TotalCastTime - CurrentCastTime` liegt bereits vor) und die
+Gefahr nach vorn zu ziehen.
