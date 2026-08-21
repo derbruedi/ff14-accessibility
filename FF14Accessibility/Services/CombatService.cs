@@ -21,6 +21,8 @@ public sealed class CombatService
     private readonly MessageHistoryService _history;
     private readonly AoeWarningService     _aoeWarn;
     private readonly EscapeRouteService    _escape;
+    // Der zweite Sprachkanal fuer die Kampfwarnungen - siehe SpeakWarning.
+    private readonly WarningVoiceService   _warnVoice;
     private readonly IPluginLog            _log;
 
     // Gefahrenflaechen dieses Frames, fuer die Fluchtsuche. Feld statt lokaler
@@ -113,6 +115,7 @@ public sealed class CombatService
         MessageHistoryService history,
         AoeWarningService aoeWarn,
         EscapeRouteService escape,
+        WarningVoiceService warnVoice,
         LevequestEnemyService leveEnemies,
         IPluginLog log)
     {
@@ -125,9 +128,38 @@ public sealed class CombatService
         _history       = history;
         _aoeWarn       = aoeWarn;
         _escape        = escape;
+        _warnVoice     = warnVoice;
         _leveEnemies   = leveEnemies;
         _log           = log;
         _actionShape   = new ActionShapeService(data, log);
+    }
+
+    /// <summary>
+    /// Sagt eine KAMPFWARNUNG - und zwar auf dem eigenen Kanal, nicht ueber den
+    /// Screenreader.
+    ///
+    /// WARUM DIESE VIER ANSAGEN ANDERS BEHANDELT WERDEN (Spielerwunsch
+    /// 2026-08-21): der Screenreader hat eine einzige Sprachwarteschlange, und
+    /// das Plugin raeumt sie selbst staendig ab. Ein Zielwechsel, eine Chatzeile
+    /// oder die Stopptaste des Spielers loescht damit eine Warnung, die gerade
+    /// laeuft. Bei einer Zeilenansage ist das richtig - bei "du stehst in der
+    /// Flaeche" kostet es Leben.
+    ///
+    /// DER RUECKFALL IST DER WICHTIGE TEIL: uebernimmt der zweite Kanal nicht
+    /// (keine Sprachausgabe im System, abgeschaltet, stumm gestellt), geht die
+    /// Warnung wieder ueber den Screenreader. Sie darf unter keinen Umstaenden
+    /// einfach verschwinden - eine ausbleibende Warnung ist von "keine Gefahr"
+    /// nicht zu unterscheiden.
+    ///
+    /// NUR HIER, NICHT ALS ALLGEMEINER WEG: alles andere, was das Plugin sagt,
+    /// gehoert weiter auf den Screenreader. Zwei Stimmen, die gleichzeitig
+    /// reden, sind schlechter als eine - der zweite Kanal traegt nur, solange
+    /// er die Ausnahme bleibt.
+    /// </summary>
+    private void SpeakWarning(string text)
+    {
+        if (_warnVoice.Speak(text)) return;
+        _tolk.SpeakInterrupt(text);
     }
 
     // Wird jeden Frame aus Plugin.OnFrameworkUpdate aufgerufen
@@ -301,7 +333,7 @@ public sealed class CombatService
             _aoeInside[caster.GameObjectId] = castId;
         }
 
-        _tolk.SpeakInterrupt(AccessibilityStrings.CastWithDanger(text, shape, standing));
+        SpeakWarning(AccessibilityStrings.CastWithDanger(text, shape, standing));
         _log.Info($"[Combat] Gegner-Cast: caster='{casterName}' id={castId} name='{action}' " +
                   $"aufMich={atMe} unterbrechbar={caster.IsCastInterruptible} " +
                   $"istZiel={caster.GameObjectId == targetId} " +
@@ -376,7 +408,7 @@ public sealed class CombatService
         _aoeInside[id] = castId;
 
         var remaining = RemainingCastTime(caster);
-        _tolk.SpeakInterrupt(AccessibilityStrings.AoeEnteredZone(remaining));
+        SpeakWarning(AccessibilityStrings.AoeEnteredZone(remaining));
         _log.Info($"[Combat] In Flaeche gelaufen: caster='{caster.Name.TextValue}' " +
                   $"id={castId} rest={remaining:F1}s");
     }
@@ -928,7 +960,7 @@ public sealed class CombatService
             var rel  = RelBearingDeg(playerPos, playerRot, spot);
             var dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z),
                                         new Vector2(spot.X, spot.Z));
-            _tolk.SpeakInterrupt(AccessibilityStrings.EscapeDirection(
+            SpeakWarning(AccessibilityStrings.EscapeDirection(
                 AccessibilityStrings.RelativeDirection(rel),
                 AccessibilityStrings.FormatDistance(dist)));
             _log.Info($"[Flucht] Sicherer Punkt {rel:F0} Grad, {dist:F1} m.");
@@ -942,7 +974,7 @@ public sealed class CombatService
         if (_escape.SearchExhausted)
         {
             _escapeSpoken = true;
-            _tolk.SpeakInterrupt(AccessibilityStrings.EscapeNoneFound);
+            SpeakWarning(AccessibilityStrings.EscapeNoneFound);
         }
     }
 

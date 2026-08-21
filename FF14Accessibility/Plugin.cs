@@ -111,6 +111,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly AoeWarningService  _aoeWarn;
+    // [Warnstimme] Zweiter Sprachkanal fuer die vier Kampfwarnungen.
+    private readonly WarningVoiceService _warnVoice;
     private readonly VitalsService      _vitals;
     private readonly HeadingService     _heading;
     private readonly EmoteService       _emote;
@@ -412,7 +414,8 @@ public sealed class Plugin : IDalamudPlugin
         _chatBackfill = new ChatBackfill(_chatReader, _history, _chatFilters, Log);
         _toasts     = new ToastService(ToastGui, TargetManager, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _leveEnemies, Log);
+        _warnVoice  = new WarningVoiceService(_config, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _warnVoice, _leveEnemies, Log);
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
@@ -431,7 +434,7 @@ public sealed class Plugin : IDalamudPlugin
         _menu       = new SpokenMenu(_tolk, Log);
         _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
-                                      _tolk, Log, _heading, _chatFilters, _aoeWarn);
+                                      _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice);
 
         // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
@@ -2258,6 +2261,7 @@ public sealed class Plugin : IDalamudPlugin
         _autoWalk.Dispose();
         _beacon.Dispose();
         _aoeWarn.Dispose();
+        _warnVoice.Dispose();
         _cue.Dispose();
         _vitals.Dispose();
         _tolk.Dispose();

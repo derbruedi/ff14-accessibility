@@ -173,6 +173,15 @@ cues — including braille display output and automatic walking.
   decide by ear. All four hold for as long as the danger does — even the
   swelling one never breaks off, so it cannot be mistaken for the target
   beacon's strikes.
+- **Separate voice for combat warnings**: the cast warning, "you are in it"
+  and the escape direction no longer go through the screen reader but through
+  a system voice of their own (SAPI). The reason: a screen reader has exactly
+  *one* speech queue — a target change, a chat line or your own stop key wipes
+  a warning that is halfway through. On its own channel nothing can cut in.
+  Voice, speed and volume live under Settings → Sounds, and every choice plays
+  a sample sentence right away. If your system offers no speech, or you switch
+  the channel off, the warnings go back through the screen reader — none of
+  them is ever lost.
 - **"You are in it" pre-warning**: if you are already standing in the area
   when the cast begins, the announcement says so — including how much time
   is left ("You are in it, 3 seconds."). Walk into it while the cast is

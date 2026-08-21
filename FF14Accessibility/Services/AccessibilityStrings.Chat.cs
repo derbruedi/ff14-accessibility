@@ -109,6 +109,75 @@ public static partial class AccessibilityStrings
     public static string AoeToneSet(string value) =>
         IsGerman ? $"Warnton {value}." : $"Warning sound {value}.";
 
+    // ── Warnstimme (zweiter Sprachkanal) ──────────────────────────────────────
+    // Sie heißt im Menü nicht "SAPI": für den Spieler zählt, WAS sie tut - dass
+    // die Kampfwarnungen an der Sprachausgabe vorbeigehen und dort nicht mehr
+    // abgeschnitten werden können.
+    public static string OptWarningVoice => IsGerman
+        ? "Eigene Stimme für Kampfwarnungen"
+        : "Separate voice for combat warnings";
+
+    public static string OptWarningVoiceVolume => IsGerman
+        ? "Lautstärke Warnstimme"
+        : "Warning voice volume";
+
+    public static string OptWarningVoiceRate => IsGerman
+        ? "Tempo Warnstimme"
+        : "Warning voice speed";
+
+    public static string OptWarningVoiceName => IsGerman
+        ? "Stimme für Kampfwarnungen"
+        : "Voice for combat warnings";
+
+    /// <summary>Der Satz, den eine Stimme zur Probe spricht. Eine echte Warnung
+    /// und kein "Test eins zwei": beurteilt werden soll, ob man SIE im Kampf
+    /// versteht.</summary>
+    public static string WarningVoiceSample => IsGerman
+        ? "Kegel von vorne. Nach rechts ausweichen, sieben Meter."
+        : "Cone from the front. Dodge right, seven metres.";
+
+    /// <summary>Steht in der Stimmenauswahl, wenn keine eigene gewählt ist.</summary>
+    public static string WarningVoiceAutomatic => IsGerman ? "Automatisch" : "Automatic";
+
+    /// <summary>Bestätigung nach der Wahl einer Stimme - nur nötig, wenn die
+    /// Probe stumm blieb.</summary>
+    public static string WarningVoiceSet(string value) =>
+        IsGerman ? $"Warnstimme {value}." : $"Warning voice {value}.";
+
+    /// <summary>Steht statt der Auswahl, wenn das System gar keine Sprachausgabe
+    /// anbietet. Eine leere Liste ohne Erklärung wäre von einem Fehler des
+    /// Plugins nicht zu unterscheiden.</summary>
+    public static string WarningVoiceUnavailable => IsGerman
+        ? "Keine Sprachausgabe des Systems verfügbar. Die Kampfwarnungen kommen über den Screenreader."
+        : "No system speech available. Combat warnings go through the screen reader.";
+
+    /// <summary>
+    /// Die wählbaren Tempostufen der Warnstimme. SAPI kennt -10 bis 10; die
+    /// Enden sind bewusst NICHT dabei - bei -10 dauert eine Warnung länger als
+    /// der Zauber, den sie ankündigt, und bei 10 ist der Satz auch für ein
+    /// geübtes Ohr nicht mehr sicher zu verstehen. Sieben Stufen reichen, um
+    /// die eigene Grenze zu finden, ohne sich durch zwanzig zu hören.
+    /// </summary>
+    public static readonly int[] VoiceRateSteps = { -4, -2, 0, 2, 4, 6, 8 };
+
+    /// <summary>Name einer Tempostufe. Beschreibend statt technisch: "Tempo 6"
+    /// sagt niemandem, wie schnell das ist.</summary>
+    public static string VoiceRateName(int rate) => rate switch
+    {
+        <= -4 => IsGerman ? "Sehr langsam" : "Very slow",
+        -3 or -2 => IsGerman ? "Langsam" : "Slow",
+        -1 or 0 => IsGerman ? "Normal" : "Normal",
+        1 or 2 => IsGerman ? "Etwas schneller" : "Slightly faster",
+        3 or 4 => IsGerman ? "Schnell" : "Fast",
+        5 or 6 => IsGerman ? "Sehr schnell" : "Very fast",
+        _ => IsGerman ? "Am schnellsten" : "Fastest",
+    };
+
+    /// <summary>Bestätigung nach der Wahl einer Tempostufe - nur nötig, wenn die
+    /// Probe stumm blieb.</summary>
+    public static string VoiceRateSet(string value) =>
+        IsGerman ? $"Tempo {value}." : $"Speed {value}.";
+
     public static string OptSkillReady => IsGerman ? "Fähigkeit bereit" : "Ability ready";
     public static string OptSkillReadyVolume => IsGerman ? "Fähigkeit bereit Lautstärke" : "Ability ready volume";
     public static string OptHeading => IsGerman ? "Himmelsrichtung" : "Compass heading";

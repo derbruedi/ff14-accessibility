@@ -391,6 +391,34 @@ public sealed class Configuration : IPluginConfiguration
     // die beste ist, entscheidet das Ohr des Spielers, nicht diese Zeile.
     public AoeWarnTone AoeWarnSound = AoeWarnTone.Soft;
 
+    // ── Warnstimme (zweiter Sprachkanal, SAPI) ────────────────────────────────
+    //
+    // Spielerwunsch 2026-08-21: "die angriffs warnungen kommen ja über nvda aber
+    // das kann weggedrückt werden". NVDA hat EINE Sprachwarteschlange, und das
+    // Plugin räumt sie selbst ständig ab - jede SpeakInterrupt-Ansage schneidet
+    // die vorige ab. Die vier Kampfwarnungen laufen deshalb über eine eigene
+    // SAPI-Stimme, die neben dem Screenreader spricht (siehe
+    // WarningVoiceService). STANDARD AN: der Wunsch kam, weil der bisherige Weg
+    // Warnungen verloren hat.
+    public bool WarningVoiceEnabled = true;
+
+    // 0 = stumm, 1 = volle Lautstärke. Bei 0 gehen die Warnungen wieder über den
+    // Screenreader - stumm heißt "anderer Kanal", nicht "keine Warnung".
+    // Höher als die übrigen Töne, weil dieser Kanal gegen die Spielgeräusche und
+    // gegen die laufende Screenreader-Stimme ankommen muss.
+    public float WarningVoiceVolume = 1.0f;
+
+    // SAPI-Tempo, -10 (sehr langsam) bis 10 (sehr schnell). Etwas über normal:
+    // eine Warnung, die erst nach dem Einschlag fertig gesprochen ist, hat ihren
+    // Zweck verfehlt. Wie weit man sie treiben kann, entscheidet das Ohr des
+    // Spielers - deshalb ist der Wert einstellbar und nicht festgelegt.
+    public int WarningVoiceRate = 2;
+
+    // Leer = automatisch die erste Stimme, die zur Sprache des Plugins passt
+    // ("/acc lang", nicht die des Betriebssystems). Ein Name, den das System
+    // nicht kennt, fällt auf dieselbe Automatik zurück.
+    public string WarningVoiceName = string.Empty;
+
     // Fähigkeit-bereit-Ansage (User-Wunsch 2026-07-30): wenn eine Fähigkeit mit
     // echter Abklingzeit (oGCD) wieder einsatzbereit ist, Ton + Name ansagen.
     // GCD-Angriffsskills ausgeschlossen (CooldownService). STANDARD AN.

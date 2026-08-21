@@ -3,7 +3,82 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-21, "PR 6 WAR FAST GANZ DA - OFFEN WAR EIN EINZIGER COMMIT")
+## STAND JETZT (2026-08-21, "WARNSTIMME: DIE WARNUNG BEKOMMT EINEN EIGENEN KANAL")
+
+>>> WUNSCH DES USERS: *"die angriffs warunugen kommen ja ueber nvda aber das kann
+    weggedrueckt werden koennen wir das ueber sapi hoerbar machen?"* - und der
+    Befund dahinter stimmt: der Screenreader hat GENAU EINE Sprachwarteschlange,
+    und das Plugin raeumt sie selbst staendig ab. Jedes SpeakInterrupt schneidet
+    ab, was gerade laeuft. Ein Zielwechsel, eine Chatzeile oder die Stopptaste des
+    Spielers loescht damit eine Warnung mitten im Satz.
+
+>>> ZWEI ENTSCHEIDUNGEN HAT DER USER SELBST GETROFFEN (gefragt, weil sie das
+    Ergebnis aendern):
+      1. NUR SAPI, nicht zusaetzlich zu NVDA - kein Echo, kein doppelter Satz.
+      2. NUR DIE VIER KAMPFWARNUNGEN: Zauber-Warnung mit Gefahrenform, "du stehst
+         in der Flaeche", Fluchtrichtung und "kein sicherer Punkt". HP-Warnung und
+         "Kampf beginnt/endet" bleiben auf dem Screenreader.
+
+>>> TOLK KANN DAS NICHT LEISTEN, und das ist der Grund fuer den eigenen Dienst:
+    die Bibliothek kennt SAPI zwar (Tolk_TrySAPI), benutzt es aber als ERSATZ,
+    wenn kein Screenreader laeuft - nicht daneben. Ueber Tolk gaebe es weiterhin
+    einen einzigen Kanal, nur mit einer anderen Stimme darin.
+
+>>> GEMESSEN STATT ANGENOMMEN, drei Dinge:
+    1. System.Speech 9.0.0 laesst sich fuer net10.0-windows aufloesen und bauen
+       (Testprojekt im Scratchpad, nicht im Repo).
+    2. SpeakAsync kehrt nach 1 ms zurueck. Das ist die Bedingung dafuer, dass der
+       Aufruf im Frame-Update stehen darf - blockierendes Sprechen wuerde das
+       Spiel bei jeder Warnung anhalten.
+    3. Auf diesem Rechner sind Stimmen fuer BEIDE Plugin-Sprachen da: Hedda
+       (de-DE), David und Zira (en-US).
+
+>>> EINE FALLE, DIE ERST IM KAMPF ZUGESCHNAPPT WAERE: das NuGet-Paket liefert
+    System.Speech ZWEIMAL - flach die plattformneutrale Fassung (310 KB, wirft
+    ausserhalb von Windows) und unter runtimes\win\lib\ die echte
+    Windows-Implementierung (685 KB). Welche geladen wird, entscheidet sonst der
+    Abhaengigkeits-Aufloeser anhand der deps.json - und die liegt in devPlugins
+    gar nicht, weil der Debug-Deploy nur einzelne DLLs kopiert. Das neue Target
+    FlattenSpeechRuntime kopiert die Windows-Fassung flach darueber; geprueft ist
+    es an der Dateigroesse in devPlugins (685360 Bytes) und im Release-ZIP.
+
+>>> DER RUECKFALL IST DER WICHTIGE TEIL. Uebernimmt der zweite Kanal nicht (keine
+    Sprachausgabe im System, abgeschaltet, Lautstaerke auf 0), geht die Warnung
+    wieder ueber den Screenreader. CombatService.SpeakWarning ist genau diese eine
+    Verzweigung. Eine Warnung, die verschwindet, weil ein Kanal fehlt, waere das
+    schlechtestmoegliche Ergebnis - Stille ist von "keine Gefahr" nicht zu
+    unterscheiden.
+
+>>> WAS SONST STILL VERLOREN GEGANGEN WAERE: SpeakInterrupt macht mehr als
+    sprechen - es reinigt SeString-Reste (in einer Cast-Warnung steckt der
+    AKTIONSNAME des Spiels, und der kommt mit Nutzlasten und Symbolzeichen),
+    entprellt gleiche Texte innerhalb einer halben Sekunde und protokolliert
+    jeden Sprechvorgang. Der neue Kanal tut alles drei selbst, mit derselben
+    Schwelle. Die Entprellung gibt dabei ABSICHTLICH true zurueck: mit false
+    haette der Aufrufer den Satz auf den Screenreader zurueckgeworfen, und der
+    Spieler haette ihn doch zweimal gehoert, nur auf zwei Stimmen verteilt.
+
+>>> IM MENUE unter "Toene": Schalter, Lautstaerke (Standard 1,0 - dieser Kanal
+    muss gegen Spielgeraeusche UND die laufende Screenreader-Stimme ankommen),
+    Tempo in sieben Stufen mit Worten statt Zahlen, und die Stimmenwahl mit
+    "Automatisch" zuoberst. Jede Wahl spielt sofort einen echten Warnsatz vor -
+    "Kegel von vorne. Nach rechts ausweichen, sieben Meter." - und keinen
+    Test-eins-zwei: beurteilt werden soll, ob man SIE im Kampf versteht.
+
+>>> NEU/GEAENDERT: WarningVoiceService.cs (neu), CombatService.cs (SpeakWarning +
+    vier Aufrufstellen), Configuration.cs, AccessibilityStrings.Chat.cs,
+    OptionsMenu.cs, Plugin.cs, FF14Accessibility.csproj, THIRD-PARTY-NOTICES.md
+    (System.Speech, MIT - Hinweispflicht), README.md, README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> DIE EINE OFFENE FRAGE, DIE NUR DAS SPIEL BEANTWORTET: ob SAPI im
+    Spielprozess ueberhaupt laeuft. Es ist COM, und Dalamud laedt Plugins in einen
+    eigenen Kontext - das ist am Schreibtisch nicht zu beweisen. Das Log sagt es
+    beim Laden: "[Warnstimme] SAPI bereit. Stimmen: ..." oder "[Warnstimme] SAPI
+    nicht verfuegbar (...)". Kommt die zweite Zeile, ist der Ausweichweg SAPI
+    direkt ueber COM (SAPI.SpVoice per Reflection), ganz ohne das NuGet-Paket.
+
+## FRUEHERER STAND (2026-08-21, "PR 6 WAR FAST GANZ DA - OFFEN WAR EIN EINZIGER COMMIT")
 
 >>> FRAGE DES USERS: *"was hat pr sechs fuer konflikte schau auf den github"*.
     Die Antwort war nicht die erwartete: PR #6 lag zum groessten Teil laengst in

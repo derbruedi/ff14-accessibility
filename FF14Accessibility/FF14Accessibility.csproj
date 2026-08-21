@@ -24,6 +24,10 @@
     <PackageReference Include="DalamudPackager" Version="15.0.0" />
     <!-- Audio-Beacon (Gehhilfe): erzeugter Sinuston mit Panning/Pitch -->
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Zweiter Sprachkanal fuer die Kampfwarnungen (SAPI, siehe
+         WarningVoiceService). Der Screenreader hat nur EINE Warteschlange, in der
+         eine laufende Warnung von der naechsten Ansage abgeschnitten wird. -->
+    <PackageReference Include="System.Speech" Version="9.0.0" />
   </ItemGroup>
 
   <!-- Native DLLs fÃ¼r Screenreader - mÃ¼ssen neben der Plugin-DLL liegen -->
@@ -52,6 +56,31 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- System.Speech kommt DOPPELT aus dem NuGet-Paket: flach die
+       plattformneutrale Fassung (~310 KB, wirft auf fremden Systemen
+       PlatformNotSupportedException) und unter runtimes\win\lib\ die echte
+       Windows-Implementierung (~685 KB). Welche geladen wird, entscheidet sonst
+       der Abhaengigkeits-Aufloeser anhand der deps.json - und die liegt im
+       devPlugins-Verzeichnis gar nicht, weil der Debug-Deploy weiter unten nur
+       einzelne DLLs kopiert. Im Spiel waere daher die neutrale Fassung geladen
+       worden und der erste Warnruf im Kampf haette geworfen.
+
+       Die Windows-Fassung wird deshalb flach darueber kopiert. Damit ist es
+       gleichgueltig, ob der Aufloeser greift: es steht nur noch eine da, und es
+       ist die richtige. AfterTargets="Build" laeuft VOR DalamudPackager (siehe
+       die Begruendung beim Deploy-Target unten), das ZIP bekommt also ebenfalls
+       die richtige. -->
+  <Target Name="FlattenSpeechRuntime" AfterTargets="Build">
+    <PropertyGroup>
+      <SpeechRid>$(OutDir)runtimes\win\lib\net9.0\System.Speech.dll</SpeechRid>
+    </PropertyGroup>
+    <Copy SourceFiles="$(SpeechRid)"
+          DestinationFiles="$(OutDir)System.Speech.dll"
+          Condition="Exists('$(SpeechRid)')" />
+    <Warning Condition="!Exists('$(SpeechRid)')"
+             Text="System.Speech: die Windows-Fassung unter runtimes\win\lib\ fehlt - die Warnstimme wird zur Laufzeit werfen. Paketversion geprueft?" />
+  </Target>
 
   <PropertyGroup>
     <AppDataRoot>$([System.Environment]::GetFolderPath(System.Environment+SpecialFolder.ApplicationData))</AppDataRoot>
@@ -82,6 +111,9 @@
       <DevPluginFiles Include="$(ResolvedOutDir)$(AssemblyName).json" Condition="Exists('$(ResolvedOutDir)$(AssemblyName).json')" />
       <!-- NAudio-Laufzeit-DLLs mÃ¼ssen neben der Plugin-DLL liegen -->
       <DevPluginFiles Include="$(ResolvedOutDir)NAudio*.dll" />
+      <!-- Dasselbe fÃ¼r System.Speech (Warnstimme): fehlt die DLL im
+           Plugin-Verzeichnis, wirft erst der ERSTE Warnruf im Kampf. -->
+      <DevPluginFiles Include="$(ResolvedOutDir)System.Speech.dll" />
     </ItemGroup>
 
     <Warning Condition="!Exists('$(XIVLauncherRoot)')"

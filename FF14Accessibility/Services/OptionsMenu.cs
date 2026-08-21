@@ -51,10 +51,13 @@ public sealed class OptionsMenu
     // Nur zum Vorhoeren: eine Klangauswahl, die man erst im Kampf zu hoeren
     // bekaeme, koennte man auch weglassen.
     private readonly AoeWarningService _aoeWarning;
+    // [Warnstimme] Nur zum Vorhoeren einer Stimme und um zu wissen, ob das
+    // System ueberhaupt eine anbietet - gesprochen wird von hier aus nichts.
+    private readonly WarningVoiceService _warnVoice;
 
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
                        HeadingService heading, GameChatFilters chatFilters,
-                       AoeWarningService aoeWarning)
+                       AoeWarningService aoeWarning, WarningVoiceService warnVoice)
     {
         _config  = config;
         _save    = save;
@@ -63,6 +66,7 @@ public sealed class OptionsMenu
         _heading = heading;
         _chatFilters = chatFilters;
         _aoeWarning = aoeWarning;
+        _warnVoice  = warnVoice;
     }
 
     /// <summary>Builds the top level. Called fresh on every open, so the labels
@@ -685,8 +689,149 @@ public sealed class OptionsMenu
             // Menue; erreichbar war es damit nicht.
             Volume(AccessibilityStrings.OptAoeWarnVolume,    () => _config.AoeWarnVolume,       v => _config.AoeWarnVolume = v),
             AoeTone(),
+
+            // DIE WARNSTIMME HAT HIER ALLES, was sie braucht - anders als die
+            // Flaechenwarnung daneben auch ihren Schalter. Der Unterschied ist
+            // kein Versehen: bei jener ist der AUSLOESER noch zu weit gefasst,
+            // hier geht es nur darum, auf WELCHEM Weg eine ohnehin ausgeloeste
+            // Warnung herauskommt. Wer den Schalter umlegt, verliert keine
+            // Warnung - sie geht dann wieder ueber den Screenreader.
+            Toggle(AccessibilityStrings.OptWarningVoice,       () => _config.WarningVoiceEnabled, v => _config.WarningVoiceEnabled = v),
+            Volume(AccessibilityStrings.OptWarningVoiceVolume, () => _config.WarningVoiceVolume,  v => _config.WarningVoiceVolume = v),
+            WarningVoiceRate(),
+            WarningVoiceChoice(),
         },
     };
+
+    /// <summary>
+    /// Das Tempo der Warnstimme. SAPI rechnet in Stufen von -10 bis 10; im Menue
+    /// stehen sie als Worte, weil "Tempo drei" niemandem sagt, wie schnell das
+    /// ist.
+    ///
+    /// WARUM UEBERHAUPT EINSTELLBAR: eine Warnung, die erst nach dem Einschlag zu
+    /// Ende gesprochen ist, hat ihren Zweck verfehlt - schneller ist hier also
+    /// besser. Wie schnell noch verstaendlich ist, haengt aber am Gehoer und an
+    /// der Gewohnheit des Spielers und laesst sich nicht festlegen.
+    /// </summary>
+    private MenuEntry WarningVoiceRate() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptWarningVoiceRate,
+                      AccessibilityStrings.VoiceRateName(_config.WarningVoiceRate)),
+        Submenu = BuildWarningVoiceRates,
+    };
+
+    private MenuLevel BuildWarningVoiceRates()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptWarningVoiceRate,
+            Rebuild = BuildWarningVoiceRates,
+        };
+
+        foreach (var step in AccessibilityStrings.VoiceRateSteps)
+        {
+            var value = step;                       // je Durchlauf festgehalten
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.VoiceRateName(value),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.WarningVoiceRate = value;
+                    Persist();
+
+                    // DIE PROBE IST DIE QUITTUNG, wie beim Warnton: ein Tempo
+                    // beurteilt man daran, ob man den Satz noch versteht, nicht
+                    // an seiner Zahl. Bleibt sie stumm, MUSS gesprochen werden -
+                    // sonst waere die Wahl von einem Fehlschlag nicht zu
+                    // unterscheiden.
+                    if (!_warnVoice.PlayPreview(string.Empty))
+                        _tolk.SpeakInterrupt(AccessibilityStrings.VoiceRateSet(
+                            AccessibilityStrings.VoiceRateName(value)));
+
+                    _log.Info($"[Einstellungen] Tempo Warnstimme -> {value}");
+                },
+            });
+        }
+
+        level.Cursor = Array.IndexOf(AccessibilityStrings.VoiceRateSteps, _config.WarningVoiceRate);
+        if (level.Cursor < 0) level.Cursor = 0;
+        return level;
+    }
+
+    /// <summary>
+    /// Die Wahl der Stimme. Zuoberst "Automatisch" - das ist der Standard und
+    /// nimmt die erste Stimme, die zur Sprache des Plugins passt.
+    ///
+    /// BIETET DAS SYSTEM KEINE, steht hier statt einer leeren Liste ein Satz, der
+    /// sagt warum und was stattdessen passiert. Eine leere Auswahl ohne Erklaerung
+    /// waere von einem Fehler des Plugins nicht zu unterscheiden.
+    /// </summary>
+    private MenuEntry WarningVoiceChoice() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptWarningVoiceName,
+                      _config.WarningVoiceName.Length > 0
+                          ? _config.WarningVoiceName
+                          : AccessibilityStrings.WarningVoiceAutomatic),
+        Submenu = BuildWarningVoiceChoices,
+    };
+
+    private MenuLevel BuildWarningVoiceChoices()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptWarningVoiceName,
+            Rebuild = BuildWarningVoiceChoices,
+        };
+
+        if (!_warnVoice.IsAvailable || _warnVoice.InstalledVoices.Count == 0)
+        {
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.WarningVoiceUnavailable,
+                StayOpen = true,
+                Activate = () => _tolk.SpeakInterrupt(AccessibilityStrings.WarningVoiceUnavailable),
+            });
+            return level;
+        }
+
+        // "Automatisch" ist ein leerer Name in der Konfiguration, kein eigener
+        // Wert: so folgt die Stimme weiter der Sprache, wenn der Spieler
+        // spaeter mit "/acc lang" umschaltet.
+        var names = new List<string> { string.Empty };
+        names.AddRange(_warnVoice.InstalledVoices);
+
+        foreach (var name in names)
+        {
+            var value = name;                       // je Durchlauf festgehalten
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = value.Length > 0 ? value : AccessibilityStrings.WarningVoiceAutomatic,
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.WarningVoiceName = value;
+                    Persist();
+
+                    // Leerer Name = "Automatisch"; PlayPreview loest die Automatik
+                    // dann selbst auf und spielt die Stimme vor, die danach
+                    // wirklich spricht.
+                    var spoken = _warnVoice.PlayPreview(value);
+
+                    if (!spoken)
+                        _tolk.SpeakInterrupt(AccessibilityStrings.WarningVoiceSet(
+                            value.Length > 0 ? value : AccessibilityStrings.WarningVoiceAutomatic));
+
+                    _log.Info($"[Einstellungen] Warnstimme -> '{(value.Length > 0 ? value : "automatisch")}'");
+                },
+            });
+        }
+
+        level.Cursor = Math.Max(0, names.IndexOf(_config.WarningVoiceName));
+        return level;
+    }
 
     /// <summary>
     /// Die Zeile, die den Klang der Flaechenwarnung waehlen laesst.

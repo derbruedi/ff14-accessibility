@@ -178,6 +178,16 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   sofort kurz vorgespielt, du entscheidest also am Ohr. Alle vier halten
   durch, solange die Gefahr besteht — auch der schwellende reißt nie ab, damit
   er nicht mit den Schlägen des Peil-Tons zu verwechseln ist.
+- **Eigene Stimme für Kampfwarnungen**: Die Zauber-Warnung, „du stehst drin"
+  und die Fluchtrichtung werden **nicht mehr über den Screenreader**
+  gesprochen, sondern über eine eigene Systemstimme (SAPI). Grund: der
+  Screenreader hat nur *eine* Sprachwarteschlange — ein Zielwechsel, eine
+  Chatzeile oder deine Stopptaste löscht eine laufende Warnung mitten im
+  Satz. Auf dem eigenen Kanal kann ihr nichts dazwischenkommen. Stimme,
+  Tempo und Lautstärke stehen unter Einstellungen → Töne, jede Wahl wird
+  sofort mit einem Beispielsatz vorgehört. Bietet dein System keine
+  Sprachausgabe an oder schaltest du den Kanal ab, kommen die Warnungen
+  wieder über den Screenreader — verloren geht keine.
 - **Vorwarnung „du stehst drin"**: stehst du beim Beginn eines Zaubers in
   seiner Fläche, sagt die Ansage es mit dazu — samt der Zeit, die dir noch
   bleibt („Du stehst drin, 3 Sekunden."). Läufst du erst während des
