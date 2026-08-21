@@ -944,6 +944,67 @@ Das gespawnte Monster trägt die **EventId seines Freibrief-Directors**:
   393 = „Dodo", 405 = „winzig[a] Mandragora", 115 = „Wind-Exergon", jeweils
   identisch mit dem Sheet.
 
+### Fang-Freibrief: „dieser Gegner ist schon gezähmt" (Log + Sheet-Dump, 2026-08-21)
+Frage: ein Fang-Freibrief lässt mehr Gegner stehen, als er verlangt („Im Namen
+des Fortschritts": elf Pyrit-Kobalos für vier Fänge). Ein gezähmter
+verschwindet nicht, verliert keine HP und heißt weiter genauso — woran erkennt
+man ihn, ohne das Emote zu verschwenden?
+
+**Antwort: `Status 213` in der `IBattleChara.StatusList` des Gegners.**
+- Gemessen (dalamud.log 2026-08-21): 09:35:51 weist das Spiel den Versuch mit
+  „Der Pyrit-Kobalos ist bereits zahm." ab; 09:36:01 liest die Fang-Sonde an
+  demselben Ziel `Status: 213:'Besänftigung'`.
+- Sheet-Beleg (Lumina, installierte Spieldaten): Zeile 213 = DE „Besänftigung"
+  / EN „Pacification", Beschreibung **„Zahm und greift nicht mehr an."** /
+  „The target is pacified and will no longer attack.", Symbol **216301**,
+  `LockActions=True`, `CanDispel=False`, `IsPermanent=False`.
+- **Verwechslungsgefahr ausgeschlossen:** drei weitere Zeilen heißen englisch
+  ebenfalls „Pacification" (6, 620, 5188), sind aber alle der Spieler-Debuff
+  DE „Pacem" („Waffenfertigkeiten können nicht eingesetzt werden") mit Symbol
+  215017. 213 ist die **einzige** Zeile des ganzen Sheets mit Symbol 216301.
+- Deshalb wird auf die **Id** geprüft, nie auf den Namen: der Name steht in der
+  Sprache des Clients, die Id nicht.
+- `IsPermanent=False` heißt: der Status hat eine Laufzeit. Wie lange sie ist,
+  ist **nicht gemessen** — ein gezähmter Gegner kann nach unbekannter Zeit
+  wieder ohne Status dastehen. Darum wird er im Objekt-Browser nur nach hinten
+  sortiert und nicht ausgeblendet.
+- **Offen:** ob die Statusliste auch für einen NICHT anvisierten Gegner gefüllt
+  ist. Der Log-Trace `[Leve] … davon N schon gezaehmt (Ids), M aufgestachelt`
+  beantwortet das beim nächsten Fang-Freibrief.
+
+**Das Gegenstück: `Status 214` „Aufstachelung" / EN „Agitation".**
+Liegt im Sheet direkt neben 213 (Symbol 216302 gegen 216301) und beschreibt
+sich als „Nach misslungener Besänftigung noch wilder als zuvor." / „Excited by
+failed pacification. Attack power and attack magic potency are enhanced."
+Ein Gegner mit 214 ist **vorübergehend nicht zähmbar** (das Spiel weist ab mit
+„ist in Raserei verfallen und lässt sich nicht beruhigen") und schlägt härter
+zu. Für den Spieler ist das dieselbe Art Auskunft wie „schon zahm", nur aus
+dem anderen Grund — deshalb wird beides angesagt.
+
+**ES GIBT NUR EINE ZÄHM-MECHANIK IM SPIEL.** Nachgesehen im `LogMessage`-Sheet
+(2026-08-21) auf die Frage, ob sich das verallgemeinern lässt — ihre Meldungen
+stehen als geschlossener Block:
+- **1805** „… wurde gezähmt. (n/m)" — Erfolg samt Zähler
+- **1806** „… konnte nicht gezähmt werden und verfällt in Raserei."
+- **1807** „… ist bereits zahm."
+- **1808** „… ist in Raserei verfallen und lässt sich nicht beruhigen."
+- **1809** „… ist nicht mehr zahm" — **der Zustand kann enden**, unabhängige
+  Bestätigung für `IsPermanent=False`. Ein gezähmter Gegner bleibt es nicht
+  ewig; deshalb wird er sortiert, aber nie ausgeblendet.
+
+Dazu die beiden **einzigen** Anleitungen im selben Sheet:
+- **1837** „Besänftige rasende Ziele, indem du das Emote „Beruhigen" (/ruhig)
+  auf sie anwendest."
+- **1838** „Besänftige rasende Ziele, indem du den richtigen
+  Schlüsselgegenstand auf sie anwendest."
+
+Zwei Wege hinein, eine Mechanik dahinter. **Unbelegt bleibt genau ein Glied:**
+dass auch der Schlüsselgegenstand-Weg (1838) Status 213 setzt — gemessen ist
+nur der Emote-Weg. Da es keinen zweiten „zahm"-Status im Sheet gibt, wäre ein
+eigener Zustand dafür ein Sonderfall ohne Zeile.
+
+Emote 35: DE „Beruhigen" (`/ruhig`, `/soothe`), EN „Soothe".
+
 ### FATE (ilspycmd-verifiziert 2026-07-31)
 Quelle: `FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager` (Singleton,
 `FateManager.Instance()`). Hält NUR die FATEs der aktuellen Zone; FATEs

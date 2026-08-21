@@ -73,6 +73,14 @@ cues — including braille display output and automatic walking.
   fishing spots, aetherytes, map waypoints such as zone exits). Announces
   name, kind, distance and direction; the object is targeted at the same
   time.
+- On a **taming levequest** ("pacify the target with the *Soothe* emote") the
+  announcement adds **"already tamed"** for an enemy you have already dealt
+  with, and **"agitated, cannot be tamed"** for one where an attempt failed.
+  Both move to the end of the list, the ones still open stay in front. This
+  works for **every** taming task regardless of monster or levequest — the game
+  keeps just one such state. A tamed enemy does not despawn and looks like
+  every other one; without the hint you walk over to it and only find out when
+  the game refuses the emote.
 - The **allies** category collects everything fighting on your side: trust
   and duty-support NPCs, party and alliance, carbuncle, fairy, companion
   chocobo. **Duties** lists only the doors leading into a dungeon, trial,
@@ -155,10 +163,16 @@ cues — including braille display output and automatic walking.
   "line, 30 meters", "circle on you, 5 meters". That tells you **which way**
   to dodge and how far. Shapes this project has never measured stay silent
   rather than guess.
-- **Danger tone for area attacks** (AoE): a pulsing tone for as long as you
+- **Danger tone for area attacks** (AoE): a tone that holds for as long as you
   stand inside a telegraphed area; it stops the moment you step out. The
   shape (circle, cone, line) comes from the spell's own data. Off by
   default, see the key overview.
+- **Sound and volume of the warning can be set** (Settings → Sounds). Four
+  sounds to choose from: *Bright* (the previous one), *Soft*, *Deep hum* and
+  *Swelling*. Each one plays a short sample the moment you select it, so you
+  decide by ear. All four hold for as long as the danger does — even the
+  swelling one never breaks off, so it cannot be mistaken for the target
+  beacon's strikes.
 - **"You are in it" pre-warning**: if you are already standing in the area
   when the cast begins, the announcement says so — including how much time
   is left ("You are in it, 3 seconds."). Walk into it while the cast is

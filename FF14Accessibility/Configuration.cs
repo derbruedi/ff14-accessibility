@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Dalamud.Configuration;
+using FF14Accessibility.Services;
 
 namespace FF14Accessibility;
 
@@ -380,6 +381,15 @@ public sealed class Configuration : IPluginConfiguration
     // Standard auf AN, sobald bestaetigt.
     public bool AnnounceAoeWarning = false;
     public float AoeWarnVolume = 0.5f;          // 0 = stumm, 1 = volle Lautstärke
+
+    // Klang der Warnung (User-Wunsch 2026-08-21: "der ist nervig"). Vier Stimmen
+    // zur Wahl, im Einstellungsmenü mit Vorhören - siehe AoeWarnTone.
+    // STANDARD IST NICHT MEHR DER ALTE KLANG: der bisherige blanke Sinus auf
+    // 660 Hz ist der eine, von dem gemeldet ist, dass er auf Dauer stört, also
+    // wäre er ein schlechter Standard für alle anderen auch. Er bleibt als
+    // "Hell" wählbar, die Umstellung ist damit umkehrbar. Welche Stimme am Ende
+    // die beste ist, entscheidet das Ohr des Spielers, nicht diese Zeile.
+    public AoeWarnTone AoeWarnSound = AoeWarnTone.Soft;
 
     // Fähigkeit-bereit-Ansage (User-Wunsch 2026-07-30): wenn eine Fähigkeit mit
     // echter Abklingzeit (oGCD) wieder einsatzbereit ist, Ton + Name ansagen.

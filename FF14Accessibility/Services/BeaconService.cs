@@ -27,6 +27,14 @@ public enum BeaconKind
     Quest,
     /// <summary>Eingang in einen Dungeon, eine Pruefung oder einen Raid.</summary>
     DutyEntrance,
+
+    /// <summary>
+    /// Der sichere Punkt aus einer Gefahrenflaeche heraus. Die dringendste
+    /// Stimme, die es gibt - tiefer als der Gegnerton und dreischlaegig, damit
+    /// sie sich von allem anderen abhebt, ohne in den Bereich des
+    /// Einrast-Quittungstons (880 Hz) zu geraten.
+    /// </summary>
+    Escape,
 }
 
 /// <summary>
@@ -270,6 +278,7 @@ public sealed class BeaconService : IDisposable
     /// </summary>
     private static (float Frequency, int Pulses) VoiceFor(BeaconKind kind) => kind switch
     {
+        BeaconKind.Escape       => (247f, 3),   // H3, tiefer als alles andere und dreischlaegig: raus hier
         BeaconKind.Enemy        => (330f, 2),   // E4, tief und doppelt: das Einzige, was wie eine Warnung klingt
         BeaconKind.DutyEntrance => (392f, 2),   // G4
         BeaconKind.Transition   => (440f, 2),   // A4
@@ -346,18 +355,26 @@ internal sealed class BeaconSampleProvider : ISampleProvider
         }
 
         var period = Math.Max(1, (int)(PeriodSeconds * Rate));
-        var pulses = Math.Clamp(PulseCount, 1, 2);
+        // Bis zu DREI Schlaege: der Fluchtton braucht ein Muster, das sich von
+        // allen anderen abhebt, ohne eine neue Tonfarbe einzufuehren. Zwei
+        // Schlaege verhalten sich dabei exakt wie vorher.
+        var pulses = Math.Clamp(PulseCount, 1, 3);
 
         for (var i = 0; i < frames; i++)
         {
             if (_posInPeriod >= period) _posInPeriod = 0;
 
-            // Position innerhalb des naechstgelegenen Schlags. Der zweite Schlag
-            // ist derselbe Anschlag, nur spaeter im Takt - so bleibt die Stimme
-            // gleich und nur das Muster unterscheidet sich.
+            // Position innerhalb des naechstgelegenen Schlags. Jeder weitere
+            // Schlag ist derselbe Anschlag, nur spaeter im Takt - so bleibt die
+            // Stimme gleich und nur das Muster unterscheidet sich. Nach dem
+            // letzten Schlag laeuft die Huellkurve weiter aus, statt neu
+            // anzusetzen.
             var posInPulse = _posInPeriod;
-            if (pulses == 2 && _posInPeriod >= SecondPulseOffset)
-                posInPulse = _posInPeriod - SecondPulseOffset;
+            if (pulses > 1)
+            {
+                var pulseIndex = Math.Min(_posInPeriod / SecondPulseOffset, pulses - 1);
+                posInPulse = _posInPeriod - pulseIndex * SecondPulseOffset;
+            }
 
             if (posInPulse == 0) _phase = 0;
 

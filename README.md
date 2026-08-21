@@ -74,6 +74,14 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Angelplätze, Ätheryten, Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit
   Name, Art, Entfernung und Richtung; das Objekt wird gleichzeitig
   anvisiert.
+- Bei einem **Fang-Freibrief** („besänftige das Ziel mit dem Emote
+  *Beruhigen*") sagt die Ansage **„schon gezähmt"**, wenn du diesen Gegner
+  bereits hattest, und **„rasend, nicht zähmbar"**, wenn ein Versuch an ihm
+  misslungen ist. Beide rutschen ans Ende der Liste, die noch offenen stehen
+  vorn. Das gilt für **jeden** Fang, unabhängig von Monster und Freibrief — das
+  Spiel führt dafür nur einen einzigen Zustand. Ein gezähmter Gegner
+  verschwindet nicht und sieht aus wie jeder andere; ohne den Hinweis läufst du
+  zu ihm und erfährst es erst an der Abweisung des Spiels.
 - Die Kategorie **Verbündete** sammelt alles, was auf deiner Seite kämpft:
   Trupp-NPCs, Gruppe und Allianz, Karfunkel, Fee, Begleitchocobo.
   **Inhalte** listet nur die Türen, die in einen Dungeon, eine Prüfung,
@@ -160,10 +168,16 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   „Linie, 30 Meter", „Kreis um dich, 5 Meter". Damit weisst du, **wohin**
   du ausweichen musst und wie weit. Formen, die dieses Projekt nie
   nachgemessen hat, bleiben still statt zu raten.
-- **Warnton für Schadensflächen** (AoE): pulsierender Ton, solange du in
+- **Warnton für Schadensflächen** (AoE): ein Ton, der durchhält, solange du in
   einer angekündigten Fläche stehst; er verstummt, sobald du heraustrittst.
   Die Form (Kreis, Kegel, Linie) kommt aus den Daten des jeweiligen Zaubers.
   Standardmäßig ausgeschaltet, siehe Tastenübersicht.
+- **Klang und Lautstärke der Warnung sind einstellbar** (Einstellungen →
+  Töne). Vier Klänge stehen zur Wahl: *Hell* (der frühere Ton), *Weich*,
+  *Tiefes Brummen* und *An- und abschwellend*. Jeder wird beim Anwählen
+  sofort kurz vorgespielt, du entscheidest also am Ohr. Alle vier halten
+  durch, solange die Gefahr besteht — auch der schwellende reißt nie ab, damit
+  er nicht mit den Schlägen des Peil-Tons zu verwechseln ist.
 - **Vorwarnung „du stehst drin"**: stehst du beim Beginn eines Zaubers in
   seiner Fläche, sagt die Ansage es mit dazu — samt der Zeit, die dir noch
   bleibt („Du stehst drin, 3 Sekunden."). Läufst du erst während des

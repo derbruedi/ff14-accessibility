@@ -3,7 +3,271 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-19, "EINSTELLUNGEN DER INHALTSSUCHE: FERTIG UND BESTAETIGT")
+## STAND JETZT (2026-08-21, "FANG-ZUSTAND VERALLGEMEINERT - UND ES GIBT NUR EINE MECHANIK")
+
+>>> FRAGE DES USERS: *"bei den freibriefen muss man unterschiedliche gegner
+    einfangen, kann man das verallgemeinern, also dass egal wen ich einfangen
+    muss gekennzeichnet ist welches monster schon besaenftigt wurde?"*
+
+>>> DIE ANTWORT WAR ZUR HAELFTE SCHON GEBAUT: die Erkennung haengt am Status des
+    Objekts, nicht an Art, Freibrief oder Name - sie galt also von Anfang an fuer
+    jeden Gegner. Offen war nur, ob JEDER Fang dieselbe Mechanik benutzt. Das ist
+    jetzt im Sheet nachgesehen statt vermutet.
+
+>>> ES GIBT GENAU EINE ZAEHM-MECHANIK IM SPIEL. Im LogMessage-Sheet stehen ihre
+    Meldungen als geschlossener Block:
+      1805 "... wurde gezähmt. (n/m)"
+      1806 "... konnte nicht gezähmt werden und verfällt in Raserei."
+      1807 "... ist bereits zahm."
+      1808 "... ist in Raserei verfallen und lässt sich nicht beruhigen."
+      1809 "... ist nicht mehr zahm"
+    Und daneben die beiden EINZIGEN Anleitungen: 1837 fuer das Emote
+    "Beruhigen", 1838 fuer den Schluesselgegenstand. Zwei Wege hinein, eine
+    Mechanik dahinter. Damit traegt die Verallgemeinerung.
+
+>>> ZEILE 1809 IST EIN EIGENER FUND: der Zustand kann ENDEN. Das war bisher nur
+    aus dem Flag IsPermanent=False abgeleitet, jetzt hat das Spiel eine eigene
+    Meldung dafuer. Es bestaetigt die Entscheidung, gezaehmte Gegner zu sortieren
+    statt auszublenden - und es zeigt, warum das Lesen des Status richtig war:
+    haette das Plugin selbst mitgezaehlt, waere seine Buchfuehrung in genau
+    diesem Moment falsch geworden und haette es nie gemerkt.
+
+>>> NEU DAZU: STATUS 214 "AUFSTACHELUNG". Liegt im Sheet direkt neben 213
+    (Symbol 216302 gegen 216301) und ist dessen Gegenstueck: "Nach misslungener
+    Besänftigung noch wilder als zuvor." Ein Gegner mit 214 ist voruebergehend
+    NICHT zaehmbar (1808) und schlaegt dabei haerter zu. Fuer den Spieler ist das
+    dieselbe Art Auskunft wie "schon zahm", nur aus dem anderen Grund - er sagt
+    jetzt ", rasend, nicht zaehmbar".
+
+>>> SORTIERUNG NACH BRAUCHBARKEIT statt nach Schwere: erst die, die gerade
+    zaehlen, dann die aufgestachelten, zuletzt die gezaehmten. Der aufgestachelte
+    steht VOR dem gezaehmten, weil seine Absage voruebergehend ist und er danach
+    wieder zaehlt - der gezaehmte hat bereits gezaehlt.
+
+>>> UNBELEGT BLEIBT GENAU EIN GLIED, und das steht so im Code: ob auch der Weg
+    ueber den Schluesselgegenstand (1838) denselben Status setzt. Gemessen ist
+    nur der Emote-Weg. Da es keinen zweiten "zahm"-Status im Sheet gibt, waere
+    ein eigener Zustand dafuer ein Sonderfall ohne Zeile.
+
+>>> GEAENDERT: NavigationService.cs (TameRank statt IsTamed, 214 dazu, Trace),
+    AccessibilityStrings.cs (Baustein DE+EN), docs/game-api.md, README.md,
+    README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+## FRUEHERER STAND (2026-08-21, "WARNTON: VIER STIMMEN ZUR WAHL, UND DER REGLER WAR NIE ERREICHBAR")
+
+>>> WUNSCH DES USERS: *"wie sollten den ton fuer flaechenangriffe auch aendern
+    der ist nervig und man sollte dafuer die lautstaerke auch aendern koennen"*.
+    Auf die Rueckfrage hat er "mehrere Klaenge zur Auswahl" gewaehlt, statt dass
+    ich einen festen neuen setze. Richtig so: wie ein Ton wirkt, der minutenlang
+    durchhaelt, kann nur hoeren, wer ihn hoert.
+
+>>> ZWEI FEHLER GEFUNDEN, BEIDE UNABHAENGIG VOM GESCHMACK:
+    1. AoeWarnVolume gibt es seit langem in der Konfiguration - und in KEINEM
+       Menue. Der Wert war fuer den Spieler schlicht nicht erreichbar.
+    2. Und selbst wenn: er wurde nur EINMAL beim Anlegen des Tonerzeugers
+       gelesen. Eine Aenderung haette erst nach einem Neustart des Plugins
+       gewirkt. Der Peil-Ton macht es seit jeher richtig (zieht jeden Frame
+       nach), der Warnton nicht. Jetzt zieht er nach.
+
+>>> VIER STIMMEN, im Menue unter "Toene", jede beim Anwaehlen SOFORT kurz
+    vorgespielt (1,5 s):
+      - Hell: der bisherige blanke Sinus auf 660 Hz. Bleibt waehlbar, damit die
+        Umstellung umkehrbar ist.
+      - Weich: 300 Hz mit etwas Oberton - nimmt dem Sinus die Schaerfe.
+      - Tiefes Brummen: 120 Hz. Liegt unter der gesamten Peil-Ton-Leiter und
+        deckt die Sprachausgabe am wenigsten zu.
+      - An- und abschwellend: 300 Hz, zweimal je Sekunde bis auf die halbe
+        Lautstaerke herunter und zurueck.
+
+>>> DIE FREQUENZEN SIND GEWAEHLT, NICHT GEGRIFFEN. Der Peil-Ton belegt mit 247,
+    330, 392, 440, 494, 523, 587, 659 und 784 Hz eine ganze diatonische Leiter,
+    und seine Stimmen werden je nach Winkel noch bis zu eine halbe Oktave nach
+    unten gebeugt. Der bisherige Warnton auf 660 Hz sitzt praktisch AUF dem
+    Sammelpunkt-Ton (659 Hz) - auseinanderzuhalten war er nur, weil er
+    durchhaelt und jener schlaegt. Die neuen Stimmen liegen deshalb zwischen den
+    Stufen beziehungsweise unter ihnen.
+
+>>> WAS BEWUSST NICHT PASSIERT IST: kein Puls. Der Dauerton war die Entscheidung
+    des Users vom 2026-07-26, und sie bleibt stehen - auch die schwellende
+    Stimme reisst NIE ab. Eine Luecke waere genau das Merkmal der Peil-Schlaege,
+    und beide laufen gleichzeitig: wer in einer Flaeche steht, hoert die Warnung
+    UND den Fluchtton. Zwei Signale mit Pausen im selben Moment sind nicht mehr
+    zu trennen.
+
+>>> EIN DETAIL, DAS SONST ALLES VERDORBEN HAETTE: ToneSynth.Timbre teilt fest
+    durch 1,47 (die Amplitudensumme bei voller Helligkeit). Beim blanken Sinus
+    waeren dadurch nur noch gut zwei Drittel Pegel herausgekommen - der
+    "bisherige Klang" waere beim Vergleichen also vor allem LEISER gewesen statt
+    gleich, und man haette Lautheit mit Klangfarbe verwechselt. Der Warnton
+    rechnet deshalb mit der Summe, die bei SEINER Helligkeit wirklich anfaellt.
+    Nachgerechnet liegen Hell/Weich/Tief bei RMS 0,71 / 0,64 / 0,66 - also
+    innerhalb von rund einem Dezibel. Die schwellende Stimme liegt
+    prinzipbedingt rund 3 dB darunter, weil sie die halbe Zeit leiser ist.
+    Fuer den Peil-Ton bleibt die feste Teilung richtig (dort laeuft die
+    Helligkeit mit der Huellkurve mit) - er ist unangetastet.
+
+>>> DIE PROBE IST DIE QUITTUNG: die Klangzeile spricht den Namen NICHT noch
+    einmal. Die Sprachausgabe laeuft nicht blockierend, sie laege also mitten
+    auf dem Ton, den man gerade beurteilen will. Der Name stand ohnehin in der
+    Zeile, auf der man steht. Kommt kein Ton heraus (kein Audio-Geraet,
+    Lautstaerke auf aus), wird sehr wohl gesprochen - eine Wahl, die weder
+    klingt noch spricht, waere von einem Fehlschlag nicht zu unterscheiden.
+
+>>> STANDARD IST JETZT "WEICH", nicht mehr der alte Klang. Begruendung: der
+    bisherige ist der eine, von dem gemeldet ist, dass er auf Dauer stoert - als
+    Vorgabe fuer alle anderen taugt er damit nicht. Welche Stimme wirklich die
+    beste ist, entscheidet das Ohr des Spielers.
+
+>>> GEAENDERT: AoeWarnTone.cs (neu: Enum + Klangwerte), AoeWarningService.cs
+    (Stimmen, Nachziehen, Vorhoeren), Configuration.cs (AoeWarnSound),
+    OptionsMenu.cs (zwei Zeilen + Auswahl-Untermenue + Service),
+    AccessibilityStrings.Chat.cs (6 Bausteine DE+EN), Plugin.cs (Verdrahtung),
+    README.md, README.en.md.
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU TESTEN: Einstellungen -> Toene -> "Klang AoE-Warnung". Erwartet: vier
+    Zeilen, jede spielt beim Druecken ihren Ton, das Menue bleibt offen. Danach
+    "Lautstaerke AoE-Warnung" verstellen und pruefen, ob die Aenderung beim
+    naechsten Warnton SOFORT gilt (das war der zweite Fehler).
+
+## FRUEHERER STAND (2026-08-21, "SCHON GEZAEHMT - DAS SPIEL FUEHRT ES SELBST")
+
+>>> VOM USER BESTAETIGT: die Freibrief-Kategorie funktioniert und ist getestet.
+
+>>> NEUER WUNSCH: *"wenn ziele beruhigt werden sollen sollte man auch sehen das
+    man diesen npc oder gegner schon hatte"*.
+
+>>> DAS PROBLEM STAND IM LOG VON HEUTE FRUEH, nicht in einer Vermutung
+    (dalamud.log 2026-08-21, Freibrief "Im Namen des Fortschritts", 4 Faenge):
+    Der Browser bot ELF Pyrit-Kobalos an - und ein gezaehmter verschwindet
+    nicht, verliert keine HP und heisst weiter genauso. Dreimal ist der User zu
+    einem gelaufen, den er schon hatte, und hat es erst an der Abweisung
+    gemerkt: "Der Pyrit-Kobalos ist bereits zahm." (09:35:51, 09:37:21,
+    09:37:40). Ein sehender Spieler sieht das Symbol ueber dem Gegner stehen,
+    bevor er losgeht.
+
+>>> DIE QUELLE WAR SCHON DA - die Fang-Sonde hatte sie mitgeschrieben, ohne dass
+    jemand hingesehen hat. 09:36:01, an genau dem Gegner, der zehn Sekunden
+    vorher "bereits zahm" gemeldet hatte:
+      [FangSonde] -> Ziel 'Pyrit-Kobalos' HP 268/268 Status: 213:'Besänftigung'
+    Also nichts nachbauen und nichts mitzaehlen: das Spiel fuehrt den Zustand
+    am Gegner, wir lesen ihn.
+
+>>> IM SHEET GEGENGEPRUEFT (Lumina offline gegen die installierten Spieldaten,
+    kein Rateschritt): Zeile 213 heisst DE "Besänftigung" / EN "Pacification"
+    und beschreibt sich selbst als "Zahm und greift nicht mehr an." Sie ist die
+    EINZIGE Zeile des ganzen Sheets mit dem Symbol 216301. Die drei anderen
+    Zeilen, die englisch auch "Pacification" heissen (6, 620, 5188), sind der
+    Spieler-Debuff "Pacem" mit Symbol 215017 - Verwechslung ausgeschlossen.
+    Geprueft wird die ID, nie der Name: der Name wechselt mit der Client-
+    Sprache, die Id nicht.
+
+>>> GEBAUT:
+    - ", schon gezaehmt" haengt jetzt an JEDER Zielansage, die den Gegner
+      betrifft: Zielwechsel per Spieltaste, Objekt-Browser und Freibrief-Gegner.
+    - BEWUSST NICHT hinter dem "Ziel angenommen"-Gatter, hinter dem Stufe und HP
+      stehen. Jene beiden stehen in der ZIEL-LEISTE, die bei einer Ablehnung
+      leer bleibt; der Besaenftigungs-Status haengt am Gegner selbst und ist
+      ueber seinem Kopf zu sehen, ohne ihn anzuvisieren.
+    - Schon gezaehmte Gegner rutschen im Browser ans ENDE der Liste, davor
+      unveraendert nach Entfernung. Sie fallen NICHT raus: der Status ist laut
+      Sheet nicht dauerhaft (IsPermanent=False), und ein Gegner, den das Plugin
+      faelschlich verschwiegen haette, waere ohne Ansage nicht mehr auffindbar.
+      Hinten in der Liste ist er beides - aus dem Weg und noch da.
+    - Der [Leve]-Trace schreibt jetzt "davon N schon gezaehmt" samt Ids mit.
+
+>>> ZWEI DINGE SIND OFFEN, und beide beantwortet derselbe Test:
+    1. Ob die Statusliste auch fuer einen NICHT anvisierten Gegner gefuellt ist.
+       Trifft das nicht zu, sagt die Ansage schlicht nichts - falsch wird sie
+       dadurch nicht.
+    2. Ob 213 bei JEDEM Fang-Freibrief benutzt wird. Gemessen ist nur "Im Namen
+       des Fortschritts"; bei "Dodos an Bord" ist es unbelegt.
+    Der Trace beantwortet beides: stehen dort waehrend eines Fang-Freibriefs
+    Ids, tragen beide Annahmen. Bleibt die Zahl bei 0, obwohl das Spiel
+    "ist bereits zahm" sagt, tut sie es nicht.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU TESTEN: einen Fang-Freibrief laufen lassen, einen Gegner zaehmen, dann im
+    Browser durch die Freibrief-Gegner blaettern. Erwartet: der gezaehmte kommt
+    zuletzt und traegt ", schon gezaehmt" am Ende der Ansage.
+
+>>> NEBENBEFUND AUS DEMSELBEN LOG, NICHT ANGEFASST: beim Freibrief "Tonscherben
+    fuer die Forscher" listet die Kategorie "Freibrief-Gegner: Hedwig" (das ist
+    das eigene Reittier/der Begleiter, Stufe 46) und "Lehmschale". Die
+    Aufgabenzeile las sich zugleich als 'H?3I?4Altertuemliches TongefaessIH' -
+    also eine Zeile mit ungelesenen SeString-Nutzlasten. Beides gehoert
+    angesehen, ist aber ein anderes Thema als dieser Wunsch.
+
+## FRUEHERER STAND (2026-08-19, "FLUCHTRICHTUNG: WOHIN, NICHT NUR DASS")
+
+>>> WUNSCH DES USERS: *"wir muessen eine bessere moeglichkeit finden damit wir
+    aus flaechenangriffen oder anderen bossmechaniken in sichere bereiche kommen
+    die sehenden sehen wo sie hinlaufen muessen bzw koennen aber wir nicht"*.
+    Auf die Rueckfrage hat er den vollen Weg gewaehlt, nicht die kleine Loesung
+    ("hinter den Gegner").
+
+>>> DER KERNGEDANKE: bisher war die AoE-Warnung ein HEISS-KALT-Signal. Der Ton
+    brummt, solange man drinsteht, und verstummt beim Heraustreten - er sagt
+    also, DASS man falsch steht, nie WOHIN. Dabei ist IsPlayerInAoe laengst eine
+    reine Funktion einer Position. Man kann sie also nicht nur fuer den Punkt
+    aufrufen, auf dem der Spieler steht, sondern fuer Probepunkte ringsum. Aus
+    "stehe ich drin?" wird damit "wo ist der naechste Punkt, der draussen ist?".
+
+>>> GEBAUT:
+    - EscapeRouteService (neu): Faecher aus 24 Strahlen mal 1 m Schritten bis
+      25 m. Ein Kandidat muss aus ALLEN aktiven Flaechen heraus sein, mit 2 m
+      Sicherheitsabstand zur Kante (wer auf der Linie steht, ist getroffen, und
+      der Gegner dreht sich waehrend des Casts weiter).
+    - DangerZone (neu): die Flaeche als reine Geometrie, ohne Gegner und ohne
+      Sheet-Zeile. CombatService baut sie und prueft SEINEN EIGENEN WARNTON
+      damit - Warnung und Fluchtrichtung koennen deshalb nicht auseinander-
+      laufen. Das war der Umbau von IsPlayerInAoe zu BuildZone.
+    - Begehbarkeit ueber NearestPointReachable. Ein Fluchtpunkt, zu dem man
+      nicht laufen kann, ist schlimmer als keiner - man rennt gegen eine Wand,
+      waehrend der Cast ablaeuft. Findet das Netz nichts, kommt die ehrliche
+      Absage statt einer Wegweisung ins Nichts.
+    - Peil-Ton mit eigener Stimme (BeaconKind.Escape, 247 Hz H3, DREI Schlaege -
+      tiefer und dringender als alles andere). Er hat VORRANG vor Gehhilfe und
+      Zielpeilung: wer in einer Flaeche steht, hat genau eine Aufgabe. Der
+      Tonerzeuger konnte bisher nur ein oder zwei Schlaege, jetzt bis drei;
+      zwei verhalten sich exakt wie vorher.
+    - Gesprochen EINMAL je Gefahrenlage: "Raus nach rechts, 8 Meter." Danach
+      fuehrt der Ton. Oefter waere ein Wortschwall genau in den Sekunden, in
+      denen man rennen muss.
+
+>>> ZWEI EIGENE FEHLER, VOR DEM TEST GEFUNDEN UND BEHOBEN:
+    1. Die Suche brach zu frueh ab. Das Budget fuer die Netzabfragen war schon
+       im ersten Meter aufgebraucht, danach sah sie gar nicht mehr weiter
+       aussen nach - der Spieler haette "kein sicherer Weg" gehoert, waehrend
+       zwei Meter weiter einer lag. Jetzt zwei Durchgaenge: erst rechnerisch
+       sammeln (kostet nichts), dann der Reihe nach ueber das Netz pruefen.
+    2. Ein Kreis AUF DEM SPIELER laesst sich nicht verlassen - seine Mitte
+       wandert jeden Frame mit. Die Suche haette einen endlos vor sich
+       hergetrieben. Solche Flaechen sind jetzt von der Wegweisung
+       ausgenommen; Ansage ("Kreis um dich") und Warnton bleiben.
+
+>>> WAS ES BEWUSST NICHT KANN, und was der User dazu wissen muss:
+    - Flaechen, die nur als Bodeneffekt existieren (die Mitte steht in keinem
+      Feld, das wir lesen). Im Code seit laengerem als ASSUMPTION markiert.
+    - Alles, was kein Cast ist: Tuerme, Sammelpunkte, Seile, Rueckstoss.
+    - Nur BELEGTE Formen gehen in die Suche. Der Warnton darf eine unbekannte
+      Form vorsichtshalber als Kreis behandeln (lieber zu oft warnen), aber eine
+      erfundene Flaeche wuerde den Spieler aktiv in eine Richtung schicken, fuer
+      die es keinen Grund gibt.
+    - "Sicher jetzt" ist nicht "sicher beim Einschlag": dreht der Boss sich
+      weiter, wandert der Kegel mit.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. IN-GAME UNGETESTET.
+
+>>> ZU TESTEN: einen Gegner mit Kegel- oder Linien-Cast suchen (Leveldungeon
+    oder Freibrief-Gegner reichen), in die Flaeche stellen und hoeren, ob die
+    Ansage kommt und der Ton in eine Richtung fuehrt, die WIRKLICH heraus
+    fuehrt. Das Log schreibt "[Flucht] Sicherer Punkt X Grad, Y m" bzw.
+    "[Flucht] Kein sicherer Punkt in Reichweite gefunden".
+
+## FRUEHERER STAND (2026-08-19, "EINSTELLUNGEN DER INHALTSSUCHE: FERTIG UND BESTAETIGT")
 
 >>> VOM USER IN-GAME BESTAETIGT ("funktioniert"). Das Fenster ist damit
     abgeschlossen. Was es kann:

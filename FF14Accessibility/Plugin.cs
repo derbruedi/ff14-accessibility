@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
     private readonly BeaconService      _beacon;
+    private readonly EscapeRouteService _escape;
     private readonly CueService         _cue;
     private readonly CooldownService    _cooldown;
     private readonly DutyActionService  _dutyActions;
@@ -276,6 +277,10 @@ public sealed class Plugin : IDalamudPlugin
         _cue          = new CueService(_config, Log);
         _beacon       = new BeaconService(_config, _tolk, _cue, Log);
         _gearInfo     = new GearInfoService(DataManager, Log);
+        // Wohin man aus einer Gefahrenflaeche heraus laufen muss. Vor der
+        // Navigation angelegt, weil die den Peil-Ton fuehrt und die Flucht
+        // darauf Vorrang hat; der Kampf fuettert sie mit den Flaechen.
+        _escape       = new EscapeRouteService(PluginInterface, Log);
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
@@ -314,7 +319,7 @@ public sealed class Plugin : IDalamudPlugin
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -407,7 +412,7 @@ public sealed class Plugin : IDalamudPlugin
         _chatBackfill = new ChatBackfill(_chatReader, _history, _chatFilters, Log);
         _toasts     = new ToastService(ToastGui, TargetManager, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _leveEnemies, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _leveEnemies, Log);
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
@@ -426,7 +431,7 @@ public sealed class Plugin : IDalamudPlugin
         _menu       = new SpokenMenu(_tolk, Log);
         _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
-                                      _tolk, Log, _heading, _chatFilters);
+                                      _tolk, Log, _heading, _chatFilters, _aoeWarn);
 
         // ── Tiefes Gewoelbe ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros

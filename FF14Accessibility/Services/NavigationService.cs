@@ -85,6 +85,9 @@ public sealed class NavigationService
     private readonly ITargetManager _targetManager;
     private readonly TolkService _tolk;
     private readonly BeaconService _beacon;
+    // Wohin man aus einer Gefahrenflaeche heraus muss - hat Vorrang auf dem
+    // Peil-Ton (siehe TryDriveEscapeBeacon).
+    private readonly EscapeRouteService _escape;
     private readonly CueService _cue;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService _places;
@@ -114,6 +117,7 @@ public sealed class NavigationService
         ITargetManager targetManager,
         TolkService tolk,
         BeaconService beacon,
+        EscapeRouteService escape,
         CueService cue,
         QuestMarkerService questMarkers,
         PlacesService places,
@@ -137,6 +141,7 @@ public sealed class NavigationService
         _targetManager = targetManager;
         _tolk = tolk;
         _beacon = beacon;
+        _escape = escape;
         _cue = cue;
         _questMarkers = questMarkers;
         _places = places;
@@ -264,15 +269,68 @@ public sealed class NavigationService
                 var distance = Vector3.Distance(player.Position, target.Position);
                 var text = $"{AccessibilityStrings.TargetPrefix}{DescribeObject(target)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
-                           $"{DescribeTargetHp(target)}.";
+                           $"{DescribeTargetHp(target)}{DescribeTamed(target)}.";
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
                 _tolk.SpeakInterrupt(text);
             }
         }
 
+        // Die Flucht aus einer Gefahrenflaeche hat Vorrang vor allem anderen -
+        // vor der Gehhilfe und vor dem anvisierten Ziel. Wer in einer Flaeche
+        // steht, hat genau eine Aufgabe, und der Ton, der ihn zu einem Erzbrocken
+        // fuehrt, hilft ihm dabei nicht.
+        //
+        // Vorrang statt zweitem Ton: es gibt nur EIN Peil-Signal, zwei
+        // gleichzeitig waeren nicht auseinanderzuhalten. Der Warnton
+        // (AoeWarningService) laeuft daneben weiter - der ist ein monaurales
+        // Brummen und deshalb bewusst nicht mit dem Peil-Ton zu verwechseln.
+        if (TryDriveEscapeBeacon(player)) return;
+
         if (_walkGuideActive) WalkGuideFrame(player);
         else UpdateTargetBeacon(player);
     }
+
+    /// <summary>
+    /// Fuehrt den Peil-Ton auf den sicheren Punkt, solange der Spieler in einer
+    /// Gefahrenflaeche steht. True, wenn die Flucht den Ton uebernommen hat -
+    /// dann laeuft in diesem Frame nichts anderes mehr auf dem Ton.
+    ///
+    /// Der Fluchtton haengt bewusst NICHT am Schalter fuer den Ziel-Peil-Ton:
+    /// wer die Zielpeilung abschaltet, will keine Erzbrocken angepeilt bekommen -
+    /// er hat damit nicht auf die Warnung verzichtet, in welche Richtung er dem
+    /// Einschlag entkommt. Sein Schalter ist der der AoE-Warnung, zu der er
+    /// gehoert (siehe CombatService).
+    ///
+    /// Findet die Suche keinen sicheren Punkt, schweigt der Ton, statt
+    /// irgendwohin zu zeigen - aber er gibt den Ton auch nicht an die Gehhilfe
+    /// zurueck, solange die Gefahr laeuft: eine Wegweisung mitten in einer
+    /// Flaeche wuerde als "hier lang ist es sicher" gehoert.
+    /// </summary>
+    private bool TryDriveEscapeBeacon(IGameObject player)
+    {
+        if (!_escape.InDanger) return false;
+
+        if (_escape.SafeSpot is not { } spot)
+        {
+            _beacon.Start();
+            _beacon.Idle();
+            return true;
+        }
+
+        _beacon.Start();
+        var distance = Distance2D(player.Position, spot);
+        // targetKey konstant: der Fluchtpunkt darf sich verschieben, ohne dass
+        // der Ton jedes Mal neu ansetzt. Er wird nur EINMAL neu angesetzt,
+        // naemlich wenn die Flucht den Ton uebernimmt - dafuer sorgt der
+        // Schluesselwechsel gegenueber dem vorherigen Ziel von selbst.
+        _beacon.Update(RelativeAngle(player, spot), distance, BeaconKind.Escape,
+                       arrived: false, targetKey: EscapeBeaconKey);
+        return true;
+    }
+
+    /// <summary>Eigener Schluessel fuer den Fluchtton, damit der Wechsel von und
+    /// zu ihm den Ton sauber neu ansetzt (siehe BeaconService.Update).</summary>
+    private const ulong EscapeBeaconKey = ulong.MaxValue;
 
     // ── Peil-Ton auf das anvisierte Ziel ──
     //
@@ -857,7 +915,7 @@ public sealed class NavigationService
         // Werte. Bei einer Ablehnung (ausser Reichweite, Sichtlinie unterbrochen)
         // bleibt es beim bisherigen Hinweis "nicht anvisiert" - ohne Werte, die auf
         // dem Bildschirm nirgends stehen.
-        var stats = rejected ? string.Empty : DescribeTargetHp(obj);
+        var stats = (rejected ? string.Empty : DescribeTargetHp(obj)) + DescribeTamed(obj);
         var text = $"{description}, " +
                    $"{FormatDistance(distance)}, " +
                    $"{CalculateDirection(player, obj.Position)}" +
@@ -1168,7 +1226,21 @@ public sealed class NavigationService
         candidates.Sort((a, b) => a.Dist.CompareTo(b.Dist));
         foreignLeve.Sort((a, b) => a.Dist.CompareTo(b.Dist));
         var todos = _leveEnemies.GetTodoLines(leve.DirectorAddress);
-        var trace = $"[Leve] Gegner des laufenden Freibriefs '{leve.LeveName}': {result.Count} gefunden " +
+        // Wer von ihnen schon gezaehmt ist, steht mit im Trace. Das ist die
+        // Gegenprobe zu der einen Annahme, die DescribeTamed offen laesst: ist
+        // die Statusliste auch fuer nicht anvisierte Gegner gefuellt, stehen hier
+        // waehrend eines Fang-Freibriefs Ids; bleibt die Zahl bei 0, obwohl das
+        // Spiel "ist bereits zahm" sagt, ist sie es nicht.
+        var tamed = result.FindAll(e => TameRank(e.Obj) == TameRankTamed)
+                          .ConvertAll(e => $"{e.Obj.GameObjectId:X}");
+        var agitated = result.FindAll(e => TameRank(e.Obj) == TameRankAgitated)
+                             .ConvertAll(e => $"{e.Obj.GameObjectId:X}");
+
+        var trace = $"[Leve] Gegner des laufenden Freibriefs '{leve.LeveName}': {result.Count} gefunden, " +
+                    $"davon {tamed.Count} schon gezaehmt" +
+                    (tamed.Count > 0 ? $" ({string.Join(", ", tamed)})" : "") +
+                    $", {agitated.Count} aufgestachelt" +
+                    (agitated.Count > 0 ? $" ({string.Join(", ", agitated)})" : "") + " " +
                     $"(Director-EventId {leve.DirectorEventId}, Eintrag {(ushort)leve.DirectorEventId}, " +
                     $"{leve.EventObjectAddresses.Count} Director-Objekte). " +
                     $"Aufgabenzeilen: {(todos.Count > 0 ? string.Join(" / ", todos) : "keine")}. " +
@@ -1186,8 +1258,22 @@ public sealed class NavigationService
             _log.Info(trace);
         }
 
+        // Nach BRAUCHBARKEIT fuer einen Fang, darin unveraendert nach Entfernung:
+        // erst die, die gerade zaehlen, dann die aufgestachelten, zuletzt die
+        // schon gezaehmten. Ein sehender Spieler ueberspringt die beiden hinteren
+        // Gruppen mit einem Blick; ohne diese Reihung muesste ein blinder Spieler
+        // sich durch sie hindurchblaettern, um den naechsten zu finden, der noch
+        // zaehlt (elf Kobalos fuer vier Faenge im Log 2026-08-21).
+        //
+        // Sie fallen bewusst NICHT aus der Liste. Beide Zustaende sind
+        // voruebergehend - das Spiel kennt sogar eine eigene Meldung dafuer, dass
+        // einer endet ("... ist nicht mehr zahm", LogMessage 1809) - und ein
+        // Gegner, den das Plugin faelschlich verschwiegen haette, waere ohne
+        // Ansage nicht mehr auffindbar. Hinten in der Liste, mit dem Grund
+        // dahinter, ist er beides: aus dem Weg und noch da.
         return result
-            .OrderBy(e => e.Dist)
+            .OrderBy(e => TameRank(e.Obj))
+            .ThenBy(e => e.Dist)
             .Select(e => (e.Obj, e.Spec))
             .ToList();
     }
@@ -1320,7 +1406,7 @@ public sealed class NavigationService
 
         // Level and HP only when the game accepted the target: only then is the
         // target bar filled, and only then would a sighted player see the values.
-        var stats = rejected ? string.Empty : DescribeTargetHp(obj);
+        var stats = (rejected ? string.Empty : DescribeTargetHp(obj)) + DescribeTamed(obj);
         var wanted = spec is { Required: > 0 }
             ? AccessibilityStrings.LeveEnemyWanted((int)spec.Required)
             : string.Empty;
@@ -3155,6 +3241,129 @@ public sealed class NavigationService
             return AccessibilityStrings.TargetLevelHpFragment(bc.Level, bc.CurrentHp, bc.MaxHp);
         return string.Empty;
     }
+
+    /// <summary>
+    /// Der Status, den ein bereits gezaehmter Gegner traegt.
+    ///
+    /// GEMESSEN, nicht geraten (dalamud.log 2026-08-21, Freibrief "Im Namen des
+    /// Fortschritts"): um 09:35:51 weist das Spiel einen Beruhigen-Versuch mit
+    /// "Der Pyrit-Kobalos ist bereits zahm." ab; zehn Sekunden spaeter liest die
+    /// Fang-Sonde an genau diesem Ziel "Status: 213:'Besänftigung'".
+    ///
+    /// IM SHEET BESTAETIGT (Lumina, installierte Spieldaten, 2026-08-21):
+    /// Zeile 213 heisst DE "Besänftigung" / EN "Pacification" und beschreibt sich
+    /// selbst als "Zahm und greift nicht mehr an." / "The target is pacified and
+    /// will no longer attack." Sie ist die EINZIGE Zeile des ganzen Sheets mit
+    /// dem Symbol 216301 - die drei anderen Zeilen, die englisch ebenfalls
+    /// "Pacification" heissen (6, 620, 5188), sind der Spieler-Debuff "Pacem"
+    /// ("Waffenfertigkeiten können nicht eingesetzt werden", Symbol 215017) und
+    /// koennen deshalb nicht mit dieser verwechselt werden.
+    ///
+    /// Auf die Id geprueft und nicht auf den Text: der Name steht in der Sprache
+    /// des Clients, die Id nicht.
+    ///
+    /// DASS DAS FUER JEDEN FANG GILT und nicht nur fuer den einen gemessenen
+    /// Freibrief, ist im Sheet nachgesehen (Spielerfrage 2026-08-21, "kann man
+    /// das verallgemeinern"): das Spiel fuehrt GENAU EINE Zaehm-Mechanik. Im
+    /// LogMessage-Sheet stehen ihre Meldungen als geschlossener Block 1805-1809
+    /// ("... wurde gezähmt. (/)", "... konnte nicht gezähmt werden und verfällt
+    /// in Raserei.", "... ist bereits zahm.", "... ist in Raserei verfallen und
+    /// lässt sich nicht beruhigen.", "... ist nicht mehr zahm"), und daneben
+    /// liegen die beiden EINZIGEN Anleitungen dazu: 1837 fuer das Emote
+    /// "Beruhigen" und 1838 fuer den Schluesselgegenstand. Zwei Wege hinein,
+    /// eine Mechanik dahinter - und im Status-Sheet gibt es dazu nur dieses eine
+    /// Paar.
+    ///
+    /// UNBELEGT BLEIBT genau ein Glied: dass auch der Weg ueber den
+    /// Schluesselgegenstand (1838) denselben Status setzt. Gemessen ist nur der
+    /// Emote-Weg. Da es keinen zweiten "zahm"-Status gibt, waere ein eigener
+    /// Zustand fuer jenen Weg allerdings ein Sonderfall ohne Zeile im Sheet.
+    /// </summary>
+    private const uint TamedStatusId = 213;
+
+    /// <summary>
+    /// Der Status eines Gegners, an dem ein Besaenftigen MISSLUNGEN ist.
+    ///
+    /// Zeile 214 liegt im Sheet direkt neben 213 und gehoert sichtbar zu ihr:
+    /// DE "Aufstachelung" / EN "Agitation", "Nach misslungener Besänftigung noch
+    /// wilder als zuvor." / "Excited by failed pacification. Attack power and
+    /// attack magic potency are enhanced." Symbol 216302 gegen 216301 - das Paar
+    /// der Fang-Mechanik.
+    ///
+    /// WARUM ER MITGESPROCHEN WIRD: fuer den Spieler ist er genauso eine Absage
+    /// wie "schon zahm", nur aus dem anderen Grund - das Spiel sagt dazu "ist in
+    /// Raserei verfallen und lässt sich nicht beruhigen" (LogMessage 1808). Wer
+    /// das nicht weiss, laeuft hin und verbraucht einen Versuch an einem Gegner,
+    /// der gerade gar nicht zu fangen ist. Und er schlaegt dabei haerter zu.
+    /// </summary>
+    private const uint AgitatedStatusId = 214;
+
+    /// <summary>
+    /// ", schon gezaehmt", wenn der Gegner den Besaenftigungs-Status traegt.
+    ///
+    /// WARUM (Spielerwunsch 2026-08-21): ein Fang-Freibrief laesst mehr Gegner
+    /// stehen, als er verlangt - "Im Namen des Fortschritts" bot elf Pyrit-Kobalos
+    /// fuer vier Faenge. Ein gezaehmter verschwindet nicht, verliert keine HP und
+    /// heisst weiter genauso; im Log vom 2026-08-21 ist der Spieler deshalb
+    /// dreimal zu einem gelaufen, den er schon hatte, und hat es erst an der
+    /// Abweisung "ist bereits zahm" gemerkt. Ein sehender Spieler sieht das
+    /// Symbol ueber dem Gegner stehen, bevor er losgeht.
+    ///
+    /// BEWUSST NICHT hinter dem "Ziel angenommen"-Gatter, hinter dem Stufe und
+    /// HP stehen: jene beiden stehen in der ZIEL-LEISTE, die bei einer Ablehnung
+    /// leer bleibt. Der Besaenftigungs-Status haengt am Gegner selbst und ist
+    /// ueber seinem Kopf zu sehen, ohne ihn anzuvisieren.
+    ///
+    /// ANNAHME, die erst der Test im Spiel bestaetigen kann: dass die
+    /// Statusliste auch fuer einen Gegner gefuellt ist, der NICHT anvisiert ist.
+    /// Trifft sie nicht zu, spricht die Ansage schlicht nichts - falsch wird sie
+    /// dadurch nicht. Der Log-Trace der Freibrief-Gegner schreibt den Zustand je
+    /// Gegner mit, dort ist es abzulesen.
+    /// </summary>
+    private static string DescribeTamed(IGameObject target) => TameRank(target) switch
+    {
+        TameRankTamed    => AccessibilityStrings.AlreadyTamed,
+        TameRankAgitated => AccessibilityStrings.Agitated,
+        _                => string.Empty,
+    };
+
+    // Wie brauchbar ein Gegner fuer einen Fang gerade ist - kleiner ist besser.
+    // Nicht als Enum, weil der Wert unmittelbar als Sortierschluessel dient.
+    private const int TameRankReady    = 0;   // nichts im Weg
+    private const int TameRankAgitated = 1;   // gerade nicht, spaeter wieder
+    private const int TameRankTamed    = 2;   // erledigt, zaehlt nicht noch einmal
+
+    /// <summary>
+    /// Der Fang-Zustand eines Gegners als Rang.
+    ///
+    /// Die Reihenfolge ist die der BRAUCHBARKEIT, nicht die der Schwere: ein
+    /// aufgestachelter Gegner kommt VOR einen gezaehmten, weil seine Absage
+    /// voruebergehend ist (der Status laeuft ab) und er danach wieder zaehlt -
+    /// waehrend ein gezaehmter bereits gezaehlt HAT.
+    ///
+    /// Nur BattleChara fuehren eine Statusliste; alles andere ist damit immer
+    /// <see cref="TameRankReady"/> und faellt aus Ansage und Sortierung heraus.
+    /// </summary>
+    private static int TameRank(IGameObject target)
+    {
+        if (target is not IBattleChara bc) return TameRankReady;
+
+        foreach (var status in bc.StatusList)
+        {
+            // Zahm schlaegt aufgestachelt: sollte ein Gegner wider Erwarten
+            // beides tragen, ist "schon erledigt" die Auskunft, die den Spieler
+            // davon abhaelt, es noch einmal zu versuchen.
+            if (status.StatusId == TamedStatusId) return TameRankTamed;
+        }
+
+        foreach (var status in bc.StatusList)
+            if (status.StatusId == AgitatedStatusId) return TameRankAgitated;
+
+        return TameRankReady;
+    }
+
+    /// <summary>Ob der Gegner den Besaenftigungs-Status traegt.</summary>
+    private static bool IsTamed(IGameObject target) => TameRank(target) == TameRankTamed;
 
     /// <summary>
     /// Leading description for an NPC, spoken BEFORE the name (user request): its

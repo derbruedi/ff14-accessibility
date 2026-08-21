@@ -20,7 +20,15 @@ public sealed class CombatService
     private readonly Configuration         _config;
     private readonly MessageHistoryService _history;
     private readonly AoeWarningService     _aoeWarn;
+    private readonly EscapeRouteService    _escape;
     private readonly IPluginLog            _log;
+
+    // Gefahrenflaechen dieses Frames, fuer die Fluchtsuche. Feld statt lokaler
+    // Liste, damit der Kampf-Frame nichts anlegt - er laeuft in jedem Bild.
+    private readonly List<DangerZone> _zoneBuf = new();
+
+    // Fluchtrichtung schon gesagt? Einmal je Gefahrenlage - siehe AnnounceEscapeOnce.
+    private bool _escapeSpoken;
 
     // Shape describer, built here rather than injected - the same pattern
     // UIReaderService uses, and it needs nothing this service does not already hold.
@@ -104,6 +112,7 @@ public sealed class CombatService
         Configuration config,
         MessageHistoryService history,
         AoeWarningService aoeWarn,
+        EscapeRouteService escape,
         LevequestEnemyService leveEnemies,
         IPluginLog log)
     {
@@ -115,6 +124,7 @@ public sealed class CombatService
         _config        = config;
         _history       = history;
         _aoeWarn       = aoeWarn;
+        _escape        = escape;
         _leveEnemies   = leveEnemies;
         _log           = log;
         _actionShape   = new ActionShapeService(data, log);
@@ -136,7 +146,7 @@ public sealed class CombatService
         // Enemy cast announcements + AoE danger tone. Runs regardless of the InCombat
         // flag: a cast telegraph can appear the instant before combat officially
         // starts, and the flag lags.
-        UpdateEnemyCastWarnings(player.GameObjectId, player.Position);
+        UpdateEnemyCastWarnings(player.GameObjectId, player.Position, player.Rotation);
 
         var inCombat = (player.StatusFlags & StatusFlags.InCombat) != 0;
 
@@ -758,13 +768,19 @@ public sealed class CombatService
     /// is horizontal (XZ) only - AoE telegraphs are ground planes, so a height
     /// difference must not hide or fake danger.
     /// </summary>
-    private void UpdateEnemyCastWarnings(ulong playerId, Vector3 playerPos)
+    private void UpdateEnemyCastWarnings(ulong playerId, Vector3 playerPos, float playerRot)
     {
-        var castOn = _config.AnnounceEnemyCast;
-        var aoeOn  = _config.AnnounceAoeWarning;
+        var castOn   = _config.AnnounceEnemyCast;
+        var aoeOn    = _config.AnnounceAoeWarning;
+        // Die Fluchtrichtung haengt am selben Schalter wie der Warnton: sie ist
+        // dessen zweite Haelfte. Der Ton sagt "du stehst falsch", die Richtung
+        // sagt "dorthin" - getrennt abschaltbar waere nur die halbe Auskunft.
+        var escapeOn = aoeOn;
+        _zoneBuf.Clear();
         if (!castOn && !aoeOn)
         {
             _aoeWarn.SetActive(false);
+            _escape.Clear();
             // Drop the memos too: with both features off nothing maintains them, and
             // a stale entry would swallow the first warning after they are switched
             // back on - exactly when the player is listening for it.
@@ -805,16 +821,26 @@ public sealed class CombatService
 
             LuminaAction? shapeRow = null;
             var inZone = false;
-            if ((wantShape || wantZone)
+            // Die Flucht braucht die Flaeche JEDES Werfers, nicht nur der
+            // angesagten: der sichere Punkt muss aus allen zugleich heraus
+            // liegen, sonst weicht man einer Flaeche in die naechste aus.
+            if ((wantShape || wantZone || escapeOn)
                 && sheet.TryGetRow(bc.CastActionId, out var row)
                 && row.EffectRange > 0)         // single-target / self-buff: no ground danger
             {
                 shapeRow = row;
-                if (wantZone)
+                var zone = BuildZone(bc, row, playerId, out var followsPlayer);
+                if (wantZone && zone is { } z)
                 {
-                    inZone = IsPlayerInAoe(bc, row, playerPos);
+                    inZone = z.Contains(playerPos);
                     if (inZone) inDanger = true;
                 }
+                // NUR belegte Formen in die Fluchtsuche. Der Warnton darf eine
+                // unbekannte Form vorsichtshalber als Kreis behandeln (lieber zu
+                // oft warnen), aber eine erfundene Flaeche wuerde den Spieler
+                // aktiv in eine Richtung schicken, fuer die es keinen Grund gibt.
+                if (escapeOn && !followsPlayer && zone is { } proven && AoeShape.HasProvenShape(row.CastType))
+                    _zoneBuf.Add(proven);
             }
 
             // Spoken warning for every cast of the current target, plus any cast
@@ -862,6 +888,62 @@ public sealed class CombatService
         }
 
         _aoeWarn.SetActive(inDanger);
+        // Zuletzt, damit die Suche die Flaechen dieses Frames sieht: der Ton
+        // sagt, DASS man falsch steht, die Flucht sagt, wohin.
+        if (escapeOn)
+        {
+            _escape.Update(playerPos, _zoneBuf);
+            AnnounceEscapeOnce(playerPos, playerRot);
+        }
+        else
+        {
+            _escape.Clear();
+            _escapeSpoken = false;
+        }
+    }
+
+    /// <summary>
+    /// Sagt EINMAL je Gefahrenlage, wohin man ausweichen kann - danach fuehrt der
+    /// Peil-Ton. Einmal, weil die Richtung sich mit jeder Drehung des Spielers
+    /// aendert: sie jedes Mal neu zu sprechen waere ein Wortschwall, der genau in
+    /// den Sekunden laeuft, in denen er rennen muss.
+    ///
+    /// "Kein sicherer Weg gefunden" MUSS dabei gesagt werden. Der Peil-Ton
+    /// schweigt in diesem Fall, und Stille heisst bei ihm sonst "du stehst
+    /// richtig" - ohne den Satz waere der gefaehrlichste Fall von dem
+    /// beruhigendsten nicht zu unterscheiden.
+    /// </summary>
+    private void AnnounceEscapeOnce(Vector3 playerPos, float playerRot)
+    {
+        if (!_escape.InDanger)
+        {
+            _escapeSpoken = false;
+            return;
+        }
+        if (_escapeSpoken) return;
+
+        if (_escape.SafeSpot is { } spot)
+        {
+            _escapeSpoken = true;
+            var rel  = RelBearingDeg(playerPos, playerRot, spot);
+            var dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z),
+                                        new Vector2(spot.X, spot.Z));
+            _tolk.SpeakInterrupt(AccessibilityStrings.EscapeDirection(
+                AccessibilityStrings.RelativeDirection(rel),
+                AccessibilityStrings.FormatDistance(dist)));
+            _log.Info($"[Flucht] Sicherer Punkt {rel:F0} Grad, {dist:F1} m.");
+            return;
+        }
+
+        // Noch kein Ergebnis: die Suche laeuft gedrosselt und braucht ein paar
+        // Frames. Erst wenn sie WIRKLICH nichts gefunden hat, wird das gesagt -
+        // sonst kaeme die Absage regelmaessig eine Zehntelsekunde vor der
+        // Richtung, die es dann doch gibt.
+        if (_escape.SearchExhausted)
+        {
+            _escapeSpoken = true;
+            _tolk.SpeakInterrupt(AccessibilityStrings.EscapeNoneFound);
+        }
     }
 
     /// <summary>
@@ -882,12 +964,29 @@ public sealed class CombatService
     /// </para>
     /// </summary>
     private bool IsPlayerInAoe(IBattleChara caster, LuminaAction row, Vector3 playerPos)
+        => BuildZone(caster, row, 0, out _) is { } zone && zone.Contains(playerPos);
+
+    /// <summary>
+    /// Dieselbe Geometrie wie oben, aber als FLAECHE statt als Ja/Nein: eine
+    /// <see cref="DangerZone"/> laesst sich fuer jeden beliebigen Punkt
+    /// auswerten, nicht nur fuer den, auf dem der Spieler steht. Genau das
+    /// braucht die Fluchtsuche (<see cref="EscapeRouteService"/>).
+    ///
+    /// Es gibt sie ABSICHTLICH nur einmal: waeren Warnton und Fluchtrichtung
+    /// zwei Rechnungen, koennte der Ton "du stehst drin" sagen, waehrend die
+    /// Richtung in dieselbe Flaeche hinein zeigt. Der Warnton oben ruft deshalb
+    /// dieselbe Flaeche auf.
+    ///
+    /// Null fuer Formen ohne belegte Geometrie. Der Warnton behandelt die weiter
+    /// als Kreis um den Werfer (lieber zu oft warnen als einmal zu wenig), die
+    /// FLUCHT bekommt sie dagegen gar nicht erst zu sehen: eine erfundene Form
+    /// wuerde den Spieler aktiv in die falsche Richtung schicken.
+    /// </summary>
+    private DangerZone? BuildZone(IBattleChara caster, LuminaAction row, ulong playerId, out bool followsPlayer)
     {
+        followsPlayer = false;
         float range = row.EffectRange;
         var casterPos = caster.Position;
-        var dx = playerPos.X - casterPos.X;
-        var dz = playerPos.Z - casterPos.Z;
-        var horiz2 = dx * dx + dz * dz;
 
         switch (row.CastType)
         {
@@ -905,40 +1004,38 @@ public sealed class CombatService
                     foreach (var o in _objectTable)
                         if (o.GameObjectId == tid) { center = o.Position; break; }
                 }
-                var cx = playerPos.X - center.X;
-                var cz = playerPos.Z - center.Z;
-                return cx * cx + cz * cz <= range * range;
+                // EIN KREIS AUF DEM SPIELER SELBST LAESST SICH NICHT VERLASSEN.
+                // Seine Mitte wird jeden Frame neu auf die eigene Position
+                // gesetzt, also ist jeder Fluchtpunkt in dem Moment veraltet, in
+                // dem man ihn erreicht - die Suche wuerde einen endlos vor sich
+                // hertreiben. Das Spiel meint hier auch etwas anderes: weglaufen
+                // von den MITSPIELERN, nicht aus der Flaeche heraus. Genau das
+                // sagt die Ansage schon (AoeShapeWithRangeOnYou, "Kreis um
+                // dich"), und der Warnton brummt weiter. Nur die Wegweisung
+                // haelt sich raus.
+                followsPlayer = tid == playerId;
+                return new DangerZone(DangerShape.Circle, center, range, 0f, 0f, 0f);
             }
 
             // Cone from the caster along its facing. Half-angle parsed from the fan
             // number in the Omen path (gl_fan090 -> 90 deg total -> 45 deg half).
             case AoeShape.CastTypeCone:
             case AoeShape.CastTypeCone13:
-            {
-                if (horiz2 > range * range) return false;
-                var rel = Math.Abs(RelBearingDeg(casterPos, caster.Rotation, playerPos));
-                return rel <= ConeHalfAngleDeg(row);
-            }
+                return new DangerZone(DangerShape.Cone, casterPos, range, caster.Rotation,
+                                      ConeHalfAngleDeg(row) * MathF.PI / 180f, 0f);
 
             // Line/rectangle from the caster along its facing. Length = EffectRange,
-            // ASSUMPTION half-width = XAxisModifier (verify in-game). Project the
-            // player onto the facing axis: ahead within length, lateral within width.
+            // ASSUMPTION half-width = XAxisModifier (verify in-game).
             case AoeShape.CastTypeLine:
             case AoeShape.CastTypeLine8:
             case AoeShape.CastTypeLine12:
-            {
-                var fx = MathF.Sin(caster.Rotation);
-                var fz = MathF.Cos(caster.Rotation);
-                var along = dx * fx + dz * fz;               // forward distance
-                if (along < 0f || along > range) return false;
-                var lateral = MathF.Abs(dx * fz - dz * fx);  // perpendicular distance
-                var halfWidth = row.XAxisModifier > 0 ? row.XAxisModifier : 0.5f;
-                return lateral <= halfWidth;
-            }
+                return new DangerZone(DangerShape.Line, casterPos, range, caster.Rotation, 0f,
+                                      row.XAxisModifier > 0 ? row.XAxisModifier : 0.5f);
 
             // Not-yet-verified shapes: caster-centred circle (over-warn, never miss).
+            // Nur fuer den Warnton - siehe CollectZones, das sie auslaesst.
             default:
-                return horiz2 <= range * range;
+                return new DangerZone(DangerShape.Circle, casterPos, range, 0f, 0f, 0f);
         }
     }
 

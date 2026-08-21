@@ -1267,6 +1267,23 @@ public static partial class AccessibilityStrings
         return max > 0 ? lvl + TargetHpFragment(cur, max) : lvl;
     }
 
+    /// <summary>", schon gezaehmt" - der Gegner traegt bereits den Status
+    /// "Besaenftigung" (Status 213, Sheet-Text "Zahm und greift nicht mehr an.").
+    /// Bei einem Fang-Freibrief ist das der Unterschied zwischen einem Ziel, das
+    /// noch zaehlt, und einem, an dem die Emote-Aufforderung nur "ist bereits
+    /// zahm" zurueckgibt.</summary>
+    public static string AlreadyTamed =>
+        IsGerman ? ", schon gezähmt" : ", already tamed";
+
+    /// <summary>", rasend, nicht zähmbar" - an dem Gegner ist ein Besänftigen
+    /// misslungen (Status 214 "Aufstachelung", Sheet-Text "Nach misslungener
+    /// Besänftigung noch wilder als zuvor."). Das Spiel weist einen weiteren
+    /// Versuch mit "ist in Raserei verfallen und lässt sich nicht beruhigen" ab.
+    /// Der Grund steht mit dabei, weil "rasend" allein nur einen Zustand nennt
+    /// und nicht, was er für den Spieler bedeutet.</summary>
+    public static string Agitated =>
+        IsGerman ? ", rasend, nicht zähmbar" : ", agitated, cannot be tamed";
+
     /// <summary>HP als Zahl, MP als Prozentwert und nur wenn die Klasse Mana hat.
     /// MP bleibt prozentual, weil MaxMp seit Patch 5.0 fuer JEDE Klasse auf JEDEM
     /// Level 10000 ist - "MP 10000 von 10000" ist keine Zahl, die ein Spieler
@@ -1341,6 +1358,24 @@ public static partial class AccessibilityStrings
     public static string AoeEnteredZone(float seconds) =>
         IsGerman ? $"Achtung, du stehst drin, {AoeSeconds(seconds)}."
                  : $"Careful, you are in it, {AoeSeconds(seconds)}.";
+
+    /// <summary>
+    /// Wohin man ausweichen kann — die Richtung, die ein sehender Spieler in
+    /// einem Blick sieht. Hängt hinter „du stehst drin", weil sie erst dann
+    /// gebraucht wird. Richtung und Weite kommen aus derselben Rechnung wie der
+    /// Peil-Ton, der danach die Feinausrichtung übernimmt.
+    /// </summary>
+    public static string EscapeDirection(string direction, string distance) =>
+        IsGerman ? $"Raus nach {direction}, {distance}."
+                 : $"Escape {direction}, {distance}.";
+
+    /// <summary>
+    /// Es gibt keinen erreichbaren sicheren Punkt in Reichweite. MUSS gesagt
+    /// werden: der Peil-Ton schweigt in diesem Fall, und Stille ist für einen
+    /// blinden Spieler sonst nicht von „ausgerichtet" zu unterscheiden.
+    /// </summary>
+    public static string EscapeNoneFound =>
+        IsGerman ? "Kein sicherer Weg gefunden." : "No safe spot found.";
 
     /// <summary>Restliche Cast-Zeit als hörbares Zeitbudget. Aufgerundet, damit aus
     /// 0,4 Sekunden nicht "0 Sekunden" wird; unter einer Sekunde bleibt nur noch

@@ -48,9 +48,13 @@ public sealed class OptionsMenu
     // The chat section's rows ARE the game's tabs, so the
     // menu asks the game what they are instead of holding a list of its own.
     private readonly GameChatFilters _chatFilters;
+    // Nur zum Vorhoeren: eine Klangauswahl, die man erst im Kampf zu hoeren
+    // bekaeme, koennte man auch weglassen.
+    private readonly AoeWarningService _aoeWarning;
 
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
-                       HeadingService heading, GameChatFilters chatFilters)
+                       HeadingService heading, GameChatFilters chatFilters,
+                       AoeWarningService aoeWarning)
     {
         _config  = config;
         _save    = save;
@@ -58,6 +62,7 @@ public sealed class OptionsMenu
         _log     = log;
         _heading = heading;
         _chatFilters = chatFilters;
+        _aoeWarning = aoeWarning;
     }
 
     /// <summary>Builds the top level. Called fresh on every open, so the labels
@@ -671,8 +676,81 @@ public sealed class OptionsMenu
             Volume(AccessibilityStrings.OptRouteCues,        () => _config.RouteCueVolume,      v => _config.RouteCueVolume = v),
             Toggle(AccessibilityStrings.OptSkillReady,       () => _config.AnnounceSkillReady,  v => _config.AnnounceSkillReady = v),
             Volume(AccessibilityStrings.OptSkillReadyVolume, () => _config.SkillReadyCueVolume, v => _config.SkillReadyCueVolume = v),
+
+            // LAUTSTAERKE UND KLANG DER FLAECHENWARNUNG SIND HIER, ihr SCHALTER
+            // weiterhin nicht (Begruendung oben). Das ist kein Widerspruch: der
+            // Schalter fehlt, weil der Ausloeser noch zu oft anschlaegt - und
+            // GENAU DESHALB muss der Spieler an die Lautstaerke herankommen.
+            // AoeWarnVolume gab es als Wert schon lange, nur stand es in keinem
+            // Menue; erreichbar war es damit nicht.
+            Volume(AccessibilityStrings.OptAoeWarnVolume,    () => _config.AoeWarnVolume,       v => _config.AoeWarnVolume = v),
+            AoeTone(),
         },
     };
+
+    /// <summary>
+    /// Die Zeile, die den Klang der Flaechenwarnung waehlen laesst.
+    ///
+    /// Jede Stimme wird beim Anwaehlen SOFORT gesetzt und kurz vorgespielt, und
+    /// die Zeile bleibt offen (StayOpen) - so haengt der Vergleich am Ohr und
+    /// nicht am Gedaechtnis. Genau wie bei den Lautstaerkestufen daneben.
+    /// </summary>
+    private MenuEntry AoeTone() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptAoeWarnTone,
+                      AccessibilityStrings.AoeToneName(_config.AoeWarnSound)),
+        Submenu = BuildAoeToneChoices,
+    };
+
+    private MenuLevel BuildAoeToneChoices()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptAoeWarnTone,
+            Rebuild = BuildAoeToneChoices,
+        };
+
+        foreach (var tone in AoeWarnTones.All)
+        {
+            var choice = tone;                      // je Durchlauf festgehalten
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.AoeToneName(choice),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.AoeWarnSound = choice;
+                    Persist();
+
+                    // DIE PROBE IST DIE QUITTUNG. Anders als bei den
+                    // Lautstaerkestufen wird hier NICHT zusaetzlich der Name
+                    // gesprochen: die Sprachausgabe laeuft nicht blockierend,
+                    // sie laege also mitten auf dem Ton, den man gerade
+                    // beurteilen will - von beidem hoerte man die Haelfte. Der
+                    // Name stand ohnehin schon in der Zeile, auf der man steht,
+                    // und die Ueberschrift eine Ebene hoeher liest den neuen
+                    // Wert beim Zurueckgehen erneut vor.
+                    //
+                    // Kommt kein Ton heraus (kein Audio-Geraet, Lautstaerke auf
+                    // aus), MUSS gesprochen werden - eine Wahl, die weder klingt
+                    // noch spricht, waere von einem Fehlschlag nicht zu
+                    // unterscheiden.
+                    if (!_aoeWarning.PlayPreview(choice))
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.AoeToneSet(AccessibilityStrings.AoeToneName(choice)));
+
+                    _log.Info($"[Einstellungen] Klang AoE-Warnung -> {choice}");
+                },
+            });
+        }
+
+        // Auf dem Klang stehen bleiben, der gerade gilt - dieselbe Regel wie bei
+        // den Lautstaerkestufen.
+        level.Cursor = Array.IndexOf(AoeWarnTones.All, _config.AoeWarnSound);
+        if (level.Cursor < 0) level.Cursor = 0;
+        return level;
+    }
 
     // ── Announcements ─────────────────────────────────────────────
 

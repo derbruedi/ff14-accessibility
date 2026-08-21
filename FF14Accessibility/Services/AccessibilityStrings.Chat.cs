@@ -78,6 +78,37 @@ public static partial class AccessibilityStrings
     public static string OptBeacon => IsGerman ? "Lautstärke Peil-Ton" : "Target beacon volume";
     public static string OptRouteCues => IsGerman ? "Wegpunkt- und Ankunftston" : "Waypoint and arrival cues";
 
+    // AoE-Warnung: die Lautstärke gab es als Konfigurationswert schon lange, aber
+    // in keinem Menü - sie war damit nicht erreichbar. Der Klang kam 2026-08-21
+    // auf Wunsch des Spielers dazu.
+    public static string OptAoeWarnVolume => IsGerman
+        ? "Lautstärke AoE-Warnung"
+        : "AoE warning volume";
+
+    public static string OptAoeWarnTone => IsGerman
+        ? "Klang AoE-Warnung"
+        : "AoE warning sound";
+
+    /// <summary>Name einer Warnton-Stimme, wie ihn die Auswahl vorliest.
+    /// Beschreibend statt technisch: "300 Hertz mit Obertönen" sagt niemandem,
+    /// wie etwas klingt.</summary>
+    public static string AoeToneName(AoeWarnTone tone) => tone switch
+    {
+        AoeWarnTone.Bright => IsGerman ? "Hell (bisheriger Klang)" : "Bright (previous sound)",
+        AoeWarnTone.Soft   => IsGerman ? "Weich" : "Soft",
+        AoeWarnTone.Deep   => IsGerman ? "Tiefes Brummen" : "Deep hum",
+        AoeWarnTone.Wave   => IsGerman ? "An- und abschwellend" : "Swelling",
+        _                  => IsGerman ? "Unbekannt" : "Unknown",
+    };
+
+    /// <summary>Die Zeile, die das Untermenü öffnet: "Klang AoE-Warnung, Weich".</summary>
+    public static string OptionChoice(string name, string value) =>
+        IsGerman ? $"{name}, {value}" : $"{name}, {value}";
+
+    /// <summary>Bestätigung nach der Wahl eines Klangs.</summary>
+    public static string AoeToneSet(string value) =>
+        IsGerman ? $"Warnton {value}." : $"Warning sound {value}.";
+
     public static string OptSkillReady => IsGerman ? "Fähigkeit bereit" : "Ability ready";
     public static string OptSkillReadyVolume => IsGerman ? "Fähigkeit bereit Lautstärke" : "Ability ready volume";
     public static string OptHeading => IsGerman ? "Himmelsrichtung" : "Compass heading";
