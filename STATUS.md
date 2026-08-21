@@ -3,7 +3,71 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-21, "FANG-ZUSTAND VERALLGEMEINERT - UND ES GIBT NUR EINE MECHANIK")
+## STAND JETZT (2026-08-21, "PR 6 WAR FAST GANZ DA - OFFEN WAR EIN EINZIGER COMMIT")
+
+>>> FRAGE DES USERS: *"was hat pr sechs fuer konflikte schau auf den github"*.
+    Die Antwort war nicht die erwartete: PR #6 lag zum groessten Teil laengst in
+    main. Der Hauptcommit bf5db54 ist der GEMEINSAME VORFAHRE beider Zweige, er
+    liegt 26 Commits zurueck. Alle sieben DeepDungeon*.cs sind da, sechs davon
+    byte-identisch mit dem PR-Stand.
+
+>>> OFFEN WAR GENAU EIN COMMIT: 6693669 vom 13.08., der Nachreich-Commit. Er
+    bringt zwei Dinge, beide an vorhandene Anschlusspunkte gehaengt, ohne neue
+    Taste:
+      - Die Beschreibung EINES Platzes der Charakterinfo an die Detailtaste
+        (TryReadDeepPanelDetail, in der Kette hinter TryReadItemDetail). Der
+        fokussierte Knoten kommt LIVE aus AtkStage, nicht aus dem gemerkten
+        _lastFocusedNodePtr - der zeigt nach dem Schliessen des Fensters auf
+        freigegebenen Speicher, und ein Lesevorgang darauf wuerde das Spiel
+        abstuerzen lassen statt eine Ausnahme zu werfen.
+      - Die ebenenweiten Wirkungen an der Ebenen-Taste (Strg+F). Sie stehen
+        NICHT in der StatusList des Spielers - ein Effekt-Leser sieht sie nie;
+        sie liegen auf dem Content-Director. Laeuft nichts, wird nichts
+        angehaengt, statt "keine Wirkungen" zu sagen.
+
+>>> VIER KONFLIKTE, KEINER EIN INHALTLICHER WIDERSPRUCH. Sie kommen alle aus den
+    26 Commits, die main seit dem Abzweig dazubekommen hat:
+      - Configuration.cs, zweimal: main hat KeyOptionsMenu, KeyToggleBeacon und
+        TargetBeaconEnabled dazu, der PR beruehrte nur die Kommentare daneben.
+        main behalten, das Praefix [Tiefes Gewoelbe] nachgezogen.
+      - Plugin.cs: der PR bringt eine ZWEITE IGameConfig-Deklaration mit, die in
+        main schon zusammengefuehrt wurde (der Kommentar dort sagt das
+        ausdruecklich). Eine zweite waere ein Compile-Fehler.
+      - NavigationService.cs, zweimal: dazwischen liegen inzwischen der
+        Jagdtagebuch-Zaehler, die Dungeonliste und die Zweige fuer Gegner,
+        Verbuendete und Inhalte. Alle bleiben.
+      - UIReaderService.cs: DescribeGearsetMark (main) und TryReadDeepPanelDetail
+        (PR) landeten an derselben Stelle, haben aber nichts miteinander zu tun.
+        Beide behalten.
+
+>>> DAS PRAEFIX [Tiefes Gewoelbe] IST UEBERALL NACHGEZOGEN, auch in den vier
+    aufgeloesten Stellen. Es war die Merge-Landkarte des Beitragenden (28
+    Stellen, per grep auffindbar); jetzt, wo der Merge durch ist, bleibt es als
+    Herkunftsvermerk stehen statt halb da und halb weg zu sein.
+
+>>> EIN OFFENER PUNKT AUS DEM PR SELBST, NICHT ERLEDIGT: der Kommentarblock in
+    DeepDungeonCategories sagt, die Kategorie "Verbuendete" fehle bewusst, weil
+    sie einem anderen PR gehoere - und nennt die EINE Zeile, die sie nachtraegt,
+    falls jener zuerst landet:
+
+        (NavCategory.Allies,   new[] { ObjectKind.BattleNpc, ObjectKind.Pc }),
+
+    Jener PR (#3) IST inzwischen gemergt. Die Zeile ist also faellig, aber sie
+    aendert Verhalten im Gewoelbe und ist NICHT ohne Rueckfrage eingefuegt
+    worden.
+
+>>> AUSSERDEM COMMITTET (b5fdc0e), was seit dem 19.08. unversioniert herumlag:
+    Fluchtrichtung, Warnton-Auswahl, Fang-Zustand, aufgeraeumte Inhaltssuche.
+    Ein BOM, das sich in CombatService.cs eingeschlichen hatte, ist raus - die
+    Datei war die einzige im Projekt mit einem.
+
+    Build Debug 0/0 UND Release 0/0, liegt in devPlugins. NICHT GEPUSHT.
+
+>>> ZU TESTEN, IN EINEM TIEFEN GEWOELBE: Strg+F nennt jetzt zusaetzlich die
+    ebenenweiten Wirkungen; in der Charakterinfo beschreibt die Detailtaste den
+    Platz, auf dem der Fokus steht. Das Log schreibt "[DeepPanel] Detail: ...".
+
+## FRUEHERER STAND (2026-08-21, "FANG-ZUSTAND VERALLGEMEINERT - UND ES GIBT NUR EINE MECHANIK")
 
 >>> FRAGE DES USERS: *"bei den freibriefen muss man unterschiedliche gegner
     einfangen, kann man das verallgemeinern, also dass egal wen ich einfangen
