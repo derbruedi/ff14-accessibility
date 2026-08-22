@@ -48,9 +48,36 @@ public sealed class AutoWalkService : IDisposable
     /// walk to a game target would (Plugin.TryResolveMarkerDestination).</summary>
     public const float StopRange = 2.5f;
 
-    /// <summary>Counts as arrived this far beyond the requested stop range. vnavmesh
-    /// aims for the range, the character coasts a little past it.</summary>
-    private const float ArrivalSlack = 1.5f;
+    /// <summary>
+    /// Counts as arrived this far beyond the requested stop range. Frame slack
+    /// only - the position is read once per frame, so a running character is
+    /// already a little past what we measured.
+    ///
+    /// WAS 1.5 m, and that was wrong in both its reasoning and its effect. The
+    /// comment claimed the character "coasts a little PAST" the range; measured,
+    /// it stops SHORT (log 2026-08-21 22:11:03, walk to Rudererquartier with
+    /// stopRange 1.0: vnavmesh gave up at 2.4 m, we announced "Ziel erreicht",
+    /// and three interaction attempts answered "Falsche Aktion oder Ziel"). With
+    /// the old slack the restart 700 ms later ended after 18 ms without a single
+    /// step, because the very first frame already counted as arrival.
+    ///
+    /// A too-generous slack does not just misreport - it disables everything
+    /// below it: the "mesh ends here" branch, the stall branch and the trail
+    /// crossing are all downstream of this check and were never reached.
+    /// </summary>
+    private const float ArrivalSlack = 0.3f;
+
+    /// <summary>
+    /// How often one walk may re-request a path after vnavmesh went quiet short
+    /// of the destination. Kept low on purpose: where the mesh genuinely ends,
+    /// retrying cannot help, and the player is better served by the honest
+    /// "this is as far as the walkable path goes" than by silent looping.
+    /// </summary>
+    private const int MaxReengages = 2;
+
+    /// <summary>Re-request only while we actually got closer than the previous
+    /// attempt got - otherwise the walk is stuck rather than merely short.</summary>
+    private const float ReengageProgress = 0.5f;
 
     /// <summary>A walk is only over once "no path running and none computing" has
     /// held this long. Shorter than vnavmesh's own 1 s stuck-retry cycle would
@@ -137,6 +164,8 @@ public sealed class AutoWalkService : IDisposable
     public NavmeshIpc Navmesh => _nav;
 
     private Phase _phase = Phase.Idle;
+    private int _reengageCount;          // re-requests spent on the current walk
+    private float _reengageBestDistance; // closest approach when we last re-requested
     private DateTime _startedAt;
     private DateTime _guardUntil;
     private bool _guardWarned;          // late revival reported once per walk
@@ -228,6 +257,17 @@ public sealed class AutoWalkService : IDisposable
         }
         return ResolveFloorPoint(approximate);
     }
+
+    /// <summary>
+    /// Is there reachable mesh RIGHT HERE? Same question as
+    /// <see cref="ResolveReachablePoint"/>, but with a tight search radius and no
+    /// fallback, so a point standing in scenery answers null instead of being
+    /// shifted metres away. Used to sort candidates (see ZoneBorderService); the
+    /// wide-radius version above is for resolving a destination that is already
+    /// settled.
+    /// </summary>
+    public Vector3? ProbeReachable(Vector3 point, float halfExtentXZ, float halfExtentY)
+        => _nav.IsReady ? _nav.NearestPointReachable(point, halfExtentXZ, halfExtentY) : null;
 
     /// <summary>
     /// Resolves the walkable height for a 2D map position (map markers carry
@@ -351,7 +391,12 @@ public sealed class AutoWalkService : IDisposable
         var player = _objectTable.LocalPlayer;
         if (player == null) return;
 
-        if (fresh) _usedTrails.Clear();
+        if (fresh)
+        {
+            _usedTrails.Clear();
+            _reengageCount = 0;
+            _reengageBestDistance = float.MaxValue;
+        }
 
         if (!_nav.IsReady)
         {
@@ -379,6 +424,9 @@ public sealed class AutoWalkService : IDisposable
             // wait out, and vnavmesh would report an immediate end that reads
             // like a failure.
             _log.Info($"[Nav] Auto-Lauf: schon am Ziel {name} (dist={distance:F1} <= {stopRange:F1}).");
+            // Standing there is not the same as facing it: without this the player
+            // is at the door and still looking at a wall.
+            FacingService.FaceTowards(player, destination);
             _tolk.SpeakInterrupt(AccessibilityStrings.AlreadyAtTarget(name));
             return;
         }
@@ -469,7 +517,8 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     private void StartingUpdate()
     {
-        if (_objectTable.LocalPlayer == null) { Finish(null, "Spieler weg"); return; }
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { Finish(null, "Spieler weg"); return; }
 
         if (_nav.IsRunning)
         {
@@ -482,6 +531,19 @@ public sealed class AutoWalkService : IDisposable
 
         // Still computing is fine; only give up once nothing is coming.
         if ((DateTime.UtcNow - _startedAt).TotalSeconds <= StartTimeoutS) return;
+
+        // After a re-request, "no route at all" would be the wrong story: we walked
+        // most of the way and are standing a few metres short. Tell the player what
+        // is actually true - how far, in which direction - and face it.
+        if (_reengageCount > 0)
+        {
+            var remainingDistance = Vector3.Distance(player.Position, _destPosition);
+            var direction = RouteService.CompassWord(player.Position, _destPosition);
+            _log.Info($"[Nav] Auto-Lauf: Nachfassen brachte keinen Weg mehr, dist={remainingDistance:F1}.");
+            Finish(AccessibilityStrings.WalkMeshEndsHere(remainingDistance, direction), "Nachfassen ohne Weg");
+            FacingService.FaceTowards(player, _destPosition);
+            return;
+        }
 
         _log.Info($"[Nav] Auto-Lauf: kein Weg zu {_targetName} (id={_targetId:X}) gefunden.");
         Finish(AccessibilityStrings.NoPathTo(_targetName, _places.BuildNoPathHint(_destPosition)), "kein Weg");
@@ -517,7 +579,14 @@ public sealed class AutoWalkService : IDisposable
         // goes quiet for a second on every stuck-retry too.
         if (distance <= _stopRange + ArrivalSlack)
         {
+            // Order matters: Finish stops vnavmesh first, THEN we turn. vnavmesh's
+            // FollowPath owns an OverrideCamera while it steers, so a turn issued
+            // before the stop can be taken straight back off us.
             Finish(AccessibilityStrings.TargetReached(_targetName), $"angekommen, dist={distance:F1}");
+            // Standing next to a thing while looking away is the same as not having
+            // arrived for a player who cannot glance around - and in the game's
+            // standard camera-relative movement it decides where "forward" goes.
+            FacingService.FaceTowards(player, _destPosition);
             return;
         }
 
@@ -554,6 +623,7 @@ public sealed class AutoWalkService : IDisposable
             if (TryTakeTrail(player.Position)) return;
             var far = RouteService.CompassWord(player.Position, _destPosition);
             Finish(AccessibilityStrings.WalkMeshEndsHere(distance, far), "Netz endet hier (keine Annäherung)");
+            FacingService.FaceTowards(player, _destPosition);
             return;
         }
 
@@ -578,6 +648,10 @@ public sealed class AutoWalkService : IDisposable
                     ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
                     : AccessibilityStrings.StuckRemaining(distance) + TrailHint(),
                 meshEnds ? "Netz endet hier" : "festgesteckt");
+            // Every ending except a zone change leaves the player facing the goal:
+            // whatever the message says, walking forward has to act on it. (A zone
+            // change is excluded because the destination belongs to the old zone.)
+            FacingService.FaceTowards(player, _destPosition);
             return;
         }
 
@@ -599,13 +673,62 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Info($"[Nav] Auto-Lauf: Pfad zu Ende, dist={distance:F1}, restWp={remaining}");
             if (TryTakeTrail(player.Position)) return;
+            if (TryReengage(distance)) return;
             var direction = RouteService.CompassWord(player.Position, _destPosition);
             Finish(AccessibilityStrings.WalkMeshEndsHere(distance, direction), "Pfad zu Ende ohne Ankunft");
+            // Turn towards the destination even though we did not reach it: the
+            // message names the remaining distance and direction, and walking
+            // forward should act on exactly that. After Finish, see above.
+            FacingService.FaceTowards(player, _destPosition);
             return;
         }
 
         _lastWaypointCount = remaining;
         SpeakProgress(distance);
+    }
+
+    /// <summary>
+    /// vnavmesh went quiet while we are still outside the stop range. Requests
+    /// the path once more instead of declaring the walk over.
+    ///
+    /// <para>
+    /// Why this is needed at all: vnavmesh stops short for reasons that are none
+    /// of the player's business - its own stuck-retry gave up, the last stretch
+    /// rounds an obstacle, the destination sits at the rim of a polygon. Measured
+    /// case (log 2026-08-21 22:11:04): 2.4 m short, and the fresh request found a
+    /// four-waypoint route around whatever was in the way. So a second attempt is
+    /// not a hack, it is the answer to a transient refusal.
+    /// </para>
+    ///
+    /// <para>
+    /// Bounded twice, because a retry that cannot succeed is worse than an honest
+    /// message: at most <see cref="MaxReengages"/> attempts per walk, and only
+    /// while each attempt got us measurably closer than the last
+    /// (<see cref="ReengageProgress"/>). Where the mesh truly ends, the second
+    /// condition fails immediately and the caller falls through to
+    /// "this is as far as the walkable path goes".
+    /// </para>
+    /// </summary>
+    private bool TryReengage(float distance)
+    {
+        if (_reengageCount >= MaxReengages) return false;
+        if (distance <= _stopRange) return false;
+        if (distance > _reengageBestDistance - ReengageProgress)
+        {
+            _log.Info($"[Nav] Auto-Lauf: Nachfassen uebersprungen - keine Annaeherung seit dem letzten " +
+                      $"Versuch (dist={distance:F1}, vorher={_reengageBestDistance:F1}).");
+            return false;
+        }
+
+        _reengageCount++;
+        _reengageBestDistance = distance;
+        _log.Info($"[Nav] Auto-Lauf: Nachfassen {_reengageCount}/{MaxReengages} bei dist={distance:F1} " +
+                  $"(stopRange={_stopRange:F1}).");
+
+        // fresh:false keeps the "Laufe zu X" line and the used trails intact -
+        // this is the same walk continuing, not a new one.
+        Begin(_destPosition, _targetName, _stopRange, _targetId, fresh: false);
+        return _phase == Phase.Starting;
     }
 
     // ── Spur-Etappe: über eine Lücke, die das Netz nicht kennt ───────

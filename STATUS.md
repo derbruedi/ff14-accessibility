@@ -3,7 +3,365 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-21, "WARNSTIMME: DIE WARNUNG BEKOMMT EINEN EIGENEN KANAL")
+## STAND JETZT (2026-08-22, "DIE KAMERA SCHAUTE GENAU VERKEHRT HERUM")
+
+>>> RUECKMELDUNG DES USERS ZUM TEST: *"nein er steht warscheinlich immer noch
+    falsch das mit dem uebergang hat immernoch nicht funktioniert aber die
+    entfernungsangabe sollte jetzt stimmen"*. Also: Punkt 3 der Testliste
+    (Entfernung) bestaetigt, Punkte 2 (Drehung) und 7 (Uebergang) nicht.
+
+>>> DIE DREHUNG WAR EIN RECHENFEHLER, UND ER STAND SEIT HEUTE FRUEH IM LOG.
+    Die manuelle Taste loggt `[Face] vorher/nachher`. Ueber 14 Messungen am
+    2026-08-22 zwischen 12:45 und 12:48 gilt in der Ruhelage ausnahmslos:
+      Rotation - DirH = 3,142   (= Pi, auf drei Stellen, jedes Mal)
+    Das galt auch dort, wo der Spieler sich zwischen zwei Messungen selbst
+    gedreht hatte - die Kopplung wanderte mit. Es ist also die Ruhelage des
+    Spiels und kein Zufall einer Pose.
+      - Bedeutung: `Camera.DirH` ist NICHT die Blickrichtung der Kamera, sondern
+        die Richtung von der Figur ZUR Kamera. Die Kamera steht hinter der Figur.
+      - Wir schrieben `DirH = rotation`. Das zielte die Kamera um eine halbe
+        Drehung verkehrt - und weil der Bewegungsmodus KAMERARELATIV ist
+        (moveMode=0, im selben Log mitgemessen), lief "geradeaus" damit vom Ziel
+        WEG statt hin. Genau die Beschwerde des Users.
+      - GEFIXT in FacingService: `DirH = rotation - Pi`, in [-Pi, Pi] gefaltet.
+        Debug 0/0, liegt in devPlugins.
+
+>>> NOCH OFFEN AN DER DREHUNG, deshalb neu gemessen statt geraten: haelt unser
+    Schreiben ueberhaupt? Im Log stand der Wert Sekunden spaeter wieder bei
+    rotation - Pi, auch wo die Figur sich nicht gedreht hatte. Zwei moegliche
+    Ursachen, die ein Ruecklesen im SELBEN Frame nicht trennen kann - das Spiel
+    zieht die Kamera zurueck, oder unser Schreiben erreicht gar nicht die Kamera,
+    die das Spiel liest.
+      - NEU: `FacingService.Tick`, laeuft jeden Frame in Plugin.cs (bewusst
+        AUSSERHALB des Laufs, denn gedreht wird im Moment des Laufende).
+      - Liest 0,2 s und 1,0 s nach jeder Drehung Rotation und DirH erneut und
+        loggt Soll, Ist und Abweichung, dazu `ActiveCameraIndex`.
+      - Log-Marker: `[Drehung] gesetzt:` und `[Drehung] nach 0,2s:`.
+
+>>> DER UEBERGANG: DAS NETZ ENDET VIER METER ZU FRUEH, UND DA IST NICHTS IM WEG.
+    Bewiesen aus zwei Quellen desselben Logs, Neu-Gridania nach Tiefer Wald:
+      - Der Auto-Lauf endet reproduzierbar mit `restWp=1, Netzende=True` bei
+        dist 3,5 bis 4,0 m zum Grenzpunkt (12:36:53, 12:37:04, 12:37:22,
+        12:38:31, 12:39:39 - fuenf Laeufe, dasselbe Bild).
+      - Danach ging der Spieler die Strecke ZU FUSS: die ExitProbe hat sie
+        aufgezeichnet (12:44:42). Von X=148,7 ueber 154,5 bis 161,6, und die
+        Hoehe blieb dabei konstant bei Y=-12,9. Also ebener, freier Boden -
+        keine Stufe, keine Wand, kein Moebelstueck.
+      - Ab X=154,5 meldete die Sonde DRIN. Unser Grenzpunkt liegt bei X=156,4,
+        also korrekt innerhalb der Box. Das Ziel stimmt, der Weg dorthin fehlt.
+    ERGEBNIS: die neue Zielkoordinate ist richtig und die Entfernungsansage
+    stimmt (der User bestaetigt es, das Log zeigt 4,4 m statt 18,6 m). Es
+    scheitert allein daran, dass vnavmeshs Netz an dieser Stelle vier Meter vor
+    der Grenze aufhoert.
+
+>>> ERSTER TEST DES USERS: Drehung technisch bestaetigt, Uebergang weiter tot.
+    `[Drehung] nach 0,2s` und `nach 1,0s` melden beide Abweichung 0,000 bei
+    kameraIndex=0 - unser Schreiben HAELT also, die zweite offene Frage von oben
+    ist damit beantwortet. Der User hat ausserdem `/vnav rebuild` laufen lassen
+    (13:15:01): die Laeufe davor und danach stoppen bei identisch X ~ 152,5, der
+    Rebuild aendert nichts.
+
+>>> UND DANN DIE FRAGE DES USERS, DIE ALLES AUFGELOEST HAT: *"wir haben doch die
+    quelle wir koennen das wegenetz aus dem spiel extrahieren das heisst wir
+    wissen auch wo gegenstaende sind und was auf welchen koordinaten ist"*.
+    Richtig - und genau das war der fehlende Schritt.
+
+>>> NEU: tools/zone-probe (Konsolenprogramm, Lumina, offline gegen das sqpack).
+      `zoneprobe <territoryId> <x> <z> <radius> [y]` listet jedes Layout-Objekt
+      im Umkreis, nach Typ gruppiert und nach Entfernung sortiert.
+      Es sind DIESELBEN Daten, aus denen vnavmesh rechnet: lebendes Layout plus
+      die .pcb-Kollisionsdateien (SceneExtractor.cs:165/177/305). Was hier mit
+      Kollision steht, ist auch fuer das Netz eine Wand.
+
+>>> DAS ERGEBNIS - `zoneprobe 132 154.5 152.0 10 -12.9`, 37 Objekte:
+      - SIEBEN FAESSER mit Box-Kollision (`f1t0_a0_taru1.mdl`) bei X 150,6-154,6
+        und Z 152,4-154,0. Genau dort, wo die Figur stehenbleibt.
+      - DAS TORBAUWERK mit echter .pcb-Kollision: `gatdr` bei Z 154,8, Bogen
+        `gat00` bei Z 158,0, `gatdl` bei Z 161,2.
+      - DREI UNSICHTBARE WAENDE (CollisionBox, `pushPlayerOut=31`) bei
+        X 153,2-156,0, zusammen durchgehend von Z 147 bis Z 168. Layer
+        `QST_OP_ENPC_001` - eine Quest-Ebene, die das Spiel je nach Fortschritt
+        schaltet. Ob sie fuer diesen Spieler aktiv ist, sagen die Dateien NICHT.
+      - Der Rest ist Deko mit `collision=None` und stoppt niemanden.
+    MEINE ERKLAERUNG VON VORHER WAR FALSCH: das Netz endet dort nicht zu frueh,
+    es endet KORREKT vor den Faessern. "Ich stecke fest" war die richtige
+    Meldung. Der Fehler lag bei uns.
+
+>>> GEBAUT: der ZoneBorderService bietet jetzt MEHRERE KANDIDATEN an.
+      - Bisher: der geometrisch naechste Punkt der Grenzbox. Der lag bei Z 150,5,
+        also mitten in den Faessern. Der User kam zu Fuss bei Z 155,5-156,9
+        durch - durch die Toroeffnung, noerdlich an den Faessern vorbei.
+      - Jetzt: Kandidaten im 3-m-Abstand entlang der Grenze, abwechselnd nach
+        beiden Seiten, hoechstens neun. Der naechste, den das Netz annimmt,
+        gewinnt. Reihenfolge = Entfernung, es wird also nur weitergesucht, wo
+        der nahe Punkt blockiert ist - im Normalfall genau eine Abfrage.
+      - Gestreut wird entlang der Achse, durch die der Spieler NICHT hereinkommt
+        (aus der Ueberschreitung je Halbmass abgeleitet), also ueber die BREITE
+        der Grenze - dort, wo ein Durchgang sich verstecken kann.
+      - Die Pruefung ist vnavmeshs eigenes `Query.Mesh.NearestPointReachable`,
+        das mit einem `FloodFillAwareFilter` filtert - Erreichbarkeit, nicht
+        blosses "ist da Boden" (NavmeshQuery.FindNearestMeshPoly).
+      - WICHTIG, das war der stille Fehler: die Abfrage laeuft mit 2 m Suchradius
+        statt der 20 m, die ResolveReachablePoint benutzt. Bei 20 m antwortet sie
+        fast immer und verschiebt das Ergebnis meterweit - so ging ein Ziel
+        MITTEN IN DEN FAESSERN als erreichbar durch (Log 12:37: NearestPoint-
+        Reachable schob 146,2 auf 150,5). Neue Methode: AutoWalkService.
+        ProbeReachable, eng und ohne Rueckfall.
+      - Lehnt das Netz ALLE Kandidaten ab, bleibt es beim naechsten Punkt und der
+        Lauf meldet ehrlich Rest und Richtung. Ohne Pruef-Funktion verhaelt sich
+        der Dienst exakt wie vorher.
+    OFFLINE NACHGERECHNET fuer den Fall des Users: Streuachse Z (richtig),
+    Kandidat 1 = (156,5|153,5), KANDIDAT 2 = (156,5|156,5) - das ist die
+    Toroeffnung. Debug 0/0 und Release 0/0.
+
+>>> ZU TESTEN:
+      1. Uebergang: in Neu-Gridania zum Uebergang nach Tiefer Wald laufen. Im Log
+         muss `[Grenze] ... Kandidat N/9, M abgelehnt` stehen. Kommt die Figur
+         diesmal an der Grenze an und wechselt die Zone?
+      2. Drehung im Spielgefuehl: die Werte stimmen jetzt nachweislich. Fuehrt
+         geradeaus nach der Ansage auch wirklich zum Ziel?
+      3. Gegenprobe an einer Grenze OHNE Hindernis (z. B. eine andere Zone), dass
+         die Kandidatenwahl nichts kaputt macht: dort muss `Kandidat 1/9` stehen.
+
+## FRUEHERER STAND (2026-08-22, "ANKUNFT HIESS NICHT ANKUNFT - UND NIEMAND STAND RICHTIG")
+
+>>> AUFTRAG DES USERS, nachdem der Navimesh-Weg geklaert war: *"fuer uns waere
+    halt wichtig das wir immer richtig ankommen, immer zum ziel gedreht"* und
+    *"wenn man zu einem uebergang laeuft ... das man wenn man gradeaus laeuft
+    direkt drauf zu geht und nicht versehen zu einer wand guckt"*.
+    Entscheidung des Users: erst Teil 1 und 2, Drehung UEBERALL. Die echten
+    Zonengrenzen (Teil 3) kommen spaeter.
+
+>>> DER FEHLER STAND IM LOG UND WAR UNSERER. ArrivalSlack war 1,5 m, und der
+    Kommentar daneben begruendete das damit, die Figur schiesse ueber das Ziel
+    HINAUS. Gemessen tut sie das Gegenteil - sie bleibt DAVOR stehen. Log
+    2026-08-21 22:11:03, Lauf zum Rudererquartier mit stopRange 1,0:
+      - vnavmesh gab bei 2,4 m auf, wir meldeten "Ziel erreicht"
+      - der Spieler drueckte erneut, vnavmesh fand einen Weg mit 4 Wegpunkten
+        (also einen Bogen um ein Hindernis), und wir beendeten den Lauf nach
+        18 Millisekunden, ohne einen einzigen Schritt
+      - danach dreimal "Falsche Aktion oder Ziel": er stand 2,4 m daneben
+
+>>> DAS SCHLIMMERE AM ZU GROSSEN ZUSCHLAG: er hat nicht nur falsch gemeldet, er
+    hat ALLES DARUNTER ABGESCHALTET. Die Zweige "hier endet der begehbare Weg",
+    "festgesteckt" und die aufgezeichnete Spur haengen alle hinter dieser
+    Pruefung und wurden nie erreicht. Die ehrlichen Meldungen gab es laengst -
+    wir haben sie uns selbst abgeschnitten.
+
+>>> GEBAUT (Debug 0/0, liegt in devPlugins, IN-GAME UNGETESTET):
+      - ArrivalSlack 1,5 -> 0,3 m (nur noch Frame-Versatz).
+      - Nachfassen: geht vnavmesh vor dem Ziel aus, wird der Weg bis zu zweimal
+        neu angefordert statt den Lauf zu beenden. Zweifach begrenzt - hoechstens
+        MaxReengages Versuche, und nur solange jeder Versuch messbar naeher kam
+        (ReengageProgress 0,5 m). Wo das Netz wirklich endet, faellt die zweite
+        Bedingung sofort durch und der Spieler hoert die Wahrheit.
+      - Drehung zum Ziel UEBERALL: bei der Ankunft, bei "du bist schon da", und
+        auch dann, wenn wir es NICHT geschafft haben - die Meldung nennt Rest und
+        Richtung, und geradeaus soll dann stimmen.
+      - Neu FacingService: die Dreh-Mechanik an EINER Stelle. Sie schreibt zwei
+        Felder, und das zweite ist das wichtige: der Standard-Bewegungsmodus ist
+        KAMERARELATIV, geradeaus geht also dorthin, wo die KAMERA schaut. Nur die
+        Figur zu drehen haette das Problem nicht geloest.
+      - NavigationService.FaceGuideDirection (die manuelle Taste) nutzt jetzt
+        denselben Code, damit beide nicht auseinanderlaufen koennen.
+      - Nach einem Nachfassen ohne Weg sagt der Lauf nicht mehr "kein Weg zu X",
+        sondern nennt Restweg und Richtung.
+
+>>> NEBENBEFUND, schon im Code dokumentiert und jetzt bestaetigt: vnavmeshs
+    Cache-Schluessel ist {bg}__{filter}__{festivals}__{zoneSGs} - KEINE
+    Spielversion. Netze ueberdauern Patches. Im Cache liegen Dateien vom 29.
+    Juli, das Spiel ist von 2026.08.11.
+
+>>> NACHGEZOGEN auf Rueckfrage des Users (*"und er sollte sich beim navigieren
+    und beim autolaufen richtig hindrehen?"*):
+      - JEDES Ende eines Auto-Laufs dreht jetzt zum Ziel, nicht nur die Ankunft:
+        auch "festgesteckt", "Netz endet hier" und "keine Annaeherung". Die
+        Meldung nennt Rest und Richtung - geradeaus muss dann stimmen. Einzige
+        Ausnahme ist der Zonenwechsel: dort gehoert das Ziel zur alten Karte.
+      - Die Gehhilfe dreht bei ihrer Ankunft ebenfalls; vorher tat sie es gar
+        nicht.
+      - REIHENFOLGE KORRIGIERT, das war ein echter Fehler im ersten Wurf: erst
+        Finish (das haelt vnavmesh an), DANN drehen. vnavmeshs FollowPath haelt
+        eine OverrideCamera, solange es steuert - eine Drehung davor kann es uns
+        direkt wieder abnehmen.
+
+>>> BEWUSST NICHT GEBAUT, weil es eine Entscheidung des Users braucht:
+    fortlaufendes Drehen WAEHREND des Laufens.
+      - Auto-Lauf: vnavmesh haelt OverrideMovement UND OverrideCamera, solange es
+        steuert. Jeder Frame, in dem wir dagegen drehen, waere ein Ringen mit ihm.
+      - Gehhilfe: dort fuehrt der PEIL-TON, und der ist Absicht - der Spieler
+        dreht sich selbst, bis es still ist. Automatisches Drehen wuerde ihm
+        diese Steuerung abnehmen. Frage liegt beim User.
+
+>>> DIE FRAGE DES USERS *"bei welchen koordinaten liegt das ziel und warum
+    laeuft vnavmesh nicht richtig zum ziel, da ist eine wand die vnavmesh
+    anscheinend nicht in seinen koords hat"* - offline beantwortet, und das
+    Ergebnis ist genau UMGEKEHRT:
+
+    - Das Ziel war (-97,0|64,0) auf Karte 31. Karte 31 ist die SASTASHA-HOEHLE
+      (Territory 1036) - der Vorfall passierte im Dungeon, was auch der Rest des
+      Logs bestaetigt (Kampf-NPCs Stufe 15, Errungenschaft "Kartograph:
+      Sastasha"). Die Koordinate stammt aus dem MapMarker-Sheet, DataType 0 =
+      benannter Ort. Also KEIN Uebergang - die ExitRange-Daten helfen hier nicht.
+      Offline nachgerechnet (Pixel 830|1152, SizeFactor 200) ergibt exakt die
+      Log-Koordinate; die Umrechnung des Plugins stimmt.
+    - Am Zielpunkt steht sehr wohl etwas, und vnavmesh KENNT es: im 12-m-Umkreis
+      liegen 61 Hintergrundobjekte des Layers "hideout", das naechste 1,1 m vom
+      Ziel entfernt, dazu FUENF ChairMarker (LVD_chair_01) im Umkreis von 1,3 bis
+      5,7 m. Das "Rudererquartier" ist ein moebliertes Zimmer, und der
+      Kartenmarker sitzt in der RAUMMITTE - also mitten im Mobiliar.
+    - Damit ist die Diagnose: vnavmesh laeuft nicht falsch. Es haelt korrekt vor
+      Moebeln, die es kennt. FALSCH WAR UNSER ZIELPUNKT - eine Stelle, auf der
+      man gar nicht stehen kann. Die Figur blieb 2,44 m davor.
+
+>>> DIE KORREKTUR LAG SCHON IM PROJEKT: ResolveReachablePoint
+    (NearestPointReachable) gab es bereits fuer das Tiefe Gewoelbe, wo dasselbe
+    Problem geloest wurde - der Raumursprung aus der Layout-Datei liegt dort oft
+    in einer Wand. Nur benutzten die normalen Ortsziele weiterhin
+    ResolveFloorPoint (NearestPoint), das den Punkt bloss senkrecht aufs Netz
+    hebt und dabei im Moebelstueck bleibt. Ortsmarker gehen jetzt ueber
+    ResolveReachablePoint; der Ruecksprung auf den alten Weg ist eingebaut.
+
+>>> DER UEBERGANGS-FALL DES USERS, gemessen (Log 2026-08-22 10:53, Neu-Gridania
+    nach Tiefer Wald - *"das ist das wo er stehen geblieben ist"*):
+      - Kartensymbol (170,0|162,0), echte ExitRange (170,1|-10,6|159,0) - nur
+        3,0 m auseinander. Das Kartensymbol war hier also NICHT das Problem, und
+        Teil 3 (echte Grenzen als Ziel) haette diesen Fall NICHT geloest.
+      - Der Lauf endete bei (152,5|-13,0|165,0): 18,6 m vor der Grenze, 2,4 m
+        tiefer. Im Log ueber Sekunden konstant restWp=1, distNextWp=17,8 - das
+        ist Fakt 3, vnavmesh haengt das Ziel unbedingt an und schiebt gegen den
+        Netzrand.
+      - Dazwischen liegt ein Torbauwerk (Layer f0t0_b1_gate, 25 Objekte auf zwei
+        Hoehen), dahinter steigt das Gelaende.
+      - Also: DAS NETZ REICHT NICHT BIS ZUR GRENZE. Passt zur Parameter-
+        Hypothese (0,50 m gegen 0,60-1,00 m Stufenhoehe), beweist sie aber nicht.
+
+>>> NEU GEBAUT: Debug-Sonde ZoneExitProbe (nur #if DEBUG, nach der Messung
+    loeschen). Sie beantwortet die eine Frage, die den Unterschied macht: ist
+    ExitRange.Scale das HALB- oder das VOLLMASS? Bei Halbmass reicht die Box bis
+    X = 154,5 und der Spieler stand bei 152,5 - nur ZWEI Meter davor, und ein
+    Ziel am BOXRAND statt in der Boxmitte wuerde reichen, ganz ohne besseres
+    Netz. Bei Vollmass fehlen zehn Meter.
+      - Ringpuffer der letzten 4 Sekunden (10 Positionen je Sekunde), weil die
+        Position im Moment des Ausloesens spaeter nicht mehr abfragbar ist.
+      - Beim Wechsel wird JEDE gepufferte Position gegen beide Lesarten geprueft,
+        in Boxkoordinaten (Drehung der Box herausgerechnet).
+      - Boxen aus planmap.lgb ueber Lumina, nicht aus der Layout-Engine: fuer
+        eine Messung braucht es keine Zeigerketten, die bei Patches brechen.
+      - Kein Startbefehl noetig - der Puffer muss ja VOR dem Wechsel laufen.
+
+>>> SONDE HAT GEMESSEN, FRAGE IST BEANTWORTET: ExitRange.Scale ist das HALBMASS.
+    Zwei Durchgaenge durch dieselbe Grenze, in beide Richtungen:
+      - Hinweg 132 -> 148, Box Scale (15,6|3,8|15,0): HALB ab 0,8 s vor dem
+        Wechsel DRIN, VOLL NIE.
+      - Rueckweg 148 -> 132, Box Scale (36,5|40,4|15,3): HALB ab 1,0 s DRIN,
+        VOLL NIE.
+      - VOLL ist damit widerlegt - der Uebergang loeste beide Male aus, obwohl
+        die Figur nach dieser Lesart nie in der Box war. Die 0,8 bis 1,0 s sind
+        die Uebergangsverzoegerung, in beiden Richtungen fast gleich.
+    ZWEI BESTAETIGUNGEN GRATIS: die Laufrichtung stimmt auch in-game (85 Grad =
+    +X, gelaufen von X 153 auf 159; 180 Grad = -Z, gelaufen von Z -298 auf -321),
+    und das ZielTerritory der Layout-Daten stimmte beide Male mit der wirklich
+    geladenen Zone ueberein.
+
+>>> GEBAUT: ZoneBorderService. Uebergangs-Marker zielen jetzt auf den NAECHSTEN
+    PUNKT DER GRENZBOX statt auf das Kartensymbol in ihrer Mitte. Fuer den Fall
+    des Users heisst das: Boxrand bei X = 154,5, Lauf endete bei X = 152,5 -
+    2,0 m statt 18,6 m.
+      - Rechnet in Boxkoordinaten, eine gedrehte Grenze wird also genauso
+        behandelt wie eine achsenparallele.
+      - 2 m Versatz nach INNEN statt genau auf die Kante (eine Kante ist ein
+        Muenzwurf), aber nie ueber die Mitte hinaus.
+      - Mehrere Grenzen zur selben Zone: die naechstgelegene gewinnt (Gridania
+        hat zwei nach Tiefer Wald).
+      - Ohne passende Grenze - Tueren, Instanz-Eingaenge - bleibt alles beim
+        Alten. Danach laeuft der Punkt durch ResolveReachablePoint wie jedes
+        andere Ziel.
+      - BEWUSST KLEIN: kein Durchlauf, keine Umleitung, keine Aenderung an der
+        Wegfindung. Nur eine bessere Zielkoordinate. Der alte, groessere
+        ZoneExitService bleibt geloescht.
+    Debug 0/0 UND Release 0/0.
+
+>>> BEKANNTE KLEINIGKEIT: die Ortsliste sagt weiter die Entfernung zum
+    KARTENSYMBOL an ("23 Meter"), gelaufen wird zur Grenze. Die Zahlen koennen
+    also ein paar Meter auseinanderliegen. Bewusst so gelassen - die Liste
+    umzustellen haette Sortierung und Ansagen aller Wegpunkte beruehrt.
+
+>>> ZU TESTEN (das kann nur der User):
+      1. Zu einem Ortsmarker laufen, an dem es frueher "Ziel erreicht" hiess und
+         die Interaktion dann scheiterte. Kommt die Figur jetzt heran?
+      2. Steht sie nach der Ankunft zum Ziel gedreht - fuehrt geradeaus hin?
+      3. Wenn es nicht klappt: kommt statt "Ziel erreicht" die ehrliche Ansage
+         mit Restmetern und Richtung?
+      4. Log-Marker fuer die Nachlese: "[Nav] Auto-Lauf: Nachfassen 1/2".
+      5. In einem Raum mit Moebeln (z. B. Sastasha "Rudererquartier") - im Log
+         muss jetzt "[Orte] NearestPointReachable" stehen statt
+         "[Orte] NearestPoint", und der Lauf sollte im Raum ankommen.
+      6. ERLEDIGT: Sonde hat gemessen, Scale ist das Halbmass.
+      7. NEU: Auto-Lauf zu "Uebergang nach Tiefer Wald" in Neu-Gridania. Im Log
+         muss "[Grenze] Ziel-Territory 148 ... -> naechster Punkt" stehen, und
+         die genannte Entfernung sollte deutlich kleiner sein als die zur Mitte.
+         Kommt die Figur diesmal an der Grenze an?
+
+## FRUEHERER STAND (2026-08-22, "DAS SPIEL-NAVIMESH LIEGT AUF DEM SERVER - ABER DAS REZEPT LIEGT BEI")
+
+>>> BESTAETIGT VOM USER: die Warnstimme ueber SAPI funktioniert im Spiel. Damit
+    ist der zweite Sprachkanal fertig. Das Log zeigt beim Laden
+    "[Warnstimme] SAPI bereit. Stimmen: Microsoft Hedda Desktop, SAPI2SR,
+    Microsoft David Desktop, Microsoft Zira Desktop. Gewaehlt: 'Microsoft Hedda
+    Desktop'." - die offene Frage, ob SAPI im Dalamud-Prozess ueberhaupt laeuft,
+    ist damit beantwortet. Der COM-Ausweichweg wird nicht gebraucht.
+
+>>> DER AUFTRAG DES USERS: weg von vnavmesh. Zwei Gruende, beide gut. Erstens
+    steht das Plugin durch die Abhaengigkeit im Automatisierungs-Oekosystem und
+    faengt sich den Botting-Vorwurf ein. Zweitens sollen die Wege endlich
+    stimmen - inklusive Treppen.
+
+>>> DIE ERSTE ANTWORT IST EIN NEGATIVBEFUND, und er ist hart gemessen: das
+    fertige Navimesh des Spiels ist NICHT im Client. Jede Zonendatei .lvb nennt
+    ihre Bestandteile im Klartext, und die Navimesh-Zeilen tragen das Praefix
+    /server/data/. Ueber alle Zonen: 873 von 873 verweisen dorthin, NULL Zonen
+    haben eine .nvm oder .nvx im sqpack. Kein Werkzeug holt heraus, was nie
+    ausgeliefert wurde - auch FFXIV Explorer nicht.
+
+>>> DIE ZWEITE ANTWORT WIEGT DAS AUF: das Netz fehlt, das REZEPT liegt bei. Das
+    Sheet RecastNavimesh steht im Client, 8 Zeilen, und Lumina liefert die
+    Spaltennamen mit: TileSize, CellSize, CellHeight, AgentHeight, AgentRadius,
+    AgentMaxClimb, AgentMaxSlope und der Rest von rcConfig. Square Enix baut
+    seine Netze also mit Recast - derselben Bibliothek wie vnavmesh.
+
+>>> DER VERGLEICH ZEIGT EINE ECHTE LUECKE, nicht nur Rundungsrauschen. Die
+    Kletterhoehe wird in Recast in Voxeln gerechnet (RcConfig.WalkableClimb ist
+    Int32, daneben WalkableClimbWorld in Metern):
+      - vnavmesh:            0,5 / 0,25 = 2 Voxel = 0,50 m
+      - Spiel (default):     0,6 / 0,2  = 3 Voxel = 0,60 m
+      - Spiel (w1d1, r1f1):  1,0 / 0,2  = 5 Voxel = 1,00 m
+    vnavmesh haelt also nur halb so hohe Stufen fuer begehbar wie das Spiel in
+    seinen grosszuegigen Zonen, und arbeitet zusaetzlich groeber aufgeloest
+    (0,25 statt 0,2 in Breite und Hoehe).
+
+>>> HYPOTHESE, AUSDRUECKLICH NOCH NICHT BEWIESEN: das ist die Ursache unserer
+    wiederkehrenden Netzschaeden - Oestliches La Noscea zerfaellt, Astalicia
+    unerreichbar, Wohngebiet-Zaeune, fehlende Treppen. Beweis geht nur ueber
+    einen Neubau unter Spielwerten plus Gegentest an einer bekannt kaputten
+    Stelle.
+
+>>> VON AUSSEN AENDERBAR IST DAS NICHT: vnavmesh haelt seine Settings im Code,
+    inklusive fest einkompilierter NavmeshCustomization-Klassen pro Zone.
+    vnavmesh.json kennt nur StopOnStuck/RetryOnStuck/BuildMaxCores.
+
+>>> WAS DEN EIGENBAU REALISTISCH MACHT: DotRecast liegt als fertige
+    C#-Portierung vor (Core, Recast, Detour, Detour.Extras) - vnavmesh liefert
+    sie selbst mit. Zu bauen waere die Extraktion der Kollisionsgeometrie und
+    die Wegsuche darauf, nicht Recast selbst.
+
+>>> NEU/GEAENDERT: nur Dokumentation - docs/game-api.md um zwei Abschnitte
+    ergaenzt (Serverbefund + Spaltenzuordnung/Vergleich). Kein Code angefasst.
+
+>>> NAECHSTER SCHRITT, offen zur Entscheidung: Gegentest, ob die Spielwerte die
+    kaputten Stellen heilen, bevor Monate in einen Eigenbau fliessen.
+
+## FRUEHERER STAND (2026-08-21, "WARNSTIMME: DIE WARNUNG BEKOMMT EINEN EIGENEN KANAL")
 
 >>> WUNSCH DES USERS: *"die angriffs warunugen kommen ja ueber nvda aber das kann
     weggedrueckt werden koennen wir das ueber sapi hoerbar machen?"* - und der

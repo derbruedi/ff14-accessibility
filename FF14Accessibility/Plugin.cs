@@ -65,7 +65,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DutyEntranceService _dutyEntrances;
 #if DEBUG
     private readonly LiftProbe _liftProbe;
+    private readonly ZoneExitProbe _zoneExitProbe;
 #endif
+    private readonly ZoneBorderService _zoneBorders;
     private readonly LevequestEnemyService _leveEnemies;
     private readonly DirectorTodoService _directorTodos;
     private readonly RouteService       _routes;
@@ -305,7 +307,12 @@ public sealed class Plugin : IDalamudPlugin
 #if DEBUG
         // Misst am Aufzug, was ein Aufzug ueberhaupt ist - siehe LiftProbe.
         _liftProbe = new LiftProbe(ObjectTable, TargetManager, _tolk, Log);
+        // Misst am Zonenwechsel, ob ExitRange.Scale das Halb- oder das Vollmass ist -
+        // siehe ZoneExitProbe. Braucht keinen Startbefehl: der Wechsel ist das Ereignis.
+        _zoneExitProbe = new ZoneExitProbe(ClientState, ObjectTable, DataManager, Log);
 #endif
+        // Echte Zonengrenzen statt Kartensymbol - nur als Zielgeber, siehe ZoneBorderService.
+        _zoneBorders = new ZoneBorderService(DataManager, ClientState, Log);
         // Gegner des gerade LAUFENDEN Freibriefs, für die Freibrief-Kategorie
         // des Objekt-Browsers (Spielerwunsch 2026-08-18).
         _leveEnemies  = new LevequestEnemyService(DataManager, Log);
@@ -326,6 +333,9 @@ public sealed class Plugin : IDalamudPlugin
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, _objectNames, Log);
+        // Static, so it needs its log handed over once. Without it the turn still
+        // happens, only the follow-up measurement in FacingService.Tick stays mute.
+        FacingService.Configure(Log);
         _history    = new MessageHistoryService(_tolk);
         // Die alte Nachlese laeuft parallel mit. Sie wird nur von den beiden
         // Chat-Lesern und dem Spiegel unten gefuellt, hat also keine Abhaengigkeit
@@ -1473,6 +1483,9 @@ public sealed class Plugin : IDalamudPlugin
         // IsTracking haengt. Kostet nichts - die Methode steigt in der ersten
         // Zeile wieder aus, solange nichts laeuft.
         _liftProbe.Update();
+        // Laeuft immer mit: der Puffer muss GEFUELLT sein, bevor der Wechsel kommt -
+        // ein Schalter, den man vorher druecken muesste, waere hier nutzlos.
+        _zoneExitProbe.Update();
 #endif
 
         // Charaktererstellung: kostet nichts ausserhalb des Aussehen-Schritts -
@@ -1742,6 +1755,9 @@ public sealed class Plugin : IDalamudPlugin
         _objectMemory.Update();
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
+        // Has to run OUTSIDE the walk: the turn happens at the moment the walk
+        // ends, so checking whether it stuck belongs to the frames after that.
+        FacingService.Tick(ObjectTable.LocalPlayer);
         // Records the player's own line while a trail recording runs (see TrailService).
         _trails.Update();
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
@@ -1946,10 +1962,37 @@ public sealed class Plugin : IDalamudPlugin
             // search) so the player lands at the water, not on a floor the
             // generic 10 m snap happens to find. Fall back to the generic
             // resolver if no bank is found (e.g. vnavmesh not ready).
+            // Named places are the CENTRE of a map symbol, not a spot to stand on:
+            // a room marker sits in the middle of the room, and there stand tables,
+            // chairs and pillars. Measured on "Rudererquartier" in Sastasha
+            // (log 2026-08-21 22:11): the marker at (-97|64) has background objects
+            // 1.1 m away and five ChairMarkers around it - the walk stopped 2.44 m
+            // short because the destination itself is not a place one can stand.
+            // ResolveReachablePoint asks vnavmesh the stronger question - a point
+            // the player can actually GET to - exactly as the deep dungeon already
+            // does for its room origins. It falls back to ResolveFloorPoint itself,
+            // so a mesh that cannot answer behaves as before.
+            // Uebergaenge zielen auf die ECHTE Grenze, nicht auf ihr Kartensymbol.
+            // Das Symbol liegt in der Mitte der Grenze, und die Mitte kann weit
+            // ausserhalb des begehbaren Netzes liegen: Neu-Gridania -> Tiefer Wald
+            // endete 18,6 m davor, waehrend der Rand der Grenze nur 2,0 m entfernt
+            // war (Log 2026-08-22, docs/game-api.md). Ohne passende Grenze - Tueren
+            // und Instanz-Eingaenge haben keine - bleibt alles wie bisher.
+            // Die Grenze ist 30 m breit, und nur ein Teil davon ist ein Durchgang:
+            // am Uebergang Neu-Gridania -> Tiefer Wald stehen Faesser und ein
+            // Torbauwerk, gemessen mit tools/zone-probe am 2026-08-22. Deshalb
+            // bekommt die Grenzsuche vnavmeshs Erreichbarkeitspruefung mit und
+            // nimmt den naechsten Punkt, den das Netz auch annimmt.
+            var borderPoint = place.IsZoneTransition
+                ? _zoneBorders.FindBorderPoint(place.TargetMapId, ObjectTable.LocalPlayer?.Position ?? place.Position,
+                                               _autoWalk.ProbeReachable)
+                : null;
+            var approach = borderPoint ?? place.Position with { Y = playerY };
+
             var floor   = place.IsWaterSpot
                 ? (_autoWalk.ResolveNearestBank(place.Position with { Y = playerY })
                    ?? _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY }))
-                : _autoWalk.ResolveFloorPoint(place.Position with { Y = playerY });
+                : _autoWalk.ResolveReachablePoint(approach);
             if (floor == null)
             {
                 _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(place.Name));
