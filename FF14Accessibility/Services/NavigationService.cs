@@ -2871,6 +2871,10 @@ public sealed class NavigationService
             StopWalkGuide();
             _cue.PlayArrivalTone();
             _tolk.SpeakInterrupt(AccessibilityStrings.TargetReached(_walkTargetName));
+            // Same promise as the auto-walk: arriving means standing there AND
+            // facing it, so walking forward or interacting just works. On the way
+            // the beacon stays in charge of the direction - the player steers.
+            FacingService.FaceTowards(player, _walkDestPosition);
             _log.Info($"[Nav] Gehhilfe: Ziel erreicht, dist={distance:F1}");
             return;
         }
@@ -2970,8 +2974,9 @@ public sealed class NavigationService
         _log.Info($"[Face] vorher: rot={player.Rotation:F3} dirH={dirHBefore:F3} " +
                   $"ziel={targetRotation:F3} dist={distance:F1} moveMode={moveMode}");
 
-        ((CSGameObject*)player.Address)->Rotation = targetRotation;
-        if (gameCam != null) gameCam->DirH = targetRotation;
+        // Shared with the automatic turn on arrival (AutoWalkService) so both keep
+        // writing the same two fields with the same convention.
+        FacingService.FaceTowards(player, target);
 
         _log.Info($"[Face] nachher: rot={((CSGameObject*)player.Address)->Rotation:F3} " +
                   $"dirH={(gameCam != null ? gameCam->DirH : float.NaN):F3}");

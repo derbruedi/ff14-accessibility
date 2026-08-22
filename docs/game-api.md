@@ -1143,11 +1143,53 @@ Alle Kandidaten für „welche Zeile ist gewählt/markiert":
   in `Flags3`@43.
 - FALLE beim Iterieren: `StdMap` liefert **`StdPair`** (`Item1`/`Item2`), NICHT
   `KeyValuePair` — und `Item2` ist ein `Pointer<T>`, also `.Item2.Value`.
-- NICHT GEMESSEN, DESHALB NICHT BENUTZT: Bedeutung von
-  `PlayerRunningDirection` (Einheit, Bezugssystem, welche der beiden
-  Richtungen) und ob `Scale` Halb- oder Vollausdehnung ist. Sonde
-  `/acc uebergang` loggt beide Lesarten. Eine falsche Laufrichtung würde die
-  Figur von der Grenze WEG steuern — schlimmer als der heutige Zustand.
+- **`PlayerRunningDirection` ist jetzt GEMESSEN (offline, 2026-08-22).** Grundlage:
+  alle `ExitRange`-Instanzen aus `planmap.lgb` — **978 Übergänge in 267 Zonen**,
+  über Lumina (`LayerCommon.ExitRangeInstanceObject`) direkt aus dem sqpack, ohne
+  laufendes Spiel. Die Übergänge stehen NUR in `planmap.lgb`, nicht in `bg.lgb`.
+  - **Einheit: Radiant.** Der größte Betrag über alle 978 Werte ist 6,283 = 2π.
+    (Ein 5-Grad-Raster gibt es NICHT durchgängig — nur 60,4 % der Werte liegen
+    darauf. Die frühere Behauptung „alle zehn Werte" beruhte auf einer
+    Stichprobe von zehn und trägt nicht als allgemeine Aussage.)
+  - **Bezugssystem: `(sin θ, 0, cos θ)`** — dieselbe Konvention wie
+    `Math.Atan2(dx, dz)` im Plugin. Belegt durch Gegenprobe: mit dieser Lesart
+    zeigen 91,3 % der Richtungen aus der Zone hinaus, mit der vertauschten
+    Lesart `(cos, sin)` nur 54,0 % — also Zufallsniveau. Der Test trennt.
+  - **Sie zeigt IN DIE NEUE ZONE** (aus der alten hinaus): 702 von 769 Fällen in
+    Zonen mit mindestens drei Ausgängen. Näherung für die Zonenmitte war der
+    Schwerpunkt der Ausgänge; die restlichen 8,7 % erklären sich plausibel aus
+    dieser groben Näherung, sind aber NICHT einzeln geprüft.
+  - NICHT belegt: dass Partner-Grenzen 180° gegeneinander stehen. Ein Test über
+    82 eindeutige Paare ergab das NICHT (Median 150° Abweichung von 180°).
+    Der Test taugt allerdings wenig — Rückwege liegen oft an anderer Stelle als
+    der Hinweg. Aus ihm folgt weder Bestätigung noch Widerlegung.
+  - **`Scale` ist das HALBMASS - im Spiel gemessen 2026-08-22** (Sonde
+    `ZoneExitProbe`, zwei Durchgaenge, Neu-Gridania <-> Tiefer Wald in beide
+    Richtungen). Beweisfuehrung:
+    - Hinweg (132 -> 148): Box Mitte (170,1|-10,6|159,0), Scale (15,6|3,8|15,0).
+      Die Figur war nach der HALB-Lesart ab 0,8 s vor dem Wechsel in der Box,
+      nach der VOLL-Lesart **nie**.
+    - Rueckweg (148 -> 132): Box Mitte (129,0|63,4|-330,9), Scale
+      (36,5|40,4|15,3). HALB ab 1,0 s vor dem Wechsel drin, VOLL **nie**.
+    - Damit ist VOLL widerlegt: der Uebergang loeste beide Male aus, obwohl die
+      Figur nach dieser Lesart nie in der Box war.
+    - Der Abstand zwischen "Box betreten" und "Zone gewechselt" betrug 0,8 bzw.
+      1,0 s. Diese Groesse ist in beiden Richtungen fast gleich - das ist die
+      Uebergangs-/Ladeverzoegerung, waehrend der die Figur weiterlaeuft, und
+      NICHT ein Hinweis auf eine kleinere Box.
+  - **Die Laufrichtung ist damit auch in-game bestaetigt**, nicht nur statistisch
+    offline: Hinweg 85 Grad -> Vektor (sin, cos) = fast reines +X, und der
+    Spieler lief von X 153 auf 159. Rueckweg 180 Grad -> -Z, gelaufen von
+    Z -298 auf -321. Beide Male zeigt sie in die neue Zone.
+  - **`TerritoryType` der ExitRange stimmte beide Male** mit der tatsaechlich
+    geladenen Zone ueberein (148 bzw. 132). Die Layout-Daten sind als Zielangabe
+    verlaesslich.
+
+**Praktische Folge fuer den Auto-Lauf:** Die Box des Uebergangs nach Tiefer Wald
+reicht von X = 154,5 bis X = 185,7. Der Auto-Lauf endete am Netzrand bei
+X = 152,5 - also **2,0 m** vor dem Boxrand statt der 18,6 m bis zur Boxmitte.
+Ein Ziel am naechstgelegenen BOXPUNKT statt in der Boxmitte verkuerzt die Luecke
+hier um den Faktor neun.
 
 ### Inhalts-Eingänge der ganzen Welt (offline-Sheet-Dump 2026-08-19)
 - Frage: „wo sind ALLE Dungeon-/Prüfungs-/Raid-Türen, mit Stufe und Ort?" —
@@ -1889,3 +1931,167 @@ sie beginnt mit dem Zaubernamen — der Angabe, die zum Ausweichen am wenigsten
 beiträgt. Ein möglicher Umbau wäre, die Ansage am verbleibenden Zeitbudget
 auszurichten (`TotalCastTime - CurrentCastTime` liegt bereits vor) und die
 Gefahr nach vorn zu ziehen.
+
+## Spiel-Navimesh: liegt auf dem SERVER, nicht im Client (gemessen 2026-08-22)
+
+Frage war, ob wir statt vnavmesh das Navigationsnetz des Spiels selbst nutzen
+koennen - fuer immer aktuelle Wege und Treppen. Antwort: die fertigen Netzdaten
+sind im Client nicht vorhanden.
+
+**Der Beweis steht in der Zonendatei selbst.** Jede Zone hat unter
+`bg/<pfad>/level/<zone>.lvb` eine Level-Datei (Magic `LVB1`, darin `SCN1`), die
+ihre Bestandteile als Klartextpfade auffuehrt. Fuer `s1f1` (Unteres La Noscea):
+
+- `bg/ffxiv/sea_s1/fld/s1f1/level/s1f1.svb`
+- `bg/ffxiv/sea_s1/fld/s1f1/level/s1f1.lcb`
+- `/server/data/bg/ffxiv/sea_s1/fld/s1f1/navimesh/s1f1.nvm`
+- `/server/data/bg/ffxiv/sea_s1/fld/s1f1/navimesh/s1f1.nvx`
+
+Die beiden Navimesh-Dateien tragen das Praefix `/server/data/`. Ueber alle Zonen
+gemessen (Lumina, TerritoryType.Bg, aktueller Spielstand):
+
+- 873 Zonen mit lesbarer `.lvb`
+- **873 von 873** verweisen auf `/server/data/`
+- **0** Zonen haben eine `.nvm` oder `.nvx` im Client-sqpack
+- im `level/`-Ordner liegen genau drei Dateien: `.lvb`, `.svb`, `.lcb`
+
+Damit ist auch die Nebenfrage beantwortet, warum die Endung `.nvm` weder in der
+Spiel-EXE noch in der Pfadliste von FFXIV Explorer (`hashlist.db`, SQLite,
+422.035 Dateinamen) vorkommt: die Dateien sind nie ausgeliefert worden.
+`NaviMeshResourceHandle` existiert in FFXIVClientStructs und als Zeichenkette in
+`ffxiv_dx11.exe`, aber es ist nur die generische Ressourcen-Huelle
+(`Data`/`Length`/`FileName`) - eine Wegsuche-API des Clients ist damit NICHT
+belegt. Kein `Pathfind`-Symbol, kein RTTI, keine Recast/Detour-Bibliothek in der
+EXE (die "recast"-Treffer dort sind Abklingzeiten).
+
+## Sheet `RecastNavimesh`: die Bauparameter des Spiels (gemessen 2026-08-22)
+
+Das Netz fehlt, das REZEPT ist da. Das Sheet existiert im aktuellen Spielstand:
+8 Zeilen, 35 Spalten. Zeile 0 heisst `default`, Zeile 11 `navimesh_test`, die
+uebrigen tragen Zonenkuerzel (`w1d1`, `l1r2`, `r2d1` - Dungeons).
+
+Zeile 0 (`default`):
+`160 | 0.2 | 0.2 | 2 | 0.5 | 0.6 | 56 | True | 8 | 20 | False | 12 | 1.4 | 6 | 6
+| 1 | 0.2 | 53 | 2.13 | -30 | 11.6 | 9 | 2.8 | 0.001 | 0.04 | 0.01 | 0.1 | 3 |
+0.7 | True | 0.4 | 2 | 0 | False`
+
+Zeile 12 (`w1d1`) weicht ab, u.a. `0.6 -> 1`, `56 -> 60`, `53 -> 58`.
+
+**Bedeutung, und wo die Grenze der Gewissheit liegt:** Der Sheetname und die
+Werte passen zur Recast-Konfiguration (`rcConfig`) - Kachelgroesse 160,
+Zellgroesse/-hoehe 0.2, maximale Ecken pro Polygon 6 sind dort uebliche Groessen.
+Das legt nahe, dass Square Enix seine Netze mit Recast baut, derselben
+Bibliothek, die auch vnavmesh benutzt. WELCHE Spalte welches rcConfig-Feld ist,
+ist damit NICHT bewiesen - die Zuordnung steht noch aus und darf bis dahin nicht
+als Tatsache verwendet werden.
+
+Konsequenz fuer die Planung: ein eigenes Netz muss aus den Kollisionsdaten des
+Clients gebaut werden (wie vnavmesh es tut), aber es koennte mit den
+Bauparametern DES SPIELS gebaut werden statt mit geratenen. Genau diese
+Parameter (Steigungswinkel, Kletterhoehe, Agentenradius) entscheiden darueber,
+ob Treppen und schmale Durchgaenge im Netz landen.
+
+## Spaltenzuordnung `RecastNavimesh` und Vergleich mit vnavmesh (gemessen 2026-08-22)
+
+**Die Spaltennamen sind belegt, nicht gedeutet.** Lumina liefert eine generierte
+Klasse `Lumina.Excel.Sheets.RecastNavimesh` mit benannten Eigenschaften; sie
+stammt aus der Schema-Definition der Community, nicht aus eigener Auslegung:
+
+`TileSize, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb,
+AgentMaxSlope, RegionMinSize, RegionMergedSize, MaxEdgeLength, MaxEdgeError,
+VertsPerPoly, DetailMeshSampleDistance, DetailMeshMaxSampleError` + 20 Unknown.
+
+Das sind eins zu eins die Felder von `rcConfig`. Damit ist belegt, dass Square
+Enix seine Navimeshes mit Recast baut.
+
+### Werte des Spiels (Sheet, 8 Zeilen)
+
+- Zeile 0 `default`: TileSize 160, CellSize 0,2, CellHeight 0,2, AgentHeight 2,
+  AgentRadius 0,5, **AgentMaxClimb 0,6**, **AgentMaxSlope 56**, RegionMinSize 8,
+  RegionMergedSize 20, MaxEdgeLength 12, MaxEdgeError 1,4, VertsPerPoly 6,
+  DetailSampleDist 6, DetailMaxSampleError 1
+- Zeilen `w1d1`, `l1r2`, `r2d1`, `r1f1`: identisch, ausser
+  **AgentMaxClimb 1,0** und **AgentMaxSlope 60**
+- Zeilen `d2d4`, `r2d3`, `navimesh_test`: wie default
+
+OFFEN: wie eine Zone ihrer Sheetzeile zugeordnet wird. Die RowIds (0, 11-16,
+148) sind nicht die TerritoryType-Ids der genannten Kuerzel - ungeprueft. Nicht
+als Zuordnung verwenden, bevor das gemessen ist.
+
+### Werte von vnavmesh (`Navmesh.NavmeshSettings`, per Reflection aus der DLL)
+
+CellSize 0,25 | CellHeight 0,25 | AgentHeight 2 | AgentRadius 0,5 |
+**AgentMaxClimb 0,5** | **AgentMaxSlopeDeg 55** | RegionMinSize 8 |
+RegionMergeSize 20 | PolyMaxEdgeLen 12 | PolyMaxSimplificationError 1,5 |
+PolyMaxVerts 6 | DetailSampleDist 6 | DetailMaxSampleError 1 |
+GenerateEdgeClimbLinks False | GenerateEdgeJumpLinks False
+
+### Der Unterschied, auf den es ankommt
+
+`RcConfig.WalkableClimb` ist eine GANZZAHL in Voxeln (daneben steht
+`WalkableClimbWorld` in Metern) - die Kletterhoehe wird also in Vielfachen der
+Zellhoehe diskretisiert. Daraus folgt die hoechste Stufe, die noch als begehbar
+gilt:
+
+- vnavmesh: 0,5 / 0,25 = **2 Voxel, also 0,50 m**
+- Spiel default: 0,6 / 0,2 = **3 Voxel, also 0,60 m**
+- Spiel in Zonen wie `w1d1`/`r1f1`: 1,0 / 0,2 = **5 Voxel, also 1,00 m**
+
+vnavmesh haelt also nur halb so hohe Stufen fuer begehbar wie das Spiel in
+seinen grosszuegigen Zonen. Dazu kommt die groebere Aufloesung (Zellen 0,25
+statt 0,2 in Breite UND Hoehe).
+
+HYPOTHESE, noch nicht bewiesen: das erklaert unsere wiederkehrenden Netzschaeden
+(Oestliches La Noscea zerfaellt, Astalicia unerreichbar, Wohngebiet-Zaeune,
+fehlende Treppen). Beweisen laesst es sich nur mit einem Neubau unter den
+Spielwerten und einem Gegentest an einer bekannt kaputten Stelle.
+
+### Ob wir vnavmesh diese Werte geben koennen: nein, nicht von aussen
+
+Die Settings stehen im Code, nicht in einer Konfigurationsdatei.
+`vnavmesh.json` enthaelt nur StopOnStuck/RetryOnStuck/BuildMaxCores. Pro Zone
+gibt es fest einkompilierte `NavmeshCustomization`-Klassen (z. B.
+`vnavmesh.Customizations.Z0613RubySea`) mit eigenem `Settings`-Feld. Aenderbar
+waere das nur per Reflection zur Laufzeit oder in einem eigenen Bau.
+
+Bemerkenswert fuer die Eigenbau-Frage: vnavmesh liefert DotRecast (Core,
+Recast, Detour, Detour.Extras) als eigene DLLs mit - die Recast-Portierung in
+C# ist also fertig verfuegbar und muesste nicht geschrieben werden.
+
+## Fallstudie Neu-Gridania -> Tiefer Wald: das Netz endet VOR der Grenze (2026-08-22)
+
+Gemessener Fehlfall aus dem Log (2026-08-22 10:53), zusammen mit den
+Layout-Daten offline aufgeloest. Er zeigt, dass "Kartensymbol ist ungenau" NICHT
+die einzige Ursache fuer misslungene Uebergaenge ist - und hier gar nicht die.
+
+- Zone: Neu-Gridania (Territory 132, `ffxiv/fst_f1/twn/f1t1`).
+- Kartensymbol "Uebergang nach Tiefer Wald" (MapMarker, DataType 1/2):
+  Welt **(170,0|162,0)**.
+- Echte Grenze (`ExitRange` aus `planmap.lgb`): **(170,1|-10,6|159,0)**,
+  Scale (15,6|3,8|15,0), Laufrichtung 85 Grad.
+- **Abstand Symbol <-> echte Grenze: nur 3,0 m.** Das Kartensymbol war hier also
+  brauchbar. Die Marker-Ungenauigkeit erklaert diesen Fall NICHT.
+- Der Lauf endete bei **(152,5|-13,0|165,0)** - **18,6 m** vor der Grenze und
+  2,4 m tiefer. Im Log ist das gut sichtbar: `restWp=1`,
+  `nextWp=(170,0|-12,4|162,0)`, `distNextWp=17,8`, ueber Sekunden unveraendert.
+  Das ist Fakt 3 aus `AutoWalkService` - vnavmesh haengt das angeforderte Ziel
+  unbedingt an die Wegpunktliste, erreichbar oder nicht.
+- Was dazwischen liegt: 25 Hintergrundobjekte, fast alle im Layer
+  **`f0t0_b1_gate`** (ein Torbauwerk, Teile auf zwei Hoehen: -13,0 und -9,7),
+  seitlich ein `bgparts_door_close`. Ab etwa einem Fuenftel der Strecke gibt es
+  keine platzierten Objekte mehr - der Boden dort ist Terrain.
+
+**Schlussfolgerung:** Das begehbare Netz von vnavmesh reicht nicht bis zur
+Zonengrenze; es endet am Torbauwerk, und hinter dem Tor steigt das Gelaende um
+2,4 m an. Ein besserer Zielpunkt (echte Grenze statt Kartensymbol) wuerde daran
+NICHTS aendern - der Lauf endet so oder so am Netzrand. Das passt zur
+Parameter-Hypothese (vnavmesh erlaubt 0,50 m Stufenhoehe, das Spiel 0,60 bis
+1,00 m), ist damit aber NICHT bewiesen: ob dort Stufen dieser Hoehe liegen,
+wurde nicht gemessen.
+
+**OFFEN und praktisch wichtig:** ob `Transform.Scale` der ExitRange die HALBE
+oder die VOLLE Ausdehnung ist. Bei Halbausdehnung reichte die Trigger-Box bis
+X = 154,5 - der Spieler stand bei X = 152,5, also nur **2 m** davor, und ein
+Ziel am Boxrand statt in der Boxmitte wuerde den Uebergang ausloesen. Bei
+Vollausdehnung waeren es 10 m. Messbar nur im Spiel: Position beim
+Zonenwechsel protokollieren.
