@@ -3,7 +3,22 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-23, "ZIEL UNTER EINEM VORSPRUNG - GEBAUT, UNGETESTET")
+## STAND JETZT (2026-08-23, "RELEASE v5.91 - ZIEL UNTER EINEM VORSPRUNG, UNGETESTET DRAUSSEN")
+
+>>> RELEASE v5.91 IST VEROEFFENTLICHT, OBWOHL DER FALL NIE IM SPIEL LIEF. Der
+    User hatte die Quest inzwischen weitergespielt, der Testort war weg, und er
+    hat den Release trotzdem angewiesen. Verifiziert ist die Logik nur offline
+    gegen den Netz-Cache. WAS BEIM NAECHSTEN MAL ZU PRUEFEN IST: dass an einer
+    beliebigen Bruecke eine `[Vorsprung]`-Zeile im Log auftaucht und der Lauf
+    unten ankommt - der Fall ist nicht an diese Quest gebunden, jede Bruecke mit
+    einem Ziel darunter taugt dafuer.
+
+    Versionen synchron: csproj 5.91.0(.0), Plugin.cs "5.91", repo.json 5.91.0.0
+    (auf GitHub nachgeprueft). Sechs Assets am Release, latest.zip liefert die
+    neuen 1.536.829 Bytes. Installer unveraendert bei 1.2.1.0, exe + installer.json
+    aus v5.90 uebernommen, SHA gegengeprueft.
+
+## VORGESCHICHTE v5.91 (2026-08-23, "ZIEL UNTER EINEM VORSPRUNG")
 
 >>> NEU UND NOCH NICHT IM SPIEL GEPRUEFT: Der Auto-Lauf setzte den Spieler aufs
     Bruecken-DECK, wenn das Ziel darunter stand. Aufgefallen an der Quest
