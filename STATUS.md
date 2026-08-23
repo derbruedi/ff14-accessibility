@@ -18,21 +18,26 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     Strg+Umschalt+F7, Freibrief-Gegner in der Kategorie.
 
     NOCH OFFEN in Teil 1: fehlt "geradeaus" in der Sprache (3), Hindernis-Ansage
-    (4), Ankunft und Nachfassen (6), BossMod-Preset (8, privat), Fluchtrichtung
-    bei AoE (10), "schon gezaehmt" (11).
+    (4), Ankunft und Nachfassen (6), Fluchtrichtung bei AoE (10), "schon
+    gezaehmt" (11). Punkt 8 betrifft ein privates Fremd-Plugin und steht in
+    `PRIVAT.txt`.
 
->>> NEUE GRUNDREGEL DES USERS, woertlich: *"das bossmod und das cact ding
-    niemals mit ins release pushen das ist erstmal nur fuer mich"*. BossMod,
-    cactbot und IINACT sind seine privaten Werkzeuge und gehoeren nicht ins
-    Paket, nicht in den Installer, nicht in die Doku. Der frueher geaeusserte
-    Wunsch "IINACT beim Updaten automatisch mit" ist damit ZURUECKGEZOGEN.
+>>> NEUE GRUNDREGEL DES USERS: die Fremd-Plugins, die er persoenlich benutzt,
+    kommen NIE ins Release - nicht ins Paket, nicht in den Installer, nicht in
+    die Doku. Ein frueherer Wunsch, eines davon beim Updaten mitzuinstallieren,
+    ist damit ZURUECKGEZOGEN.
 
     GEPRUEFT UND BEREINIGT: im Repo steckte nichts davon - bis auf zwei
-    unbenutzte Konstanten in `Installer/InstallerService.cs`
-    (`IinactInternalName`, `BrowsingwayInternalName`). Sie wurden nie
-    aufgerufen, sahen aber aus wie eine halbfertige Vorbereitung. Entfernt.
-    Gegenprobe an der neu gebauten EXE: `strings` findet null Treffer auf
-    "IINACT" oder "Browsingway".
+    unbenutzte Namenskonstanten in `Installer/InstallerService.cs`. Sie wurden
+    nie aufgerufen, sahen aber aus wie eine halbfertige Vorbereitung. Entfernt,
+    und an der neu gebauten EXE mit `strings` gegengeprueft: null Treffer.
+
+    AUSGELAGERT: alles, was die private Einrichtung dieser Plugins beschreibt,
+    steht jetzt in `PRIVAT.txt` (in `.gitignore`, wird nie committet). Aus
+    diesem Dokument sind die betreffenden fuenf Abschnitte herausgenommen, aus
+    `OFFENE-PUNKTE.txt` der zugehoerige Testpunkt. Was hier bleibt, sind
+    Erkenntnisse ueber UNSEREN Code - etwa dass unsere Boss-Cast-Ansage hinter
+    einem fremden Optionsgatter tot lag. Die gehoeren ins Projekt.
 
 >>> RELEASE v5.90. Versionen synchron gesetzt: csproj 5.90.0(.0), Plugin.cs
     "5.90", repo.json 5.90.0.0, im gebauten Manifest steht AssemblyVersion
@@ -387,7 +392,7 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     GEGENTEST (der User, 30 Sekunden): Optionsmenue -> "Töne für Leben und
     Mana" AUS. Ist die Stoerung damit weg, ist der Fall geklaert. Bleibt sie,
     sind die HP/MP-Toene entlastet und der naechste Kandidat ist ein FREMDES
-    Plugin (BossMod, cactbot) - dann pruefen, ob die Stoerung auch bei
+    Plugin - dann pruefen, ob die Stoerung auch bei
     abgeschaltetem FF14Accessibility auftritt.
 
 >>> BEFUND 6, ZWEI TONFEHLER - GEMELDET 2026-08-23, SONDE GEBAUT, UNGEMESSEN.
@@ -483,200 +488,6 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 >>> IM LOG VOM 2026-08-22 (21:21-22:56) STEHT KEIN PLUGIN-FEHLER. Die einzige
     Exception ist vnavmesh: `FileNotFoundException` auf
     `pluginConfigs\vnavmesh\seeds-local.json` - der bekannte Saatpunkt-Fehler.
-
-## FRUEHERER STAND (2026-08-22, "PRESET 'LAUFEN' ANGELEGT - ZU TESTEN")
-
->>> GESCHRIEBEN, bei geschlossenem Spiel:
-    `%APPDATA%\XIVLauncher\pluginConfigs\BossMod\autorot\presets.db.json`
-    Inhalt: ein einziges Preset namens **Laufen** mit genau einem Modul,
-    `BossMod.Autorotation.MiscAI.NormalMovement`, Track `Destination` =
-    `Pathfind`. Sonst nichts - kein AutoTarget, kein TankAI/MeleeAI/HealerAI/
-    RangedAI. Damit benutzt es keine einzige Faehigkeit und fasst die Zielwahl
-    nicht an.
-
->>> DAS FORMAT IST NICHT GERATEN. `PresetDatabase.LoadPresetsFromFile` laedt
-    Benutzer- und Standarddatei mit DERSELBEN Funktion
-    (`PlanPresetConverter.PresetSchema.Load`), also gilt das Format von
-    `DefaultRotationPresets.json`: `{"version":8,"payload":[...]}`.
-    JsonPresetConverter.Read sucht den Track ueber `StrategyConfig.InternalName`
-    und die Option ueber `StrategyOption.InternalName`; beide Werte
-    ("Destination"/"Pathfind") stehen woertlich im VBM-AI-Standardpreset.
-
->>> BEDIENUNG, reine Chatbefehle:
-      `/vbm ar set laufen`   einschalten (Gross/Klein egal, FindPresetByName
-                             vergleicht CurrentCultureIgnoreCase)
-      `/vbm ar clear`        ausschalten
-    ACHTUNG, STILLE HEISST ERFOLG: bei Erfolg schreibt BossMod nur ins Log
-    (`Console: set activates preset 'Laufen'`), KEINE Chatmeldung. Nur der
-    Fehlerfall meldet sich (`Failed to find preset '...'`). Wenn das stoert,
-    ist die Quittung per IPC `BossMod.Presets.GetActive` nachruestbar.
-
->>> ZWEI VERHALTEN, DIE UEBERRASCHEN KOENNEN (aus AutorotationConfig gelesen):
-      - `ClearPresetOnDeath = true` (Standard): **nach dem Tod ist das Preset
-        aus** und muss neu gesetzt werden.
-      - `ClearPresetOnCombatEnd = false` (Standard): nach dem Kampf bleibt es an.
-      - `PlannedPullSafety` greift nur mit aktivem Cooldown-Plan - haben wir nicht.
-
->>> ES WIRKT AUCH AUSSERHALB VON DUNGEONS. `AIHintsBuilder.OnCastStarted`
-    haengt an `ws.Actors.CastStarted`, also an JEDEM Zauber im Umkreis, leitet
-    die Form aus dem Omen des Action-Sheets ab und ruft `hints.AddForbiddenZone`.
-    Ein Bossmodul ist dafuer nicht noetig. Auf Stufe 30 im offenen Feld sollte
-    der Test also etwas zeigen.
-
->>> ZU TESTEN, in dieser Reihenfolge:
-      1. Spiel starten. Im Log darf NICHT stehen: `Failed to parse preset
-         database` oder `Error while deserializing preset Laufen`.
-      2. `/vbm ar set laufen` eingeben. Keine Meldung = geklappt.
-      3. Einen Gegner mit Flaechenzauber pullen. Laeuft die Figur von selbst
-         aus der Flaeche heraus? Und benutzt sie dabei KEINE Faehigkeit und
-         wechselt das Ziel NICHT?
-
-## FRUEHERER STAND (2026-08-22, "BOSSMOD LAEUFT - /vbmai OHNE ARGUMENT IST EIN FENSTERSCHALTER")
-
->>> BEWIESEN, BossMod LAEDT. Log vom 21:06:
-      Zeile  91  `[LocalPlugin] Creating plugin instance for BossMod (async=true)`
-      Zeile 160  `[LocalPlugin] Finished loading BossMod`
-    Content root: `...\pluginConfigs\BossMod`. Damit ist die Frage aus dem
-    letzten Chat beantwortet - die beiden Schalter sitzen richtig.
-
->>> WARUM DER USER NICHTS GEMERKT HAT, und es ist KEIN Fehler. `/vbmai` wurde
-    21:08:38 abgeschickt (Log: `[Chat] Echo: '/vbmai'`), danach steht nichts.
-    Aus TickService.RegisterAISlashCommands dekompiliert: `/vbmai` OHNE Argument
-    ist `cmd.SetSimpleHandler("toggle multibox ui", ...)` - es kippt nur
-    `AIConfig.DrawUI`, also ein ImGui-Fenster auf/zu. Kein Ton, keine Meldung,
-    fuer einen blinden Spieler wirkungslos.
-
->>> DIE BEFEHLE, DIE ES WIRKLICH GIBT (aus TickService dekompiliert, nicht geraten):
-      - `/vbm ar set <preset>`   "start executing specified preset, and deactivate others"
-      - `/vbm ar clear`          "clear current preset"
-      - `/vbm ar activate|deactivate|togglemulti <preset>`
-      - `/vbmai on|off|toggle`   schaltet `AIConfig.Enabled` (die ALTE, deprecated AI)
-      - `/vbm cfg <config-type> <field> [<value>]`
-    Alles reine Chatbefehle. Das ImGui-Fenster wird fuer nichts davon gebraucht.
-
->>> DAS PRESET "VBM AI" KAEMPFT DOCH MIT - ausgelesen aus
-    `devPlugins\BossMod\DefaultRotationPresets.json`, es enthaelt:
-      MiscAI.AutoTarget (Retarget=Always, FATE=Enabled)  <- visiert selbst an
-      xan.TankAI, xan.MeleeAI, xan.RangedAI, xan.HealerAI <- Second Wind,
-        Bloodbath, Stun, Low Blow, Invuln, Heal, Esuna ... das sind Aktionen
-      MiscAI.StayWithinLeylines, MiscAI.NormalMovement
-    Die Notiz von vorhin ("sie kaempft nicht") war zu grosszuegig: die
-    Rotationsmodule bleiben aus, die AI-Hilfsmodule aber NICHT. Und AutoTarget
-    beisst sich mit der Zielwahl per Tab/F11.
-
->>> DAS EINE MODUL, DAS DER USER WILL: `BossMod.Autorotation.MiscAI.NormalMovement`.
-    Selbstbeschreibung aus der DLL: "Automatic movement - Automatically move
-    character based on pathfinding or explicit coordinates", Kategorie "AI".
-    Es rechnet mit `NavigationDecision` aus BossMod.Pathfinding und hat einen
-    Track `ForbiddenZoneCushion` - es weicht also verbotenen Zonen aus. Genau
-    "nur an sichere Orte laufen", ohne eine einzige Aktion.
-
->>> DER WEG DORTHIN, OHNE ImGui UND OHNE CODE: Benutzer-Presets liegen in einer
-    Datei, die wir selbst schreiben koennen. Kette aus der DLL:
-      TickService: `new RotationDatabase(Path.Join(ConfigDirectory, "autorot"), ...)`
-      RotationDatabase: `new PresetDatabase(rootPath + "/presets", ...)`
-      PresetDatabase: `_dbPath = rootPath + ".db.json"`
-    Ergibt: `%APPDATA%\XIVLauncher\pluginConfigs\BossMod\autorot\presets.db.json`
-    Existiert noch nicht (der Ordner `autorot` ist leer). Format wie
-    DefaultRotationPresets.json: `{"version":8,"payload":[ ... ]}`.
-    Bei GESCHLOSSENEM Spiel schreiben - gelesen wird sie beim Start, und
-    BossMod ueberschreibt sie bei jeder eigenen Aenderung.
-    Alternative ohne Dateischreiben: IPC `BossMod.Presets.Create(json, overwrite)`
-    + `Presets.SetActive(name)` - beides in IPCProvider bestaetigt.
-
->>> NEBENBEFUND AUS DEMSELBEN LOG, gehoert zur Navigations-Baustelle:
-    Zeile 105, LASTEXCEPTION von vnavmesh: `Unable to fetch seeds from Github,
-    quality will be lacking` (SocketException 10038 auf
-    raw.githubusercontent.com:443, aus `Navmesh.FloodFill.Init()`).
-    Das ist genau die Saatpunkt-Frage aus dem Memory - die Seeds fehlen NICHT
-    nur fuer Zone 132, sie wurden diesmal ueberhaupt nicht geladen. Deshalb
-    filtert NearestPointReachable nichts.
-
-## FRUEHERER STAND (2026-08-22, "BOSSMOD SCHARFGESCHALTET - NAECHSTER SCHRITT: NUR LAUFEN, NICHT KAEMPFEN")
-
->>> NAECHSTER SCHRITT FUER DEN NEUEN CHAT, in dieser Reihenfolge:
-      1. User startet das Spiel. Im Log pruefen: steht dort
-         `Creating plugin instance for BossMod`? NUR diese Zeile beweist, dass es
-         laeuft - `Loading dev plugin BossMod` allein beweist nichts (genau
-         daran ist es zweimal gescheitert).
-      2. `/vbmai` sollte es jetzt geben. Und: `%APPDATA%\XIVLauncher\
-         pluginConfigs\BossMod\` sollte angelegt sein.
-      3. DANN konfigurieren: Ausweich-Bewegung AN, Autorotation AUS.
-
->>> DIE ANFORDERUNG DES USERS, woertlich: "es soll ja nicht fuer mich kaempfen,
-    es soll nur fuer mich an sichere orte laufen." Das ist die Messlatte.
-    Aus der DLL gelesen, was das bedeutet:
-      - Die Bewegungs-AI ist ein eingebautes Preset **"VBM AI"**. Klartext aus
-        der DLL: "A new built-in preset has been added - VBM AI. This provides
-        the same functionality as the legacy AI feature. It will try to dodge
-        AOEs and automatically target enemies."
-      - Sie KAEMPFT NICHT. Angriffe kommen aus den Rotationsmodulen (Tank AI,
-        Melee DPS AI, Healer AI, Caster AI, Phys Ranged AI ...) - die bleiben aus.
-      - ABER sie visiert automatisch an (`BossMod.Autorotation.MiscAI.AutoTarget`).
-        DAS KANN SICH MIT DER ZIELWAHL DES USERS BEISSEN - er waehlt mit Tab und
-        F11. Wenn es stoert: eigenes Preset ohne AutoTarget bauen, per IPC
-        `Presets.Create(presetSerialized, overwrite)` + `Presets.SetActive(name)`,
-        also ohne ImGui. Das Preset-JSON liegt komprimiert in der DLL und ist
-        erst nach dem ersten Start lesbar.
-      - Moeglicherweise geht die Konfiguration OHNE Neustart: das IPC hat
-        `Configuration(args, save)`, und `/vbm` nimmt Argumente. Ungeprueft.
-
->>> ZWEI STOLPERSTELLEN, BEIDE GETRETEN UND BEHOBEN (siehe Memory
-    dalamud-devplugin-two-switches): Ein Plugin nach devPlugins zu kopieren
-    reicht NICHT. Es braucht (1) einen Eintrag in `DevPluginLoadLocations` mit
-    vollem DLL-Pfad und (2) einen Eintrag in `DefaultProfile.Plugins` mit
-    `IsEnabled: true` - Dalamud legt den sonst selbst an, aber mit **false**
-    ("was not in any profile, adding to default with false"). Beides nur bei
-    GESCHLOSSENEM Spiel aendern, sonst ueberschreibt Dalamud es beim Beenden.
-    BEIDES STEHT JETZT RICHTIG, gegengeprueft. Sicherungen liegen als
-    `dalamudConfig.backup-20260822-*.json`.
-
-## FRUEHERER STAND (2026-08-22, "BOSSMOD INSTALLIERT - FUER DEN USER PERSOENLICH")
-
->>> ENTSCHEIDUNG DES USERS, und sie ist begruendet: "selbst wenn ich weiss was
-    kommt, muss ich schnell wissen wo ich hinlaufe - bossmod wuerde fuer mich
-    richtig laufen, ich will das erstmal nur fuer mich". Also KEIN Plugin-Feature,
-    sondern seine private Einrichtung.
-
->>> INSTALLIERT: BossMod 7.5.5.8 (veyn/xan_0), DalamudApiLevel 15 - passt zu
-    vnavmesh (15), IINACT (15) und uns (15). Bezogen ueber das Veyn-Repo
-    `https://puni.sh/api/repository/veyn`, entpackt nach
-    `%APPDATA%\XIVLauncher\devPlugins\BossMod`.
-    WARUM DORTHIN und nicht ueber den Plugin-Installer: die Fremdrepo-Liste in
-    dalamudConfig.json ist LEER - IINACT, Browsingway, Echokraut und vnavmesh
-    liegen alle in devPlugins. Das ist der etablierte Weg in diesem Setup und
-    umgeht den ImGui-Installer, den der User nicht bedienen kann.
-    NEUSTART DES SPIELS NOETIG, es lief waehrend der Installation.
-
->>> AUS DER INSTALLIERTEN DLL GELESEN (nicht von der Webseite geraten):
-      - Chatbefehle: `/vbm`, `/vbm macro`, `/vbmai`
-      - `/vbmai` kennt "enable AI mode", "disable AI mode", "toggle AI mode"
-      - Die Bewegungs-AI beschreibt sich selbst als: "Automatically moves your
-        character based on safe zones determined by a boss's module, visible on
-        the radar." - genau das, was der User will.
-
->>> ZWEI WARNUNGEN, BEIDE AUS DER DLL:
-    1. "AI feature is now deprecated and will be removed in one of the future
-       versions." und "Legacy AI has been replaced by VBM AI." Ob `/vbmai` die
-       alte oder die neue steuert, laesst sich aus Strings NICHT entscheiden -
-       das muss im Spiel gepruft werden. Die neue laeuft ueber
-       Autorotation-Presets (BossMod.Autorotation.MiscAI.*).
-    2. Presets legt man normalerweise im ImGui-Fenster an. Der Ausweg ist
-       bekannt: das IPC hat `Presets.Create(presetSerialized, overwrite)` und
-       `Presets.SetActive(name)` - derselbe Trick wie bei cactbot, wo das
-       ImGui-Gatter auch umgangen wurde.
-
->>> NEBENBEFUND, FUER SPAETER WICHTIG: BossMod erzeugt fuer seine Anzeige
-    TEXTHINWEISE - "Aim for safe spot!", "Go to safe zone!", "Go to safe
-    quadrant!", "Go to safe platform!", "Go to nearest safespot". Das ist genau
-    das Format, das eine Sprachausgabe braucht. Ueber IPC kommt man nicht dran
-    (siehe Memory bossmod-ipc-no-zones), aber es zeigt: die Information EXISTIERT
-    in sprechbarer Form. Ein moeglicher spaeterer Weg, wenn die AI-Bewegung
-    allein zu stumm bleibt.
-
->>> ZU TESTEN: Spiel neu starten. Laedt BossMod? Dann `/vbmai` eingeben und
-    schauen, was es meldet. Achtung, Stufe 20-30: dort gibt es kaum harte
-    Mechaniken, der Nutzen zeigt sich erst in spaeteren Inhalten.
 
 ## FRUEHERER STAND (2026-08-22, "WAS STEHT MIR IM WEG")
 
@@ -1029,8 +840,8 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     5.89.0.0. Sechs Assets haengen am Release. Gegengeprueft durch Download von
     releases/latest: latest.zip meldet AssemblyVersion 5.89.0.0.
 
->>> INSTALLER MUSSTE MIT: sein Quellcode wurde seit v5.88 geaendert (IINACT und
-    Browsingway fuer die cactbot-Kampfansagen, Commit 9ec2f24). Deshalb 1.1.0.0
+>>> INSTALLER MUSSTE MIT: sein Quellcode wurde seit v5.88 geaendert (zwei
+    Namenskonstanten fuer fremde Plugins, Commit 9ec2f24). Deshalb 1.1.0.0
     -> 1.2.0.0, exe neu gebaut, SHA256 in installer.json nachgezogen und gegen
     die veroeffentlichte Datei geprueft. Waere die Version stehengeblieben,
     haette der Installer das Update endlos angeboten.
@@ -2534,20 +2345,20 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## FRUEHERER STAND (2026-08-19, "FORMANSAGE + VORWARNUNG - UND WARUM DER BOSS SCHWIEG")
 
->>> AUSLOESER: User ueberlegt, cactbot wieder rauszunehmen - "es hilft mir in
+>>> AUSLOESER: User ueberlegt, das fremde Kampf-Plugin wieder rauszunehmen - "es hilft mir in
     meiner quest bei dem boss nicht weil es da nichts spricht". Vorschlag von
     ihm: "wenn wir wuessten wie die ganzen bossmechaniken funktionieren
     koennte man was eigenes bauen". Auftrag danach: "bau die formansage und
     die vorwarnung".
 
->>> DER EIGENTLICHE FUND, und er ist aelter als cactbot: DIE BOSS-CAST-ANSAGE
+>>> DER EIGENTLICHE FUND, und er ist aelter als das fremde Plugin: DIE BOSS-CAST-ANSAGE
     VOM 2026-08-18 WAR TOT AUSGELIEFERT. `UpdateAoeWarning` begann mit
       if (!_config.AnnounceAoeWarning) { _aoeWarn.SetActive(false); return; }
     und `AnnounceAoeWarning` ist STANDARD AUS (bewusst, seit 2026-07-26 Opt-in).
     Die Cast-Ansage war am 2026-08-18 in genau diese Methode gewandert, haengt
     aber an `AnnounceEnemyCast` (Standard AN). Ergebnis: wer nicht zufaellig
     Strg+Umschalt+F3 gedrueckt hatte, bekam KEINE Gegner-Cast-Ansage - egal wie
-    die Option stand. Damit erklaert sich das Schweigen beim Boss ohne cactbot.
+    die Option stand. Damit erklaert sich das Schweigen beim Boss auch ohne fremde Hilfe.
     GEFIXT: die Methode heisst jetzt `UpdateEnemyCastWarnings`, laeuft sobald
     EINE der beiden Optionen an ist, und jede Option steuert nur noch ihre
     eigene Ausgabe.
@@ -2614,8 +2425,8 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
        SpeakInterrupt. Falls ja: die Form kuerzen (Winkel weg) oder die
        Vorwarnung von der Form trennen.
 
->>> ZU CACTBOT, ENTSCHEIDUNG VERTAGT: nicht rausgeworfen. Belegt bleibt, dass
-    es fuer Levelinhalte fast nichts hat (Stein-Vigil: 1 Trigger, nichts fuer
+>>> ZUM FREMDEN KAMPF-PLUGIN, ENTSCHEIDUNG VERTAGT: nicht rausgeworfen. Belegt
+    bleibt, dass es fuer Levelinhalte fast nichts hat (Stein-Vigil: 1 Trigger, nichts fuer
     den Endboss). Der eigene Weg oben deckt jeden Gegner im Spiel ab, aber
     NICHT die Bedeutung ("zusammenstehen", "auseinander", "Tankbuster") -
     das ist Handarbeit je Boss und steht in keinem Sheet. Erst testen, dann
@@ -2885,18 +2696,17 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 
 ## FRUEHERER STAND (2026-08-18, "BOSS-ZAUBER WERDEN ANGESAGT")
 
->>> AUSLOESER: User meldet, cactbot sage ausser dem einen Satz nichts mehr,
+>>> AUSLOESER: User meldet, das fremde Kampf-Plugin sage ausser dem einen Satz nichts mehr,
     beim Drachen am Ende von Stein-Vigil komme gar keine Meldung. Frage des
     Users: "was soll es alles ansagen?"
 
 >>> ZWEI URSACHEN, beide am Quelltext belegt, nicht vermutet:
-    1. cactbot HAT FUER DEN DRACHEN NICHTS. In
-       `ui/common/raidboss_data.bundle.js` (dort liegen die Trigger, NICHT in
-       raidboss.bundle.js) steht fuer `the_stone_vigil.ts` genau EIN Trigger:
-       `Stone Vigil Swinge`, id 387, source Chudo-Yudo. Kein Eintrag fuer den
-       Endboss, in keiner Sprache. Muster ueber alle ARR-Dungeons: 0 bis 6
-       Trigger je Instanz, meist 1 bis 3. cactbot zielt auf aktuelle Raids,
-       nicht auf Levelinhalte - da ist nichts nachzujustieren.
+    1. DAS FREMDE PLUGIN HAT FUER DEN DRACHEN NICHTS. In seiner
+       Ausloeser-Datenbank steht fuer Stein-Vigil genau EIN Eintrag (id 387,
+       Quelle Chudo-Yudo), nichts fuer den Endboss, in keiner Sprache. Muster
+       ueber alle ARR-Dungeons: 0 bis 6 Eintraege je Instanz, meist 1 bis 3.
+       Solche Werkzeuge zielen auf aktuelle Raids, nicht auf Levelinhalte -
+       da ist nichts nachzujustieren.
     2. UNSER Kampfteil schwieg AUS REGEL, nicht aus Fehler. CombatService
        sprach nur bei `CastTargetObjectId == playerId` (Entscheid 2026-07-25).
        Ein Boss wirft aber fast alles auf den Boden oder auf den Tank, also
@@ -2926,90 +2736,6 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
       SpeakInterrupt die laufende Ausgabe.
     - Trash-Gegner, die man anvisiert, casten auch - stoert das beim Leveln?
     - Kommt "auf dich" hoerbar rueber, oder ist es zu spaet im Satz?
-
-## FRUEHERER STAND (2026-08-18, "CACTBOT SPRICHT - KAMPFANSAGEN STEHEN")
-
->>> ERGEBNIS: cactbot sagt Boss-Mechaniken an und SPRICHT. Vom User in-game
-    bestaetigt. Damit ist die Frage aus dem Spielerwunsch beantwortet: der
-    Stapel traegt, und zwar ohne ACT, rein ueber Dalamud.
-
->>> KETTE (alle Glieder am laufenden System gemessen):
-    Spiel -> IINACT 2.10.3.6 (devPlugins) -> WebSocket 127.0.0.1:10501
-    -> cactbot 0.37.5 im Browsingway-Overlay 1.7.2 -> Handler `cactbotSay`
-    zurueck an IINACT -> SAPI. IINACT erkennt den Client korrekt als Deutsch
-    (`Parsing Plugin Language: de`), der WebSocket-Server laeuft von Haus aus.
-
->>> WICHTIG: die Stimme ist NICHT NVDA, sondern die SAPI-Standardstimme
-    (hier Microsoft Hedda, de-DE). IINACT bietet zwar Dalamud-IPC an
-    (`IINACT.CreateSubscriber`, `IINACT.Server.*`), aber KEINEN Draht fuer den
-    gesprochenen Text. Es gibt also keine Abstimmung mit unseren Ansagen -
-    cactbot redet, wann cactbot will. Ob das stoert, ist ungetestet.
-
->>> FALLE 1, der eigentliche Blocker: BROWSINGWAY WARTET AUF EINEN IMGUI-KLICK.
-    Chromium (159,5 MB) wird erst nach „Install missing dependencies" geladen -
-    fuer einen blinden Nutzer ein toter Punkt. Symptom im Log: gar keine
-    Renderer-Zeile, kein cef-Ordner. UMGANGEN: URL, Version und SHA256 stehen
-    fest in `DependencyManager.cs` (`_dependencies`); selbst laden und nach
-    `pluginConfigs\Browsingway\dependencies\cef` entpacken. Browsingway prueft
-    nur, ob die Datei `VERSION` dort die Versionszeichenkette enthaelt.
-    Pruefsumme wurde abgeglichen und stimmte.
-
->>> FALLE 2: `Options.DefaultAlertOutput = 'ttsOnly'` IST IN NUTZERDATEIEN
-    WIRKUNGSLOS. Der Wert ist nur die Anzeige der Einstellungsseite;
-    `setOptionsFromOutputValue` (raidboss_config.ts) uebersetzt ihn in drei
-    echte Schalter, aber ausschliesslich ueber die GESPEICHERTE Konfiguration.
-    In `user/raidboss.js` muessen die Schalter direkt stehen:
-    TextAlertsEnabled=false, SoundAlertsEnabled=true, SpokenAlertsEnabled=true.
-    `SpokenAlertsEnabled` ist standardmaessig FALSE (user_config.ts,
-    getDefaultBaseOptions) - Symptom war exakt „Ton kommt, Stimme nicht".
-
->>> WAS INSTALLIERT WURDE (alles devPlugins, wie vnavmesh):
-    - IINACT 2.10.3.6, GPL-3.0, eigenes Repo
-      raw.githubusercontent.com/marzent/IINACT/main/repo.json
-    - Browsingway 1.7.2, GPL-3.0, OFFIZIELLES Dalamud-Repo. Achtung: der Host
-      heisst `kamori.goats.dev`, NICHT goatcorp.io (loest gar nicht auf).
-    - cactbot 0.37.5, Apache-2.0, Release-ZIP nach
-      %AppData%\XIVLauncher\cactbot (gebaute raidboss.html liegt bei)
-    - dalamudConfig-Eintrag ueber ein Hilfsprogramm im Scratchpad
-      (DevPluginPatch), das die Logik aus InstallerService.cs spiegelt.
-      Backup: dalamudConfig.json.bak-cactbot. Eigene Eintraege unberuehrt.
-
->>> NUTZERDATEIEN liegen in `pluginConfigs\IINACT\cactbot_user\` (Handler
-    `cactbotLoadUser`). Eigene Auslöser mit `zoneId: ZoneId.MatchAll` gelten
-    ueberall - cactbots eingebauter Testsatz dagegen NUR in Mittleres La
-    Noscea, deshalb brauchte es einen eigenen. `/bw overlay cactbot reload`
-    liest die Nutzerdateien neu, ohne Spielneustart (so wurde es bestaetigt).
-
->>> IN ECHTEM INHALT BESTAETIGT (2026-08-18, 17:39-17:41): Stein-Vigil,
-    Bosskampf Chudo-Yudo. cactbot sagte SECHSMAL „Weg von Vorne" - auf
-    DEUTSCH und als VORWARNUNG. Auslöser `Stone Vigil Swinge`,
-    type StartsUsing, Fähigkeit 387, Quelle Chudo-Yudo. Damit sind Punkt 1
-    und 2 der alten Offen-Liste erledigt: es traegt in echtem Inhalt, und die
-    deutsche Ausgabe kommt.
-    ABER die ABDECKUNG in alten Inhalten ist duenn und das ist jetzt gemessen,
-    nicht vermutet: Stein-Vigil normal hat bei cactbot GENAU EINEN Auslöser,
-    die schwere Fassung drei. Kein Eintrag fuer Kupferglocken-Mine, Totorak,
-    Klaue. Vorhanden: Sastasha, Tam-Tara, Halatali, Haukke, Brayflox, Qarn,
-    Ifrit, Titan. Der Nutzen waechst stark mit neuerem/schwererem Inhalt.
-
->>> MITSCHRIFT-WERKZEUG, hat sich bewaehrt: `Options.TransformTts` in der
-    Nutzerdatei schickt jede gesprochene Zeile per fetch (mode no-cors) an
-    einen kleinen TcpListener auf 127.0.0.1:8777, der sie mit Uhrzeit in eine
-    Datei schreibt (scratchpad/ttslog.ps1). Sechs echte Ereignisse lueckenlos
-    erfasst, ohne die Sprachausgabe zu beeinflussen (try/catch).
-    WICHTIG FUER SPAETER: das ist genau der Draht, ueber den cactbots Ansagen
-    bei NVDA statt bei SAPI landen koennten. Browsingway leitet die
-    Browser-Konsole NICHT weiter und hat kein Remote-Debugging - dieser Weg
-    ist also der einzige, der ohne Aenderung an Fremdcode funktioniert.
-
->>> NOCH OFFEN:
-    1. Stoert die zweite Stimme neben NVDA? Beim Chudo-Yudo-Kampf gab es
-       keine Beschwerde, aber auch keine gezielte Beobachtung.
-    2. Einbau in unseren Installer. Der Wunsch des Users war „beim Updaten
-       automatisch mit". EMPFEHLUNG STEHT: einmal fragen statt still
-       mitinstallieren, weil IINACT ein Netzwerk-Parser ist und damit eine
-       andere Kategorie als unser Fenster-Vorleser. Danach vollautomatisch.
-       Alle noetigen Schritte sind jetzt bekannt und erprobt.
 
 ## FRUEHERER STAND (2026-08-18, "EINSTELLUNGEN: FALSCHE UND FEHLENDE ANSAGEN")
 

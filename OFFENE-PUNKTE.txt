@@ -28,12 +28,15 @@ schnell durchgehen und abraeumen.
 GRUNDREGEL, GILT IMMER (deine Ansage vom 2026-08-23)
 ========================================================================
 
-BOSSMOD, CACTBOT UND IINACT KOMMEN NIE IN EIN RELEASE.
-Die laufen bei dir persoenlich, sie sind kein Bestandteil des Plugins.
-Nicht in den Installer, nicht in die Doku, nicht in ein Paket.
+DIE FREMD-PLUGINS, DIE DU PRIVAT BENUTZT, KOMMEN NIE IN EIN RELEASE.
+Sie sind kein Bestandteil des Plugins: nicht in den Installer, nicht in
+die Doku, nicht in ein Paket.
 Geprueft am 2026-08-23: im Repo steckt nichts davon. Im Installer lagen
-noch zwei unbenutzte Namenskonstanten ("IINACT", "Browsingway") herum -
-die sind entfernt, damit sie niemand spaeter scharfschaltet.
+noch zwei unbenutzte Namenskonstanten herum - die sind entfernt, damit
+sie niemand spaeter scharfschaltet.
+Alles, was diese Werkzeuge betrifft, steht in PRIVAT.txt. Die Datei
+liegt neben dieser hier, steht in .gitignore und wird nie committet -
+Punkt 8 dieser Liste ist dorthin gewandert.
 
 
 ========================================================================
@@ -42,7 +45,8 @@ TEIL 1 - IN-GAME-TESTS, DIE NUR DU MACHEN KANNST
 
 ERLEDIGT am 2026-08-23, von dir abgehakt: 1, 2, 5, 7, 9, 12, 13, 14,
 15, 16, 17, 18. Die Nummern bleiben vergeben, damit wir uns nicht
-verhaspeln. Offen sind nur noch die folgenden sechs.
+verhaspeln. Offen sind nur noch die folgenden fuenf. Punkt 8 betraf ein
+privates Fremd-Plugin und steht jetzt in PRIVAT.txt.
 
 3. FEHLT "GERADEAUS"?
    Seit die Sprache Himmelsrichtungen sagt, gibt es keine gesprochene
@@ -65,16 +69,6 @@ verhaspeln. Offen sind nur noch die folgenden sechs.
    c) Wenn nicht: kommt statt "Ziel erreicht" die ehrliche Ansage mit
       Restmetern und Richtung?
    Log-Marker: [Nav] Auto-Lauf: Nachfassen 1/2
-
-8. BOSSMOD-PRESET "LAUFEN"   >>> NUR FUER DICH, NIE INS RELEASE <<<
-   Das Preset liegt in deinem BossMod-Ordner, nicht im Projekt. Es taucht
-   hier nur auf, damit der Test nicht vergessen wird.
-   a) Spiel starten. Im Log darf NICHT stehen: "Failed to parse preset
-      database" oder "Error while deserializing preset Laufen".
-   b) /vbm ar set laufen eingeben. Keine Meldung = geklappt.
-   c) Einen Gegner mit Flaechenzauber pullen: laeuft die Figur von selbst
-      aus der Flaeche heraus? Benutzt sie dabei KEINE Faehigkeit und
-      wechselt das Ziel NICHT?
 
 10. FLUCHTRICHTUNG BEI AOE
     Einen Gegner mit Kegel- oder Linien-Zauber suchen (Leveldungeon oder
@@ -152,7 +146,7 @@ TEIL 3 - ARBEITEN OHNE SPIELTEST
     ohne das zieht Dalamud kein Update.
     Installer auf 1.2.1.0, weil die EXE eine andere Datei ist als die von
     v5.89 (die toten Fremd-Plugin-Konstanten sind raus). Gegenprobe an der
-    neuen EXE: kein einziger Treffer auf "IINACT" oder "Browsingway".
+    neuen EXE mit `strings`: kein einziger Treffer.
     Der Debug-Build liegt in devPlugins, du hast die Aenderungen also auch
     im Spiel.
 
@@ -181,7 +175,7 @@ TEIL 3 - ARBEITEN OHNE SPIELTEST
     kamen in ein Repo ohne Lizenzdatei. Kommentare unter PR #7 sind
     abgeschickt, die Rueckmeldung steht aus.
 
-34. IINACT/CACTBOT IN DEN INSTALLER - GESTRICHEN (2026-08-23)
+34. FREMD-PLUGIN IN DEN INSTALLER - GESTRICHEN (2026-08-23)
     Der fruehere Wunsch "beim Updaten automatisch mit" ist zurueckgezogen:
     das laeuft nur bei dir persoenlich. Siehe die Grundregel ganz oben.
     Wird nicht gebaut. Punkt erledigt durch Entscheidung, nicht durch
@@ -312,5 +306,4 @@ MEIN VORSCHLAG FUER DIE REIHENFOLGE
 5. Punkte 3, 10, 11 nebenbei, wenn die Gelegenheit im Spiel kommt.
 6. Danach Teil 5 nach deiner Wichtigkeit sortieren.
 
-Punkt 8 (BossMod) steht ausserhalb dieser Reihenfolge - der hat mit dem
-Release nichts zu tun.
+Punkt 8 steht in PRIVAT.txt und hat mit dem Release nichts zu tun.

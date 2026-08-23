@@ -29,3 +29,6 @@ age-of-decadence-analyse.txt
 nul
 *.zip
 .aider*
+
+# Private Werkzeuge des Entwicklers - nie ins Repo
+PRIVAT.txt
