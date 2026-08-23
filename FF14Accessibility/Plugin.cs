@@ -66,6 +66,7 @@ public sealed class Plugin : IDalamudPlugin
 #if DEBUG
     private readonly LiftProbe _liftProbe;
     private readonly ZoneExitProbe _zoneExitProbe;
+    private readonly CollisionProbe _collisionProbe;
 #endif
     private readonly ZoneBorderService _zoneBorders;
     private readonly LevequestEnemyService _leveEnemies;
@@ -73,9 +74,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly RouteService       _routes;
     private readonly ShopNpcService     _shops;
     private readonly ObjectNameService  _objectNames;
+    private readonly ObstacleService    _obstacles;
     private readonly ObjectMemoryService _objectMemory;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
+    private readonly MeshBridgeService  _bridges;
+    private readonly ZoneTransitionHandler _transitions;
     private readonly TrailService       _trails;
     private readonly CharaMakeReader    _charaMake;
     private readonly UIReaderService    _uiReader;
@@ -135,8 +139,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.89";
-    private const string PluginVersionTag = "Kampf: eigene Warnstimme, Fluchtrichtung aus Flaechen, waehlbarer Warnton";
+    private const string PluginVersion    = "5.90";
+    private const string PluginVersionTag = "Himmelsrichtungen statt links und rechts, Peil-Ton beim Laufen, Wege an Netzluecken";
 
     public Plugin()
     {
@@ -310,6 +314,9 @@ public sealed class Plugin : IDalamudPlugin
         // Misst am Zonenwechsel, ob ExitRange.Scale das Halb- oder das Vollmass ist -
         // siehe ZoneExitProbe. Braucht keinen Startbefehl: der Wechsel ist das Ereignis.
         _zoneExitProbe = new ZoneExitProbe(ClientState, ObjectTable, DataManager, Log);
+        // Beantwortet, ob die Absperrung am Tor zum Tiefen Wald gerade STEHT -
+        // siehe CollisionProbe. Aus dem laufenden Layout, nicht aus der .lgb.
+        _collisionProbe = new CollisionProbe(ObjectTable, ClientState, _tolk, Log);
 #endif
         // Echte Zonengrenzen statt Kartensymbol - nur als Zielgeber, siehe ZoneBorderService.
         _zoneBorders = new ZoneBorderService(DataManager, ClientState, Log);
@@ -332,7 +339,25 @@ public sealed class Plugin : IDalamudPlugin
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
-        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, _objectNames, Log);
+        // Gemessene Netzluecken und der Vorwaerts-Impuls in eine Zonengrenze.
+        // Beide werden VOR dem Auto-Lauf gebaut, weil er sie benutzt; beide sind
+        // dort optional, der Lauf laeuft ohne sie unveraendert weiter.
+        _bridges     = new MeshBridgeService(ClientState, Log);
+        _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, _bridges, _objectNames, Log);
+        // Erst jetzt: der Handler teilt sich die vnavmesh-Verbindung des Auto-Laufs,
+        // statt eine zweite zu oeffnen.
+        // Sagt, WAS im Weg steht, wenn ein Lauf sich festfaehrt - Wesen beim Namen,
+        // Kulisse als das, was sie ist. Der Unterschied entscheidet, was der
+        // Spieler tut: ein Spieler geht gleich weiter, eine Absperrung nie.
+        _obstacles   = new ObstacleService(ObjectTable, _objectNames, Log);
+        _autoWalk.Obstacles = _obstacles;
+        _transitions = new ZoneTransitionHandler(ObjectTable, ClientState, _autoWalk.Navmesh, _tolk, _obstacles, Log);
+        _autoWalk.Transitions = _transitions;
+        // Der Peil-Ton spielt nur, solange ein Lauf laeuft - dafuer muss der
+        // Navigationsdienst den Auto-Lauf fragen koennen. Auch das erst hier: er
+        // wird ein paar Zeilen weiter oben gebaut, lange bevor es einen Auto-Lauf
+        // gibt (siehe NavigationService.AutoWalk).
+        _navigation.AutoWalk = _autoWalk;
         // Static, so it needs its log handed over once. Without it the turn still
         // happens, only the follow-up measurement in FacingService.Tick stays mute.
         FacingService.Configure(Log);
@@ -615,6 +640,12 @@ public sealed class Plugin : IDalamudPlugin
             case "lift":
             case "liftprobe":
                 _liftProbe.Start();
+                break;
+            // Steht die Absperrung am Tor gerade? Liest das laufende Layout statt
+            // der .lgb, weil QST_-Layer nach Questfortschritt geschaltet werden.
+            case "coll":
+            case "collprobe":
+                _collisionProbe.Dump();
                 break;
 #endif
             case "cooldowns":
@@ -1555,7 +1586,7 @@ public sealed class Plugin : IDalamudPlugin
             }
             // No through-point here: the walk guide steers the PLAYER, who walks
             // through the line themselves once they are told they are there.
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _))
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _, out _))
             {
                 // Marker destinations (quest objectives, map waypoints) work in
                 // the walk guide too since V4.63 - manual walking was
@@ -1577,9 +1608,9 @@ public sealed class Plugin : IDalamudPlugin
             }
             // The v5.74 walk takes no height-is-guess hint - that belonged to
             // the reworked routing which has been rolled back.
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _))
+            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _, out var isTransition))
             {
-                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop); break;
+                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop, isTransition); break;
                 case MarkerResolve.None:     _autoWalk.Toggle();                          break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
@@ -1596,7 +1627,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             // Speak the route (compass segments) without walking - to the
             // selected marker destination, or to the current game target.
-            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _))
+            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _, out _))
             {
                 case MarkerResolve.Resolved: _navigation.PreviewRoute(pos, name); break;
                 case MarkerResolve.None:     _navigation.PreviewRouteToTarget();  break;
@@ -1755,6 +1786,9 @@ public sealed class Plugin : IDalamudPlugin
         _objectMemory.Update();
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
         _autoWalk.Update();
+        // Laeuft NACH dem Auto-Lauf und unabhaengig von ihm: der Impuls beginnt
+        // genau dann, wenn der Lauf zu Ende ist.
+        _transitions.Update();
         // Has to run OUTSIDE the walk: the turn happens at the moment the walk
         // ends, so checking whether it stuck belongs to the frames after that.
         FacingService.Tick(ObjectTable.LocalPlayer);
@@ -1889,8 +1923,11 @@ public sealed class Plugin : IDalamudPlugin
     /// after teleports); 2D map markers get their height from the navmesh.
     /// </summary>
     private MarkerResolve TryResolveMarkerDestination(out Vector3 position, out string name, out float stopRange,
-                                                      out bool heightIsGuess)
+                                                      out bool heightIsGuess, out bool isZoneTransition)
     {
+        // Vorbelegen: jeder Rueckgabepfad muss den Wert setzen, und nur der
+        // Uebergangs-Zweig weiter unten setzt ihn auf true.
+        isZoneTransition = false;
         position = default;
         name = string.Empty;
         stopRange = _config.AutoWalkPlaceStopRange;
@@ -2006,6 +2043,10 @@ public sealed class Plugin : IDalamudPlugin
             stopRange = place.IsZoneTransition
                 ? _config.AutoWalkTransitionStopRange
                 : _config.AutoWalkPlaceStopRange;
+            // Nur echte Zonengrenzen duerfen am Ende angeschoben werden - und nur,
+            // wenn wir wirklich die Grenze anzielen. Ohne borderPoint ist das Ziel
+            // das Kartensymbol, und das liegt nicht zwingend im Ausloeser.
+            isZoneTransition = place.IsZoneTransition && borderPoint != null;
             return MarkerResolve.Resolved;
         }
 
