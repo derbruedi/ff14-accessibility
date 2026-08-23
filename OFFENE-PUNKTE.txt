@@ -133,22 +133,28 @@ TEIL 2 - MESSUNGEN: DU LOEST AUS, ICH LESE DAS LOG
 TEIL 3 - ARBEITEN OHNE SPIELTEST
 ========================================================================
 
-26. ARBEITSSTAND IST NICHT COMMITTET
-    14 geaenderte Dateien plus vier neue Dienste (CollisionProbe,
-    MeshBridgeService, ObstacleService, ZoneTransitionHandler) und der
-    Ordner tools/navmesh-gaps liegen unversioniert im Verzeichnis.
-    Geht bei einem Rechnerproblem verloren.
+26. ARBEITSSTAND SICHERN - ERLEDIGT (2026-08-23)
+    Zwei Commits: die Navigations- und Ton-Arbeit, dann der Versions-Bump.
+    Die vier neuen Dienste sind mit drin.
+    NICHT mit eingecheckt: tools/navmesh-gaps - genau wie tools/zone-probe
+    und tools/charamake-dump, die auch nie im Repo waren. Wenn du willst,
+    dass die Werkzeuge mitversioniert werden, sag Bescheid.
 
-27. ZWEI COMMITS SIND NICHT GEPUSHT
-    main liegt zwei Commits vor origin/main. Der Push wurde am 22.08. von
-    der Berechtigungspruefung abgelehnt. Danach: Zweig nav-2026-08-22
-    loeschen.
+27. PUSH - ERLEDIGT (2026-08-23)
+    main ist auf GitHub, der gemergte Zweig nav-2026-08-22 ist geloescht.
+    Diesmal ging der Push ohne Beanstandung durch.
 
-28. RELEASE V5.90 STEHT AUS
-    Draussen ist v5.89. Alles seit dem 22.08. (Navigation, Bruecken,
-    Uebergaenge, Peil-Ton-Ruecknahme, Himmelsrichtungen, Vorzeichenfix)
-    haben die Spieler noch nicht. Der Peil-Ton-Fix ist die Antwort auf
-    eine Spielerbeschwerde - der sollte nicht lange liegen.
+28. RELEASE V5.90 - ERLEDIGT (2026-08-23)
+    https://github.com/derbruedi/ff14-accessibility/releases/tag/v5.90
+    Sechs Assets haengen dran. Verifiziert, dass ein Spieler wirklich die
+    neue Fassung bekommt: latest.zip von der latest-Weiterleitung meldet
+    AssemblyVersion 5.90.0.0, und repo.json auf main steht auf 5.90.0.0 -
+    ohne das zieht Dalamud kein Update.
+    Installer auf 1.2.1.0, weil die EXE eine andere Datei ist als die von
+    v5.89 (die toten Fremd-Plugin-Konstanten sind raus). Gegenprobe an der
+    neuen EXE: kein einziger Treffer auf "IINACT" oder "Browsingway".
+    Der Debug-Build liegt in devPlugins, du hast die Aenderungen also auch
+    im Spiel.
 
 29. SYSTEM.SPEECH.DLL LIEGT DOPPELT IM ZIP
     Einmal oben, einmal unter runtimes/win/lib/net9.0/, je 685 KB.
