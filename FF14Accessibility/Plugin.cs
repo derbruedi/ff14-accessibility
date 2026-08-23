@@ -139,8 +139,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.90";
-    private const string PluginVersionTag = "Himmelsrichtungen statt links und rechts, Peil-Ton beim Laufen, Wege an Netzluecken";
+    private const string PluginVersion    = "5.91";
+    private const string PluginVersionTag = "Ziele unter Bruecken und Vorspruengen werden erreicht statt ueberlaufen";
 
     public Plugin()
     {
