@@ -681,6 +681,21 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptSkillReady,       () => _config.AnnounceSkillReady,  v => _config.AnnounceSkillReady = v),
             Volume(AccessibilityStrings.OptSkillReadyVolume, () => _config.SkillReadyCueVolume, v => _config.SkillReadyCueVolume = v),
 
+            // HP\MP-TOENE: NACHGETRAGEN 2026-08-23. Sie liefen seit V5.28 ohne
+            // jede Schaltung im Menue - und sie sind lauter zu hoeren, als es
+            // aussieht: ein Ton bei JEDER 10-Prozent-Stufe beider Balken, auch
+            // ausserhalb des Kampfes (Regeneration), mit einer Stereoseite, die
+            // den FUELLSTAND abbildet und nicht eine Richtung. Bei einem Beruf mit
+            // viel Manabewegung ergibt das eine Tonfolge, die wie ein kaputter
+            // Navigationston klingt, aus wechselnden Richtungen kommt und sich von
+            // der Gehhilfe nicht abschalten laesst.
+            //
+            // Genau danach haben wir am 2026-08-23 einen halben Tag am falschen
+            // Ton gesucht. Ohne Schalter kann ein Spieler eine Tonquelle nicht
+            // einmal versuchsweise ausschliessen - deshalb steht sie jetzt hier.
+            Toggle(AccessibilityStrings.OptVitalCues,        () => _config.AnnounceVitalCues,   v => _config.AnnounceVitalCues = v),
+            Volume(AccessibilityStrings.OptVitalCueVolume,   () => _config.VitalCueVolume,      v => _config.VitalCueVolume = v),
+
             // LAUTSTAERKE UND KLANG DER FLAECHENWARNUNG SIND HIER, ihr SCHALTER
             // weiterhin nicht (Begruendung oben). Das ist kein Widerspruch: der
             // Schalter fehlt, weil der Ausloeser noch zu oft anschlaegt - und

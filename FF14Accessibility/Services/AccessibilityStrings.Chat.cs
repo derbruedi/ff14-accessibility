@@ -70,12 +70,23 @@ public static partial class AccessibilityStrings
     // Configuration und einen Dienst dahinter, der es liest - eine Beschriftung ohne
     // Funktion dahinter ist genau der Weg, auf dem eine tote Einstellung eine
     // Überarbeitung überlebt.
-    /// <summary>Schalter für den Peil-Ton auf das getrackte Ziel.</summary>
-    public static string OptTargetBeacon => IsGerman ? "Peil-Ton auf das Ziel" : "Target beacon";
+    // "beim Laufen" steht bewusst in der Beschriftung: der Schalter hiess bis
+    // v5.89 "Peil-Ton auf das Ziel", und genau so hat er sich auch verhalten -
+    // er lief bei jedem anvisierten Ziel, im Kampf also ununterbrochen. Seit
+    // 2026-08-23 laeuft er nur waehrend eines Laufs, und die Beschriftung muss
+    // das sagen, sonst sucht der Spieler den Fehler beim Ton statt beim Lauf.
+    /// <summary>Schalter für den Peil-Ton, der während eines Laufs die Richtung hält.</summary>
+    public static string OptTargetBeacon => IsGerman ? "Peil-Ton beim Laufen" : "Navigation beacon";
 
-    // Heisst weiterhin so, weil es die LAUTSTAERKE desselben Tons ist - der jetzt
-    // nicht mehr nur bei der Gehhilfe laeuft, sondern bei jedem gewaehlten Ziel.
-    public static string OptBeacon => IsGerman ? "Lautstärke Peil-Ton" : "Target beacon volume";
+    // Heisst weiterhin so, weil es die LAUTSTAERKE desselben Tons ist.
+    public static string OptBeacon => IsGerman ? "Lautstärke Peil-Ton" : "Navigation beacon volume";
+
+    /// <summary>Schalter für die HP- und MP-Töne (jede 10-Prozent-Stufe).</summary>
+    public static string OptVitalCues => IsGerman ? "Töne für Leben und Mana" : "Health and mana tones";
+
+    /// <summary>Lautstärke der HP- und MP-Töne.</summary>
+    public static string OptVitalCueVolume =>
+        IsGerman ? "Lautstärke Leben und Mana" : "Health and mana tone volume";
     public static string OptRouteCues => IsGerman ? "Wegpunkt- und Ankunftston" : "Waypoint and arrival cues";
 
     // AoE-Warnung: die Lautstärke gab es als Konfigurationswert schon lange, aber

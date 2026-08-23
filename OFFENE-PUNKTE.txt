@@ -1,0 +1,310 @@
+========================================================================
+FF14 ACCESSIBILITY PLUGIN - WAS IST NOCH OFFEN
+Stand: 2026-08-23
+Quellen: STATUS.md (alle 15.072 Zeilen durchgesehen), Memory-Notizen,
+         Git-Stand des Arbeitsverzeichnisses
+========================================================================
+
+SO IST DIE LISTE AUFGEBAUT
+
+Teil 1: Tests, die nur du im Spiel machen kannst - mit Anleitung.
+Teil 2: Messungen, wo du etwas ausloest und ich das Log auswerte.
+Teil 3: Arbeiten am Projekt, die keinen Spieltest brauchen.
+Teil 4: Gebaut, aber nie foermlich abgehakt (Altbestand).
+Teil 5: Gar nicht gebaut - offene Wuensche und Features.
+Teil 6: Bewusste Entscheidungen - kein Handlungsbedarf, nur zum Nachlesen.
+
+Die Nummern laufen durch. Du kannst also sagen "Punkt 14 ist erledigt"
+oder "Punkt 22 interessiert mich nicht", und ich streiche ihn.
+
+EHRLICHKEITS-HINWEIS: Punkte aus Teil 4 stehen in STATUS.md als
+"ungetestet", sind aber teils Wochen alt. Wahrscheinlich laeuft vieles
+davon laengst und wurde nur nie abgehakt. Ich habe sie trotzdem
+aufgenommen, weil "wahrscheinlich" kein Beweis ist - du kannst sie
+schnell durchgehen und abraeumen.
+
+
+========================================================================
+GRUNDREGEL, GILT IMMER (deine Ansage vom 2026-08-23)
+========================================================================
+
+BOSSMOD, CACTBOT UND IINACT KOMMEN NIE IN EIN RELEASE.
+Die laufen bei dir persoenlich, sie sind kein Bestandteil des Plugins.
+Nicht in den Installer, nicht in die Doku, nicht in ein Paket.
+Geprueft am 2026-08-23: im Repo steckt nichts davon. Im Installer lagen
+noch zwei unbenutzte Namenskonstanten ("IINACT", "Browsingway") herum -
+die sind entfernt, damit sie niemand spaeter scharfschaltet.
+
+
+========================================================================
+TEIL 1 - IN-GAME-TESTS, DIE NUR DU MACHEN KANNST
+========================================================================
+
+ERLEDIGT am 2026-08-23, von dir abgehakt: 1, 2, 5, 7, 9, 12, 13, 14,
+15, 16, 17, 18. Die Nummern bleiben vergeben, damit wir uns nicht
+verhaspeln. Offen sind nur noch die folgenden sechs.
+
+3. FEHLT "GERADEAUS"?
+   Seit die Sprache Himmelsrichtungen sagt, gibt es keine gesprochene
+   Bestaetigung "du laeufst richtig" mehr - das traegt jetzt allein der
+   Peil-Ton. Frage an dich: fuehlt sich das im Spiel als Luecke an?
+   Wenn ja, ist das die erste Stelle zum Nachbessern.
+
+4. HINDERNIS-ANSAGE "WAS STEHT MIR IM WEG"
+   Irgendwo gegen einen Spieler oder NPC laufen lassen (Auto-Lauf zu
+   einem Ziel, hinter dem jemand steht).
+   Kommt der Name des Hindernisses? Und an einer Stelle mit Kulisse:
+   kommt "ein festes Hindernis"?
+   Im Log muesste stehen: [Hindernis] Kulisse blockiert, ...
+
+6. ANKUNFT UND NACHFASSEN
+   Zu einem Ortsmarker laufen, an dem frueher "Ziel erreicht" kam und
+   die Interaktion danach scheiterte.
+   a) Kommt die Figur jetzt heran?
+   b) Steht sie nach der Ankunft zum Ziel gedreht - fuehrt geradeaus hin?
+   c) Wenn nicht: kommt statt "Ziel erreicht" die ehrliche Ansage mit
+      Restmetern und Richtung?
+   Log-Marker: [Nav] Auto-Lauf: Nachfassen 1/2
+
+8. BOSSMOD-PRESET "LAUFEN"   >>> NUR FUER DICH, NIE INS RELEASE <<<
+   Das Preset liegt in deinem BossMod-Ordner, nicht im Projekt. Es taucht
+   hier nur auf, damit der Test nicht vergessen wird.
+   a) Spiel starten. Im Log darf NICHT stehen: "Failed to parse preset
+      database" oder "Error while deserializing preset Laufen".
+   b) /vbm ar set laufen eingeben. Keine Meldung = geklappt.
+   c) Einen Gegner mit Flaechenzauber pullen: laeuft die Figur von selbst
+      aus der Flaeche heraus? Benutzt sie dabei KEINE Faehigkeit und
+      wechselt das Ziel NICHT?
+
+10. FLUCHTRICHTUNG BEI AOE
+    Einen Gegner mit Kegel- oder Linien-Zauber suchen (Leveldungeon oder
+    Freibrief-Gegner reichen), in die Flaeche stellen.
+    Kommt die Ansage, und fuehrt der Ton in eine Richtung, die WIRKLICH
+    heraus fuehrt?
+    Log: [Flucht] Sicherer Punkt X Grad, Y m
+
+11. "SCHON GEZAEHMT" BEI FANG-FREIBRIEFEN
+    Fang-Freibrief laufen lassen, einen Gegner zaehmen, dann im Browser
+    durch die Freibrief-Gegner blaettern.
+    Erwartet: der gezaehmte kommt zuletzt und traegt ", schon gezaehmt".
+
+
+========================================================================
+TEIL 2 - MESSUNGEN: DU LOEST AUS, ICH LESE DAS LOG
+========================================================================
+
+19. KAMERA-VERDACHT BEIM PEIL-TON
+    Bei MoveMode 0 bewegt sich die Figur kamerarelativ, wir rechnen aber
+    gegen die Figur. In allen bisherigen Messungen stand "kameraAb" auf
+    0,0 - der Fall ist also nie eingetreten. Kein bekannter Fehler, aber
+    auch nicht ausgeschlossen. Sonde steht ([NavDirProbe], Marker
+    ABWEICHUNG). Nur pruefen, wenn dir Richtungen wieder komisch
+    vorkommen.
+
+20. ZIELANSAGE FOLGT DEM SOFT-TARGET
+    Die Zielwechsel-ANSAGE liest auch das Soft-Target (das Ziel, das
+    beim Vorbeilaufen von NPC zu NPC wandert), der TON bewusst nicht.
+    Ob daraus im Kampf zusaetzliche "Ziel: ..."-Ansagen entstehen, ist
+    NICHT gemessen. Sonde muesste ich erst bauen.
+
+21. KOLLISIONS-SONDE AN DER HAENGESTELLE
+    Falls der Auto-Lauf wieder irgendwo haengenbleibt: an die Stelle
+    laufen, dann /acc coll eingeben. Ich lese aus dem Log, ob dort eine
+    echte Wand steht oder nur das Wegenetz fehlt.
+
+22. FANG-SCHWELLE "JETZT BESAENFTIGEN"
+    Die eigentliche Hilfe beim Fang-Freibrief waere eine Ansage im
+    richtigen Moment. Dafuer fehlt die gemessene HP-Schwelle - ohne die
+    waere jede Ansage geraten.
+
+23. KAMPF-NACHLESE: MESSUNG 2 OFFEN
+    Der Chat-Weg fuer das Kampflog traegt, eigen/fremd kommt aus
+    SourceKind/TargetKind. Eine zweite Messung steht noch aus, gebaut ist
+    dazu noch nichts.
+
+24. EINSTELLUNGEN DER INHALTSSUCHE: ZWEI PUNKTE
+    Das Fenster liest sauber, zwei Detailmessungen sind noch offen.
+
+25. ANGEL-SONDE /acc fishprobe
+    Nie ausgeloest worden.
+
+
+========================================================================
+TEIL 3 - ARBEITEN OHNE SPIELTEST
+========================================================================
+
+26. ARBEITSSTAND IST NICHT COMMITTET
+    14 geaenderte Dateien plus vier neue Dienste (CollisionProbe,
+    MeshBridgeService, ObstacleService, ZoneTransitionHandler) und der
+    Ordner tools/navmesh-gaps liegen unversioniert im Verzeichnis.
+    Geht bei einem Rechnerproblem verloren.
+
+27. ZWEI COMMITS SIND NICHT GEPUSHT
+    main liegt zwei Commits vor origin/main. Der Push wurde am 22.08. von
+    der Berechtigungspruefung abgelehnt. Danach: Zweig nav-2026-08-22
+    loeschen.
+
+28. RELEASE V5.90 STEHT AUS
+    Draussen ist v5.89. Alles seit dem 22.08. (Navigation, Bruecken,
+    Uebergaenge, Peil-Ton-Ruecknahme, Himmelsrichtungen, Vorzeichenfix)
+    haben die Spieler noch nicht. Der Peil-Ton-Fix ist die Antwort auf
+    eine Spielerbeschwerde - der sollte nicht lange liegen.
+
+29. SYSTEM.SPEECH.DLL LIEGT DOPPELT IM ZIP
+    Einmal oben, einmal unter runtimes/win/lib/net9.0/, je 685 KB.
+    Daher der Sprung von 974 KB auf 1,52 MB im Download.
+
+30. SECHS KAPUTTE GEDANKENSTRICHE IN PLUGIN.CS
+    Zeilen 534, 738, 824, 1745, 1756, 1827 - Reste frueherer
+    PowerShell-Umschreibungen. Nur Kommentare, kein Codepfad betroffen.
+
+31. DEBUG-SONDEN AUFRAEUMEN
+    Aktuell im Code: [UiProbe], [Probe] _ToDoList, [GatherProbe],
+    [NavDirProbe], [ShopProbe], [BeaconProbe], [CollProbe], [ExitProbe].
+    Nach der Sonden-Konvention loeschen, sobald die zugehoerigen Tests
+    durch sind - sonst wird das Log unlesbar.
+
+32. VNAVMESH-SAATPUNKTE FEHLEN
+    Im Log steht durchgehend eine FileNotFoundException auf
+    seeds-local.json. Ohne Saatpunkte filtert die Erreichbarkeitspruefung
+    in Zone 132 (Neu-Gridania) gar nicht - das ist der Grund, warum die
+    Grenz-Kandidaten-Wahl dort schiefgehen kann (siehe Punkt 5).
+
+33. LIZENZ: ZUSTIMMUNG DER ZWEI BEITRAGENDEN
+    Sieben bereits gemergte PRs von bladestorm360 und blindndangerous
+    kamen in ein Repo ohne Lizenzdatei. Kommentare unter PR #7 sind
+    abgeschickt, die Rueckmeldung steht aus.
+
+34. IINACT/CACTBOT IN DEN INSTALLER - GESTRICHEN (2026-08-23)
+    Der fruehere Wunsch "beim Updaten automatisch mit" ist zurueckgezogen:
+    das laeuft nur bei dir persoenlich. Siehe die Grundregel ganz oben.
+    Wird nicht gebaut. Punkt erledigt durch Entscheidung, nicht durch
+    Arbeit.
+
+35. STOERT DIE ZWEITE STIMME (SAPI) NEBEN NVDA?
+    Beim Chudo-Yudo-Kampf gab es keine Beschwerde, aber auch keine
+    gezielte Beobachtung. Nur eine Frage an dich, kein Test.
+
+36. DOCS/KNOWN-ISSUES.MD IST NOCH DIE VORLAGE
+    Steht voll mit Unity/MelonLoader-Text, der mit FF14 nichts zu tun
+    hat. Entweder mit echten FF14-Fallen fuellen oder loeschen.
+
+
+========================================================================
+TEIL 4 - GEBAUT, ABER NIE FOERMLICH ABGEHAKT
+========================================================================
+
+Das sind Features, die laut Notiz "gebaut, ungetestet" sind. Vieles
+davon benutzt du vermutlich taeglich. Bitte einmal durchgehen und mir
+sagen, was laeuft - dann faellt es aus der Liste.
+
+37. Sammel-Fenster (Erz abbauen / Holz faellen), V5.32
+38. Gil-Depot beim Gehilfen (anvertrauen/entnehmen), V5.44
+39. SP-Ansage auf Strg+Ende und Himmelsrichtung beim Drehen, V5.43
+40. Charakterkonfiguration (Reiter-Namen + Zustand der Einstellungen), V5.54
+41. Triple Triad: Brett (Strg+Umschalt+F4) und eigene Hand
+    (Strg+Umschalt+F5) - dazu eine offene Cursor-Frage
+42. Objekt-Browser: Numpad3 laeuft auch zu Objekten, die das Spiel nicht
+    anvisieren kann, v5.66
+43. Quest-Kategorien im Objekt-Browser (ueber Level-Sheet und
+    Namensschild-Symbol), v5.68
+44. Ausruestungswerte in der Ansage (Gegenstandsstufe, Verteidigung,
+    Attribute), v5.70
+45. Haendler-Kategorie im Objekt-Browser, v5.72
+46. FATE-Kategorie im Objekt-Browser
+47. Beute auswuerfeln (Bedarf/Gier), Teil 1 - braucht eine Gruppe
+48. Auf- und Absteigen (Reittier)
+49. Begleiter-Verzeichnis
+50. Quest-Gegenstaende im Kampf (Duty Action)
+51. Ausruestungsset-Marke "nicht verkaufen"
+52. Unbekannte Objekte im Wohngebiet
+53. Tauschfenster: Preis und Beschreibung
+54. Numpad5: zur Wegrichtung drehen
+
+
+========================================================================
+TEIL 5 - GAR NICHT GEBAUT: OFFENE WUENSCHE
+========================================================================
+
+55. HINDERNIS-ANSAGE BEIM MANUELLEN LAUFEN
+    Funktioniert bisher nur beim Auto-Lauf. Beim manuellen Laufen fehlt
+    das Signal "der Spieler will gerade laufen" - ohne das ist Stillstand
+    nicht von Herumstehen zu unterscheiden.
+
+56. SAMMELPUNKTE-NAVIGATION (Erz/Holz auf Koordinate finden)
+    Recherche ist fertig, gebaut ist nichts.
+
+57. NATIVES FOLGEN PRUEFEN
+    Im Code steht die Behauptung "FFXIV hat kein aufrufbares natives
+    Folgen" - das wurde nie geprueft. Gaebe es einen /follow-Textbefehl,
+    koennte das Spiel selbst die Figur bewegen statt wir. Pruefung waere
+    ein Offline-Dump des TextCommand-Sheets.
+
+58. TREPPEN- UND EINGANGS-ERKENNUNG
+    Dein Wunsch vom 01.08., unrecherchiert.
+
+59. CHARAKTERERSTELLUNG VOLLSTAENDIG ZUGAENGLICH
+    Steht seit V4.x als "naechster grosser Brocken" in der Liste.
+
+60. AUKTIONSHAUS/MARKTPLATZ LESBAR MACHEN
+
+61. ZIELVERFOLGUNG PER NAME UEBER CHAT-BEFEHL
+
+62. CONTROLLER-BEDIENUNG
+    Machbarkeit geprueft (52 Mod-Tasten gegen 16 Knoepfe), nichts gebaut.
+    Ob sich einzelne Knoepfe schlucken lassen, ist ungeklaert.
+
+63. EMOTE-FENSTER: RASTER- UND TAB-FRAGE
+    Teilweise lesbar, der Rest ist offen.
+
+64. FARBSCHEMA-REITER: ZWEI FEHLER
+    Im Reiter Farbschema stehen zwei Sachen, die noch nicht gebaut sind.
+
+65. ENGLISCHE AUSGABE, TEIL 2
+    Teil 1 ist komplett (v5.59). Offen sind die Client-Match-Strings -
+    also die Stellen, wo wir gegen deutschen Spieltext vergleichen.
+
+66. OESTLICHES LA NOSCEA: NETZ ZERFAELLT
+    Durchgeprueft sind Cache, Neubau, neue vnavmesh-Fassung und alle 51
+    Forks. Es bleibt: eigene Bruecke bauen oder fliegen. Fliegen loest es
+    von selbst, haengt aber an der 2.0-Story (Stufe 50) - du bist 30.
+
+
+========================================================================
+TEIL 6 - BEWUSSTE ENTSCHEIDUNGEN, KEIN HANDLUNGSBEDARF
+========================================================================
+
+Damit diese Punkte nicht immer wieder als "Fehler" aufpoppen:
+
+- ZIELWECHSEL BEIM BLAETTERN im Kampf (Bild-auf/-ab visiert an): belegt,
+  aber auf deinen Wunsch bewusst so gelassen (23.08.).
+- PEIL-TON IST NIE STILL, sondern mittig und ruhig, wenn es stimmt
+  (deine Entscheidung 23.08., das dritte Mal, dass dieses Design
+  gedreht wurde). Und er laeuft NUR beim Laufen.
+- SPRACHE SAGT HIMMELSRICHTUNGEN, nicht links/rechts. Grund ist nicht
+  Geschmack: eine Himmelsrichtung kann nicht auf die falsche Seite
+  zeigen, weil sie die Blickrichtung gar nicht anfasst.
+- QUEST-ZIELE: Stopp am Kreisrand, Freibrief-Ziele laufen bis zur Mitte.
+- EIGENE HP ALS ZAHL, MP/Ziel-HP/SP in Prozent (v5.84).
+- DAUERTON AUF LANGEN WEGEN: falls das ermuedet, ist der Hebel NICHT
+  die Stille zurueckzuholen, sondern Takt (heute 0,95 s) und Lautstaerke.
+
+
+========================================================================
+MEIN VORSCHLAG FUER DIE REIHENFOLGE
+========================================================================
+
+1. Punkte 26 bis 28: Arbeitsstand sichern, pushen, v5.90 releasen.
+   Zwoelf Tests hast du heute abgehakt - das steckt alles noch im
+   ungesicherten Arbeitsstand. Der Peil-Ton-Fix beantwortet zusaetzlich
+   eine Spielerbeschwerde und liegt seit heute ungenutzt herum.
+2. Punkte 4 und 6: die letzten zwei Navigations-Tests vom 22.08. - die
+   Arbeit ist gebaut und wartet nur auf einen Durchlauf.
+3. Teil 4 (37 bis 54) in einer Sitzung durchklicken und abraeumen.
+   Da faellt vermutlich der groesste Teil der Liste weg.
+4. Punkt 31: Sonden loeschen, sobald die Tests durch sind.
+5. Punkte 3, 10, 11 nebenbei, wenn die Gelegenheit im Spiel kommt.
+6. Danach Teil 5 nach deiner Wichtigkeit sortieren.
+
+Punkt 8 (BossMod) steht ausserhalb dieser Reihenfolge - der hat mit dem
+Release nichts zu tun.

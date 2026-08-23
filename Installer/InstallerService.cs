@@ -28,8 +28,6 @@ public sealed partial class InstallerService
 {
     private const string AccessibilityInternalName = "FF14Accessibility";
     private const string VnavmeshInternalName = "vnavmesh";
-    private const string IinactInternalName = "IINACT";
-    private const string BrowsingwayInternalName = "Browsingway";
 
     private const string AccessibilityRepoOwner = "derbruedi";
     private const string AccessibilityRepoName = "ff14-accessibility";

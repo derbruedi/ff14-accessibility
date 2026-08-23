@@ -137,6 +137,35 @@ internal static class FacingService
                   $"dirH={isDirH:F3} (soll {_wantedDirH:F3}, ab {Normalise(isDirH - _wantedDirH):F3})");
     }
 
+    /// <summary>
+    /// The direction the camera LOOKS, in the same convention as
+    /// <c>IGameObject.Rotation</c> - or null when there is no camera to ask.
+    ///
+    /// <para>
+    /// This is <c>DirH + pi</c>, not <c>DirH</c>: the raw field points from the
+    /// character TO the camera, which sits behind them (measured 2026-08-22,
+    /// fourteen samples, see the class docs). Turning it round here means no
+    /// caller has to remember the offset - forgetting it once aims things exactly
+    /// backwards, which is the mistake this file already made once.
+    /// </para>
+    ///
+    /// <para>
+    /// WHY ANYONE WOULD WANT THIS instead of the character rotation: with
+    /// <c>UiControl.MoveMode</c> 0 - the game's standard, and what this player has
+    /// - walking forward goes where the CAMERA looks. A "left" or "right" measured
+    /// against the character is then only correct while the camera happens to sit
+    /// squarely behind them.
+    /// </para>
+    /// </summary>
+    public static unsafe float? CameraFacing()
+    {
+        var camera     = CameraManager.Instance();
+        var gameCamera = camera != null ? camera->Camera : null;
+        if (gameCamera == null) return null;
+
+        return Normalise(gameCamera->DirH + (float)Math.PI);
+    }
+
     /// <summary>Folds an angle into [-pi, pi] so differences stay comparable.</summary>
     private static float Normalise(float angle)
     {

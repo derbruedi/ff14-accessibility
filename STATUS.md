@@ -3,7 +3,1050 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-22, "DIE KAMERA SCHAUTE GENAU VERKEHRT HERUM")
+## STAND JETZT (2026-08-23, "RELEASE v5.90 - ZWOELF TESTS BESTAETIGT, NAVIGATION IST DRAUSSEN")
+
+>>> DER USER HAT DIE OFFENE-PUNKTE-LISTE DURCHGEARBEITET. Neu angelegt:
+    `OFFENE-PUNKTE.txt` in der Repo-Wurzel - alle offenen Punkte aus diesem
+    Dokument, den Memory-Notizen und dem Git-Stand, in sechs Teilen und
+    durchnummeriert. Er hat Teil 1 mit `#` abgehakt.
+
+    ALS ERLEDIGT BESTAETIGT (2026-08-23): Peil-Ton nur beim Laufen (das war die
+    Spielerbeschwerde), HP/MP-Ton-Gegentest, Zonenuebergang mit
+    Grenz-Kandidaten, Drehung im Spielgefuehl, AoE-Warnton-Auswahl, Tiefes
+    Gewoelbe aus PR 6, Chatlog-Einstellungen, Systemkonfiguration Grafik,
+    Chat-Kanaele im Optionsmenue, Jagdziel-Kategorie, Aufgabenliste auf
+    Strg+Umschalt+F7, Freibrief-Gegner in der Kategorie.
+
+    NOCH OFFEN in Teil 1: fehlt "geradeaus" in der Sprache (3), Hindernis-Ansage
+    (4), Ankunft und Nachfassen (6), BossMod-Preset (8, privat), Fluchtrichtung
+    bei AoE (10), "schon gezaehmt" (11).
+
+>>> NEUE GRUNDREGEL DES USERS, woertlich: *"das bossmod und das cact ding
+    niemals mit ins release pushen das ist erstmal nur fuer mich"*. BossMod,
+    cactbot und IINACT sind seine privaten Werkzeuge und gehoeren nicht ins
+    Paket, nicht in den Installer, nicht in die Doku. Der frueher geaeusserte
+    Wunsch "IINACT beim Updaten automatisch mit" ist damit ZURUECKGEZOGEN.
+
+    GEPRUEFT UND BEREINIGT: im Repo steckte nichts davon - bis auf zwei
+    unbenutzte Konstanten in `Installer/InstallerService.cs`
+    (`IinactInternalName`, `BrowsingwayInternalName`). Sie wurden nie
+    aufgerufen, sahen aber aus wie eine halbfertige Vorbereitung. Entfernt.
+    Gegenprobe an der neu gebauten EXE: `strings` findet null Treffer auf
+    "IINACT" oder "Browsingway".
+
+>>> RELEASE v5.90. Versionen synchron gesetzt: csproj 5.90.0(.0), Plugin.cs
+    "5.90", repo.json 5.90.0.0, im gebauten Manifest steht AssemblyVersion
+    5.90.0.0. Drin ist alles seit v5.89, also die komplette Navigationsarbeit
+    vom 22.08. (Bruecken ueber Netzluecken, Zonenuebergaenge, Hindernis-Ansage,
+    Ankunft/Nachfassen, Kamera-Versatz) und der 23.08. (Vorzeichenfix,
+    Himmelsrichtungen statt links/rechts, Peil-Ton nur beim Laufen und nie
+    still, Lautstaerke am Peilpunkt, HP/MP-Ton-Schalter im Menue).
+
+    INSTALLER auf 1.2.1.0 gehoben, obwohl die Aenderung nur die zwei toten
+    Konstanten betrifft. BEGRUENDUNG, weil die Regel eigentlich "unveraendert =
+    nicht bumpen" lautet: die EXE ist jetzt eine ANDERE Datei als die von
+    v5.89. Zwei verschiedene Binaries unter derselben Versionsnummer sind genau
+    die Drift, die uns beim 5.51-Fall Nutzer auf einer alten Fassung
+    festhaengen liess. Lieber ein Update-Angebot zu viel als eine
+    Versionsnummer, die nicht mehr eindeutig ist.
+
+>>> NICHT ANGEFASST, BEWUSST: System.Speech.dll liegt weiter DOPPELT im ZIP
+    (oben und unter runtimes/win/lib/net9.0/, je 685 KB, daher 1,53 MB
+    Gesamtgroesse). Der Fix waere ein Ausschluss im csproj - das aendert aber
+    den Ladepfad einer DLL, an der die SAPI-Warnstimme haengt, und das gehoert
+    nicht ungetestet in einen Release. Bleibt Punkt 29 in OFFENE-PUNKTE.txt.
+
+## FRUEHERER STAND (2026-08-23, "PEIL-TON-REGRESSION IN V5.89 GEFUNDEN UND ZURUECKGENOMMEN")
+
+>>> DIE BESCHWERDE AUS DER SPIELERSCHAFT (2026-08-23), woertlich:
+    *"this latest update broke the game ... when going fighting the target is
+    changing if I press any key during the fight, while the beeping keeps going
+    on and on. the way it was before if you wanted to trigger the beacon was
+    fine, now its all on every time and you hear it over everything."*
+
+>>> BEFUND 1, DAUERPIEPEN - BELEGT, WAR EINE ECHTE REGRESSION IN V5.89.
+    Zwei Dinge griffen ineinander:
+      - `Configuration.TargetBeaconEnabled = true`, also Standard AN.
+      - `NavigationService` kannte KEINE Kampfabfrage (Suche nach `InCombat`
+        und `ConditionFlag` in der Datei: null Treffer).
+    `UpdateTargetBeacon` spielte, sobald irgendetwas anvisiert war - und im
+    Kampf ist immer etwas anvisiert. Eingefuehrt in 9ec2f24 (2026-08-19), und
+    das liegt VOR dem v5.89-Release, war also bei allen Spielern draussen.
+
+>>> DER VORHER-ZUSTAND IST NACHGESEHEN, NICHT ERINNERT. In `9ec2f24^` steht
+    `if (_walkGuideActive) WalkGuideFrame(player);` OHNE else-Zweig - vor dem
+    19.08. speiste ausschliesslich die Gehhilfe den Ton. Auch der Auto-Lauf
+    hatte damals keinen.
+
+>>> ENTSCHEIDUNG DES USERS (2026-08-23): Ton nur noch waehrend eines Laufs.
+    Damit ist die eigene Vorgabe vom 2026-08-19 ("die toene fuer getrackte
+    sachen sollen auch kommen wenn die gehhilfe aus ist aber dann nur wenn was
+    anvisiert ist") ausdruecklich GEKIPPT. Wer das spaeter liest: es war kein
+    Versehen, es war eine bewusste Ruecknahme nach Spielerrueckmeldung.
+
+>>> GEBAUT (Debug, 0 Fehler / 0 Warnungen, deployt nach devPlugins):
+      - `AutoWalkService.IsWalking` - `IsActive || IsFollowing`, eine Auskunft
+        fuer "bewegen sich die Fuesse".
+      - `NavigationService.AutoWalk` - Property, nachtraeglich gesetzt, weil
+        Plugin.cs den Navigationsdienst frueher baut (wie `DeepDungeon`).
+      - Gatter in `UpdateTargetBeacon`: `if (AutoWalk is not { IsWalking: true })`
+        -> `_beacon.Idle()`. Idle statt Stop, damit der naechste Lauf ohne
+        Geraete-Aussetzer einsetzt.
+      - Beschriftung `OptTargetBeacon`: "Peil-Ton auf das Ziel" -> "Peil-Ton
+        beim Laufen" / "Navigation beacon". Sonst sucht der Spieler den Fehler
+        beim Ton statt beim Lauf.
+    NICHT angefasst: der Fluchtton bei AoE (`TryDriveEscapeBeacon`) laeuft
+    weiter unabhaengig vom Schalter - das war schon vorher so und ist gewollt.
+
+>>> BEFUND 2, ZIELWECHSEL BEI TASTENDRUCK - BELEGT, ABER AUF WUNSCH DES USERS
+    BEWUSST NICHT GEAENDERT. `CycleObject` visiert beim Blaettern das Spielziel
+    an (`NavigationService.cs:862`, `_targetManager.Target = obj`), und das
+    haengt auf Bild-ab/Bild-auf (`Configuration.cs:28-29`). Wer sich im Kampf
+    mit dem Objekt-Browser orientiert, verliert dabei sein Kampfziel. Der User
+    hat am 2026-08-23 entschieden: so lassen.
+
+>>> BEFUND 3, UNBESTAETIGT - NICHT ANFASSEN OHNE MESSUNG. Die Zielwechsel-ANSAGE
+    liest `_targetManager.Target ?? _targetManager.SoftTarget`
+    (`NavigationService.cs:256`), folgt also auch dem Soft-Target. Der TON tut
+    das bewusst nicht (`Zeile 399`: *"das wandert beim Vorbeilaufen von NPC zu
+    NPC"*). Ob daraus im Kampf zusaetzliche "Ziel: ..."-Ansagen entstehen, ist
+    NICHT gemessen. Vor einer Aenderung gehoert da eine Debug-Sonde hin.
+
+>>> ZU TESTEN, in dieser Reihenfolge:
+      1. Im Kampf ein Ziel anvisieren, ohne zu laufen. Der Ton muss SCHWEIGEN.
+      2. Gehhilfe einschalten. Ton muss kommen wie frueher.
+      3. Auto-Lauf (Numpad3) auf ein anvisiertes Ziel. Ton muss kommen und am
+         Ende des Laufs aufhoeren.
+      4. Optionsmenue: der Schalter heisst jetzt "Peil-Ton beim Laufen".
+
+>>> BEFUND 4 IST GELOEST - ES WAR EIN VORZEICHENDREHER, NICHT DIE KAMERA.
+    Der User hat es in-game gemessen (2026-08-23): *"wenn ich nach links laufe
+    wird weniger und nach rechts mehr, links und rechts ist vertauscht"*. Das
+    Wort "vertauscht" war der Hinweis: ein Kamera-Versatz waere WECHSELHAFT,
+    ein Vorzeichenfehler ist KONSTANT.
+
+    DIE URSACHE, hergeleitet aus zwei Angaben, die beide schon im Projekt
+    standen - es brauchte kein neues Log:
+      - Blickvektor = (sin(rot), cos(rot)), also blickt rot=0 nach +Z.
+      - Norden ist -Z, Osten +X (`RouteService.SectorOf` = atan2(dx, -dz),
+        0 = Norden; dieselbe Rechnung speist die Himmelsrichtungsansagen).
+      - Zusammen: rot=0 blickt nach SUEDEN, denn
+        HeadingSector(0) = SectorOf(0, 1) = atan2(0, -1) = 180 Grad.
+      - Ein Ziel im Osten (dx>0) ergab mit `atan2 - rot` ein PLUS, also
+        "rechts". Wer nach Sueden blickt, hat Osten aber LINKS.
+
+    DAS ERKLAERT AUCH, WARUM SPRACHE UND TON GEMEINSAM FALSCH WAREN: es war nie
+    ein Doppelfehler. Der Peil-Ton nimmt `sin(relAngle)` als Stereoseite, haengt
+    also an derselben Zahl wie das gesprochene Wort.
+
+    WIE ES SO LANGE UEBERLEBT HAT - der Punkt, der wehtut: im Code stand
+    "Vorzeichen per Beacon-Hoertest bestaetigt (2026-07-10)", waehrend in
+    `docs/game-api.md` an derselben Sache "OFFEN: Vorzeichen (positiv = rechts
+    oder links?)" stand. Der Hoertest kann die Seite nur bestaetigt haben, wenn
+    dabei nach NORDEN geblickt wurde - nur dann fallen beide Vorzeichen
+    zusammen. Ein "bestaetigt" im Code, dem im Referenzdokument ein "offen"
+    gegenuebersteht, ist kein Beweis, sondern ein Widerspruch.
+
+    GEAENDERT (Debug + Release, je 0 Fehler / 0 Warnungen):
+      - `NavigationService.RelativeAngle`: jetzt `rot - atan2(dx, dz)`.
+      - `CombatService.RelBearingDeg`: dieselbe Kopie, derselbe Dreher, mit.
+      - `docs/game-api.md`: Vorzeichen von "OFFEN" auf geklaert, mit Herleitung
+        und einer Warnung an kuenftige Leser.
+    NICHT geaendert, bewusst: die AoE-Geometrie (`EscapeRouteService` rechnet
+    mit `MathF.Abs`, Vorzeichen egal - falsch war nur, WOHIN wir geschickt
+    haben, nicht OB gewarnt wurde) und `FacingService`/`FaceGuideDirection`
+    (dort ist `atan2(dx, dz)` die zu setzende Ziel-Rotation, kein
+    Relativwinkel - eine Umkehr waere dort ein neuer Fehler).
+
+    GEGENGERECHNET an fuenf Lagen: Blick Sued/Ziel Ost -> links, Blick
+    Sued/Ziel West -> rechts, Ziel voraus -> geradeaus, Ziel hinten -> hinten,
+    Blick Ost/Ziel Sued -> rechts.
+
+    ZU TESTEN: sagt der Mod jetzt die Seite, auf der das Ziel wirklich liegt -
+    und zieht der Peil-Ton auf dieselbe Seite? Gegenprobe: einmal nach Norden
+    und einmal nach Sueden blickend, denn nach Norden war es auch vorher
+    richtig.
+
+>>> BEFUND 5, DIE FOLGE-ENTSCHEIDUNG: ALLES GESPROCHENE LAEUFT JETZT AUF
+    HIMMELSRICHTUNG. Vorschlag und Entscheidung des Users 2026-08-23, direkt
+    nach dem Vorzeichenfund.
+
+    DER GRUND IST NICHT GESCHMACK, SONDERN DIE FEHLERKLASSE. `CompassAdjective`
+    faellt allein aus der Positionsdifferenz und fasst `player.Rotation` gar
+    nicht an. Eine Himmelsrichtung KANN darum nicht auf die falsche Seite
+    zeigen - weder durch einen Vorzeichendreher noch durch eine verdrehte
+    Kamera. Der Fehler von heute war nur moeglich, WEIL links/rechts an der
+    Blickrichtung haengt.
+
+    ARBEITSTEILUNG SEITHER, das ist der Kern: die SPRACHE sagt absolut, WO
+    etwas liegt ("30 Meter, oestlich"), der PEIL-TON fuehrt relativ die
+    Ausrichtung (Stereo, verstummt beim Einrasten). Die beiden ergaenzen sich,
+    statt dasselbe doppelt zu sagen. Der Ton MUSS relativ bleiben - Stereo ist
+    von Natur aus links/rechts.
+
+    GEAENDERT (Debug + Release, je 0 Fehler / 0 Warnungen):
+      - `RouteService.CompassAdjective(from, to)` neu - Adjektivform
+        ("oestlich") neben dem vorhandenen `CompassWord` ("Osten").
+      - `NavigationService.CalculateDirection` liefert jetzt den Kompass. Die
+        SIGNATUR blieb gleich, darum sind alle 17 Aufrufstellen (Objekt-
+        Browser, Questziele, Zielansage, FATEs, Haendler, Jagd, Dungeontueren,
+        Sammel- und Angelpunkte) auf einen Schlag mit umgestellt.
+      - Gehhilfe: laufende Ansage und Wegpunkt-Ansage auf Kompass.
+      - Reroute-Vergleich ("hat sich die Richtung geaendert?") auf Kompass -
+        dort sogar der bessere Massstab, weil die relative Angabe schon
+        wechselte, wenn der Spieler sich nur drehte.
+      - Fluchtansage im Kampf auf Kompass.
+
+    GRAMMATIKFALLE, gefunden und behoben: `EscapeDirection` lautet "Raus nach
+    {richtung}" und verlangt das SUBSTANTIV - "Raus nach oestlich" waere kein
+    Deutsch. Dort steht `CompassWord`, ueberall sonst (Richtung hinter einem
+    Komma: "30 Meter, oestlich") das Adjektiv. `RouteViaHop` und `NewRoute`
+    wurden gegengeprueft, beide tragen das Adjektiv.
+
+    WAS VERLOREN GEHT, bewusst: "geradeaus" gibt es im Kompass nicht, also
+    fehlt die gesprochene Bestaetigung "du laeufst richtig". Die traegt jetzt
+    allein der Peil-Ton, der genau dann verstummt. WENN SICH DAS IM SPIEL ALS
+    LUECKE ANFUEHLT, ist das die erste Stelle zum Nachbessern.
+
+    `AccessibilityStrings.RelativeDirection` bleibt bestehen, hat aber keinen
+    Sprech-Aufrufer mehr: sie speist nur noch die Sonde (die die TON-Seite
+    misst) und ist der Rueckweg, falls der Kompass sich im Spiel als schlechter
+    erweist. Im Code ist genau das vermerkt, damit sie nicht als tote
+    Beschriftung durchrutscht.
+
+    ZU TESTEN: klingen die Ansagen brauchbar ("Ziel: Wolf, 30 Meter, oestlich,
+    80 Prozent Leben.")? Und traegt der Peil-Ton die Feinausrichtung allein,
+    jetzt wo "geradeaus" nicht mehr gesagt wird?
+
+>>> BEFUND 9, FOLGEFEHLER AUS BEFUND 8 - SELBST EINGEBAUT, GLEICH BEHOBEN.
+    Der User: *"wenn ich mich mit Numpad5 automatisch ausrichte geht der Ton
+    nicht mit"*. Ursache: als der Ton am 2026-08-23 auf das Segment-Ende
+    umgestellt wurde, blieb `CurrentGuidePoint` - die Quelle der Ausricht-Taste -
+    auf dem naechsten ROHEN Wegpunkt stehen. Numpad5 drehte den Spieler also
+    woandershin, als der Ton zeigte; dass der Ton danach nicht still wurde, war
+    voellig richtig, denn der Spieler stand nach der Drehung tatsaechlich falsch.
+    Angeglichen: `CurrentGuidePoint` UND die beiden Reroute-Ansagen liefern jetzt
+    ebenfalls das Segment-Ende. Die Cursor-Logik (Wegpunkt erreicht, Abweichung,
+    Ecken abschneiden) bleibt bewusst auf den Rohpunkten - die muss die Route
+    Punkt fuer Punkt abgehen.
+
+    MERKSATZ, teurer als er aussieht: Ton, gesprochene Richtung und
+    Ausricht-Taste beantworten dieselbe Frage ("wo geht es lang") und muessen aus
+    DERSELBEN Quelle kommen. Drei Antworten auf eine Frage sind fuer einen
+    blinden Spieler nicht auseinanderzuhalten - er hoert nur, dass etwas nicht
+    stimmt, und kann nicht sagen, welche der drei luegt.
+
+>>> BEFUND 10, LAUTSTAERKE HING AM FALSCHEN PUNKT (Vorschlag des Users, gebaut).
+    Log 15:27: `dist=10,0 zielDist=701,0` - der Peilpunkt lag 10 m entfernt, die
+    Lautstaerke rechnete mit 701 m und landete damit auf der Untergrenze von
+    15 %. Auf langen Routen war der Ton praktisch stumm. Jetzt bekommt
+    `_beacon.Update` `guideDist` statt `distance`: Richtung UND Lautstaerke
+    meinen denselben Punkt. `arrived` bleibt an der Reststrecke, denn es
+    beantwortet "bin ich da" und nicht "wo ist der naechste Knick".
+    Das alte Gegenargument ("Wegpunkte sind immer nah, der Ton waere dauernd
+    laut") traegt nicht: der Ton ist ohnehin nur hoerbar, wenn die Ausrichtung
+    NICHT stimmt - laut ist er also genau dann, wenn eine Korrektur faellig ist.
+
+>>> IN-GAME BESTAETIGT (User, 2026-08-23): *"das mit den himmelsrichtungen
+    geht"* und *"das mit den tönen funktioniert"*. Damit sind bestaetigt:
+      - Himmelsrichtungen statt links/rechts (Befund 5)
+      - der Vorzeichenfix (Befund 4) - der Ton haengt an `RelativeAngle`, also
+        beweist ein richtig ziehender Ton die Rechnung mit
+      - Segment-Peilung + Numpad5-Angleich (Befunde 8A, 9)
+      - Geraet schliessen gegen das Rauschen (Befund 8B)
+      - Lautstaerke am Peilpunkt (Befund 10) und der durchlaufende Ton (11)
+    NICHT bestaetigt, weil nie eingetreten: der Kamera-Verdacht (`kameraAb` stand
+    in jeder Messung auf 0,0). Bleibt offen, ist aber kein bekannter Fehler.
+
+>>> BEFUND 11, ENTSCHIEDEN UND GEBAUT: DER TON IST NIE MEHR STILL.
+    User woertlich (2026-08-23): *"es soll nicht still sein der ton soll immer
+    sein egal wie lang wenn man näher kommt soll der ton lauter werden nie
+    stille"*. Damit ist die Umkehrung vom 2026-08-19 ("geradeaus = Stille")
+    ZURUECKGENOMMEN - das dritte Mal, dass dieses Design gedreht wird.
+
+    WAS SICH AENDERT: `alignedNow` schaltet nicht mehr auf `Silent`. Der Ton
+    laeuft durch, solange gefuehrt wird. "Richtig" klingt jetzt mittig, hell und
+    ruhig statt gar nicht - und das kommt ohne Sonderfall zustande, die
+    vorhandene Rechnung liefert es von selbst: Pan gegen die Mitte (sin(0)=0),
+    Tonhoehe auf dem unverbogenen Grundton, Takt auf dem langsamsten Wert
+    (0,95 s). Der Einrast-Quittungston bleibt, markiert aber jetzt den Moment
+    statt eine Stille zu erklaeren.
+
+    STILLE GIBT ES WEITER, aber nur wo sie etwas anderes heisst: kein Ziel,
+    keine Fuehrung, kein Lauf (Idle/Stop an den Aufrufstellen).
+
+    MITGEZOGEN, weil sonst Doku und Ansage etwas versprechen, das es nicht mehr
+    gibt - das schickt den Spieler auf die Suche nach einem Fehler, der keiner
+    ist:
+      - GESPROCHEN: "Peil-Ton an. Er verstummt, sobald du richtig stehst." ->
+        "...wird mittig und ruhig, wenn du richtig stehst." (auch EN)
+      - Klassendoku `BeaconService`, `Configuration.TargetBeaconEnabled`,
+        `RouteService.CompassAdjective`.
+
+    ZU BEOBACHTEN: ein Dauerton ueber 700 m Wegstrecke kann auf Dauer muede
+    machen - das war 2026-08-19 der Grund fuer die Umkehrung. Wenn es soweit
+    kommt, ist der Hebel NICHT die Stille zurueckzuholen, sondern der Takt bei
+    stimmender Ausrichtung (heute 0,95 s) und die Lautstaerke.
+
+>>> BEFUND 8, BEIDE TONFEHLER GEMESSEN UND ERKLAERT (Log 13:18, 2026-08-23).
+    Die HP/MP-Toene sind ENTLASTET: null `[Vitals]`-Zeilen im ganzen Zeitraum,
+    obwohl sie jetzt sichtbar loggen. Es waren zwei andere Sachen.
+
+    A) "BEIM AUSRICHTEN SPINNT DER TON" - der Peilpunkt springt.
+         13:18:15.190  still=True  eingerastet=True   rot=-1,797
+         13:18:15.355  still=False eingerastet=False  rot=-1,797
+         13:18:15.419  "Wegpunkt erreicht, weiter zu 4/5"
+       `rot` UNVERAENDERT - der Spieler hat sich nicht gedreht. Geaendert hat
+       sich das Ziel des Tons: er peilt den naechsten WEGPUNKT an, und beim
+       Passieren springt der auf den uebernaechsten, der woanders liegt. Der Ton
+       rastet aus, man richtet sich neu aus, naechster Wegpunkt, wieder aus.
+       Auf dieser Strecke lagen 5 Wegpunkte auf 72 m.
+       BEMERKENSWERT: die SPRACHE fasst dieselbe Route zu 2 Segmenten zusammen
+       ("5 Wegpunkte, 2 Segmente"), der Ton nimmt alle 5 roh. Der Fix liegt
+       damit nahe - den Ton auf das Ende des SEGMENTS zeigen lassen statt auf
+       den naechsten Rohpunkt. GEBAUT 2026-08-23 auf Entscheidung des Users,
+       mit seiner Auflage "der Ton darf nicht abreissen":
+         - `RouteService.SegmentEndIndex(from, waypoints, cursor)` neu - dieselbe
+           Regel wie `BuildSegments`, inklusive der Sub-Meter-Ausnahme (ein
+           Zentimeter-Huepfer an einer Tuerschwelle hat keine verlaessliche
+           Richtung und darf kein Segment zerschneiden).
+         - `WalkGuideFrame` peilt damit das Segment-Ende an. Dieselbe Route hat
+           2 Peilpunkte statt 5.
+         - DIE AUFLAGE IST KONSTRUKTIV ERFUELLT, nicht nur gehofft: `targetKey`
+           bleibt ueber die ganze Gehhilfe `_walkBeaconKey`. NUR ein Wechsel
+           dieses Schluessels laesst `BeaconService.Update` den Takt abbrechen
+           und neu ansetzen (`provider.Restart`). Ein wandernder Peilpunkt unter
+           demselben Schluessel aendert nur Winkel und Lautstaerke - fortlaufend,
+           ohne Luecke. Auch das Geraet bleibt waehrend des Laufs offen; die
+           Stop-Aenderung aus B greift nur, wenn KEIN Lauf laeuft.
+         - SPRACHE MITGEZOGEN, sonst nennt sie eine Richtung, die der Ton nicht
+           zeigt: die Wegpunkt-Ansage meint jetzt auch das Segment-Ende, mit
+           Merker `_lastSpokenLeg` gegen Wiederholung. Im Log vom 13:18 kamen
+           "4 Meter, suedwestlich" und "3 Meter, suedwestlich" 150 ms
+           hintereinander - zwei Rohpunkte, eine Richtung.
+       ZU TESTEN: reisst der Ton beim Uebergang zwischen zwei Segmenten ab?
+       ACHTUNG BEIM BEURTEILEN: dass er beim Einrasten VERSTUMMT und beim
+       Abbiegen wieder einsetzt, ist keine Luecke, sondern das Signal.
+
+    B) "VERSCHWINDET NICHT BEIM AUSMACHEN" - das Geraet blieb offen. GEFIXT.
+       Die Sonde stand nach dem Ende der Gehhilfe eine Minute lang auf
+       `still=True offen=True` - stumm, aber der Ausgabestrom lief weiter und
+       schob Stille durch die Soundkarte, was je nach Geraet hoerbar rauscht.
+       `Idle()` schaltet nur stumm, `Stop()` schliesst. Das war richtig, solange
+       der Ton bei jedem Ziel lief (Aufmachen kostet einen Aussetzer) - seit er
+       an einen LAUF gebunden ist, vergehen bis zum naechsten Ton Minuten.
+       Ich hatte das heute Vormittag mit dem Gatter sogar noch verfestigt.
+       Geaendert auf `Stop()` an drei Stellen: `UpdateTargetBeacon` (Gatter),
+       `StopWalkGuide` (damit "aus" im selben Moment aus ist) und beim
+       Spielerverlust (Ladebildschirm).
+
+    LEHRE: `still=True` heisst NICHT "nichts zu hoeren". Bei einer Tonquelle
+    gehoert die Frage "ist das Geraet ueberhaupt zu?" mit in die Sonde - genau
+    diese Spalte hat den Fall geloest.
+
+>>> BEFUND 7, DER WAHRSCHEINLICHE TAETER: DIE HP/MP-TOENE. Verdacht vom
+    2026-08-23, noch NICHT bewiesen - aber der Gegentest dauert 30 Sekunden.
+
+    AUSGANGSPUNKT: der User meldete nach dem Peil-Ton-Umbau *"hast du das
+    plugin neugestartet, fuer mich hat sich nichts geaendert"*. Geprueft: die
+    DLL wurde 12:52:49 deployt und 12:52:53 vom Spiel geladen, alle Aenderungen
+    waren also drin. Damit ist "nichts geaendert" selbst der Befund - wir haben
+    am falschen Ton gearbeitet. Das Log zeigt den Peil-Ton nachweislich korrekt:
+    er schweigt beim Ausschalten der Gehhilfe, rastet beim Ausrichten ein, und
+    seine Richtung stimmt (nachgerechnet: Blick Osten, Ziel Nordwesten ->
+    "hinter links").
+
+    WARUM DIE VITALWERT-TOENE PASSEN (Configuration.cs, HP/MP-Toene seit V5.28):
+      - Ein Ton bei JEDER 10-Prozent-Stufe von HP UND MP.
+      - Die Stereoseite bildet den FUELLSTAND ab, nicht eine Richtung
+        (voll = rechts, leer = links) -> *"er ist nicht da wo er sein sollte"*.
+      - Sie laufen ausdruecklich AUCH AUSSERHALB DES KAMPFES, damit die
+        Regeneration hoerbar ist -> *"geht nicht aus wenn man das manuelle
+        Laufen aus macht"*. Sie haben mit der Gehhilfe nichts zu tun.
+      - Der User spielt Schwarzmagier (Log 13:02:44). Mana bewegt sich dort
+        staendig, also folgen die Stufen dicht aufeinander -> *"wird ganz oft
+        gespammt ganz schnell"*.
+
+    WARUM WIR SIE EINEN HALBEN TAG LANG NICHT GESEHEN HABEN - die uebertragbare
+    Lehre: `VitalsService` loggte mit `_log.Debug`, und DALAMUD SCHREIBT KEIN
+    DEBUG in die dalamud.log. Nachgezaehlt am 2026-08-23: 3598 INF, 45 WRN,
+    NULL DBG. Eine Tonquelle ohne Logspur kann man nicht ausschliessen, und
+    genau deshalb blieb sie ausserhalb des Verdachts, waehrend drei Sonden den
+    unschuldigen Peil-Ton vermassen. MERKSATZ: bevor man eine Quelle
+    ausschliesst, pruefen, ob sie ueberhaupt sichtbar WAERE.
+
+    GEBAUT (Debug + Release, je 0 Fehler / 0 Warnungen):
+      - `VitalsService.LogVital` - im Debug-Build auf INFO, damit die Toene im
+        Log auftauchen.
+      - MENUEEINTRAEGE NACHGETRAGEN: "Töne für Leben und Mana" (Schalter) und
+        "Lautstärke Leben und Mana". Die liefen seit V5.28 voellig ohne
+        Schaltung - ein Spieler konnte diese Tonquelle nicht einmal
+        versuchsweise ausschliessen. Das ist derselbe Mangel wie damals beim
+        AoE-Lautstaerkeregler.
+
+    GEGENTEST (der User, 30 Sekunden): Optionsmenue -> "Töne für Leben und
+    Mana" AUS. Ist die Stoerung damit weg, ist der Fall geklaert. Bleibt sie,
+    sind die HP/MP-Toene entlastet und der naechste Kandidat ist ein FREMDES
+    Plugin (BossMod, cactbot) - dann pruefen, ob die Stoerung auch bei
+    abgeschaltetem FF14Accessibility auftritt.
+
+>>> BEFUND 6, ZWEI TONFEHLER - GEMELDET 2026-08-23, SONDE GEBAUT, UNGEMESSEN.
+    Der User nach dem Kompass-Test: *"die navigationstoene sind nicht korrekt,
+    der ton stoppt nicht wenn man die gehhilfe aus macht und wenn man sich
+    ausrichtet passt der ton sich nicht an"*.
+
+    ZUM TONERZEUGER SELBST: der ist geprueft und in Ordnung.
+    `BeaconSampleProvider.Read` gibt bei `Silent` zuverlaessig Stille aus und
+    setzt den Takt zurueck. Der Fehler sitzt also davor - bei der Frage, WER den
+    Ton fuettert.
+
+    SYMPTOM 2 IST DER SCHLUESSEL, und der Verdacht ist derselbe wie bei Befund 4,
+    diesmal aber als HAUPTsymptom: der Ton rechnet gegen `player.Rotation`. Bei
+    `MoveMode` 0 dreht sich die FIGUR nicht, wenn der Spieler sich umsieht - nur
+    die KAMERA. Dann bleibt `rot` konstant, und der Ton KANN sich nicht
+    anpassen. Das trifft genau den Zweck des Tons ("dreh dich, bis es still
+    wird"), und es erklaert, warum es beim Kompass-Umbau nicht auffiel: die
+    Sprache haengt seither an gar keiner Blickrichtung mehr.
+    NOCH NICHT GEMESSEN. Der Fix waere, den Ton bei `MoveMode` 0 gegen
+    `FacingService.CameraFacing()` zu rechnen - erst messen.
+
+    SYMPTOM 1 IST UNGEKLAERT UND KOENNTE SCHON BEHOBEN SEIN. Durchgespielt:
+    Gehhilfe aus -> `StopWalkGuide` -> `_beacon.Idle()` -> naechster Frame
+    `UpdateTargetBeacon` -> das heute gebaute Gatter -> `Idle()`. Das ist still.
+    Zwei Erklaerungen bleiben, und die Sonde trennt sie: entweder lief ein
+    Auto-Lauf oder ein Ziel-Folgen (dann haelt `IsWalking` den Ton absichtlich
+    am Leben), oder getestet wurde mit einer DLL von vor dem Gatter. ZUERST
+    PLUGIN NEU LADEN, dann messen.
+
+    GEBAUT: `[BeaconProbe]` in `NavigationService.Update`, plus drei
+    Debug-Leser in `BeaconService` (`DebugSilent`, `DebugAligned`,
+    `DebugTargetKey`). Loggt quelle / still / eingerastet / offen / schluessel /
+    gehhilfe / laeuft / rot / dirH / kameraAb. Entdoppelt: nur bei Aenderung,
+    sonst hoechstens 1x pro Sekunde.
+
+    SO WIRD ES GELESEN:
+      - `still=False` bei `quelle=Ziel` und `laeuft=False` -> ein `Idle()`, das
+        nicht angekommen ist. Das ist Symptom 1.
+      - `rot` bleibt konstant, waehrend sich der Spieler dreht, und `kameraAb`
+        waechst -> Figur steht, Kamera dreht. Das ist Symptom 2, bewiesen.
+      - `laeuft=True` obwohl der Spieler nur die Gehhilfe aus hat -> es lief ein
+        Auto-Lauf/Folgen, dann ist Symptom 1 gar kein Fehler.
+
+>>> DER KAMERA-VERDACHT VON VORHIN BLEIBT OFFEN, ist aber NICHT die Ursache
+    dieses Fehlers. `MoveMode` = 0 heisst weiterhin kamerarelative Bewegung,
+    waehrend wir gegen die Figur rechnen - das kann bei verdrehter Kamera
+    zusaetzlich danebenliegen. Die Sonde dafuer steht (`[NavDirProbe]`, Marker
+    `ABWEICHUNG`), `FacingService.CameraFacing()` liest die Kamerarichtung.
+    Erst nach dem Vorzeichen-Test messen, sonst vermischen sich zwei Effekte.
+
+>>> URSPRUENGLICHER VERDACHT (ueberholt, nur noch als Historie lesen):
+    Zweite Spielerbeschwerde 2026-08-23: *"it says go left, so go left well it
+    should say right instead ... I've tried all sorts of changing control
+    settings from the camera to everything. even the beeping locator is
+    incorrect."* Dass Sprache UND Ton gemeinsam falsch sind, spricht fuer EINE
+    Ursache, nicht fuer zwei Fehler - beide haengen an `RelativeAngle`.
+
+    DIE ABLEITUNG, aus zwei bereits gemessenen Fakten:
+      1. `UiControl.MoveMode` = 0 -> kamerarelative Bewegung. Vorwaerts laeuft
+         die Figur dorthin, wo die KAMERA schaut. Gemessen 2026-08-22, steht in
+         `FacingService` und im Memory `camera_dirh_half_turn_offset`.
+      2. `RelativeAngle` (`NavigationService.cs`) rechnet gegen
+         `player.Rotation`, also gegen die FIGUR.
+    Solange die Kamera hinter der Figur steht, sind beide identisch - und GENAU
+    dieser Fall wurde am 2026-07-10 per Hoertest bestaetigt ("Vorzeichen vom
+    User per Beacon-Hoertest bestaetigt"). Steht die Kamera woanders, zeigen
+    Ansage und Steuerung auseinander. Fuer einen blinden Spieler ist eine
+    verdrehte Kamera unsichtbar - er kann den Zustand nicht bemerken.
+
+    NICHT UMGEBAUT, weil ungemessen. Stattdessen zwei Bausteine gebaut:
+      - `FacingService.CameraFacing()` - die Richtung, in die die Kamera SCHAUT
+        (`DirH + Pi`, der halbe-Drehung-Versatz ist hier eingerechnet, damit ihn
+        kein Aufrufer vergessen kann). Den braucht ein spaeterer Fix ohnehin.
+      - `[NavDirProbe]` erweitert: loggt jetzt Figur-Wort UND Kamera-Wort
+        nebeneinander, dazu `kameraAb` (wie weit beide auseinanderstehen),
+        `moveMode` und das Wort `ABWEICHUNG`, wo die beiden Woerter
+        auseinanderfallen.
+
+    SO WIRD ES ENTSCHIEDEN (Debug-Build noetig, die Sonde ist `#if DEBUG`):
+      1. Einmal normal spielen und dabei eine Richtungsansage ausloesen.
+      2. Im Log nach `ABWEICHUNG` suchen. Kommt das Wort vor, ist die Ursache
+         bewiesen und der Fix ist: `RelativeAngle` bei `moveMode=0` gegen
+         `CameraFacing()` rechnen statt gegen `player.Rotation`.
+      3. Kommt es NIE vor, ist die Kamera nicht die Ursache und der Fehler
+         liegt woanders - dann NICHT an der Rechnung drehen, sondern weiter
+         messen.
+
+>>> NEBENBEFUND, nicht repariert: `Plugin.cs` enthaelt 6 kaputte Gedankenstriche
+    (`â€"` statt `-`) in Kommentarzeilen 534, 738, 824, 1745, 1756, 1827 - Reste
+    frueherer PowerShell-Umschreibungen. Rein kosmetisch, kein Codepfad betroffen.
+
+>>> IM LOG VOM 2026-08-22 (21:21-22:56) STEHT KEIN PLUGIN-FEHLER. Die einzige
+    Exception ist vnavmesh: `FileNotFoundException` auf
+    `pluginConfigs\vnavmesh\seeds-local.json` - der bekannte Saatpunkt-Fehler.
+
+## FRUEHERER STAND (2026-08-22, "PRESET 'LAUFEN' ANGELEGT - ZU TESTEN")
+
+>>> GESCHRIEBEN, bei geschlossenem Spiel:
+    `%APPDATA%\XIVLauncher\pluginConfigs\BossMod\autorot\presets.db.json`
+    Inhalt: ein einziges Preset namens **Laufen** mit genau einem Modul,
+    `BossMod.Autorotation.MiscAI.NormalMovement`, Track `Destination` =
+    `Pathfind`. Sonst nichts - kein AutoTarget, kein TankAI/MeleeAI/HealerAI/
+    RangedAI. Damit benutzt es keine einzige Faehigkeit und fasst die Zielwahl
+    nicht an.
+
+>>> DAS FORMAT IST NICHT GERATEN. `PresetDatabase.LoadPresetsFromFile` laedt
+    Benutzer- und Standarddatei mit DERSELBEN Funktion
+    (`PlanPresetConverter.PresetSchema.Load`), also gilt das Format von
+    `DefaultRotationPresets.json`: `{"version":8,"payload":[...]}`.
+    JsonPresetConverter.Read sucht den Track ueber `StrategyConfig.InternalName`
+    und die Option ueber `StrategyOption.InternalName`; beide Werte
+    ("Destination"/"Pathfind") stehen woertlich im VBM-AI-Standardpreset.
+
+>>> BEDIENUNG, reine Chatbefehle:
+      `/vbm ar set laufen`   einschalten (Gross/Klein egal, FindPresetByName
+                             vergleicht CurrentCultureIgnoreCase)
+      `/vbm ar clear`        ausschalten
+    ACHTUNG, STILLE HEISST ERFOLG: bei Erfolg schreibt BossMod nur ins Log
+    (`Console: set activates preset 'Laufen'`), KEINE Chatmeldung. Nur der
+    Fehlerfall meldet sich (`Failed to find preset '...'`). Wenn das stoert,
+    ist die Quittung per IPC `BossMod.Presets.GetActive` nachruestbar.
+
+>>> ZWEI VERHALTEN, DIE UEBERRASCHEN KOENNEN (aus AutorotationConfig gelesen):
+      - `ClearPresetOnDeath = true` (Standard): **nach dem Tod ist das Preset
+        aus** und muss neu gesetzt werden.
+      - `ClearPresetOnCombatEnd = false` (Standard): nach dem Kampf bleibt es an.
+      - `PlannedPullSafety` greift nur mit aktivem Cooldown-Plan - haben wir nicht.
+
+>>> ES WIRKT AUCH AUSSERHALB VON DUNGEONS. `AIHintsBuilder.OnCastStarted`
+    haengt an `ws.Actors.CastStarted`, also an JEDEM Zauber im Umkreis, leitet
+    die Form aus dem Omen des Action-Sheets ab und ruft `hints.AddForbiddenZone`.
+    Ein Bossmodul ist dafuer nicht noetig. Auf Stufe 30 im offenen Feld sollte
+    der Test also etwas zeigen.
+
+>>> ZU TESTEN, in dieser Reihenfolge:
+      1. Spiel starten. Im Log darf NICHT stehen: `Failed to parse preset
+         database` oder `Error while deserializing preset Laufen`.
+      2. `/vbm ar set laufen` eingeben. Keine Meldung = geklappt.
+      3. Einen Gegner mit Flaechenzauber pullen. Laeuft die Figur von selbst
+         aus der Flaeche heraus? Und benutzt sie dabei KEINE Faehigkeit und
+         wechselt das Ziel NICHT?
+
+## FRUEHERER STAND (2026-08-22, "BOSSMOD LAEUFT - /vbmai OHNE ARGUMENT IST EIN FENSTERSCHALTER")
+
+>>> BEWIESEN, BossMod LAEDT. Log vom 21:06:
+      Zeile  91  `[LocalPlugin] Creating plugin instance for BossMod (async=true)`
+      Zeile 160  `[LocalPlugin] Finished loading BossMod`
+    Content root: `...\pluginConfigs\BossMod`. Damit ist die Frage aus dem
+    letzten Chat beantwortet - die beiden Schalter sitzen richtig.
+
+>>> WARUM DER USER NICHTS GEMERKT HAT, und es ist KEIN Fehler. `/vbmai` wurde
+    21:08:38 abgeschickt (Log: `[Chat] Echo: '/vbmai'`), danach steht nichts.
+    Aus TickService.RegisterAISlashCommands dekompiliert: `/vbmai` OHNE Argument
+    ist `cmd.SetSimpleHandler("toggle multibox ui", ...)` - es kippt nur
+    `AIConfig.DrawUI`, also ein ImGui-Fenster auf/zu. Kein Ton, keine Meldung,
+    fuer einen blinden Spieler wirkungslos.
+
+>>> DIE BEFEHLE, DIE ES WIRKLICH GIBT (aus TickService dekompiliert, nicht geraten):
+      - `/vbm ar set <preset>`   "start executing specified preset, and deactivate others"
+      - `/vbm ar clear`          "clear current preset"
+      - `/vbm ar activate|deactivate|togglemulti <preset>`
+      - `/vbmai on|off|toggle`   schaltet `AIConfig.Enabled` (die ALTE, deprecated AI)
+      - `/vbm cfg <config-type> <field> [<value>]`
+    Alles reine Chatbefehle. Das ImGui-Fenster wird fuer nichts davon gebraucht.
+
+>>> DAS PRESET "VBM AI" KAEMPFT DOCH MIT - ausgelesen aus
+    `devPlugins\BossMod\DefaultRotationPresets.json`, es enthaelt:
+      MiscAI.AutoTarget (Retarget=Always, FATE=Enabled)  <- visiert selbst an
+      xan.TankAI, xan.MeleeAI, xan.RangedAI, xan.HealerAI <- Second Wind,
+        Bloodbath, Stun, Low Blow, Invuln, Heal, Esuna ... das sind Aktionen
+      MiscAI.StayWithinLeylines, MiscAI.NormalMovement
+    Die Notiz von vorhin ("sie kaempft nicht") war zu grosszuegig: die
+    Rotationsmodule bleiben aus, die AI-Hilfsmodule aber NICHT. Und AutoTarget
+    beisst sich mit der Zielwahl per Tab/F11.
+
+>>> DAS EINE MODUL, DAS DER USER WILL: `BossMod.Autorotation.MiscAI.NormalMovement`.
+    Selbstbeschreibung aus der DLL: "Automatic movement - Automatically move
+    character based on pathfinding or explicit coordinates", Kategorie "AI".
+    Es rechnet mit `NavigationDecision` aus BossMod.Pathfinding und hat einen
+    Track `ForbiddenZoneCushion` - es weicht also verbotenen Zonen aus. Genau
+    "nur an sichere Orte laufen", ohne eine einzige Aktion.
+
+>>> DER WEG DORTHIN, OHNE ImGui UND OHNE CODE: Benutzer-Presets liegen in einer
+    Datei, die wir selbst schreiben koennen. Kette aus der DLL:
+      TickService: `new RotationDatabase(Path.Join(ConfigDirectory, "autorot"), ...)`
+      RotationDatabase: `new PresetDatabase(rootPath + "/presets", ...)`
+      PresetDatabase: `_dbPath = rootPath + ".db.json"`
+    Ergibt: `%APPDATA%\XIVLauncher\pluginConfigs\BossMod\autorot\presets.db.json`
+    Existiert noch nicht (der Ordner `autorot` ist leer). Format wie
+    DefaultRotationPresets.json: `{"version":8,"payload":[ ... ]}`.
+    Bei GESCHLOSSENEM Spiel schreiben - gelesen wird sie beim Start, und
+    BossMod ueberschreibt sie bei jeder eigenen Aenderung.
+    Alternative ohne Dateischreiben: IPC `BossMod.Presets.Create(json, overwrite)`
+    + `Presets.SetActive(name)` - beides in IPCProvider bestaetigt.
+
+>>> NEBENBEFUND AUS DEMSELBEN LOG, gehoert zur Navigations-Baustelle:
+    Zeile 105, LASTEXCEPTION von vnavmesh: `Unable to fetch seeds from Github,
+    quality will be lacking` (SocketException 10038 auf
+    raw.githubusercontent.com:443, aus `Navmesh.FloodFill.Init()`).
+    Das ist genau die Saatpunkt-Frage aus dem Memory - die Seeds fehlen NICHT
+    nur fuer Zone 132, sie wurden diesmal ueberhaupt nicht geladen. Deshalb
+    filtert NearestPointReachable nichts.
+
+## FRUEHERER STAND (2026-08-22, "BOSSMOD SCHARFGESCHALTET - NAECHSTER SCHRITT: NUR LAUFEN, NICHT KAEMPFEN")
+
+>>> NAECHSTER SCHRITT FUER DEN NEUEN CHAT, in dieser Reihenfolge:
+      1. User startet das Spiel. Im Log pruefen: steht dort
+         `Creating plugin instance for BossMod`? NUR diese Zeile beweist, dass es
+         laeuft - `Loading dev plugin BossMod` allein beweist nichts (genau
+         daran ist es zweimal gescheitert).
+      2. `/vbmai` sollte es jetzt geben. Und: `%APPDATA%\XIVLauncher\
+         pluginConfigs\BossMod\` sollte angelegt sein.
+      3. DANN konfigurieren: Ausweich-Bewegung AN, Autorotation AUS.
+
+>>> DIE ANFORDERUNG DES USERS, woertlich: "es soll ja nicht fuer mich kaempfen,
+    es soll nur fuer mich an sichere orte laufen." Das ist die Messlatte.
+    Aus der DLL gelesen, was das bedeutet:
+      - Die Bewegungs-AI ist ein eingebautes Preset **"VBM AI"**. Klartext aus
+        der DLL: "A new built-in preset has been added - VBM AI. This provides
+        the same functionality as the legacy AI feature. It will try to dodge
+        AOEs and automatically target enemies."
+      - Sie KAEMPFT NICHT. Angriffe kommen aus den Rotationsmodulen (Tank AI,
+        Melee DPS AI, Healer AI, Caster AI, Phys Ranged AI ...) - die bleiben aus.
+      - ABER sie visiert automatisch an (`BossMod.Autorotation.MiscAI.AutoTarget`).
+        DAS KANN SICH MIT DER ZIELWAHL DES USERS BEISSEN - er waehlt mit Tab und
+        F11. Wenn es stoert: eigenes Preset ohne AutoTarget bauen, per IPC
+        `Presets.Create(presetSerialized, overwrite)` + `Presets.SetActive(name)`,
+        also ohne ImGui. Das Preset-JSON liegt komprimiert in der DLL und ist
+        erst nach dem ersten Start lesbar.
+      - Moeglicherweise geht die Konfiguration OHNE Neustart: das IPC hat
+        `Configuration(args, save)`, und `/vbm` nimmt Argumente. Ungeprueft.
+
+>>> ZWEI STOLPERSTELLEN, BEIDE GETRETEN UND BEHOBEN (siehe Memory
+    dalamud-devplugin-two-switches): Ein Plugin nach devPlugins zu kopieren
+    reicht NICHT. Es braucht (1) einen Eintrag in `DevPluginLoadLocations` mit
+    vollem DLL-Pfad und (2) einen Eintrag in `DefaultProfile.Plugins` mit
+    `IsEnabled: true` - Dalamud legt den sonst selbst an, aber mit **false**
+    ("was not in any profile, adding to default with false"). Beides nur bei
+    GESCHLOSSENEM Spiel aendern, sonst ueberschreibt Dalamud es beim Beenden.
+    BEIDES STEHT JETZT RICHTIG, gegengeprueft. Sicherungen liegen als
+    `dalamudConfig.backup-20260822-*.json`.
+
+## FRUEHERER STAND (2026-08-22, "BOSSMOD INSTALLIERT - FUER DEN USER PERSOENLICH")
+
+>>> ENTSCHEIDUNG DES USERS, und sie ist begruendet: "selbst wenn ich weiss was
+    kommt, muss ich schnell wissen wo ich hinlaufe - bossmod wuerde fuer mich
+    richtig laufen, ich will das erstmal nur fuer mich". Also KEIN Plugin-Feature,
+    sondern seine private Einrichtung.
+
+>>> INSTALLIERT: BossMod 7.5.5.8 (veyn/xan_0), DalamudApiLevel 15 - passt zu
+    vnavmesh (15), IINACT (15) und uns (15). Bezogen ueber das Veyn-Repo
+    `https://puni.sh/api/repository/veyn`, entpackt nach
+    `%APPDATA%\XIVLauncher\devPlugins\BossMod`.
+    WARUM DORTHIN und nicht ueber den Plugin-Installer: die Fremdrepo-Liste in
+    dalamudConfig.json ist LEER - IINACT, Browsingway, Echokraut und vnavmesh
+    liegen alle in devPlugins. Das ist der etablierte Weg in diesem Setup und
+    umgeht den ImGui-Installer, den der User nicht bedienen kann.
+    NEUSTART DES SPIELS NOETIG, es lief waehrend der Installation.
+
+>>> AUS DER INSTALLIERTEN DLL GELESEN (nicht von der Webseite geraten):
+      - Chatbefehle: `/vbm`, `/vbm macro`, `/vbmai`
+      - `/vbmai` kennt "enable AI mode", "disable AI mode", "toggle AI mode"
+      - Die Bewegungs-AI beschreibt sich selbst als: "Automatically moves your
+        character based on safe zones determined by a boss's module, visible on
+        the radar." - genau das, was der User will.
+
+>>> ZWEI WARNUNGEN, BEIDE AUS DER DLL:
+    1. "AI feature is now deprecated and will be removed in one of the future
+       versions." und "Legacy AI has been replaced by VBM AI." Ob `/vbmai` die
+       alte oder die neue steuert, laesst sich aus Strings NICHT entscheiden -
+       das muss im Spiel gepruft werden. Die neue laeuft ueber
+       Autorotation-Presets (BossMod.Autorotation.MiscAI.*).
+    2. Presets legt man normalerweise im ImGui-Fenster an. Der Ausweg ist
+       bekannt: das IPC hat `Presets.Create(presetSerialized, overwrite)` und
+       `Presets.SetActive(name)` - derselbe Trick wie bei cactbot, wo das
+       ImGui-Gatter auch umgangen wurde.
+
+>>> NEBENBEFUND, FUER SPAETER WICHTIG: BossMod erzeugt fuer seine Anzeige
+    TEXTHINWEISE - "Aim for safe spot!", "Go to safe zone!", "Go to safe
+    quadrant!", "Go to safe platform!", "Go to nearest safespot". Das ist genau
+    das Format, das eine Sprachausgabe braucht. Ueber IPC kommt man nicht dran
+    (siehe Memory bossmod-ipc-no-zones), aber es zeigt: die Information EXISTIERT
+    in sprechbarer Form. Ein moeglicher spaeterer Weg, wenn die AI-Bewegung
+    allein zu stumm bleibt.
+
+>>> ZU TESTEN: Spiel neu starten. Laedt BossMod? Dann `/vbmai` eingeben und
+    schauen, was es meldet. Achtung, Stufe 20-30: dort gibt es kaum harte
+    Mechaniken, der Nutzen zeigt sich erst in spaeteren Inhalten.
+
+## FRUEHERER STAND (2026-08-22, "WAS STEHT MIR IM WEG")
+
+>>> WUNSCH DES USERS: "es ist gut zu wissen, wo man gegen laeuft". Gebaut als
+    ObstacleService, Debug 0/0 und Release 0/0, liegt in devPlugins.
+    Der Nutzen steckt nicht darin, DASS etwas blockiert, sondern WAS: ein
+    Spieler geht von allein weiter, eine Absperrung nie.
+
+>>> ZWEI QUELLEN, UND SIE GEBEN UNTERSCHIEDLICH VIEL HER:
+    1. WESEN (Spieler, NPCs, Begleiter, Vermieter, Wohnraum-Objekte) tragen
+       Namen, Position und HitboxRadius. "Wer steht im Weg" ist damit eine reine
+       Rechnung: Objekt liegt in Laufrichtung, Abstand zur Laufachse kleiner als
+       beide Hitboxen plus etwas Spiel, Hoehenunterschied unter 2 m. Der Name
+       kommt aus dem vorhandenen ObjectNameService. Das ist auch der haeufige
+       Fall - in einer Stadt steht staendig jemand im Tuerrahmen.
+    2. KULISSE TRAEGT KEINEN NAMEN. Mit zone-probe gemessen: Hintergrundteile
+       weisen sich nur ueber Modell- und Kollisionsdatei aus
+       (`f1t0_a0_taru1.mdl`, `f1t0_b0_gatdr.pcb`) plus Layout-Typ. Fuer ein Fass
+       oder einen Zaun fuehrt das Spiel nirgends einen sprechbaren Namen, anders
+       als bei NPCs oder Truhen.
+       DESHALB WIRD KEINER ERFUNDEN. Eine Uebersetzungstabelle fuer fremde
+       Modellkuerzel waere genau die Art Vermutung, die die Regeln hier
+       verbieten. Ehrlich sagbar ist die Unterscheidung, auf die es ankommt:
+         - "eine unsichtbare Absperrung" (CollisionBox mit pushPlayerOut)
+         - "ein festes Hindernis" (BgPart mit Kollision)
+       Das Modellkuerzel geht ins LOG, nicht ins Ohr - damit sich spaeter
+       beantworten laesst, was es war, ohne es jetzt zu raten.
+
+>>> ANGEBUNDEN AN DIE ZWEI STELLEN, DIE HEUTE SCHON "DA STEHT ETWAS IM WEG"
+    SAGEN - keine neue Taste noetig (Tastenknappheit):
+      - ZoneTransitionHandler.Stop: "Ich komme nicht in X hinein, <Y> steht im Weg."
+      - AutoWalkService, Zweig "festgesteckt": "Ich komme nicht weiter, <Y> steht
+        im Weg. Noch N Meter." Der Netzende-Zweig behaelt seinen eigenen Wortlaut:
+        dort steht NICHTS im Weg, dort hoert der Boden auf. Zwei verschiedene
+        Lagen, zwei verschiedene Ansagen.
+    Beide Ansagen bilingual in AccessibilityStrings. Findet der Dienst nichts,
+    bleibt es beim bisherigen, vagen aber ehrlichen Satz.
+
+>>> GELESEN WIRD DAS LAUFENDE LAYOUT, dieselbe Kette wie beim Netzbau von
+    vnavmesh (`SceneDefinition.FillFromLayout`), inklusive desselben Aktiv-Bits
+    `Flags3 & 0x10`. Was hier als Hindernis zaehlt, zaehlt also auch fuers
+    Wegenetz als eines. Nur Lesezugriffe, kein Hook.
+
+>>> ZU TESTEN: irgendwo gegen einen Spieler oder NPC laufen lassen (Auto-Lauf zu
+    einem Ziel, hinter dem jemand steht) - kommt der Name? Und an einer Stelle
+    mit Kulisse: kommt "ein festes Hindernis", und steht im Log die Zeile
+    `[Hindernis] Kulisse blockiert, Kollisionskennung ...`?
+
+>>> NOCH NICHT GEBAUT: die Ansage beim MANUELLEN Laufen. Dafuer fehlt das Signal
+    "der Spieler will gerade laufen" - ohne das ist Stillstand nicht von
+    Stehenbleiben zu unterscheiden. vnavmesh liest das per Signatur-Hook auf
+    RMIWalk. Ob `Character.MoveController` / `Character.MovementState` ein
+    lesbares Feld bieten, ist UNGEKLAERT - die Felder gibt es, ihr Aufbau steht
+    nicht in der mitgelieferten Doku. Muesste ausgemessen werden.
+
+## FRUEHERER STAND (2026-08-22, "DER UEBERGANG IST DURCHLAUFEN - IN BEIDE RICHTUNGEN")
+
+>>> ES FUNKTIONIERT. Im Log vom Test 18:41 laeuft die ganze Kette durch, ohne
+    eine einzige Stockung:
+      18:41:10.966  `[Bruecke] Weg endet 2,7 m vor ... - nicht erreichbar`
+      18:41:10.968  `[Bruecke] 'Tor zum Tiefen Wald' passt`
+      18:41:10.969  `umgelenkt - erst zur Bruecke`
+      18:41:12.337  `fahre Bruecke 'Tor zum Tiefen Wald'`
+      18:41:12.360  `Spur zu Ende, ich laufe normal weiter`
+      18:41:13.262  `beendet (angekommen, dist=0,7)`
+      18:41:13.863  `[ExitProbe] === Zonenwechsel 132 nach 148 ===`
+      18:41:14.429  Toast: 'Jadeweiher-Ufer'
+    KEIN ANSCHIEBEN NOETIG - die Figur ist einfach durchgelaufen.
+
+>>> GEGENPROBE RUECKWEG, ebenfalls bestanden (18:41:22-25): dort passt KEINE
+    gemessene Luecke, und das Log sagt das auch (`Keine gemessene Luecke passt -
+    laufe den Teilweg trotzdem`). Der Teilweg allein hat gereicht: `angekommen,
+    dist=0,8`, Zonenwechsel 148 nach 132. Genau das war der Sinn des Zweigs -
+    Stillstand ist die schlechteste Auskunft.
+
+>>> DIE UNSICHTBARE WAND IST NICHT AKTIV - GEMESSEN, NICHT VERMUTET. Die
+    CollisionBox aus `QST_OP_ENPC_001` deckt X 154,0..156,0 ueber Z 146,4..168,4
+    ab. Der Positionsverlauf der ExitProbe zeigt die Figur quer hindurch:
+    (154,7|158,1) -> (155,2|158,2) -> (155,8|158,2) -> (156,4|158,3) ->
+    (158,4|158,5), ohne jeden Widerstand. Damit ist die Sperren-Deutung von
+    vorhin WIDERLEGT, und die Bruecke ist kein Cheat: der Weg ist offen.
+
+>>> WAS DIE FEHLVERSUCHE WIRKLICH UNTERSCHIED: der gewaehlte Grenz-Kandidat.
+      - 18:41 (klappt):    Kandidat bei (156,4|-10,6|**158,0**) - noerdlich.
+      - 18:19/18:20 (nein): Kandidat bei (156,3|-10,6|**149,2**) bzw. Z 150,5 -
+        suedlich, hinter den Toren und Faessern.
+    Der ZoneBorderService nimmt den Punkt der Trigger-Box, der dem SPIELER am
+    naechsten liegt. Steht der Spieler suedlich, waehlt er einen suedlichen
+    Randpunkt - und dort ist der Durchgang zu. Ablehnen kann er nichts, weil
+    NearestPointReachable in Zone 132 nichts filtert (keine Saatpunkte).
+    DAS IST DER LETZTE OFFENE PUNKT an dieser Baustelle.
+
+>>> DIE SONDE WURDE NIE AUSGELOEST - der User hat nichts eingegeben, daher keine
+    `[CollProbe]`-Zeile. Kein Fehler. Sie ist gebaut und liegt bereit
+    (`/acc coll`), fuer die Wand-Frage aber nicht mehr noetig: die ist oben aus
+    dem Positionsverlauf beantwortet. Sie bleibt vorerst liegen, weil sie der
+    erste Baustein fuer die gewuenschte Hindernis-Ansage ist ("wogegen laufe ich
+    gerade?"). Wird sie dafuer nicht gebraucht, nach Sonden-Konvention loeschen.
+
+## FRUEHERER STAND (2026-08-22, "DIE LUECKE WAR EIN SYMPTOM, DIE SPERRE IST DIE URSACHE")
+
+>>> BEIDE FIXES VON HEUTE WIRKEN, IM LOG BESTAETIGT (Test 18:19-18:20):
+      - Fix 1: beim Anschub um 18:20:00.845 steht KEIN "nachlaufender Pfad
+        abgeraeumt" mehr dazwischen. Der Waechter laesst ihn in Ruhe.
+      - Fix 2: `Weg endet 2,7 m vor ...` -> `'Tor zum Tiefen Wald' passt` ->
+        `umgelenkt` -> einmal sogar `fahre Bruecke`. Die Kette laeuft.
+      - GEGENTEST BESTANDEN, und er hat die unsichere Zahl geklaert: bei einem
+        Weg, der wirklich ankommt, meldet die Sonde `letzter echter Wegpunkt
+        0,0 m davor` - dreimal, zu Miounnes Hexenstuebchen. 0,0 gegen 2,7-3,8:
+        die Trennung ist scharf, PathShortfallSlack = 2 m ist bestaetigt.
+
+>>> UND TROTZDEM KOMMT DIE FIGUR NICHT DURCH - WEIL DORT ETWAS STEHT.
+    tools/zone-probe an genau den beiden Stellen, an denen sie haengenblieb:
+      - CollisionBox aus Layer `QST_OP_ENPC_001/planner.lgb`, Mitte
+        (155,0|-8,7|157,4), Halbmass (1,0|5,8|11,0), `pushPlayerOut=31`.
+        Das ist eine unsichtbare Wand: X 154,0..156,0, Z 146,4..168,4, und in
+        der Hoehe umschliesst sie die Figur.
+      - Zwei weitere solche Boxen desselben Layers liegen auf der Linie, auf der
+        der Anschub in Fall B scheiterte.
+      - Dazu Tore mit echter Kollision (`f1t0_b0_gatdr.pcb`, `f1t0_b0_gat00.pcb`)
+        direkt noerdlich. Der Toast im Log nennt den Ort: Blaudachs-Pforte.
+    UNSERE BRUECKE ENDET MITTEN IN DIESER WAND: (155,0|-12,8|161,0) liegt in
+    X 154..156. Die Figur wird also nicht von Faessern gestoppt, sie wird
+    hinausgeschoben.
+
+>>> DAMIT KIPPT DIE DEUTUNG VON GESTERN. Die 36-Polygon-Insel ist KEINE
+    Baufehler-Luecke im Netz. Recast hat den Bereich hinter der Absperrung voellig
+    korrekt als unerreichbar abgetrennt. Die Luecke war das Symptom, die Sperre
+    ist die Ursache. Was daraus folgt, haengt an einer Frage, die die Datei nicht
+    beantwortet - `QST_*`-Layer schaltet das Spiel nach Questfortschritt:
+      - Wand AKTIV -> das Spiel sperrt den Weg mit Absicht. Dann darf der Mod das
+        nicht unterlaufen (Playability-Regel), und dorthin gehoert eine ehrliche
+        Ansage statt einer Bruecke.
+      - Wand ABGESCHALTET -> etwas anderes blockiert, und die Brueckenpunkte
+        muessen neu vermessen werden, ausserhalb X 154..156.
+
+>>> GEBAUT: CollisionProbe (`/acc coll`), Debug 0/0, liegt in devPlugins.
+    Liest das LAUFENDE Layout statt der .lgb - nur dort steht, was das Spiel
+    gerade eingeschaltet hat. Dieselbe Kette, die vnavmesh fuer den Netzbau
+    benutzt (`SceneDefinition.FillFromLayout`): ueber LayoutWorld auf
+    `InstancesByType`, je Instanz das Aktiv-Bit `Flags3 & 0x10`. Nur Lesezugriffe,
+    kein Hook. Listet CollisionBoxen (mit AKTIV, Ausdehnung und "SPIELER STEHT
+    DRIN") und BgParts mit Kollision.
+    Beantwortet nebenbei die zweite Frage des Users ("kann man ansagen, wogegen
+    man laeuft?"): Position, Ausdehnung und Modellkennung stehen da. Sprechbare
+    Namen fuehrt das Spiel nicht, aber die Kuerzel sind lesbar - `taru1` ist ein
+    Fass, `gatdr` die Tortuer.
+
+>>> FRAGE DES USERS: "es gibt zwei uebergaenge nach tiefer wald, warum?" -
+    stimmt, und die Antwort ist wichtig. zoneprobe ueber die ganze Zone:
+      - A (170,1|-10,6|159,0), Halbmass (15,6|3,8|15,0), Laufrichtung 85 Grad -
+        der oestliche, Blaudachs-Pforte. Dorthin laeuft das Plugin, weil naeher.
+      - B (-122,2|-3,7|105,6), Halbmass (1,0|1,0|1,0), Laufrichtung 0 Grad -
+        ganz im Westen, rund 290 m weg, auffaellig winzig.
+    (Dazu drei Uebergaenge nach 133, Alt-Gridania.)
+    B TAUGT NICHT ALS AUSWEICHWEG: navmeshgaps sagt fuer B "mesh here, but no
+    route from FROM" in ALLEN VIER Netzvarianten.
+
+>>> UND DABEI KAM DER EIGENTLICHE FUND: NEU-GRIDANIA HAT VIER NETZVARIANTEN.
+    Im Cache des Users liegen vier Dateien fuer dieselbe Zone, und sie
+    unterscheiden sich nicht kosmetisch:
+      - `...f1t1__10942__27.AE__0`  1466 Polygone, Uebergang A ABGELEHNT
+      - `...f1t1__10942__27__0`     1466 Polygone, Uebergang A ABGELEHNT
+      - `...f1t1__10942____0`       1464 Polygone, Uebergang A ABGELEHNT
+      - `...f1t1__125B9____0`       1643 Polygone, Uebergang A **ANGENOMMEN**
+    vnavmesh baut den Namen als `{zone}__{filterKey}__{festivals}__{zoneSGs}`
+    (NavmeshManager.GetCacheKey). Die vier unterscheiden sich AUSSCHLIESSLICH im
+    filterKey: dreimal 10942, die begehbare einmal 125B9. Der Filter entscheidet,
+    welche Layer an sind.
+    ES GIBT ALSO EINEN ZUSTAND, IN DEM MAN DORT DURCHLAEUFT - und der Zustand des
+    Users beim Test war keiner davon. Das stuetzt die Sperren-Deutung stark,
+    beweist sie aber noch nicht.
+
+>>> ZU TESTEN: an die Stelle laufen, wo der Auto-Lauf haengenbleibt, dann
+    `/acc coll`. Zwei Zeilen zaehlen:
+      1. Die CollisionBox mit Mitte (155,0|-8,7|157,4): steht dort `AKTIV=True`
+         oder `AKTIV=False`? Das ist die Kernfrage.
+      2. `layerFilterKey=...` bzw. die Filter-Zeilen: steht dort 10942 (die
+         gesperrte Fassung) oder 125B9 (die offene)?
+    Zusammen sagen die beiden, ob die Sperre steht und in welcher Fassung der
+    Zone der Spieler sich befindet.
+
+## FRUEHERER STAND (2026-08-22, "BEIDE NEUBAUTEN WAREN TOT, AUS ZWEI GRUENDEN")
+
+>>> DER USER HAT GETESTET UND ICH HABE DAS LOG GELESEN. Beide gestern gebauten
+    Teile sind gelaufen und haben nicht getragen - jeder aus einem eigenen,
+    inzwischen bewiesenen Grund. Nichts davon war eine Vermutung, beides steht
+    im Log bzw. im vnavmesh-Quelltext.
+
+    BEFUND 1: DER AUTO-LAUF LOESCHT SEINEN EIGENEN ANSCHUB, NACH 11 ms.
+      Log 17:50:00 -> .541 "beendet (Uebergang: schiebe die letzten 3,6 m)",
+      .550 "[Uebergang] Schiebe in ... hinein", .561 "nachlaufender Pfad nach
+      dem Ende abgeraeumt", 01.766 "Anschieben bringt nichts - keine Bewegung".
+      Das ist GuardUpdate (AutoWalkService). Der Waechter laeuft nach jedem
+      Lauf-Ende weiter, sieht Path.IsRunning und ruft Path.Stop. Er kann einen
+      fremden Nachlaeufer nicht von unserem eigenen Anschub unterscheiden - und
+      TryNudgeIntoTransition ruft Finish() bewusst ZUERST. Vier Versuche im Log,
+      viermal dasselbe Muster. Die Meldung "da steht etwas im Weg" war falsch.
+
+    BEFUND 2: DIE ERREICHBARKEITSPRUEFUNG PRUEFT IN NEU-GRIDANIA NICHTS.
+      Im ganzen Log steht keine einzige "[Bruecke]"-Zeile - der Zweig wurde nie
+      betreten. Er haengt an ProbeReachable == null, und das wird nie null:
+      17:50:12.217 "[Orte] NearestPointReachable (156,4|-10,6|155,1) ->
+      (156,4|-12,8|155,1)", also "erreichbar" fuer genau den Punkt, den wir
+      offline als unerreichbar vermessen haben. Im vnavmesh-Quelltext gelesen:
+        - NearestPointReachable filtert nur gegen ein Bit, FLAG_UNREACHABLE
+          (NavmeshQuery.cs:59-64).
+        - Gesetzt wird das Bit ausschliesslich von Prune
+          (NavmeshManager.cs:396-402).
+        - Prune laeuft nur fuer Territorien mit Flood-Fill-Saatpunkten
+          (NavmeshManager.cs:112-114).
+        - Die Saatliste (seeds.json, 2026-08-22 abgerufen) fuehrt 54 Zonen.
+          132 ist NICHT dabei - 128, 129, 134, 135 schon, 132 nicht. 148 haette
+          einen.
+      Ohne Saat traegt in Neu-Gridania kein Polygon das Bit, also ist
+      NearestPointReachable bitgenau NearestPoint. Das trifft nicht nur die
+      Bruecke, sondern auch die Kandidatenauswahl: "Kandidat 1/9, 0 abgelehnt"
+      lehnt nichts ab, weil sie nichts ablehnen KANN.
+
+>>> BEIDES REPARIERT (Debug 0/0, Release 0/0, liegt in devPlugins):
+
+    1. GuardUpdate laesst einen laufenden Anschub in Ruhe (Transitions.IsActive)
+       und schiebt sein eigenes Fenster so lange vor sich her. Unbeaufsichtigt
+       ist dabei nichts: der ZoneTransitionHandler begrenzt sich selbst auf 3 s,
+       bricht nach 1,2 s Stillstand ab und stoppt vnavmesh am Ende immer - und
+       danach laeuft der volle Waechter noch einmal.
+
+    2. TryBridgePartialPath liest die Antwort aus dem WEG statt aus der Abfrage.
+       Recast liefert fuer ein unerreichbares Ziel einen TEILWEG, der am Rand der
+       eigenen Flaeche endet. Achtung beim Auswerten: vnavmesh haengt das
+       Wunschziel unkonditioniert hinten an (res.Add(endPos) in BEIDEN Zweigen
+       von PathfindMesh, das Clamping darueber ist auskommentiert) - der LETZTE
+       Wegpunkt ist also erfunden, der VORLETZTE sagt die Wahrheit. Derselbe
+       erfundene Endpunkt, der in V5.78 die falschen Ankunftsmeldungen erzeugt
+       hat. Endet der Weg zu weit vorm Ziel, sucht der Lauf eine gemessene
+       Bruecke und lenkt auf deren diesseitiges Ende um; passt keine, laeuft er
+       den Teilweg trotzdem und sagt am Ende die ehrliche Restentfernung.
+       Der Vorab-Check bleibt drin - wo es Saatpunkte GIBT, antwortet er richtig
+       und spart einen Fehlversuch.
+
+>>> EINE ZAHL IST NOCH UNSICHER: PathShortfallSlack = 2 m. Ein Weg gilt als
+    abgeschnitten, wenn sein letzter echter Wegpunkt weiter als stopRange + 2 m
+    vom Ziel liegt. Der gemessene kaputte Fall ist 3,6 m bei stopRange 0,5 m,
+    also trennt 2 m die Faelle mit Luft nach beiden Seiten. Was NICHT gemessen
+    ist: wie weit dieser Punkt bei einem Weg liegt, der wirklich ankommt (string
+    pulling setzt ihn auf eine Polygonkante). Zu klein gewaehlt wuerde ein guter
+    Weg als kaputt gelten. Genau das prueft Gegentest 3.
+
+>>> ZU TESTEN (in-game, das kann nur der User):
+      1. In Neu-Gridania zum "Uebergang nach Tiefer Wald" laufen. Erwartete
+         Log-Kette: `[Bruecke] Weg endet 3,x m vor ...` -> `[Bruecke] 'Tor zum
+         Tiefen Wald' passt` -> `umgelenkt - erst zur Bruecke` -> `fahre Bruecke`
+         -> normaler Lauf -> ggf. `[Uebergang] Schiebe in ... hinein`.
+         Kommt die Figur in den Tiefen Wald?
+      2. Wenn der Anschub laeuft: kommt jetzt KEIN "nachlaufender Pfad nach dem
+         Ende abgeraeumt" mehr dazwischen? Das war Befund 1.
+      3. GEGENTEST, wichtig fuer die unsichere Zahl oben: irgendwohin laufen, wo
+         der Weg normal durchgeht. Dort MUSS `[Bruecke] Weg reicht bis zum Ziel`
+         im Log stehen, mit der gemessenen Entfernung. Steht dort statt dessen
+         "Weg endet ... m vor", ist PathShortfallSlack zu klein und die Zahl aus
+         dem Log sagt, auf welchen Wert.
+
+## FRUEHERER STAND (2026-08-22, "DER UEBERGANG LAG HINTER EINER INSEL")
+
+>>> DIE URSACHE IST GEMESSEN, UND SIE WAR NICHT DIE, DIE ICH ZULETZT ANNAHM.
+    Mit dem neuen tools/navmesh-gaps (Punkt-Modus) gegen den echten Cache des
+    Users geprueft, mit genau den Werten, die das Plugin uebergibt:
+      - Von der Spielerposition (152,2|-13,0|151,5) aus umfasst die
+        zusammenhaengende Flaeche 1466 Polygone.
+      - ALLE NEUN Grenz-Kandidaten und auch die Boxmitte antworten
+        "mesh here, but no route from FROM" - dort ist Boden, aber kein Weg.
+      - Der ganze Uebergangsbereich haengt an einer INSEL von 36 Polygonen.
+        Von der Insel aus sind alle Kandidaten UND die Boxmitte erreichbar.
+      - Zwischen Spielerflaeche und Insel: 1,46 m Luecke, 0,00 m Hoehenunterschied,
+        bei (153,75|-12,75|160,25) <-> (155,00|-12,75|161,00).
+    DAMIT WAERE DER KANDIDATEN-FIX VON HEUTE FRUEH ALLEIN WIRKUNGSLOS geblieben:
+    er haette brav alle neun durchprobiert, alle verworfen und waere beim
+    naechsten Punkt gelandet - vor den Faessern. Der Fix ist trotzdem richtig,
+    er repariert nur eine andere Ebene.
+
+>>> ZUM VERGLEICH: Neu-Gridania zerfaellt insgesamt in 718 Flaechen, Limsa in
+    352. Zerfallene Netze sind der Normalzustand, nicht die Ausnahme.
+
+>>> IDEE DES USERS (ausgearbeiteter Vorschlag: Rotation + Vorwaerts-Impuls +
+    Targeting-Fallback). Bewertung gegen die Messungen:
+      1. Rotation: WAR SCHON GEBAUT und ist seit heute frueh repariert
+         (FacingService, Atan2 + DirH-Halbdrehung). Nachgemessen: Abweichung
+         0,000 nach 0,2 s und 1,0 s.
+      2. Vorwaerts-Impuls: richtige Idee, aber fuer DIESEN Fall zu kurz gegriffen
+         - zwischen Lauf-Ende und Grenze liegen Faesser und eine Netzinsel, kein
+         freier Meter. Fuer den Fall "Lauf endet knapp vor dem Ausloeser" ist er
+         genau richtig, und den gibt es.
+      3. Targeting/Interact: trifft hier nicht zu. Zonengrenzen im Freien sind
+         ExitRange-Triggerboxen aus planmap.lgb, es gibt nichts zum Anvisieren.
+         Fuer Instanz-Eingaenge und Tueren (EventObject) gilt das anders, und den
+         Weg benutzt das Plugin dort bereits.
+
+>>> GEBAUT, BEIDES AUF WUNSCH DES USERS ("bau beides, plugin-variante"):
+
+    1. MeshBridgeService - gemessene Netzluecken als Tabelle im Plugin.
+       - Fuer den blinden Spieler ist "lauf die Luecke einmal ab" (aufgezeichnete
+         Spur) untauglich: *"ich kann das nicht selber ablaufen weil ich den weg
+         nicht weiss"*. Also kommen die Punkte aus der Offline-Messung.
+       - Erster Eintrag: Territory 132, "Tor zum Tiefen Wald", mit der
+         Herkunftsangabe direkt im Code.
+       - Der Auto-Lauf fragt VOR dem Start, ob das Ziel erreichbar ist. Ist es das
+         nicht und passt eine Bruecke, laeuft er zuerst ganz normal zum
+         diesseitigen Ende (das liegt auf der erreichbaren Seite), faehrt die
+         Luecke dann mit Path.MoveTo ab und nimmt danach das eigentliche Ziel
+         wieder auf. Die Spur-Etappe wird dafuer komplett wiederverwendet -
+         gleiches Problem, gleiche Fahrweise, nur andere Herkunft der Punkte.
+       - Ein Eintrag gilt nur fuer Ziele innerhalb seiner gemessenen Reichweite
+         (40 m), damit eine Luecke nicht fuer fremde Wege herhalten muss.
+
+    2. ZoneTransitionHandler - der Vorwaerts-Impuls.
+       - Laeuft NUR bei echten Zonengrenzen und nur, wenn die Grenze hoechstens
+         6 m entfernt ist. Weiter weg heisst: da steht etwas im Weg, und blindes
+         Schieben mahlt die Figur hinein.
+       - Faehrt mit Path.MoveTo statt simulierter Tasten - dieselbe Mechanik wie
+         die Spuren, steuert ohne Wegfindung, und wir koennen sie stoppen.
+       - Bricht ab bei Zonenwechsel (Ziel erreicht), nach 3 s, oder sobald sich
+         1,2 s lang nichts bewegt. Dann sagt er, dass etwas im Weg steht.
+       - Richtet vorher ueber FacingService aus, also Figur UND Kamera.
+
+    Neue Ansagen bilingual in AccessibilityStrings (BridgeCrossing,
+    TransitionNudgeFailed). Debug 0/0 und Release 0/0, liegt in devPlugins.
+
+>>> ZU TESTEN (in-game, das kann nur der User):
+      1. In Neu-Gridania zum "Uebergang nach Tiefer Wald" laufen. Erwartete
+         Log-Kette: `[Bruecke] 'Tor zum Tiefen Wald' passt` -> `erst zur Bruecke`
+         -> `fahre Bruecke` -> danach normaler Lauf -> ggf. `[Uebergang] Schiebe
+         in ... hinein`. Kommt die Figur in den Tiefen Wald?
+      2. Wenn nicht: welcher Schritt fehlt im Log? Jeder hat seinen eigenen
+         Marker, die Kette zeigt genau, wo sie abreisst.
+      3. Gegenprobe an einer Grenze OHNE Luecke: dort darf keine Bruecke
+         auftauchen, der Lauf muss unveraendert sein.
+
+## FRUEHERER STAND (2026-08-22, "V5.89 IST DRAUSSEN - DIE NAVIGATION BLEIBT DRIN")
+
+>>> RELEASE v5.89 VEROEFFENTLICHT UND VERIFIZIERT. Der User wollte "von allem was
+    getestet ist ein release" - eine Trennung nach Teststand war nicht moeglich,
+    weil Bestaetigtes und Ungetestetes in denselben Commits liegen. Gewaehlte
+    Trennlinie nach Rueckfrage: alles COMMITTETE seit v5.88 (14 Commits), die
+    heutige Navigationsarbeit bleibt draussen.
+      - Drin: Warnstimme SAPI (bestaetigt), Einstellungen der Inhaltssuche
+        (bestaetigt), Fluchtrichtung, Warnton-Auswahl, Fang-Zustand, Peil-Ton,
+        Dungeonliste, Sonderaktionen, Tiefes Gewoelbe, Jagdziel-Fixes.
+      - Draussen: Drehung, Ankunft/Nachfassen, Grenz-Kandidaten, zone-probe.
+    Versionen synchron: csproj 5.89.0(.0), Plugin.cs "5.89", repo.json
+    5.89.0.0. Sechs Assets haengen am Release. Gegengeprueft durch Download von
+    releases/latest: latest.zip meldet AssemblyVersion 5.89.0.0.
+
+>>> INSTALLER MUSSTE MIT: sein Quellcode wurde seit v5.88 geaendert (IINACT und
+    Browsingway fuer die cactbot-Kampfansagen, Commit 9ec2f24). Deshalb 1.1.0.0
+    -> 1.2.0.0, exe neu gebaut, SHA256 in installer.json nachgezogen und gegen
+    die veroeffentlichte Datei geprueft. Waere die Version stehengeblieben,
+    haette der Installer das Update endlos angeboten.
+
+>>> OFFEN, BRAUCHT DEN USER: der Merge-Commit mit der heutigen Navigationsarbeit
+    liegt LOKAL auf main, der Push wurde von der Berechtigungspruefung
+    abgelehnt. Der Release ist davon nicht betroffen (Tag zeigt auf den
+    Bump-Commit). Zu tun: `git push origin main`, dann den Zweig
+    `nav-2026-08-22` loeschen.
+
+>>> SCHOENHEITSFEHLER, NICHT ANGEFASST: System.Speech.dll liegt DOPPELT im ZIP
+    (einmal oben, einmal unter runtimes/win/lib/net9.0/), je 685 KB. Daher der
+    Sprung von 974 KB auf 1,52 MB. Kurz vor einem Release nicht mehr angefasst -
+    fuer das naechste Mal notiert.
+
+## FRUEHERER STAND (2026-08-22, "DIE KAMERA SCHAUTE GENAU VERKEHRT HERUM")
 
 >>> RUECKMELDUNG DES USERS ZUM TEST: *"nein er steht warscheinlich immer noch
     falsch das mit dem uebergang hat immernoch nicht funktioniert aber die

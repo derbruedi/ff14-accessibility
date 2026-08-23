@@ -323,11 +323,18 @@ public sealed class Configuration : IPluginConfiguration
     public float BeaconVolume = 0.35f;          // Peil-Ton: 0 = stumm, 1 = volle Lautstärke
 
     /// <summary>
-    /// Peil-Ton auf das getrackte Ziel (Spielerwunsch 2026-08-19). Läuft, sobald
-    /// im Objekt-Browser etwas gewählt oder ein Ziel anvisiert ist - nicht erst
-    /// mit der Gehhilfe. Klingt je Zielart anders, wird mit der Entfernung leiser
-    /// und VERSTUMMT, sobald man richtig ausgerichtet steht (Aufzüge, Plattformen).
-    /// Standard AN, abschaltbar mit <see cref="KeyToggleBeacon"/>.
+    /// Peil-Ton beim Laufen. Klingt je Zielart anders, wird mit der Entfernung
+    /// leiser und wird mittig, hell und ruhig, sobald man richtig ausgerichtet
+    /// steht — er verstummt dabei NICHT (Entscheid des Users 2026-08-23, siehe
+    /// BeaconService). Standard AN, abschaltbar mit <see cref="KeyToggleBeacon"/>.
+    ///
+    /// <para>
+    /// ER LÄUFT NUR WÄHREND EINES LAUFS - Gehhilfe oder Auto-Lauf. Von 2026-08-19
+    /// bis v5.89 genügte ihm ein anvisiertes Ziel; da im Kampf immer eines
+    /// anvisiert ist, lief er dort ununterbrochen über allem anderen. Rückmeldung
+    /// aus der Spielerschaft 2026-08-23, daraufhin zurückgenommen. Das Gatter
+    /// sitzt in <c>NavigationService.UpdateTargetBeacon</c>.
+    /// </para>
     /// </summary>
     public bool TargetBeaconEnabled = true;
 

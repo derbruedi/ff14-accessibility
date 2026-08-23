@@ -116,6 +116,29 @@ public sealed class VitalsService : IDisposable
     }
 
     /// <summary>
+    /// Schreibt die Vitalwert-Toene ins Log - im Debug-Build auf INFO-Ebene.
+    ///
+    /// <para>
+    /// WARUM NICHT EINFACH `Debug`: Dalamud schreibt nur INF und WRN in die
+    /// dalamud.log (nachgezaehlt 2026-08-23: 3598 INF, 45 WRN, kein einziges
+    /// DBG). Alles, was hier als Debug lief, war damit unsichtbar - und diese
+    /// Toene sind ein Kandidat fuer die Stoerung, die der Spieler seit dem
+    /// 2026-08-23 meldet ("wird ganz oft gespammt", "er ist nicht da wo er sein
+    /// sollte"). Eine Tonquelle, die keine Spur hinterlaesst, kann man nicht
+    /// ausschliessen, und das hat uns einen halben Tag am falschen Ton suchen
+    /// lassen.
+    /// </para>
+    /// </summary>
+    private void LogVital(string message)
+    {
+#if DEBUG
+        _log.Info(message);
+#else
+        _log.Debug(message);
+#endif
+    }
+
+    /// <summary>
     /// Tracks one bar and plays a tone when it crosses into a new 10 % step.
     /// A big hit that skips several steps yields ONE tone for the step actually
     /// reached, not a salvo.
@@ -153,11 +176,12 @@ public sealed class VitalsService : IDisposable
         // while tabbed out would be announced in one go on return.
         if (!_windowActive)
         {
-            _log.Debug($"[Vitals] {label} {previous * 10}% -> {percent}% - Fenster im Hintergrund, kein Ton.");
+            LogVital($"[Vitals] {label} {previous * 10}% -> {percent}% - Fenster im Hintergrund, kein Ton.");
             return;
         }
 
-        _log.Debug($"[Vitals] {label} {previous * 10}% -> {percent}% (Stufe {level}, {(direction > 0 ? "auf" : "ab")})");
+        LogVital($"[Vitals] {label} {previous * 10}% -> {percent}% (Stufe {level}, " +
+                 $"{(direction > 0 ? "auf" : "ab")}, Seite {PanFor(percent):F2})");
         PlayTone(voice, PanFor(percent), direction, IsCritical(voice, percent));
     }
 

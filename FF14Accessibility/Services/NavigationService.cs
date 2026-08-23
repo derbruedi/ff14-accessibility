@@ -182,8 +182,10 @@ public sealed class NavigationService
             _lastSeenTargetId = 0;
             // Zonenwechsel oder Logout: es gibt keine Richtung mehr, auf die der
             // Ton zeigen koennte. Ohne das laeuft er mit dem letzten Stand weiter,
-            // waehrend der Ladebildschirm liegt.
-            if (_beacon.IsRunning) _beacon.Idle();
+            // waehrend der Ladebildschirm liegt. Stop statt Idle - auf einem
+            // Ladebildschirm hat auch das Geraet nichts offen zu haben (siehe
+            // UpdateTargetBeacon).
+            if (_beacon.IsRunning) _beacon.Stop();
             if (_walkGuideActive)
             {
                 // Player gone (logout/zone change) - the tracked object is
@@ -284,11 +286,63 @@ public sealed class NavigationService
         // gleichzeitig waeren nicht auseinanderzuhalten. Der Warnton
         // (AoeWarningService) laeuft daneben weiter - der ist ein monaurales
         // Brummen und deshalb bewusst nicht mit dem Peil-Ton zu verwechseln.
-        if (TryDriveEscapeBeacon(player)) return;
+        if (TryDriveEscapeBeacon(player))
+        {
+            BeaconProbe(player, "Flucht");
+            return;
+        }
 
         if (_walkGuideActive) WalkGuideFrame(player);
         else UpdateTargetBeacon(player);
+        BeaconProbe(player, _walkGuideActive ? "Gehhilfe" : "Ziel");
     }
+
+#if DEBUG
+    private string _lastBeaconProbe = string.Empty;
+    private DateTime _lastBeaconProbeAt;
+
+    /// <summary>
+    /// Schreibt mit, WER den Peil-Ton gerade fuettert und was dabei herauskommt.
+    /// Gebaut fuer zwei Meldungen des Users vom 2026-08-23: *"der ton stoppt
+    /// nicht wenn man die gehhilfe aus macht"* und *"wenn man sich ausrichtet
+    /// passt der ton sich nicht an"*.
+    ///
+    /// <para>
+    /// Die beiden Fragen, die das Log beantworten soll:
+    ///   1. STOPPT ER NICHT? Dann zeigt `still=False`, obwohl `quelle=Ziel` und
+    ///      `laeuft=False` - also niemand mehr fuettert, aber die Ausgabe steht
+    ///      nicht auf stumm. Genau dort sitzt das nicht angekommene `Idle()`.
+    ///   2. PASST ER SICH NICHT AN? Dann bleibt `rot` konstant, waehrend sich
+    ///      der Spieler dreht - der Beweis, dass die FIGUR stehen bleibt und nur
+    ///      die KAMERA sich dreht (`MoveMode` 0). `dirH` daneben zeigt, ob die
+    ///      Kamera die Bewegung mitgemacht hat, die die Figur nicht machte.
+    /// </para>
+    ///
+    /// <para>
+    /// Entdoppelt: geloggt wird nur, wenn sich die Lage aendert, sonst hoechstens
+    /// einmal pro Sekunde. Ein Peil-Ton laeuft ueber Minuten, und ein Eintrag pro
+    /// Frame macht das Log unlesbar.
+    /// </para>
+    /// </summary>
+    private void BeaconProbe(IGameObject player, string quelle)
+    {
+        var dirH = FacingService.CameraFacing();
+        var zeile = $"quelle={quelle} still={_beacon.DebugSilent?.ToString() ?? "-"} " +
+                    $"eingerastet={_beacon.DebugAligned} offen={_beacon.IsRunning} " +
+                    $"schluessel={_beacon.DebugTargetKey:X} gehhilfe={_walkGuideActive} " +
+                    $"laeuft={AutoWalk?.IsWalking.ToString() ?? "-"} " +
+                    $"rot={player.Rotation:F3} dirH={dirH?.ToString("F3") ?? "-"} " +
+                    $"kameraAb={(dirH is { } d ? Normalise180((player.Rotation - d) * (180.0 / Math.PI)) : double.NaN):F1}";
+
+        var now = DateTime.UtcNow;
+        if (zeile == _lastBeaconProbe && (now - _lastBeaconProbeAt).TotalSeconds < 1.0) return;
+        _lastBeaconProbe = zeile;
+        _lastBeaconProbeAt = now;
+        _log.Info($"[BeaconProbe] {zeile}");
+    }
+#else
+    private void BeaconProbe(IGameObject player, string quelle) { }
+#endif
 
     /// <summary>
     /// Fuehrt den Peil-Ton auf den sicheren Punkt, solange der Spieler in einer
@@ -339,9 +393,7 @@ public sealed class NavigationService
     // ausgerichtet steht (Aufzuege, Plattformen). Die ganze Signallogik sitzt in
     // BeaconService; hier wird nur beantwortet: WORAUF zielt er gerade?
     //
-    // ZWEI QUELLEN, und die Trennung ist seine Vorgabe ("die toene fuer getrackte
-    // sachen sollen auch kommen wenn die gehhilfe aus ist aber dann nur wenn was
-    // anvisiert ist"):
+    // ZWEI QUELLEN:
     //   Gehhilfe AN  -> WalkGuideFrame fuettert den Ton. Sie kennt den naechsten
     //                   WEGPUNKT, also die Richtung, in die man wirklich laufen
     //                   muss, und sie kann auch auf eine blosse Position zeigen.
@@ -350,6 +402,48 @@ public sealed class NavigationService
     private void UpdateTargetBeacon(IGameObject player)
     {
         if (!_config.TargetBeaconEnabled)
+        {
+            if (_beacon.IsRunning) _beacon.Stop();
+            return;
+        }
+
+        // DER TON GEHOERT ZUM LAUFEN, NICHT ZUM ANVISIEREN.
+        //
+        // Bis v5.89 hing diese Methode an nichts weiter als "es ist etwas
+        // anvisiert" - die Vorgabe des Users vom 2026-08-19 ("die toene fuer
+        // getrackte sachen sollen auch kommen wenn die gehhilfe aus ist aber dann
+        // nur wenn was anvisiert ist"). Im Kampf ist aber IMMER etwas anvisiert,
+        // und damit lief der Ton dauerhaft ueber allem. Rueckmeldung aus der
+        // Spielerschaft 2026-08-23: *"now its all on every time and you hear it
+        // over everything"*. Der User hat die Vorgabe daraufhin gekippt
+        // (2026-08-23): der Ton laeuft nur noch, solange wirklich ein Lauf laeuft.
+        //
+        // Vor 9ec2f24 speiste AUSSCHLIESSLICH die Gehhilfe den Ton (nachgesehen in
+        // 9ec2f24^: `if (_walkGuideActive) WalkGuideFrame(player);` ohne
+        // else-Zweig). Der Auto-Lauf kommt hier bewusst dazu: auch er ist ein
+        // bewusst ausgeloester Vorgang mit Anfang und Ende, also kein
+        // Dauerzustand - genau der Unterschied, ueber den sich die Spieler
+        // beschwert haben.
+        //
+        // STOP, NICHT IDLE - und das ist eine Korrektur von heute Vormittag.
+        //
+        // `Idle()` schaltet nur stumm und LAESST DAS AUDIOGERAET OFFEN. Das war
+        // richtig, solange der Ton bei jedem anvisierten Ziel lief: dann kam der
+        // naechste Ton im Sekundentakt, und Auf- und Zumachen kostete nur einen
+        // hoerbaren Aussetzer. Seit der Ton an einen LAUF gebunden ist, ist das
+        // Gegenteil richtig - bis zum naechsten Lauf vergehen Minuten, und ein
+        // offener Ausgabestrom schiebt die ganze Zeit Stille durch die Soundkarte.
+        //
+        // GEMESSEN 2026-08-23: nach dem Ende der Gehhilfe stand die Sonde eine
+        // Minute lang auf `still=True offen=True` - stumm, aber offen. Der User
+        // meldete waehrenddessen *"er verschwindet nicht beim ausmachen"*. Ein
+        // offener Strom rauscht je nach Soundkarte hoerbar; das ist die einzige
+        // Erklaerung, die dazu passt, dass die Software stumm ist und trotzdem
+        // etwas zu hoeren war.
+        //
+        // Der Aussetzer beim naechsten Start ist verkraftbar: ein Lauf beginnt
+        // ohnehin mit einer gesprochenen Ansage, hinter der das Geraet aufgeht.
+        if (AutoWalk is not { IsWalking: true })
         {
             if (_beacon.IsRunning) _beacon.Stop();
             return;
@@ -587,6 +681,18 @@ public sealed class NavigationService
     /// Konstruktor-Arguments, damit die Signatur unveraendert bleibt.
     /// </summary>
     public DeepDungeonNav? DeepDungeon { get; set; }
+
+    /// <summary>
+    /// Der Auto-Lauf, oder null solange er nicht gesetzt ist. Gebraucht wird davon
+    /// genau eine Auskunft: laeuft gerade einer? Sie entscheidet, ob der Peil-Ton
+    /// ueberhaupt spielen darf (siehe <see cref="UpdateTargetBeacon"/>).
+    ///
+    /// Eine Property statt eines Konstruktor-Arguments, weil Plugin.cs diesen
+    /// Dienst frueher baut als den Auto-Lauf - dieselbe Bauordnung wie bei
+    /// <see cref="DeepDungeon"/>. Bleibt sie null, schweigt der Ton ausserhalb der
+    /// Gehhilfe; das ist die stillere und damit die sichere Richtung.
+    /// </summary>
+    public AutoWalkService? AutoWalk { get; set; }
 
     /// <summary>[Tiefes Gewoelbe] Ob der Gewoelbe-Satz im vorigen Frame galt, damit das Betreten oder
     /// Verlassen eines Gewoelbes den Browser zuruecksetzen kann.</summary>
@@ -2569,6 +2675,17 @@ public sealed class NavigationService
 
     private bool _guideMeshEndAnnounced;
 
+    /// <summary>
+    /// Das zuletzt ANGESAGTE Segment-Ende, oder null am Anfang eines Laufs.
+    /// Verhindert, dass dieselbe Etappe mehrfach gesprochen wird: seit die
+    /// Ansage das Segment-Ende nennt statt des naechsten Rohpunkts, passiert der
+    /// Spieler mehrere Wegpunkte, die alle auf DENSELBEN Zielpunkt zeigen -
+    /// ohne diesen Merker kaeme bei jedem davon dieselbe Zeile
+    /// (Log 13:18: "4 Meter, suedwestlich" und "3 Meter, suedwestlich" in
+    /// 150 ms Abstand).
+    /// </summary>
+    private Vector3? _lastSpokenLeg;
+
     /// <summary>Arrival distance for the walk guide, in yalms/meters.</summary>
     private const float ArrivalDistance = 3f;
 
@@ -2716,11 +2833,16 @@ public sealed class NavigationService
     private void StopWalkGuide()
     {
         _walkGuideActive = false;
-        // Idle statt Stop: das Ziel bleibt in aller Regel gewaehlt, und im
-        // naechsten Frame uebernimmt der Ziel-Peilton (UpdateTargetBeacon). Das
-        // Audiogeraet dazwischen zu schliessen und sofort wieder zu oeffnen
-        // kostet nur einen hoerbaren Aussetzer.
-        _beacon.Idle();
+        // Stop, nicht Idle: mit dem Ende der Gehhilfe endet der Ton, und bis zum
+        // naechsten Lauf vergehen Minuten - das Geraet hat solange nichts offen zu
+        // haben. Die alte Begruendung ("im naechsten Frame uebernimmt der
+        // Ziel-Peilton") gilt nicht mehr, seit der Ton an einen LAUF gebunden ist
+        // und nicht mehr an ein anvisiertes Ziel. Ausfuehrlich steht das an der
+        // gleichlautenden Stelle in UpdateTargetBeacon.
+        //
+        // Hier UND dort, obwohl das Gatter es im naechsten Frame ohnehin taete:
+        // "aus" muss im selben Moment aus sein, in dem es der Spieler ausschaltet.
+        _beacon.Stop();
         ClearRoute();
     }
 
@@ -2728,6 +2850,9 @@ public sealed class NavigationService
     {
         _route = null;
         _routeCursor = 0;
+        // Der naechste Lauf faengt frisch an: sonst schwiege seine erste Etappe,
+        // wenn sie zufaellig dorthin zeigt wie die letzte des vorigen.
+        _lastSpokenLeg = null;
         _routeTask = null;
         _computeAnnounced = false;
     }
@@ -2809,8 +2934,16 @@ public sealed class NavigationService
             return;
         }
 
+        // Kompass, wie alles Gesprochene seit 2026-08-23. Fuer den Vergleich
+        // "hat sich die Richtung geaendert?" ist er sogar der bessere Massstab:
+        // die relative Angabe wechselte schon, wenn der Spieler sich nur drehte,
+        // ohne dass die Route eine andere geworden waere.
+        // Segment-Ende, wie Ton und Ausricht-Taste (siehe CurrentGuidePoint) -
+        // sonst meldet ein Re-Routing eine Richtung, die der Ton nicht zeigt.
         var previousDirection = _route != null && _routeCursor < _route.Count
-            ? DirectionText(RelativeAngle(player, _route[_routeCursor]))
+            ? RouteService.CompassAdjective(
+                  player.Position,
+                  _route[RouteService.SegmentEndIndex(player.Position, _route, _routeCursor)])
             : null;
 
         _route = waypoints;
@@ -2841,7 +2974,9 @@ public sealed class NavigationService
         {
             // Guide rule: after a quiet re-route speak one line ONLY when the
             // immediate direction actually changed.
-            var newDirection = DirectionText(RelativeAngle(player, _route[_routeCursor]));
+            var newDirection = RouteService.CompassAdjective(
+                player.Position,
+                _route[RouteService.SegmentEndIndex(player.Position, _route, _routeCursor)]);
             if (newDirection != previousDirection)
                 _tolk.SpeakInterrupt(AccessibilityStrings.NewRoute(newDirection));
             _log.Info($"[Nav] Gehhilfe: Route neu berechnet ({waypoints.Count} Wegpunkte).");
@@ -2891,16 +3026,49 @@ public sealed class NavigationService
             CheckMeshEnd(player, distance, now);
         }
 
+        // DER PEILPUNKT IST DAS SEGMENT-ENDE, NICHT DER NAECHSTE ROHE WEGPUNKT.
+        //
+        // Vorher sprang er bei jedem passierten Wegpunkt weiter, und weil der
+        // naechste woanders liegt, riss die Ausrichtung jedes Mal auf: einrasten,
+        // drei Meter laufen, ausrasten, neu ausrichten. Gemessen 2026-08-23 an
+        // einer Route mit 5 Wegpunkten auf 72 m - `rot` blieb dabei unveraendert,
+        // es lag also nie am Spieler. Jetzt zeigt der Ton dorthin, wo der Weg
+        // wirklich abbiegt (siehe RouteService.SegmentEndIndex); dieselbe Route
+        // hat damit 2 Peilpunkte statt 5.
+        //
+        // DER TON REISST DABEI NICHT AB, und das ist Bedingung des Users:
+        // `targetKey` bleibt ueber die ganze Gehhilfe `_walkBeaconKey`. Nur ein
+        // WECHSEL dieses Schluessels laesst BeaconService den Takt abbrechen und
+        // neu ansetzen - ein wandernder Peilpunkt unter demselben Schluessel
+        // veraendert lediglich Winkel und Lautstaerke, fortlaufend und ohne Luecke.
         var guidePoint = _route != null && _routeCursor < _route.Count
-            ? _route[_routeCursor]
+            ? _route[RouteService.SegmentEndIndex(player.Position, _route, _routeCursor)]
             : _walkDestPosition;
         var guideDist = Vector3.Distance(player.Position, guidePoint);
         var relAngle = RelativeAngle(player, guidePoint);
-        // Steering (pitch/pan) follows the waypoint; loudness follows the
-        // remaining distance to the DESTINATION (see BeaconService.Update).
-        // Die Steuerung (Seite, Stille-Zone) folgt dem WEGPUNKT, die Lautstaerke
-        // der Reststrecke zum Ziel - siehe BeaconService.Update.
-        _beacon.Update(relAngle, distance, _walkBeaconKind,
+        // LAUTSTAERKE NACH DEM PEILPUNKT, NICHT NACH DER RESTSTRECKE - geaendert
+        // 2026-08-23 auf Vorschlag des Users ("vielleicht sollten wir die
+        // Entfernung ueber die Wegpunkte machen").
+        //
+        // Vorher stand hier `distance`, also der Weg bis zum ZIEL, mit der
+        // Begruendung "Wegpunkte sind immer nah, der Ton waere sonst dauernd
+        // laut". Was dabei uebersehen wurde, zeigt das Log vom 15:27:
+        //     dist=10,0  zielDist=701,0  relAngle=0
+        // Der Peilpunkt lag 10 m entfernt, gerechnet wurde mit 701 m - und bei
+        // der Entfernung greift die Untergrenze von 15 % aus
+        // BeaconService.Update. Auf einer langen Route ist der Ton damit ueber
+        // die gesamte Strecke praktisch stumm, genau dort, wo man ihn am
+        // laengsten braucht. Der User meldete es als *"beim Laufen hab ich jetzt
+        // keinen Ton, es sei denn das Ziel ist weiter weg"*.
+        //
+        // Das alte Gegenargument traegt nicht: der Ton ist ohnehin NUR hoerbar,
+        // wenn die Ausrichtung nicht stimmt (sonst schweigt er). Laut ist er
+        // also genau dann, wenn eine Korrektur faellig ist - das ist kein
+        // Uebermass, sondern der Zweck. Wie weit es noch ist, sagt die Sprache.
+        //
+        // `arrived` bleibt bewusst am ZIEL haengen: es beantwortet "bin ich da",
+        // und das entscheidet die Reststrecke, nicht der naechste Knick.
+        _beacon.Update(relAngle, guideDist, _walkBeaconKind,
                        arrived: distance <= _walkArrivalRange, targetKey: _walkBeaconKey);
 
         // Reassurance repeat between waypoint events; the beacon carries the
@@ -2912,7 +3080,13 @@ public sealed class NavigationService
         if ((DateTime.UtcNow - _lastGuideTick).TotalSeconds < interval) return;
         _lastGuideTick = DateTime.UtcNow;
 
-        _tolk.SpeakInterrupt($"{FormatDistance(guideDist)}, {DirectionText(relAngle)}{VerticalHint(player, guidePoint)}.");
+        // Gesprochen wird die Himmelsrichtung, gefuehrt wird ueber den Ton. Der
+        // Ton steht direkt darueber und bekommt weiter relAngle - das ist die
+        // Arbeitsteilung seit 2026-08-23: die Sprache sagt, WO der Wegpunkt
+        // liegt, der Ton sagt, ob man richtig steht.
+        _tolk.SpeakInterrupt($"{FormatDistance(guideDist)}, " +
+                             $"{RouteService.CompassAdjective(player.Position, guidePoint)}" +
+                             $"{VerticalHint(player, guidePoint)}.");
         _log.Info($"[Nav] Gehhilfe: dist={guideDist:F1} zielDist={distance:F1} relAngle={relAngle:F0} " +
                   $"wp={_routeCursor}/{_route?.Count ?? 0} rot={player.Rotation:F2}");
     }
@@ -2985,17 +3159,41 @@ public sealed class NavigationService
     }
 
     /// <summary>
-    /// Where the walk guide is currently steering - the active waypoint while a
-    /// route exists, the destination itself otherwise. Null when no guide runs.
+    /// Where the walk guide is currently steering - das Ende des laufenden
+    /// Segments, solange eine Route existiert, sonst das Ziel selbst. Null, wenn
+    /// keine Gehhilfe laeuft.
+    ///
+    /// <para>
+    /// ES MUSS DERSELBE PUNKT SEIN, AUF DEN DER TON ZEIGT. Als der Ton am
+    /// 2026-08-23 auf das Segment-Ende umgestellt wurde, blieb diese Property auf
+    /// dem naechsten ROHEN Wegpunkt stehen - und damit drehte die Ausricht-Taste
+    /// (Numpad5) den Spieler in eine andere Richtung, als der Ton anzeigte. Der
+    /// Ton wurde nach dem Ausrichten folgerichtig nicht still, weil der Spieler
+    /// nach der Drehung tatsaechlich falsch stand. Gemeldet vom User noch am
+    /// selben Tag: *"wenn ich mich mit Numpad5 automatisch ausrichte geht der Ton
+    /// nicht mit"*.
+    /// </para>
+    ///
+    /// <para>
+    /// MERKSATZ: Ton, gesprochene Richtung und Ausricht-Taste beantworten
+    /// dieselbe Frage - "wo geht es lang". Sie muessen aus derselben Quelle
+    /// kommen; drei Antworten auf eine Frage sind fuer einen blinden Spieler
+    /// nicht auseinanderzuhalten.
+    /// </para>
     /// </summary>
     private Vector3? CurrentGuidePoint
     {
         get
         {
             if (!_walkGuideActive) return null;
-            return _route != null && _routeCursor < _route.Count
+            if (_route == null || _routeCursor >= _route.Count) return _walkDestPosition;
+
+            // Ohne Spieler kein Segment - dann bleibt der Rohpunkt die ehrlichste
+            // Auskunft, denn das Segment beginnt bei der Spielerposition.
+            var player = _objectTable.LocalPlayer;
+            return player == null
                 ? _route[_routeCursor]
-                : _walkDestPosition;
+                : _route[RouteService.SegmentEndIndex(player.Position, _route, _routeCursor)];
         }
     }
 
@@ -3065,14 +3263,29 @@ public sealed class NavigationService
 
         if (advanced && announce)
         {
-            if (genuineReach) _cue.PlayWaypointTone();
-            // Fresh leg, spoken once, relative to the current heading - this
-            // event line replaces the old fixed 2 s repetition.
-            var next = route[_routeCursor];
-            var relAngle = RelativeAngle(player, next);
+            // NUR AN ECHTEN ABBIEGUNGEN, nicht an jedem Rohpunkt. Der Ton peilt
+            // seit 2026-08-23 das Segment-Ende an (siehe WalkGuideFrame), und die
+            // Sprache muss denselben Punkt meinen - sonst nennt sie eine Richtung,
+            // die der Ton gar nicht zeigt.
+            //
+            // Es loest ausserdem dasselbe Uebermass wie beim Ton: im Log vom
+            // 13:18 kamen "4 Meter, suedwestlich" und "3 Meter, suedwestlich"
+            // innerhalb von 150 ms nacheinander - zweimal dieselbe Richtung, weil
+            // zwei Rohpunkte in derselben Richtung lagen.
+            var next = route[RouteService.SegmentEndIndex(player.Position, route, _routeCursor)];
             var dist = Vector3.Distance(player.Position, next);
-            _tolk.SpeakInterrupt($"{FormatDistance(dist)}, {DirectionText(relAngle)}{VerticalHint(player, next)}.");
-            // (FormatDistance/DirectionText/VerticalHint are all language-aware.)
+            var sameLeg = _lastSpokenLeg is { } last
+                          && Vector3.DistanceSquared(last, next) < 0.01f;
+            _lastSpokenLeg = next;
+
+            if (!sameLeg)
+            {
+                if (genuineReach) _cue.PlayWaypointTone();
+                _tolk.SpeakInterrupt($"{FormatDistance(dist)}, " +
+                                     $"{RouteService.CompassAdjective(player.Position, next)}" +
+                                     $"{VerticalHint(player, next)}.");
+                // (FormatDistance/CompassAdjective/VerticalHint are all language-aware.)
+            }
             _lastGuideTick = DateTime.UtcNow;
             _log.Info($"[Nav] Gehhilfe: Wegpunkt {(genuineReach ? "erreicht" : "übersprungen")}, " +
                       $"weiter zu {_routeCursor + 1}/{route.Count}, dist={dist:F1}");
@@ -3525,43 +3738,116 @@ public sealed class NavigationService
     }
 
     /// <summary>
-    /// Direction word from the player's heading to <paramref name="targetPos"/>.
+    /// Die gesprochene Richtung zu <paramref name="targetPos"/> - seit 2026-08-23
+    /// eine HIMMELSRICHTUNG ("östlich"), nicht mehr "links"/"rechts".
+    ///
+    /// <para>
+    /// Entscheidung des Users 2026-08-23, nachdem links und rechts vertauscht
+    /// waren. Der Punkt ist nicht der behobene Dreher, sondern die Fehlerklasse:
+    /// eine relative Angabe haengt an der Blickrichtung (und bei `MoveMode` 0
+    /// zusaetzlich an der Kamera), eine Himmelsrichtung faellt allein aus der
+    /// Positionsdifferenz. Sie KANN nicht auf die falsche Seite zeigen.
+    /// Arbeitsteilung seither: die Sprache sagt, WO es liegt (absolut), der
+    /// Peil-Ton fuehrt die Ausrichtung (relativ, Stereo) - siehe
+    /// <see cref="RouteService.CompassAdjective"/>.
+    /// </para>
+    ///
+    /// <para>
     /// <paramref name="caller"/> is filled in by the compiler and only used by
     /// the debug probe, so every direction announcement (object browser, quest
     /// goals, target change, /acc nav) can be traced back to its source in the
     /// log without a game target being required.
+    /// </para>
     /// </summary>
     private string CalculateDirection(IGameObject player, Vector3 targetPos,
                                       [CallerMemberName] string caller = "")
     {
+        var word = RouteService.CompassAdjective(player.Position, targetPos);
+        // Weiter berechnet, aber nur noch fuer die Sonde: sie misst die Seite,
+        // an der der PEIL-TON haengt, und der bleibt relativ.
         var angle = RelativeAngle(player, targetPos);
-        var word = DirectionText(angle);
 #if DEBUG
         var dx = targetPos.X - player.Position.X;
         var dz = targetPos.Z - player.Position.Z;
+
+        // FIGUR GEGEN KAMERA - die Frage betrifft jetzt nur noch den PEIL-TON.
+        //
+        // Die gesprochene Richtung (`wort`) ist seit 2026-08-23 eine
+        // Himmelsrichtung und haengt an gar keiner Blickrichtung mehr. Der Ton
+        // aber schon: seine Stereoseite ist sin(relAngle), und `relAngle` rechnet
+        // gegen `player.Rotation`, also gegen die FIGUR - waehrend die Bewegung
+        // bei `MoveMode` 0 der KAMERA folgt (gemessen 2026-08-22).
+        //
+        // Deshalb stehen figurWort und kameraWort weiter nebeneinander: wo sie
+        // sich unterscheiden, zieht der Ton auf eine andere Seite, als das Laufen
+        // sie hinbringt. `kameraAb` sagt, wie weit beide auseinanderstehen.
+        var figurWort = DirectionText(angle);
+        var camFacing = FacingService.CameraFacing();
+        var camAngle  = camFacing is { } cf
+            ? Normalise180((cf - Math.Atan2(dx, dz)) * (180.0 / Math.PI))
+            : double.NaN;
+        var camWord   = double.IsNaN(camAngle) ? "?" : DirectionText(camAngle);
+        var camOffset = camFacing is { } cf2
+            ? Normalise180((player.Rotation - cf2) * (180.0 / Math.PI))
+            : double.NaN;
+        var moveMode  = _gameConfig.UiControl.TryGetUInt("MoveMode", out var mm) ? (int)mm : -1;
+
         _log.Info($"[NavDirProbe] {caller}: rot={player.Rotation:F3} dx={dx:F2} dz={dz:F2} " +
-                  $"angle={angle:F1} wort='{word}'");
+                  $"gesprochen='{word}' | tonWinkel={angle:F1} figurWort='{figurWort}' " +
+                  $"kamera={camFacing?.ToString("F3") ?? "-"} " +
+                  $"kameraWinkel={camAngle:F1} kameraWort='{camWord}' kameraAb={camOffset:F1} " +
+                  $"moveMode={moveMode} {(figurWort != camWord ? "ABWEICHUNG" : "gleich")}");
 #endif
         return word;
     }
 
     // Relativer Winkel Spieler-Blickrichtung -> Ziel: 0° = geradeaus,
-    // positiv = rechts. Rotations-Konvention VERIFIZIERT aus Live-Log
-    // 2026-07-10 15:27 (F-Snap auf Ziel, rot=-1.83 bei Ziel-Peilung
-    // atan2(dx,dz)=-105°): Blickvektor = (sin(rot), cos(rot)) in XZ, also
-    // rot direkt vergleichbar mit atan2(dx, dz). Vorzeichen (positiv =
-    // rechts) vom User per Beacon-Hörtest bestätigt (2026-07-10 Abend).
-    // Details: docs/game-api.md.
+    // positiv = rechts, negativ = links (so liest es RelativeDirection).
+    //
+    // DAS VORZEICHEN WAR BIS 2026-08-23 VERDREHT - links und rechts kamen
+    // vertauscht heraus. Der Fehler traf ALLES, was hier hängt: die
+    // Richtungsansagen, die Gehhilfe und den Peil-Ton (dessen Stereoseite ist
+    // sin(relAngle)). Genau deshalb meldeten die Spieler beides zusammen als
+    // falsch - es war nie ein Ton- und ein Sprachfehler, sondern dieser eine.
+    //
+    // WARUM ES VERDREHT WAR, hergeleitet aus der Konvention, auf der dieselbe
+    // Datei schon beruhte:
+    //   - Blickvektor = (sin(rot), cos(rot)) in XZ, verifiziert aus Live-Log
+    //     2026-07-10 (Details: docs/game-api.md).
+    //   - Norden ist -Z, Osten +X. Steht so in RouteService.SectorOf
+    //     (atan2(dx, -dz), 0 = Norden) und speist die Himmelsrichtungsansagen.
+    //   - Daraus folgt zwingend: rot = 0 blickt nach +Z, also nach SÜDEN
+    //     (HeadingSector(0) = SectorOf(0, 1) = atan2(0, -1) = 180° = Süden).
+    // Ein Ziel im Osten (dx > 0) ergab mit `atan2 - rot` ein PLUS, also
+    // "rechts". Wer nach Süden blickt, hat Osten aber LINKS. Darum steht die
+    // Differenz jetzt andersherum.
+    //
+    // Der Beacon-Hörtest vom 2026-07-10, auf den sich der alte Kommentar hier
+    // berief, hat das Vorzeichen NICHT abgesichert - er kann die Seite nur
+    // bestätigt haben, wenn dabei nach Norden geblickt wurde, denn nur dann
+    // fallen beide Vorzeichen zusammen. In-game gemessen und gemeldet vom User
+    // 2026-08-23: *"wenn ich nach links laufe wird weniger und nach rechts mehr,
+    // links und rechts ist vertauscht"*.
+    //
+    // Gegengerechnet an fünf Lagen (Blick Süd/Ziel Ost -> links, Blick Süd/Ziel
+    // West -> rechts, Ziel voraus -> geradeaus, Ziel hinten -> hinten, Blick
+    // Ost/Ziel Süd -> rechts).
     internal static double RelativeAngle(IGameObject player, Vector3 targetPos)
     {
         var playerPos = player.Position;
         var dx = targetPos.X - playerPos.X;
         var dz = targetPos.Z - playerPos.Z;
 
-        var relativeAngle = (Math.Atan2(dx, dz) - player.Rotation) * (180.0 / Math.PI);
-        if (relativeAngle > 180) relativeAngle -= 360;
-        if (relativeAngle < -180) relativeAngle += 360;
-        return relativeAngle;
+        return Normalise180((player.Rotation - Math.Atan2(dx, dz)) * (180.0 / Math.PI));
+    }
+
+    /// <summary>Folds an angle in DEGREES into [-180, 180], so "left" and "right"
+    /// stay on the sides they belong to across the seam.</summary>
+    private static double Normalise180(double degrees)
+    {
+        if (degrees > 180) degrees -= 360;
+        if (degrees < -180) degrees += 360;
+        return degrees;
     }
 
     private static string DirectionText(double relativeAngle) =>

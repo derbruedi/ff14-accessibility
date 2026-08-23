@@ -298,8 +298,20 @@ public static partial class AccessibilityStrings
             ? $"{name}, Stufe {level}, {distance:F0} Meter {compass}"
             : $"{name}, level {level}, {distance:F0} meters {compass}";
 
-    /// <summary>Relative-to-heading direction word for a signed angle in degrees
-    /// (negative = left, 0 = ahead). The spoken steering cue.</summary>
+    /// <summary>
+    /// Relative-to-heading direction word for a signed angle in degrees
+    /// (negative = left, 0 = ahead).
+    ///
+    /// <para>
+    /// NICHT MEHR DIE GESPROCHENE RICHTUNG. Seit 2026-08-23 sagt der Mod
+    /// Himmelsrichtungen (<c>RouteService.CompassAdjective</c>) - die haengen
+    /// nicht an der Blickrichtung und koennen darum nicht auf die falsche Seite
+    /// zeigen, woran diese hier jahrelang krankte. Was hier noch haengt, ist die
+    /// Debug-Sonde <c>[NavDirProbe]</c>, die damit die Seite des PEIL-TONS misst;
+    /// der bleibt relativ. Bleibt ausserdem als Rueckweg, falls sich der Kompass
+    /// im Spiel als der schlechtere Weg erweist.
+    /// </para>
+    /// </summary>
     public static string RelativeDirection(double relativeAngle) => relativeAngle switch
     {
         < -135 => IsGerman ? "hinter links"  : "behind to the left",
@@ -544,8 +556,12 @@ public static partial class AccessibilityStrings
     /// <summary>Peil-Ton eingeschaltet.</summary>
     public static string TargetBeaconOn =>
         IsGerman
-            ? "Peil-Ton an. Er verstummt, sobald du richtig stehst."
-            : "Target beacon on. It goes quiet once you are lined up.";
+            // Wortlaut geaendert 2026-08-23: der Ton verstummt NICHT mehr beim
+            // Ausrichten (siehe BeaconService). Ein gesprochener Satz, der ein
+            // Verhalten verspricht, das es nicht mehr gibt, schickt den Spieler
+            // auf die Suche nach einem Fehler, der keiner ist.
+            ? "Peil-Ton an. Er wird mittig und ruhig, wenn du richtig stehst."
+            : "Target beacon on. It centres and slows once you are lined up.";
 
     /// <summary>Peil-Ton ausgeschaltet.</summary>
     public static string TargetBeaconOff =>
@@ -1775,6 +1791,11 @@ public static partial class AccessibilityStrings
     public static string StuckRemaining(float distance) =>
         IsGerman ? $"Ich stecke fest, noch {MetersRemaining(distance)}. Auto-Lauf beendet."
                  : $"I'm stuck, {MetersRemaining(distance)} remaining. Auto-walk ended.";
+    /// <summary>Same, with the culprit named (see <see cref="ObstacleService"/>).
+    /// "Ich stecke fest" says nothing about what to do; the blocker does.</summary>
+    public static string StuckBehind(string blocker, float distance) =>
+        IsGerman ? $"Ich komme nicht weiter, {blocker} steht im Weg. Noch {MetersRemaining(distance)}. Auto-Lauf beendet."
+                 : $"I cannot get any further, {blocker} is in the way. {MetersRemaining(distance)} remaining. Auto-walk ended.";
     public static string NoPathTo(string name, string hint) =>
         IsGerman ? $"Kein Weg zu {name} gefunden.{hint}" : $"No path to {name} found.{hint}";
     /// <summary>
@@ -1879,6 +1900,45 @@ public static partial class AccessibilityStrings
     public static string TrailFinished => IsGerman
         ? "Spur zu Ende, ich laufe normal weiter."
         : "End of the trail, continuing normally.";
+    /// <summary>Crossing a measured gap in the mesh (MeshBridgeService). Named
+    /// separately from a recorded trail because the player did not record it and
+    /// would otherwise wonder which trail is meant.</summary>
+    public static string BridgeCrossing(string name) => IsGerman
+        ? $"Das Wegenetz hat hier eine Luecke, ich gehe ueber {name}."
+        : $"There is a gap in the navmesh here; crossing at {name}.";
+    /// <summary>The push into a zone line achieved nothing. Says what is true -
+    /// something is in the way - rather than leaving the player guessing why
+    /// nothing happened.</summary>
+    public static string TransitionNudgeFailed(string name) => IsGerman
+        ? $"Ich komme nicht in {name} hinein, da steht etwas im Weg."
+        : $"I cannot get into {name}; something is in the way.";
+
+    /// <summary>Same, but the culprit is known (see <see cref="ObstacleService"/>).
+    /// Knowing WHAT blocks decides what to do: another player moves on by
+    /// themselves, a barrier never will.</summary>
+    public static string TransitionNudgeBlocked(string name, string blocker) => IsGerman
+        ? $"Ich komme nicht in {name} hinein, {blocker} steht im Weg."
+        : $"I cannot get into {name}; {blocker} is in the way.";
+
+    /// <summary>An obstacle named for its own sake, without a walk around it.</summary>
+    public static string BlockedBy(string blocker) => IsGerman
+        ? $"{blocker} steht im Weg."
+        : $"{blocker} is in the way.";
+
+    /// <summary>A switched-on collision box that pushes the player out. Deliberately
+    /// not called a wall: it is invisible and has no model, and the point of saying
+    /// it at all is that it will not move - turn around.</summary>
+    public static string ObstacleBarrier => IsGerman
+        ? "eine unsichtbare Absperrung"
+        : "an invisible barrier";
+
+    /// <summary>Scenery carrying collision - a crate, a fence, a gate. The game
+    /// keeps no speakable name for these (measured with zone-probe 2026-08-22:
+    /// only model and collision file names such as f1t0_a0_taru1.mdl), and
+    /// inventing one would be a guess. The abbreviation goes to the log instead.</summary>
+    public static string ObstacleScenery => IsGerman
+        ? "ein festes Hindernis"
+        : "solid scenery";
     /// <summary>vnavmesh threw our fixed point list away and started routing on
     /// its own (OnStuck + RetryOnStuck) - from here on nothing is under our
     /// control, so the walk ends honestly instead of drifting off.</summary>

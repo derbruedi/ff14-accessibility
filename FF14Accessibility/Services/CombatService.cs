@@ -960,8 +960,19 @@ public sealed class CombatService
             var rel  = RelBearingDeg(playerPos, playerRot, spot);
             var dist = Vector2.Distance(new Vector2(playerPos.X, playerPos.Z),
                                         new Vector2(spot.X, spot.Z));
+            // Himmelsrichtung wie ueberall sonst seit 2026-08-23. Hier war die
+            // Abwaegung am knappsten - in einer Flaeche zaehlen Sekunden, und
+            // "links" ist eine Anweisung, "oestlich" erst eine Auskunft. Es bleibt
+            // trotzdem der Kompass: eine Fluchtrichtung, die auf die falsche Seite
+            // zeigt, ist schlimmer als eine, die einen Gedanken kostet - und der
+            // Flucht-Peil-Ton fuehrt ohnehin relativ, der ist hier die schnelle
+            // Spur (NavigationService.TryDriveEscapeBeacon).
+            // CompassWord, nicht CompassAdjective: die Schablone lautet "Raus nach
+            // {richtung}" und verlangt das Substantiv - "Raus nach oestlich" waere
+            // kein Deutsch. Anderswo steht die Richtung hinter einem Komma
+            // ("30 Meter, oestlich"), dort passt das Adjektiv.
             SpeakWarning(AccessibilityStrings.EscapeDirection(
-                AccessibilityStrings.RelativeDirection(rel),
+                RouteService.CompassWord(playerPos, spot),
                 AccessibilityStrings.FormatDistance(dist)));
             _log.Info($"[Flucht] Sicherer Punkt {rel:F0} Grad, {dist:F1} m.");
             return;
@@ -1103,7 +1114,16 @@ public sealed class CombatService
     {
         var dx = to.X - from.X;
         var dz = to.Z - from.Z;
-        return NormalizeDeg((MathF.Atan2(dx, dz) - rot) * 180f / MathF.PI);
+        // Vorzeichen wie NavigationService.RelativeAngle - `rot - Peilung`, nicht
+        // andersherum. Diese Kopie trug denselben Dreher und schickte damit die
+        // Fluchtansage auf die falsche Seite; die Begruendung steht drueben, an
+        // einer Stelle, damit die beiden nicht wieder auseinanderlaufen.
+        //
+        // NICHT betroffen war die AoE-GEOMETRIE: EscapeRouteService rechnet mit
+        // dem Betrag des Winkels (`MathF.Abs`), dem das Vorzeichen gleich ist.
+        // Falsch war nur, wohin wir den Spieler geschickt haben - nicht, ob wir
+        // ihn gewarnt haben.
+        return NormalizeDeg((rot - MathF.Atan2(dx, dz)) * 180f / MathF.PI);
     }
 
     private static float NormalizeDeg(float deg)

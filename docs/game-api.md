@@ -440,16 +440,42 @@ Zeichen selbst (V4.90). Quelle:
 ### Rotations-Konvention (VERIFIZIERT aus Live-Log 2026-07-10, 15:26–15:27)
 - `IGameObject.Rotation` (Radiant): **Blickvektor = (sin(rot), cos(rot))
   in der XZ-Ebene**, d. h. rot = atan2(dx, dz) der Blickrichtung.
-  rot=0 blickt nach +Z. Relativwinkel zum Ziel daher:
-  `atan2(dx, dz) - rot` (normalisiert auf ±180°); 0 = geradeaus.
+  rot=0 blickt nach +Z. Relativwinkel zum Ziel:
+  **`rot - atan2(dx, dz)`** (normalisiert auf ±180°); 0 = geradeaus,
+  positiv = rechts, negativ = links.
 - Beweis: F-Taste (zum Ziel drehen) rastete zweimal auf exakt rot=-1,83
   ein; Ziel-Peilung aus stationären Gehhilfe-Ticks: atan2(dx,dz)=-105° =
   -1,83 rad — Blickvektor traf Zielrichtung auf <0,5° genau. Die alte
   Annahme „0 = Norden" (atan2(dx,-dz)) war eine SPIEGELUNG, kein Offset.
-- OFFEN: Vorzeichen (positiv = rechts oder links?). Aus dem Log nicht
-  ableitbar. Test: Ziel „links" angesagt → A (links drehen) → Ansage muss
-  Richtung „geradeaus" wandern; bzw. D halten und im Gehhilfe-Log prüfen,
-  ob rot dabei steigt oder fällt.
+
+#### Vorzeichen: GEKLÄRT 2026-08-23 — die Differenz stand jahrelang falsch herum
+- Bis dahin rechnete der Mod `atan2(dx, dz) - rot`, also andersherum. Damit
+  kamen **links und rechts vertauscht** heraus — in den Ansagen, in der
+  Gehhilfe und im Peil-Ton (dessen Stereoseite `sin(relAngle)` ist). Spieler
+  meldeten Sprache und Ton gemeinsam als falsch; es war nie ein Doppelfehler,
+  sondern dieser eine.
+- Die Herleitung braucht kein neues Log, nur zwei Angaben aus diesem
+  Dokument zusammengelegt:
+  - Blickvektor = (sin(rot), cos(rot)), also blickt rot=0 nach +Z.
+  - Norden ist −Z, Osten +X (`RouteService.SectorOf` = `atan2(dx, −dz)`,
+    0 = Norden — dieselbe Rechnung, die die Himmelsrichtungsansagen speist).
+  - Zusammen: **rot=0 blickt nach SÜDEN**, denn
+    `HeadingSector(0) = SectorOf(0, 1) = atan2(0, −1) = 180°`.
+  - Ein Ziel im Osten (dx>0) ergab mit der alten Formel ein Plus, also
+    „rechts". Wer nach Süden blickt, hat Osten aber **links**.
+- Bestätigt in-game vom User 2026-08-23: „wenn ich nach links laufe wird
+  weniger und nach rechts mehr, links und rechts ist vertauscht".
+- **Warnung an künftige Leser:** der Code trug an dieser Stelle den Vermerk
+  „Vorzeichen per Beacon-Hörtest bestätigt (2026-07-10)", während HIER
+  „OFFEN" stand. Der Hörtest kann die Seite nur bestätigt haben, wenn dabei
+  nach Norden geblickt wurde — nur dann fallen beide Vorzeichen zusammen.
+  Ein „bestätigt" im Code, dem im Referenzdokument ein „offen" gegenübersteht,
+  ist kein Beweis, sondern ein Widerspruch, der aufzulösen ist.
+- Betroffene Stellen, beide korrigiert: `NavigationService.RelativeAngle`
+  und `CombatService.RelBearingDeg`. **Nicht** betroffen: die AoE-Geometrie
+  (`EscapeRouteService` rechnet mit `MathF.Abs` des Winkels) und
+  `FacingService`/`FaceGuideDirection` (dort ist `atan2(dx, dz)` die zu
+  setzende Ziel-Rotation, kein Relativwinkel — dort wäre die Umkehr falsch).
 
 ### vnavmesh-IPC (Quellcode-verifiziert 2026-07-10, github.com/awgil/ffxiv_navmesh)
 - Fremd-Plugin für Navmesh-Wegfindung + Auto-Bewegung. Installation:

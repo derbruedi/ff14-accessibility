@@ -128,6 +128,30 @@ public sealed class RouteService
         => CompassWords[SectorOf(to.X - from.X, to.Z - from.Z)];
 
     /// <summary>
+    /// Dasselbe als Adjektiv ("östlich"), fuer Ansagen der Form
+    /// "30 Meter, östlich" - siehe <see cref="CompassWord"/>.
+    ///
+    /// <para>
+    /// SEIT 2026-08-23 IST DAS DIE GESPROCHENE RICHTUNG DES MODS, ueberall wo
+    /// vorher "links"/"rechts" stand. Der Grund ist nicht Geschmack: eine
+    /// Himmelsrichtung braucht die Blickrichtung des Spielers ueberhaupt nicht,
+    /// sie faellt allein aus der Positionsdifferenz. Damit kann sie strukturell
+    /// nicht auf die falsche Seite zeigen - anders als die relative Angabe, die
+    /// genau daran jahrelang falsch war (siehe NavigationService.RelativeAngle)
+    /// und die ausserdem von der Kamera abhaengt, solange `MoveMode` 0 ist.
+    /// </para>
+    ///
+    /// <para>
+    /// Was dabei VERLOREN geht und woanders aufgefangen wird: "geradeaus" gibt es
+    /// im Kompass nicht, also fehlt die Bestaetigung "du laeufst richtig". Die
+    /// traegt jetzt der Peil-Ton, der bei stimmender Ausrichtung mittig und ruhig
+    /// wird (BeaconService - seit 2026-08-23 verstummt er dabei NICHT mehr).
+    /// </para>
+    /// </summary>
+    public static string CompassAdjective(Vector3 from, Vector3 to)
+        => AccessibilityStrings.CompassAdjectives[SectorOf(to.X - from.X, to.Z - from.Z)];
+
+    /// <summary>
     /// The compass sector (0 = Norden .. 7 = Nordwesten) the player is FACING,
     /// from their rotation. The facing vector is (sin(rot), cos(rot)) in world
     /// XZ - the rotation convention verified in NavigationService.RelativeAngle
@@ -143,6 +167,63 @@ public sealed class RouteService
 
     /// <summary>One spoken route segment: metres in one compass direction.</summary>
     public readonly record struct RouteSegment(float Distance, int Sector);
+
+    /// <summary>Der Kompass-Sektor von einem Punkt zum anderen (0 = Norden).</summary>
+    public static int SectorBetween(Vector3 from, Vector3 to)
+        => SectorOf(to.X - from.X, to.Z - from.Z);
+
+    /// <summary>
+    /// Der Index des Wegpunkts, an dem das AKTUELLE Segment endet - also der
+    /// letzte Punkt, den man noch in derselben Kompassrichtung erreicht, bevor
+    /// der Weg abbiegt.
+    ///
+    /// <para>
+    /// WOFUER: der Peil-Ton peilte bis 2026-08-23 den jeweils naechsten ROHEN
+    /// Wegpunkt an. Beim Passieren sprang der Peilpunkt auf den uebernaechsten,
+    /// der woanders liegt - der Ton rastete aus, man richtete sich neu aus, drei
+    /// Meter weiter dasselbe. Gemessen an einer Route mit 5 Wegpunkten auf 72 m
+    /// (Log 13:18): der Spieler meldete *"wenn ich mich ausrichte spinnt der
+    /// Ton"*, und `rot` war dabei nachweislich unveraendert - es lag nie am
+    /// Spieler, immer am springenden Peilpunkt.
+    /// </para>
+    ///
+    /// <para>
+    /// Die SPRACHE machte es laengst richtig: dieselbe Route wurde als
+    /// "5 Wegpunkte, 2 Segmente" angesagt. Diese Methode holt den Ton auf
+    /// denselben Stand und benutzt dieselbe Regel wie
+    /// <see cref="BuildSegments"/> - inklusive der Sub-Meter-Ausnahme, denn ein
+    /// Zentimeter-Huepfer an einer Tuerschwelle hat keine verlaessliche Richtung
+    /// und darf ein Segment nicht zerschneiden.
+    /// </para>
+    /// </summary>
+    /// <param name="from">Der Spieler - der laufende Abschnitt beginnt bei ihm,
+    /// nicht beim letzten Wegpunkt, den er schon hinter sich hat.</param>
+    public static int SegmentEndIndex(Vector3 from, IReadOnlyList<Vector3> waypoints, int cursor)
+    {
+        if (cursor < 0 || cursor >= waypoints.Count) return cursor;
+
+        var sector = SectorBetween(from, waypoints[cursor]);
+        var end = cursor;
+
+        for (var i = cursor + 1; i < waypoints.Count; i++)
+        {
+            var dx = waypoints[i].X - waypoints[i - 1].X;
+            var dz = waypoints[i].Z - waypoints[i - 1].Z;
+
+            // Unter einem Meter: gehoert zum Segment, beendet es aber nicht -
+            // dieselbe Schwelle wie in BuildSegments.
+            if (dx * dx + dz * dz < 1f)
+            {
+                end = i;
+                continue;
+            }
+
+            if (SectorOf(dx, dz) != sector) break;
+            end = i;
+        }
+
+        return end;
+    }
 
     /// <summary>
     /// Folds the waypoint hops into 8-sector compass segments: consecutive

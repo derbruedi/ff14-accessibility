@@ -131,6 +131,32 @@ public sealed class AutoWalkService : IDisposable
     /// and would walk off unsupervised (fact 1).</summary>
     private const double StopGuardS = 3.0;
 
+    /// <summary>
+    /// How far the last REAL waypoint may sit from the destination before the path
+    /// counts as cut short (see <see cref="TryBridgePartialPath"/>). Measured
+    /// against <c>_stopRange</c>, because a walk with a stop range asks vnavmesh
+    /// for a path that ends inside that radius on purpose
+    /// (<c>NavmeshManager.QueryPath</c> hands <c>range</c> to
+    /// <c>GoalRadiusHeuristic</c>) - so "ends within the stop range" is a complete
+    /// path, not a short one.
+    ///
+    /// <para>
+    /// UNCERTAIN, and deliberately generous: string pulling puts that last point on
+    /// a polygon edge, and how far the edge sits from the destination has not been
+    /// measured for a path that DOES arrive. Too small a value would call a good
+    /// path broken and send the walk to a bridge it does not need. The measured
+    /// broken case is 3,6 m short against a stop range of 0,5 m (log 2026-08-22),
+    /// so 2 m separates the two cases with room on both sides. The counter-test at
+    /// a border WITHOUT a gap is what confirms it.
+    /// </para>
+    /// </summary>
+    private const float PathShortfallSlack = 2f;
+
+    /// <summary>How close the walk to a bridge's near end has to get. Must stay
+    /// under <c>MeshBridgeService.EntryRange</c>, or the walk would end outside the
+    /// entry and the crossing would refuse to start.</summary>
+    private const float BridgeEntryStopRange = 1.5f;
+
     private enum Phase
     {
         /// <summary>Nothing running.</summary>
@@ -154,6 +180,19 @@ public sealed class AutoWalkService : IDisposable
     private readonly PlacesService _places;
     private readonly RouteService _routes;
     private readonly TrailService _trails;
+    /// <summary>Gemessene Netzluecken. Optional - ohne den Dienst verhaelt sich der
+    /// Lauf genau wie vorher, es wird nur keine Bruecke angeboten.</summary>
+    private readonly MeshBridgeService? _bridges;
+    /// <summary>Der Vorwaerts-Impuls in eine Zonengrenze. NACH dem Konstruktor
+    /// gesetzt, weil der Handler dieselbe vnavmesh-Verbindung braucht, die dieser
+    /// Dienst erst selbst aufbaut (<see cref="Navmesh"/>). Optional wie die
+    /// Bruecken - fehlt er, endet der Lauf wie bisher mit der ehrlichen Ansage.</summary>
+    public ZoneTransitionHandler? Transitions { private get; set; }
+    /// <summary>Names what blocks the way when the walk gets wedged. NACH dem
+    /// Konstruktor gesetzt, wie <see cref="Transitions"/>. Optional - fehlt er,
+    /// bleibt die Ansage die bisherige, vage aber ehrliche.</summary>
+    public ObstacleService? Obstacles { private get => _obstacles; set => _obstacles = value; }
+    private ObstacleService? _obstacles;
     private readonly ObjectNameService _objectNames;
     private readonly IPluginLog _log;
     private readonly NavmeshIpc _nav;
@@ -193,6 +232,23 @@ public sealed class AutoWalkService : IDisposable
     private DateTime _trailStartedAt;
     private readonly HashSet<string> _usedTrails = new();
 
+    // Bruecken-Etappe (siehe MeshBridgeService): der Lauf geht zuerst zum
+    // diesseitigen Ende der Luecke, faehrt sie dann ab und nimmt danach das
+    // eigentliche Ziel wieder auf.
+    /// <summary>Zielt der Lauf auf eine Zonengrenze? Dann darf am Ende der
+    /// Vorwaerts-Impuls laufen (ZoneTransitionHandler) - bei jedem anderen Ziel
+    /// waere blindes Anschieben sinnlos, weil dort nichts ausgeloest wird.</summary>
+    private bool _destinationIsTransition;
+
+    private IReadOnlyList<Vector3>? _pendingCrossing;
+    private string _pendingCrossingName = string.Empty;
+    private Vector3? _crossingDestination;
+    private float _crossingStopRange;
+    /// <summary>Whether this walk's path has already been examined for being cut
+    /// short (<see cref="TryBridgePartialPath"/>). Once per walk: the check ends in
+    /// a second walk, and letting that one check again would be a loop.</summary>
+    private bool _partialPathChecked;
+
     /// <summary>Whether an auto-walk is currently running. Plugin.cs suppresses
     /// automatic target-change announcements while this is true - passing NPCs
     /// grab the soft target every few steps and each one would be announced
@@ -201,6 +257,20 @@ public sealed class AutoWalkService : IDisposable
 
     /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).</summary>
     public bool IsFollowing => _following;
+
+    /// <summary>
+    /// Whether the character is being moved by this service at all - a walk to a
+    /// destination OR follow mode. The two are separate states (<see cref="IsActive"/>
+    /// and <see cref="IsFollowing"/>) because they end differently; for anything
+    /// that only cares "are the feet moving", asking for both separately is an
+    /// invitation to forget one.
+    ///
+    /// <para>
+    /// NavigationService gates the beacon on this: the tone belongs to walking, and
+    /// a walk the player did not start is not one they need steering for.
+    /// </para>
+    /// </summary>
+    public bool IsWalking => IsActive || IsFollowing;
 
     public AutoWalkService(
         IDalamudPluginInterface pluginInterface,
@@ -212,10 +282,12 @@ public sealed class AutoWalkService : IDisposable
         PlacesService places,
         RouteService routes,
         TrailService trails,
+        MeshBridgeService? bridges,
         ObjectNameService objectNames,
         IPluginLog log)
     {
         _objectTable = objectTable;
+        _bridges = bridges;
         _targetManager = targetManager;
         _clientState = clientState;
         _tolk = tolk;
@@ -363,8 +435,9 @@ public sealed class AutoWalkService : IDisposable
     /// tighter still for zone transitions so they trigger. The position should
     /// already be snapped onto the walkable mesh.
     /// </summary>
-    public void ToggleToPosition(Vector3 position, string name, float stopRange)
+    public void ToggleToPosition(Vector3 position, string name, float stopRange, bool isZoneTransition = false)
     {
+        _destinationIsTransition = isZoneTransition;
         StopFollowQuiet();
 
         if (IsActive)
@@ -431,9 +504,50 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
+        // Is the destination on ground we can actually get to? Asked BEFORE the
+        // walk, because the honest answer changes where we walk to.
+        //
+        // CAUTION - THIS QUESTION IS ONLY ANSWERED IN SOME ZONES, and the first
+        // build of the bridge stage was silently dead because of it (log
+        // 2026-08-22: not one "[Bruecke]" line, while the destination WAS
+        // unreachable). NearestPointReachable filters on one bit,
+        // Navmesh.FLAG_UNREACHABLE (NavmeshQuery.cs:59-64). Only Prune ever sets
+        // that bit (NavmeshManager.cs:396-402), and Prune runs only for territories
+        // that have flood-fill seed points (NavmeshManager.cs:112-114). Those seeds
+        // come from vnavmesh's seeds.json, which lists 54 zones - and 132,
+        // Neu-Gridania, is not among them (fetched and checked 2026-08-22; 128, 129,
+        // 134, 135 are there, 132 is not). In a zone without seeds no polygon
+        // carries the bit, so NearestPointReachable is bit-for-bit NearestPoint and
+        // answers "reachable" for everything.
+        //
+        // It stays because where seeds DO exist the answer is right and saves a
+        // failed walk. What carries the zones without seeds is
+        // TryBridgePartialPath, which reads the answer out of the path vnavmesh
+        // actually returns.
+        var crossing = default(IReadOnlyList<Vector3>);
+        var crossingName = string.Empty;
+        var crossingEntry = default(Vector3);
+        var walkTo = destination;
+        var walkStopRange = stopRange;
+
+        if (fresh && _bridges != null && ProbeReachable(destination, 2f, 5f) == null)
+        {
+            crossing = _bridges.FindCrossing(player.Position, destination, out crossingName, out crossingEntry);
+            if (crossing != null)
+            {
+                // Walk to the near end with ordinary pathfinding - it sits on the
+                // reachable side, so this part is a normal walk - and drive the
+                // crossing itself on arrival.
+                walkTo = crossingEntry;
+                walkStopRange = BridgeEntryStopRange;
+                _log.Info($"[Nav] Auto-Lauf: {name} liegt hinter einer Netzluecke - " +
+                          $"erst zur Bruecke '{crossingName}' ({Fmt(crossingEntry)}).");
+            }
+        }
+
         _nav.Stop();
 
-        if (!_nav.MoveCloseTo(destination, stopRange))
+        if (!_nav.MoveCloseTo(walkTo, walkStopRange))
         {
             _tolk.SpeakInterrupt(_nav.LastCallFailed
                 ? AccessibilityStrings.AutoWalkUnavailable
@@ -441,10 +555,15 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        _targetId = targetId;
+        _pendingCrossing = crossing;
+        _pendingCrossingName = crossingName;
+        _crossingDestination = crossing != null ? destination : null;
+        _crossingStopRange = stopRange;
+
+        _targetId = crossing != null ? 0 : targetId;   // the bridge entry is not the target object
         _targetName = name;
-        _destPosition = destination;
-        _stopRange = stopRange;
+        _destPosition = walkTo;
+        _stopRange = walkStopRange;
         _startTerritory = (ushort)_clientState.TerritoryType;
 
         _phase = Phase.Starting;
@@ -459,6 +578,9 @@ public sealed class AutoWalkService : IDisposable
         _routeSpoken = false;
         _guardWarned = false;
         _lastWaypointCount = 0;
+        // Only a fresh walk may go looking for a bridge. A continuation is already
+        // ON one (or came off one), and re-checking would send it back.
+        _partialPathChecked = !fresh || crossing != null;
 
         _log.Info($"[Nav] Auto-Lauf: gestartet zu {name} (id={targetId:X}, stopRange={stopRange:F1}, " +
                   $"dist={distance:F1}, neu={fresh})");
@@ -522,6 +644,10 @@ public sealed class AutoWalkService : IDisposable
 
         if (_nav.IsRunning)
         {
+            // The path exists - but does it reach the destination? Asked here
+            // because this is the one frame where the whole list is still present.
+            if (TryBridgePartialPath(player.Position)) return;
+
             _phase = Phase.Walking;
             _lastMoveAt = DateTime.UtcNow;
             _pathQuiet = false;
@@ -579,6 +705,11 @@ public sealed class AutoWalkService : IDisposable
         // goes quiet for a second on every stuck-retry too.
         if (distance <= _stopRange + ArrivalSlack)
         {
+            // Arrived at the near end of a measured gap: drive across it, then pick
+            // the real destination back up. Not an arrival for the player - they
+            // asked to go somewhere else and are not there yet.
+            if (_pendingCrossing != null && TryTakeCrossing(player.Position)) return;
+
             // Order matters: Finish stops vnavmesh first, THEN we turn. vnavmesh's
             // FollowPath owns an OverrideCamera while it steers, so a turn issued
             // before the stop can be taken straight back off us.
@@ -643,10 +774,18 @@ public sealed class AutoWalkService : IDisposable
             // (user 2026-08-15, FC plot in Mist: the walk stalled 12,6 m short
             // with restWp=2, so the mesh-edge branch never ran).
             if (TryTakeTrail(player.Position)) return;
+            if (TryNudgeIntoTransition(distance)) return;
             var direction = RouteService.CompassWord(player.Position, _destPosition);
+            // Wedged on geometry is the "ich laufe gegen etwas" case - so say what
+            // that something is when it can be named. The mesh-edge case is a
+            // different story (nothing is in the way, the ground simply stops) and
+            // keeps its own wording.
+            var blocker = meshEnds ? null : _obstacles?.DescribeBlocker(player.Position, _destPosition);
             Finish(meshEnds
                     ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
-                    : AccessibilityStrings.StuckRemaining(distance) + TrailHint(),
+                    : blocker != null
+                        ? AccessibilityStrings.StuckBehind(blocker, distance) + TrailHint()
+                        : AccessibilityStrings.StuckRemaining(distance) + TrailHint(),
                 meshEnds ? "Netz endet hier" : "festgesteckt");
             // Every ending except a zone change leaves the player facing the goal:
             // whatever the message says, walking forward has to act on it. (A zone
@@ -674,6 +813,7 @@ public sealed class AutoWalkService : IDisposable
             _log.Info($"[Nav] Auto-Lauf: Pfad zu Ende, dist={distance:F1}, restWp={remaining}");
             if (TryTakeTrail(player.Position)) return;
             if (TryReengage(distance)) return;
+            if (TryNudgeIntoTransition(distance)) return;
             var direction = RouteService.CompassWord(player.Position, _destPosition);
             Finish(AccessibilityStrings.WalkMeshEndsHere(distance, direction), "Pfad zu Ende ohne Ankunft");
             // Turn towards the destination even though we did not reach it: the
@@ -780,6 +920,181 @@ public sealed class AutoWalkService : IDisposable
             : AccessibilityStrings.HousingFenceHint;
     }
 
+    /// <summary>
+    /// The path vnavmesh just handed us stops short of the destination - so the
+    /// destination is not reachable, whatever the reachability query said. Looks
+    /// for a measured crossing and re-aims the walk at its near end.
+    ///
+    /// <para>
+    /// WHY THE PATH IS READ INSTEAD OF THE QUERY. NearestPointReachable is blind in
+    /// any zone without flood-fill seeds, Neu-Gridania among them - see the note at
+    /// the reachability check in <see cref="Begin"/>. Recast answers the same
+    /// question honestly on its own: for an unreachable goal <c>DtNavMeshQuery.
+    /// FindPath</c> returns a PARTIAL path, ending at the edge of the surface the
+    /// character is standing on.
+    /// </para>
+    ///
+    /// <para>
+    /// WHY THE LAST WAYPOINT IS SKIPPED. vnavmesh appends the requested destination
+    /// to the result unconditionally - <c>res.Add(new(endPos.RecastToSystem()))</c>
+    /// in BOTH branches of <c>NavmeshQuery.PathfindMesh</c>, with the clamp to the
+    /// last polygon commented out right above it. So the final entry is a wish, not
+    /// a place the path goes; it is the one BEFORE it that says how far Recast
+    /// actually got. (Same invented endpoint that made the walk report arrivals it
+    /// never made, V5.78.)
+    /// </para>
+    /// </summary>
+    /// <returns>True when the walk has been re-aimed at a crossing and this frame
+    /// is done; false to carry on with the path as it is.</returns>
+    private bool TryBridgePartialPath(Vector3 position)
+    {
+        if (_partialPathChecked) return false;
+        _partialPathChecked = true;
+        if (_bridges == null) return false;
+
+        var waypoints = _nav.Waypoints;
+        // One entry is the appended destination and nothing else - no path at all.
+        // Two or more: the second-to-last is where Recast really stopped.
+        var shortfall = waypoints.Count >= 2
+            ? Vector3.Distance(waypoints[^2], _destPosition)
+            : Vector3.Distance(position, _destPosition);
+
+        if (shortfall <= _stopRange + PathShortfallSlack)
+        {
+            _log.Info($"[Bruecke] Weg reicht bis zum Ziel (letzter echter Wegpunkt {shortfall:F1} m " +
+                      $"davor, erlaubt {_stopRange + PathShortfallSlack:F1} m) - keine Bruecke noetig.");
+            return false;
+        }
+
+        _log.Info($"[Bruecke] Weg endet {shortfall:F1} m vor {_targetName} " +
+                  $"({waypoints.Count} Wegpunkte, stopRange {_stopRange:F1}) - Ziel ist nicht erreichbar.");
+
+        var crossing = _bridges.FindCrossing(position, _destPosition, out var crossingName, out var crossingEntry);
+        if (crossing == null)
+        {
+            // No measured gap covers this. Walking the partial path is still the
+            // best thing available: it gets as close as the mesh allows, and the
+            // end of the walk says the honest remaining distance.
+            _log.Info("[Bruecke] Keine gemessene Luecke passt - laufe den Teilweg trotzdem.");
+            return false;
+        }
+
+        // Re-aim at the near end, which sits on the reachable side by definition,
+        // and remember the real destination for the far side. Same handover the
+        // pre-walk check sets up in Begin.
+        _nav.Stop();
+        if (!_nav.MoveCloseTo(crossingEntry, BridgeEntryStopRange))
+        {
+            _log.Warning($"[Bruecke] Lauf zur Bruecke '{crossingName}' konnte nicht gestartet werden - " +
+                         "bleibe auf dem Teilweg.");
+            return false;
+        }
+
+        _pendingCrossing = crossing;
+        _pendingCrossingName = crossingName;
+        _crossingDestination = _destPosition;
+        _crossingStopRange = _stopRange;
+
+        _targetId = 0;                  // the bridge entry is not the target object
+        _destPosition = crossingEntry;
+        _stopRange = BridgeEntryStopRange;
+        _startedAt = DateTime.UtcNow;   // the wait for a path starts over
+        _lastMoveAt = _startedAt;
+        _lastPosition = position;
+        _lastWaypointCount = 0;
+
+        // Progress tracking has to follow the new destination too. The stall and
+        // "no approach" checks compare against these, and left on the old target's
+        // numbers they would call the redirected walk stuck the moment it starts.
+        var entryDistance = Vector3.Distance(position, crossingEntry);
+        _lastProgressDistance = entryDistance;
+        _bestDistance = entryDistance;
+        _lastApproachAt = _startedAt;
+        _lastDiagAt = _startedAt;
+        _pathQuiet = false;
+
+        _log.Info($"[Nav] Auto-Lauf: umgelenkt - erst zur Bruecke '{crossingName}' ({Fmt(crossingEntry)}).");
+        return true;
+    }
+
+    /// <summary>
+    /// Drives a measured gap crossing (see <see cref="MeshBridgeService"/>) and
+    /// hands the walk back to the real destination on the far side. Reuses the
+    /// trail stage wholesale - same problem, same driving, only the points come
+    /// from an offline measurement instead of a recording.
+    /// </summary>
+    private bool TryTakeCrossing(Vector3 position)
+    {
+        var crossing = _pendingCrossing;
+        var destination = _crossingDestination;
+        if (crossing == null || destination == null) return false;
+
+        // Clear first: whatever happens next, this crossing has had its turn. A
+        // second attempt would be a loop, and a loop is worse than an honest stop.
+        _pendingCrossing = null;
+        _crossingDestination = null;
+
+        if (!MeshBridgeService.AtEntry(position, crossing[0]))
+        {
+            _log.Info($"[Nav] Auto-Lauf: Bruecke '{_pendingCrossingName}' nicht genommen - " +
+                      $"{Vector3.Distance(position, crossing[0]):F1} m vom Einstieg entfernt.");
+            return false;
+        }
+
+        _nav.Stop();
+        if (!_nav.MoveAlong(new List<Vector3>(crossing)))
+        {
+            _log.Warning($"[Nav] Auto-Lauf: Bruecke '{_pendingCrossingName}' konnte nicht gestartet werden.");
+            return false;
+        }
+
+        // From here the trail stage runs the show, and when it ends it calls Begin
+        // with _destPosition - so that has to be the REAL destination now.
+        _destPosition = destination.Value;
+        _stopRange = _crossingStopRange;
+        _trailEnd = crossing[^1];
+        _trailWaypointsSeen = crossing.Count;
+        _trailStartedAt = DateTime.UtcNow;
+        _phase = Phase.TrailWalking;
+        _lastPosition = position;
+        _lastMoveAt = _trailStartedAt;
+
+        _log.Info($"[Nav] Auto-Lauf: fahre Bruecke '{_pendingCrossingName}' " +
+                  $"({Fmt(crossing[0])} -> {Fmt(crossing[^1])}), danach weiter zu {Fmt(destination.Value)}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.BridgeCrossing(_pendingCrossingName));
+        return true;
+    }
+
+    /// <summary>
+    /// The walk ran out short of a ZONE LINE. Standing next to one does nothing,
+    /// so the last couple of metres are driven straight in - the trigger box fires
+    /// on entry, measured with ZoneExitProbe on 2026-08-22.
+    ///
+    /// <para>
+    /// Only for zone transitions, and only over a short distance: pushing blindly
+    /// at anything else is either pointless or grinds the character into whatever
+    /// stopped the walk. The handler itself refuses beyond its own limit and gives
+    /// up as soon as nothing moves.
+    /// </para>
+    /// </summary>
+    private bool TryNudgeIntoTransition(float distance)
+    {
+        if (!_destinationIsTransition || Transitions == null) return false;
+
+        // Finish first, then push: vnavmesh's FollowPath holds the movement
+        // override while it steers, and a push issued before the stop is taken
+        // straight back off us (same ordering the arrival turn needs).
+        Finish(null, $"Uebergang: schiebe die letzten {distance:F1} m");
+        if (Transitions.Nudge(_destPosition, _targetName)) return true;
+
+        // Refused - too far to walk in blind. Say the honest thing instead.
+        var direction = RouteService.CompassWord(_objectTable.LocalPlayer?.Position ?? _destPosition, _destPosition);
+        _tolk.SpeakInterrupt(AccessibilityStrings.WalkMeshEndsHere(distance, direction));
+        var player = _objectTable.LocalPlayer;
+        if (player != null) FacingService.FaceTowards(player, _destPosition);
+        return true;
+    }
+
     private bool TryTakeTrail(Vector3 position)
     {
         var points = _trails.FindUsableTrail(position, _destPosition, out var name);
@@ -876,6 +1191,26 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     private void GuardUpdate()
     {
+        // EXCEPTION, and it is the whole reason the forward nudge did nothing:
+        // TryNudgeIntoTransition calls Finish() FIRST (the nudge has to be issued
+        // after vnavmesh lets go of the movement override) and starts the push
+        // milliseconds later. The guard then sees a running path and cannot tell
+        // it apart from a stray one - so it stopped the very push the same walk
+        // had just started. Measured in the log of 2026-08-22: nudge at
+        // 17:50:00.550, "nachlaufender Pfad abgeraeumt" at .561, "keine Bewegung"
+        // at 17:50:01.766, four times over.
+        //
+        // Nothing is left unwatched while the push runs: the handler limits itself
+        // to 3 s and gives up after 1,2 s without movement, and it always calls
+        // Path.Stop when it ends. The guard window is pushed out so the FULL
+        // guard still follows AFTER the push - a pathfind that was in flight when
+        // the walk stopped can still land while the push is under way.
+        if (Transitions is { IsActive: true })
+        {
+            _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+            return;
+        }
+
         if (DateTime.UtcNow >= _guardUntil)
         {
             _phase = Phase.Idle;

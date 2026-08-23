@@ -38,8 +38,8 @@ public enum BeaconKind
 }
 
 /// <summary>
-/// Der Peil-Ton: er sagt, WOHIN man sich drehen muss, und er verstummt, sobald
-/// man richtig steht.
+/// Der Peil-Ton: er sagt, WOHIN man sich drehen muss - und er laeuft dabei
+/// durch, solange gefuehrt wird.
 ///
 /// Wunsch des Users (2026-08-19): *"es waere gut wenn wir verschiedene ziele
 /// durch toene hoerbar machen sobald sie getrackt sind objekte gegner uebergaenge
@@ -49,23 +49,33 @@ public enum BeaconKind
 /// richtig steht soller ausgehen es geht mir dabei auch um aufzuege bzw
 /// plattformen ob man richtig steht"*.
 ///
+/// <para>
+/// DER LETZTE TEIL DIESES WUNSCHES IST AM 2026-08-23 ZURUECKGENOMMEN WORDEN:
+/// *"es soll nicht still sein, der Ton soll immer sein, egal wie lang; wenn man
+/// naeher kommt soll der Ton lauter werden, nie Stille."* Ausloeser war die
+/// Segment-Peilung vom selben Tag - sie verlaengerte die Stillephasen auf
+/// Minuten (Log 15:27: 40 s durchgehend ausgerichtet), und minutenlange Stille
+/// ist fuer einen blinden Spieler nicht von "kaputt" zu unterscheiden. Wer das
+/// wieder umdrehen will, muss dieses Problem mitloesen.
+/// </para>
+///
 /// DAS SIGNAL, und warum es so herum gebaut ist:
 /// <list type="bullet">
-/// <item><b>Stille heisst richtig.</b> Innerhalb von <see cref="AlignedDeg"/>
-///   Grad schweigt der Ton. Das ist die Umkehrung des frueheren Verhaltens (frueher
-///   war "geradeaus" ein hoher Ton) und genau das, was eine Plattform oder einen
-///   Aufzug benutzbar macht: drehen, bis es still ist.</item>
-/// <item><b>Stille wird quittiert.</b> Beim Uebergang von falsch auf richtig
-///   kommt EIN kurzer Einrast-Ton. Fuer einen blinden Spieler ist Stille sonst
-///   nicht von "kaputt" zu unterscheiden - der Einrast-Ton ist der Beweis, dass
-///   der Ton absichtlich schweigt.</item>
-/// <item><b>Hysterese</b> (<see cref="ReleaseDeg"/>): einmal eingerastet, meldet
-///   sich der Ton erst wieder ab <see cref="ReleaseDeg"/> Grad. Ohne das flattert
-///   er am Rand der Stille-Zone im Takt der Maus.</item>
+/// <item><b>Richtig klingt mittig, hell und ruhig - nicht still.</b> Bei
+///   stimmender Ausrichtung geht die Seite gegen die Mitte, die Tonhoehe steht
+///   auf dem unverbogenen Grundton der Zielart und der Takt ist der langsamste.
+///   Man dreht also, bis der Ton mittig und ruhig wird. Bis 2026-08-23 wurde er
+///   an dieser Stelle stattdessen stumm.</item>
+/// <item><b>Der Einrast-Ton bleibt.</b> Beim Uebergang von falsch auf richtig
+///   kommt EIN kurzer heller Schlag. Er erklaert jetzt keine Stille mehr,
+///   sondern markiert den Moment - das erspart das Heraushoeren einer
+///   allmaehlichen Aenderung.</item>
+/// <item><b>Hysterese</b> (<see cref="ReleaseDeg"/>): einmal eingerastet, gilt
+///   die Ausrichtung erst ab <see cref="ReleaseDeg"/> Grad wieder als falsch.
+///   Ohne das flattert der Ton am Rand der Zone im Takt der Maus.</item>
 /// <item><b>Je genauer, desto ruhiger.</b> Die Schlagfolge geht von 0,4 s (voellig
-///   daneben) auf 0,95 s (kurz vor dem Einrasten) zurueck. Man hoert die Naeherung
-///   also, bevor die Stille kommt, und der Ton wird zum Ziel hin leiser statt
-///   hektischer - das ist der Teil, der ihn ertraeglich macht.</item>
+///   daneben) auf 0,95 s (ausgerichtet) zurueck. Der Ton wird zum Ziel hin
+///   ruhiger statt hektischer - das ist der Teil, der ihn ertraeglich macht.</item>
 /// <item><b>Lauter je naeher</b> (Wunsch: "um so weiter man weg ist um so
 ///   leiser"): volle Lautstaerke bis 5 m, dann linear herunter bis auf 15% ab
 ///   150 m.</item>
@@ -104,6 +114,20 @@ public sealed class BeaconService : IDisposable
     /// faengt der Ton von vorne an - siehe <see cref="Update"/>.
     /// </summary>
     private ulong _lastTargetKey;
+
+#if DEBUG
+    /// <summary>Nur fuer die Sonde: gibt der Ton gerade Stille aus? `null` heisst,
+    /// es laeuft gar keine Ausgabe. Sagt die Wahrheit ueber das, was zu hoeren
+    /// ist - ein "Idle()" das nie ankam, sieht man nur hier.</summary>
+    internal bool? DebugSilent => _provider?.Silent;
+
+    /// <summary>Nur fuer die Sonde: haelt der Ton die Ausrichtung fuer stimmig
+    /// (dann schweigt er)?</summary>
+    internal bool DebugAligned => _aligned;
+
+    /// <summary>Nur fuer die Sonde: welches Ziel der Ton gerade fuehrt.</summary>
+    internal ulong DebugTargetKey => _lastTargetKey;
+#endif
 
     public BeaconService(Configuration config, TolkService tolk, CueService cue, IPluginLog log)
     {
@@ -183,9 +207,17 @@ public sealed class BeaconService : IDisposable
     /// <see cref="NavigationService.RelativeAngle"/>).
     /// </param>
     /// <param name="distance">
-    /// Entfernung zum ZIEL in Metern - sie steuert nur die Lautstaerke. Bei der
-    /// Gehhilfe ist das die Reststrecke, nicht der Abstand zum naechsten
-    /// Wegpunkt: Wegpunkte sind immer nah, der Ton waere sonst dauernd laut.
+    /// Entfernung zu dem Punkt, auf den der Ton ZEIGT, in Metern - sie steuert
+    /// nur die Lautstaerke.
+    ///
+    /// <para>
+    /// Bis 2026-08-23 gab die Gehhilfe hier die Reststrecke zum Ziel herein,
+    /// waehrend der Winkel schon dem Wegpunkt folgte. Die beiden liefen damit
+    /// auseinander, und auf langen Wegen gewann die Reststrecke: bei 701 m
+    /// Restweg (Log 15:27) lag der Ton auf der Untergrenze von 15 %, obwohl der
+    /// Peilpunkt 10 m entfernt war - hoerbar war er praktisch nicht mehr.
+    /// Seither gilt: Richtung UND Lautstaerke meinen denselben Punkt.
+    /// </para>
     /// </param>
     /// <param name="kind">Zielart - waehlt die Stimme.</param>
     /// <param name="arrived">
@@ -229,24 +261,37 @@ public sealed class BeaconService : IDisposable
         var voice = VoiceFor(kind);
         var absAngle = Math.Abs(relAngleDegrees);
 
-        // Einrasten mit Hysterese: hinein bei AlignedDeg, hinaus erst bei
-        // ReleaseDeg. Ankunft rastet immer ein.
+        // AUSRICHTUNG SCHALTET NICHT MEHR STUMM - Entscheidung des Users
+        // 2026-08-23: *"es soll nicht still sein, der Ton soll immer sein, egal
+        // wie lang; wenn man naeher kommt soll der Ton lauter werden, nie
+        // Stille."* Damit ist die Umkehrung vom 2026-08-19 ("geradeaus = Stille")
+        // ZURUECKGENOMMEN und der Ton laeuft wieder durch, solange gefuehrt wird.
+        //
+        // WARUM: die Segment-Peilung von heute hat die Stillephasen auf Minuten
+        // verlaengert (Log 15:27: 40 s durchgehend ausgerichtet). Fuer einen
+        // blinden Spieler ist Stille aber nicht von "kaputt", "Ziel verloren"
+        // oder "Ton aus" zu unterscheiden - genau die Falle, die in diesem
+        // Projekt schon einmal beschrieben wurde. Ein Signal, das minutenlang
+        // durch ABWESENHEIT fuehrt, fuehrt nicht mehr.
+        //
+        // DIE RICHTUNG BLEIBT TROTZDEM ABLESBAR, ohne dass es dafuer Stille
+        // braucht - die Rechnung darunter liefert bei stimmender Ausrichtung von
+        // selbst das ruhigste Bild: Pan geht gegen die Mitte (sin(0)=0), die
+        // Tonhoehe steht auf dem unverbogenen Grundton der Zielart, und der Takt
+        // ist der langsamste (0,95 s). "Richtig" klingt also mittig, hell und
+        // ruhig statt gar nicht.
+        //
+        // Stille gibt es weiterhin - aber nur noch dort, wo sie etwas anderes
+        // heisst: kein Ziel, keine Fuehrung, kein Lauf (Idle/Stop an den
+        // Aufrufstellen).
         var alignedNow = arrived || (_aligned ? absAngle <= ReleaseDeg : absAngle <= AlignedDeg);
 
-        if (alignedNow)
-        {
-            provider.Silent = true;
-            // Der eine Ton, der die Stille erklaert. Nur beim UEBERGANG, und nur
-            // wenn vorher wirklich ein Ziel gefuehrt wurde - sonst quittiert der
-            // erste Frame einer neuen Auswahl eine Ausrichtung, die der Spieler
-            // gar nicht vorgenommen hat.
-            if (!_aligned && _hadTarget) _cue.PlayAlignedTone();
-            _aligned = true;
-            _hadTarget = true;
-            return;
-        }
+        // Der Quittungston bleibt, obwohl keine Stille mehr zu erklaeren ist: er
+        // markiert den Moment, in dem es stimmt, und erspart das Heraushoeren
+        // einer allmaehlichen Aenderung.
+        if (alignedNow && !_aligned && _hadTarget) _cue.PlayAlignedTone();
 
-        _aligned = false;
+        _aligned = alignedNow;
         _hadTarget = true;
         provider.Silent = false;
 
