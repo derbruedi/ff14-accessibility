@@ -3,7 +3,49 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-23, "RELEASE v5.90 - ZWOELF TESTS BESTAETIGT, NAVIGATION IST DRAUSSEN")
+## STAND JETZT (2026-08-23, "ZIEL UNTER EINEM VORSPRUNG - GEBAUT, UNGETESTET")
+
+>>> NEU UND NOCH NICHT IM SPIEL GEPRUEFT: Der Auto-Lauf setzte den Spieler aufs
+    Bruecken-DECK, wenn das Ziel darunter stand. Aufgefallen an der Quest
+    "Auf der Flucht" (Stufe 44, Coerthas, Territory 155): der NPC Wedge steht
+    bei (-397,5|229,15|448,3) unter der Bruecke r1f1_s1_brdg1.
+
+    GEMESSEN, nicht vermutet (Werkzeuge: tools/navmesh-gaps --at, plus ein neues
+    heightprobe im Scratchpad, das einen senkrechten Strahl durch die
+    Kollisionsgeometrie schiesst):
+    - Durchgangshoehe an Wedges Standort 1,25 m. vnavmesh verlangt AgentHeight
+      2,0 m und wirft alles darunter weg (NavmeshBuilder.cs:73/221).
+    - Der Verlauf: Z 446 noch 2,33 m, Z 447 nur noch 1,80 m - und genau dort
+      endet auch das Netz. Zwei unabhaengige Messungen, dieselbe Grenze.
+    - Das naechste Netz an Wedges Koordinaten ist das Deck 2,85 m ueber ihm.
+
+    GEBAUT: `TryStepOutFromUnderCeiling` in AutoWalkService. Liegt das Netz am
+    Ziel mindestens 1,5 m hoeher, sucht es in Ringen (2,5 m Schritte, 8 Speichen,
+    bis 15 m) einen Boden auf Zielhoehe und laeuft dorthin. Ansage beim Start und
+    bei der Ankunft nennt Vorsprung, Restentfernung und Richtung.
+
+    FALLE, DIE DABEI AUFFLOG: Ein enges Hoehen-Halbmass filtert NICHT. Die
+    Abfrage mit 15 m / 1,5 m lieferte wieder das Deck 2,65 m hoeher, weil
+    Detours FindNearestPoly die Kandidaten ueber Polygon-Bounding-Boxen sucht
+    und ein geneigtes Deck-Polygon in die Scheibe hineinragt. Verlaesslich ist
+    nur die Pruefung am ERGEBNIS - daher die Ringsuche.
+
+    BEIDE WEGE, nicht nur einer: Der Auto-Lauf (AutoWalkService.Begin) und die
+    Gehhilfe (NavigationService.StartWalkGuide) stellen jetzt dieselbe Frage, die
+    Methode ist dafuer public. Sonst haette der Peil-Ton weiter aufs Deck gezeigt,
+    waehrend der Auto-Lauf unten ankommt. In beiden Faellen wird die Ziel-Id auf 0
+    gesetzt (sonst zoege der naechste Frame die Objektposition zurueck) - ein
+    Ziel unter einem Vorsprung wird also nicht mehr verfolgt, wenn es laeuft.
+
+    ERWARTUNG FUER DEN TEST (offline gegen den Netz-Cache vorausberechnet):
+    Ziel wird (-399,8|228,8|445,0), rund 4,0 m von Wedge, Richtung Suedost.
+    Log-Zeile beginnt mit `[Vorsprung]`.
+
+    BESTAETIGT IST BEREITS: Der Punkt unter der Bruecke ist begehbar und Wedge
+    von dort ansprechbar - der User ist mit `/vnav moveto -399 228.8 444.6`
+    hingelaufen und hat mit ihm geredet.
+
+## RELEASE v5.90 (2026-08-23, "ZWOELF TESTS BESTAETIGT, NAVIGATION IST DRAUSSEN")
 
 >>> DER USER HAT DIE OFFENE-PUNKTE-LISTE DURCHGEARBEITET. Neu angelegt:
     `OFFENE-PUNKTE.txt` in der Repo-Wurzel - alle offenen Punkte aus diesem

@@ -1771,6 +1771,25 @@ public static partial class AccessibilityStrings
 
     public static string WalkingTo(string name) =>
         IsGerman ? $"Laufe zu {name}." : $"Walking to {name}.";
+
+    /// <summary>
+    /// Der Lauf startet zu einem Ersatzpunkt, weil das Ziel unter etwas Begehbarem
+    /// steht (Bruecke, Unterfuehrung, Keller - siehe
+    /// <c>AutoWalkService.TryStepOutFromUnderCeiling</c>). Sagt die Entfernung
+    /// gleich mit: sonst klingt der Lauf wie jeder andere, endet aber ein Stueck
+    /// vom Ziel entfernt.
+    /// </summary>
+    public static string WalkingToBelowLedge(string name, float metres) =>
+        IsGerman ? $"{name} liegt unter einem Vorsprung. Laufe bis auf {metres:F0} Meter heran."
+                 : $"{name} is under an overhang. Walking to within {metres:F0} meters of it.";
+
+    /// <summary>Ankunft am Ersatzpunkt: das Ziel selbst liegt noch die genannte
+    /// Strecke in der genannten Himmelsrichtung. Richtung statt links/rechts aus
+    /// demselben Grund wie ueberall sonst in der Navigation.</summary>
+    public static string ArrivedBelowLedge(string name, float metres, string direction) =>
+        IsGerman ? $"Angekommen. {name} ist {MetersRemaining(metres)} nach {direction}, unter dem Vorsprung."
+                 : $"Arrived. {name} is {MetersRemaining(metres)} to the {direction}, under the overhang.";
+
     public static string AutoWalkStopped =>
         IsGerman ? "Auto-Lauf gestoppt." : "Auto-walk stopped.";
     public static string ArrivedNewZone =>
@@ -1854,6 +1873,13 @@ public static partial class AccessibilityStrings
         IsGerman ? "Gehhilfe aus." : "Walk guide off.";
     public static string WalkGuideOn(string name) =>
         IsGerman ? $"Gehhilfe an: {name}." : $"Walk guide on: {name}.";
+
+    /// <summary>Gehhilfe startet auf einen Ersatzpunkt, weil das Ziel unter etwas
+    /// Begehbarem steht. Eine einzige Zeile - ein zweiter Interrupt gleich danach
+    /// wuerde die erste abschneiden.</summary>
+    public static string WalkGuideOnBelowLedge(string name, float metres) =>
+        IsGerman ? $"Gehhilfe an: {name}. Liegt unter einem Vorsprung, führe bis auf {metres:F0} Meter heran."
+                 : $"Walk guide on: {name}. It is under an overhang, guiding to within {metres:F0} meters of it.";
     public static string NoPathStraightLine(string hint) =>
         IsGerman ? $"Kein Weg gefunden, führe in Luftlinie.{hint}" : $"No path found, guiding in a straight line.{hint}";
     // ════════════════════════════════════════════════════════════════

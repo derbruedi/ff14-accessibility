@@ -157,6 +157,49 @@ public sealed class AutoWalkService : IDisposable
     /// entry and the crossing would refuse to start.</summary>
     private const float BridgeEntryStopRange = 1.5f;
 
+    /// <summary>
+    /// From how far above the destination the mesh counts as a DIFFERENT storey
+    /// rather than the ground the destination stands on
+    /// (<see cref="TryStepOutFromUnderCeiling"/>).
+    /// <para>
+    /// Measured case, Coerthas Central Highlands, quest "Auf der Flucht"
+    /// (2026-08-23): the NPC Wedge stands under a bridge at y 229,15, and the
+    /// nearest mesh at his coordinates is the bridge DECK at y 231,8 - 2,6 m above
+    /// him. The headroom underneath is 1,25 m, and vnavmesh drops any floor with
+    /// less than <c>AgentHeight</c> = 2 m of clearance (NavmeshBuilder.cs:73/221),
+    /// which is why no mesh exists down there at all. Anything under 1,5 m is
+    /// ordinary unevenness - a kerb, a root, a sloping floor - and must not
+    /// trigger a detour.
+    /// </para>
+    /// </summary>
+    private const float CeilingClearance = 1.5f;
+
+    /// <summary>How far from the destination the substitute point on the
+    /// destination's own level may sit. Beyond that the walk would end somewhere
+    /// the player cannot relate to the target any more; saying "I cannot get
+    /// there" is the more honest answer. User's call, 2026-08-23.</summary>
+    private const float CeilingDetourRadius = 15f;
+
+    /// <summary>Horizontal box for the question "what does the mesh look like AT
+    /// the destination". Deliberately tight: this asks about the destination's own
+    /// spot, not its neighbourhood.</summary>
+    private const float CeilingProbeXZ = 2f;
+
+    /// <summary>Vertical box for that same question - the value
+    /// <see cref="ResolveFloorPoint"/> uses, so both read the same mesh.</summary>
+    private const float CeilingProbeY = 10f;
+
+    /// <summary>Abstand der Suchringe um das Ziel, und zugleich - halbiert - das
+    /// XZ-Halbmass jeder einzelnen Ringabfrage, damit zwischen zwei Ringen keine
+    /// Luecke bleibt.</summary>
+    private const float CeilingRingStep = 2.5f;
+
+    /// <summary>Speichen je Suchring. Acht reichen fuer einen zusammenhaengenden
+    /// Boden; am gemessenen Fall trafen zwei davon (2026-08-23). Jede Speiche ist
+    /// eine Netzabfrage, und die ganze Suche laeuft nur an, wenn ueber dem Ziel
+    /// tatsaechlich etwas liegt - im gewoehnlichen Lauf kostet sie nichts.</summary>
+    private const int CeilingSpokes = 8;
+
     private enum Phase
     {
         /// <summary>Nothing running.</summary>
@@ -249,6 +292,13 @@ public sealed class AutoWalkService : IDisposable
     /// a second walk, and letting that one check again would be a loop.</summary>
     private bool _partialPathChecked;
 
+    /// <summary>Where the player actually wanted to go, when the walk was diverted
+    /// to a substitute point beside it (<see cref="TryStepOutFromUnderCeiling"/>).
+    /// Null for every ordinary walk. Kept so arrival can face the real target and
+    /// say how far off it still is - the substitute point is the mesh's answer,
+    /// not the player's question.</summary>
+    private Vector3? _ceilingDestination;
+
     /// <summary>Whether an auto-walk is currently running. Plugin.cs suppresses
     /// automatic target-change announcements while this is true - passing NPCs
     /// grab the soft target every few steps and each one would be announced
@@ -340,6 +390,110 @@ public sealed class AutoWalkService : IDisposable
     /// </summary>
     public Vector3? ProbeReachable(Vector3 point, float halfExtentXZ, float halfExtentY)
         => _nav.IsReady ? _nav.NearestPointReachable(point, halfExtentXZ, halfExtentY) : null;
+
+    /// <summary>
+    /// Ziel unter einem Vorsprung: liefert den naechsten Netzpunkt auf ZIELHOEHE,
+    /// wenn an der Zielstelle selbst nur das Stockwerk darueber im Netz steht.
+    /// Antwortet false fuer jeden gewoehnlichen Lauf.
+    ///
+    /// <para>
+    /// WARUM DAS NOETIG IST. Die Wegsuche bekommt die rohe Zielposition und sucht
+    /// sich das raeumlich naechstgelegene Polygon dazu - Hoehe zaehlt dabei wie
+    /// jede andere Richtung. Steht das Ziel unter einer Bruecke, in einer
+    /// Unterfuehrung oder in einem Keller, ist das naechste Polygon die Decke
+    /// DARUEBER, und der Lauf endet oben statt unten. Gemessen am 2026-08-23 in
+    /// Coerthas: der Quest-NPC Wedge steht unter einer Bruecke, das Netz an seinen
+    /// Koordinaten liegt 2,6 m ueber ihm, und der Auto-Lauf setzte den Spieler
+    /// aufs Bruecken-Deck. Er konnte den NPC von dort weder erreichen noch sehen,
+    /// warum.
+    /// </para>
+    ///
+    /// <para>
+    /// DIE UMLEITUNG GREIFT NUR, wenn alle drei Bedingungen zutreffen: an der
+    /// Zielstelle liegt Netz, es liegt mindestens <see cref="CeilingClearance"/>
+    /// ueber dem Ziel, und im Umkreis von <see cref="CeilingDetourRadius"/> gibt es
+    /// Netz auf Zielhoehe. Ein Ziel, das legitim erhoeht steht (Podest, Mauerkrone)
+    /// oder das gar kein Netz in der Naehe hat, faellt durch alle drei und laeuft
+    /// unveraendert weiter wie bisher.
+    /// </para>
+    /// </summary>
+    /// <param name="destination">Die rohe Zielposition, wie der Aufrufer sie kennt.</param>
+    /// <param name="ground">Der Ersatzpunkt auf Zielhoehe.</param>
+    /// <param name="lift">Wie hoch das Netz an der Zielstelle ueber dem Ziel liegt.</param>
+    /// <remarks>Oeffentlich, weil die Gehhilfe (<see cref="NavigationService"/>)
+    /// dieselbe Frage stellt: sie fuehrt den Spieler zu Fuss zum selben Punkt, den
+    /// der Auto-Lauf ansteuern wuerde, und duerfte ihn nicht aufs Dach schicken,
+    /// nur weil er diesmal selbst laeuft.</remarks>
+    public bool TryStepOutFromUnderCeiling(Vector3 destination, out Vector3 ground, out float lift)
+    {
+        ground = default;
+        lift = 0f;
+        if (!_nav.IsReady) return false;
+
+        // Was liegt an der Zielstelle auf dem Netz?
+        if (_nav.NearestPoint(destination, CeilingProbeXZ, CeilingProbeY) is not { } above) return false;
+
+        lift = above.Y - destination.Y;
+        if (lift < CeilingClearance) return false;   // Netz auf Zielhoehe: nichts zu tun
+
+        // DAS HOEHENFENSTER FILTERT NICHT. Naheliegend waere jetzt eine einzige
+        // Abfrage mit weitem XZ und duenner Hoehenscheibe. Sie liefert das falsche
+        // Ergebnis, offline gegen den Netz-Cache gemessen (2026-08-23): mit
+        // Halbmass 15 m / 1,5 m um Wedge kam wieder das Bruecken-Deck 2,65 m ueber
+        // ihm heraus. Grund ist Detours FindNearestPoly - das Halbmass sucht
+        // KANDIDATEN-Polygone ueber deren Bounding-Box aus, und ein geneigtes
+        // Deck-Polygon reicht mit seiner Box in die Scheibe hinein; danach gewinnt
+        // schlicht der raeumlich naechste Punkt, und das ist die Decke.
+        //
+        // Verlaesslich ist nur die Pruefung am ERGEBNIS. Also den Abfragepunkt
+        // selbst verschieben: Ringe um das Ziel, und jede Antwort, die nicht auf
+        // Zielhoehe liegt, wird verworfen. Von innen nach aussen, der erste Ring
+        // mit Treffern gewinnt - der naechstgelegene Boden ist der, von dem aus der
+        // Spieler das Ziel noch erreichen kann.
+        for (var radius = CeilingRingStep; radius <= CeilingDetourRadius + 0.01f; radius += CeilingRingStep)
+        {
+            var best = default(Vector3?);
+            var bestDistance = float.MaxValue;
+
+            for (var spoke = 0; spoke < CeilingSpokes; spoke++)
+            {
+                var angle = spoke * 2f * MathF.PI / CeilingSpokes;
+                var probe = destination + new Vector3(MathF.Sin(angle) * radius, 0f, MathF.Cos(angle) * radius);
+
+                if (_nav.NearestPoint(probe, CeilingRingStep / 2f, CeilingClearance) is not { } hit) continue;
+
+                var rise = MathF.Abs(hit.Y - destination.Y);
+                if (rise > CeilingClearance) continue;   // wieder ein Stockwerk daneben
+
+                // Hoehenunterschied zaehlt wie Weg, statt wie in der Luftlinie nur
+                // quadratisch einzugehen. Am gemessenen Fall entscheidet genau das:
+                // ein Punkt auf der Boeschung 1,05 m ueber dem NPC lag 3,99 m weit,
+                // der Punkt auf SEINER Ebene 4,05 m - die Luftlinie haette also die
+                // Boeschung gewaehlt, obwohl der Spieler von dort ueber eine Stufe
+                // hinweg mit ihm reden muesste. Von der Ebene aus ist es bestaetigt
+                // gegangen (2026-08-23).
+                var flat = Vector2.Distance(new Vector2(destination.X, destination.Z), new Vector2(hit.X, hit.Z));
+                var cost = flat + rise;
+                if (cost >= bestDistance) continue;
+                bestDistance = cost;
+                best = hit;
+            }
+
+            if (best is { } found)
+            {
+                ground = found;
+                return true;
+            }
+        }
+
+        // Netz nur ueber dem Ziel, keines auf seiner Hoehe: der Lauf geht wie bisher
+        // dorthin, wo die Wegsuche hinfuehrt. Die Zeile steht trotzdem im Log - sie
+        // ist der Unterschied zwischen "unerklaerlich oben gelandet" und einer
+        // Stelle, an der man nachmessen kann.
+        _log.Info($"[Vorsprung] Ziel ({Fmt(destination)}) liegt {lift:F1} m unter dem Netz, " +
+                  $"aber im Umkreis von {CeilingDetourRadius:F0} m gibt es keinen Boden auf Zielhoehe.");
+        return false;
+    }
 
     /// <summary>
     /// Resolves the walkable height for a 2D map position (map markers carry
@@ -490,6 +644,28 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
+        // Steht das Ziel unter etwas Begehbarem? Dann ist der Punkt, den die
+        // Wegsuche daraus machen wuerde, das Stockwerk darueber. BEVOR die
+        // Entfernung geprueft wird: von der Bruecke aus ist das Ziel wenige Meter
+        // weit weg, und "du bist schon da" waere die falscheste aller Auskuenfte
+        // fuer jemanden, der oben steht und unten hin will.
+        var ceilingDetour = 0f;
+        if (fresh)
+        {
+            _ceilingDestination = null;
+            if (TryStepOutFromUnderCeiling(destination, out var ground, out var lift))
+            {
+                ceilingDetour = Vector3.Distance(destination, ground);
+                _log.Info($"[Vorsprung] {name} ({Fmt(destination)}) liegt {lift:F1} m unter dem Netz - " +
+                          $"laufe stattdessen zu ({Fmt(ground)}), {ceilingDetour:F1} m daneben.");
+                _ceilingDestination = destination;
+                destination = ground;
+                // Sonst zoege WalkingUpdate die Objektposition jeden Frame zurueck
+                // und der Lauf zielte wieder auf den Punkt unter dem Vorsprung.
+                targetId = 0;
+            }
+        }
+
         var distance = Vector3.Distance(player.Position, destination);
         if (distance <= stopRange)
         {
@@ -584,7 +760,10 @@ public sealed class AutoWalkService : IDisposable
 
         _log.Info($"[Nav] Auto-Lauf: gestartet zu {name} (id={targetId:X}, stopRange={stopRange:F1}, " +
                   $"dist={distance:F1}, neu={fresh})");
-        if (fresh) _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
+        if (fresh)
+            _tolk.SpeakInterrupt(_ceilingDestination != null
+                ? AccessibilityStrings.WalkingToBelowLedge(name, ceilingDetour)
+                : AccessibilityStrings.WalkingTo(name));
     }
 
     /// <summary>
@@ -709,6 +888,21 @@ public sealed class AutoWalkService : IDisposable
             // the real destination back up. Not an arrival for the player - they
             // asked to go somewhere else and are not there yet.
             if (_pendingCrossing != null && TryTakeCrossing(player.Position)) return;
+
+            // Umgeleitet, weil das Ziel unter einem Vorsprung steht: angekommen ist
+            // der Lauf, das Ziel aber ein paar Meter weiter. Beides gehoert in die
+            // Ansage, sonst steht der Spieler scheinbar grundlos daneben.
+            if (_ceilingDestination is { } real)
+            {
+                var gap = Vector3.Distance(player.Position, real);
+                var bearing = RouteService.CompassWord(player.Position, real);
+                Finish(AccessibilityStrings.ArrivedBelowLedge(_targetName, gap, bearing),
+                       $"angekommen unter Vorsprung, dist={distance:F1}, Ziel {gap:F1} m");
+                // Auf das ECHTE Ziel drehen, nicht auf den Ersatzpunkt: dorthin geht
+                // der naechste Schritt des Spielers.
+                FacingService.FaceTowards(player, real);
+                return;
+            }
 
             // Order matters: Finish stops vnavmesh first, THEN we turn. vnavmesh's
             // FollowPath owns an OverrideCamera while it steers, so a turn issued

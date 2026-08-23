@@ -2639,6 +2639,12 @@ public sealed class NavigationService
     private float _walkArrivalRange = ArrivalDistance;
     private DateTime _lastGuideTick = DateTime.MinValue;
 
+    /// <summary>Wohin der Spieler eigentlich wollte, wenn die Gehhilfe auf einen
+    /// Ersatzpunkt daneben umgeleitet hat, weil das Ziel unter einem Vorsprung
+    /// steht (<see cref="AutoWalkService.TryStepOutFromUnderCeiling"/>). Null bei
+    /// jeder gewoehnlichen Fuehrung.</summary>
+    private Vector3? _walkCeilingDestination;
+
     // Route state. A null route = straight-line guidance (the pre-V4.63 mode).
     private List<Vector3>? _route;
     private int _routeCursor;
@@ -2806,6 +2812,24 @@ public sealed class NavigationService
 
     private void StartWalkGuide(ulong targetId, string name, Vector3 destination, float arrivalRange)
     {
+        // Steht das Ziel unter etwas Begehbarem, fuehrt der Peil-Ton sonst aufs
+        // Dach darueber - der Ton kennt nur einen Punkt, und die Wegsuche macht aus
+        // dem Ziel dasselbe Bruecken-Deck wie beim Auto-Lauf. Dieselbe Frage, damit
+        // beide Wege am selben Fleck ankommen.
+        var ceilingDetour = 0f;
+        _walkCeilingDestination = null;
+        if (AutoWalk is { } walk && walk.TryStepOutFromUnderCeiling(destination, out var ground, out var lift))
+        {
+            ceilingDetour = Vector3.Distance(destination, ground);
+            _log.Info($"[Vorsprung] Gehhilfe: {name} ({destination.X:F1}|{destination.Y:F1}|{destination.Z:F1}) liegt " +
+                      $"{lift:F1} m unter dem Netz - fuehre stattdessen zu " +
+                      $"({ground.X:F1}|{ground.Y:F1}|{ground.Z:F1}), {ceilingDetour:F1} m daneben.");
+            _walkCeilingDestination = destination;
+            destination = ground;
+            // Sonst zoege WalkGuideFrame die Objektposition jeden Frame zurueck.
+            targetId = 0;
+        }
+
         _walkGuideActive = true;
         _walkBeaconKey = ++_walkBeaconKeyCounter;
         _walkTargetId = targetId;
@@ -2820,7 +2844,11 @@ public sealed class NavigationService
         ResetApproachTracking(_objectTable.LocalPlayer?.Position ?? destination, destination);
         _guideMeshEndAnnounced = false;
         _beacon.Start();
-        _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideOn(_walkTargetName));
+        // Eine Zeile, nicht zwei: ein zweiter Interrupt direkt danach schnitte die
+        // erste ab (V4.42).
+        _tolk.SpeakInterrupt(_walkCeilingDestination != null
+            ? AccessibilityStrings.WalkGuideOnBelowLedge(_walkTargetName, ceilingDetour)
+            : AccessibilityStrings.WalkGuideOn(_walkTargetName));
         _log.Info($"[Nav] Gehhilfe: gestartet zu {name} (id={targetId:X}, ankunft={arrivalRange:F1})");
 
         var player = _objectTable.LocalPlayer;
@@ -3005,6 +3033,21 @@ public sealed class NavigationService
         {
             StopWalkGuide();
             _cue.PlayArrivalTone();
+
+            // Umgeleitet, weil das Ziel unter einem Vorsprung steht: der Weg ist zu
+            // Ende, das Ziel aber noch ein Stueck weiter. Wie beim Auto-Lauf sagt
+            // die Ansage beides, und gedreht wird aufs echte Ziel.
+            if (_walkCeilingDestination is { } real)
+            {
+                var gap = Vector3.Distance(player.Position, real);
+                var bearing = RouteService.CompassWord(player.Position, real);
+                _tolk.SpeakInterrupt(AccessibilityStrings.ArrivedBelowLedge(_walkTargetName, gap, bearing));
+                FacingService.FaceTowards(player, real);
+                _log.Info($"[Nav] Gehhilfe: unter dem Vorsprung angekommen, dist={distance:F1}, " +
+                          $"Ziel noch {gap:F1} m nach {bearing}.");
+                return;
+            }
+
             _tolk.SpeakInterrupt(AccessibilityStrings.TargetReached(_walkTargetName));
             // Same promise as the auto-walk: arriving means standing there AND
             // facing it, so walking forward or interacting just works. On the way
