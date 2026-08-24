@@ -3,9 +3,10 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-24, "DREI TASTEN WAREN NIE VERDRAHTET")
+## STAND JETZT (2026-08-24, "DREI TASTEN WAREN NIE VERDRAHTET - BESTAETIGT")
 
->>> GEBAUT UND DEPLOYT (Debug), IM SPIEL NOCH NICHT GEGENGEPRUEFT.
+>>> IM SPIEL BESTAETIGT (2026-08-24, 11:34 bis 11:41). Belege unten unter
+    ERGEBNIS.
 
     DER FALL. Der User meldete "Strg+F funktioniert bei mir nicht" (die Ansage
     von Gewoelbe und Ebene im Tiefen Gewoelbe). Es war kein Ankunftsproblem der
@@ -47,10 +48,17 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     BildAuf/BildAb/Numpad0/3/5/Return/Escape), Tabelle jetzt 78 Eintraege. Es ist
     nichts weggefallen, es sind drei Tasten dazugekommen.
 
-    WAS DER TEST ZEIGEN MUSS: dass die drei WRN-Zeilen beim naechsten Laden NICHT
-    mehr im Log stehen, und dass Strg+F ausserhalb eines Gewoelbes "Kein Tiefes
-    Gewölbe." sagt. Sagt es gar nichts, kommt die Taste wirklich nicht an - dann
-    gilt [[keybind_dump_not_proof_of_arrival]] und es braucht eine andere Taste.
+    ERGEBNIS - BESTAETIGT. Dasselbe Log zeigt beide Zustaende nacheinander:
+        10:28:58 alter Build geladen -> die drei WRN-Zeilen
+        11:34:55 neuer Build geladen -> KEINE Warnung mehr
+        11:41:10 [Speak] INT 'Kein Tiefes Gewölbe.'
+    Die Taste kommt also an und antwortet. Das war die offene Frage, ob es sich
+    doch um einen Fall von [[keybind_dump_not_proof_of_arrival]] handelt - tut
+    es nicht.
+
+    NOCH NICHT SELBST GEDRUECKT: Umschalt+Pos1 und Alt+Pos1. Sie hingen an
+    derselben Tabelle, und dass ihre Warnung verschwunden ist, beweist, dass sie
+    jetzt aufloesen - aber gedrueckt hat sie niemand.
 
 ## VORGESCHICHTE (2026-08-24, "ZIEL AUF EINER ERHOEHUNG - IM SPIEL BESTAETIGT")
 
