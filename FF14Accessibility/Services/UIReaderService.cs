@@ -3663,7 +3663,7 @@ public sealed class UIReaderService : IDisposable
         switch (comp->GetComponentType())
         {
             case ComponentType.CheckBox:
-                var label = GetTextFromNodeTree(compNode).Trim();
+                var label = PlayerSearchSwitchLabel(node, compNode);
                 if (string.IsNullOrWhiteSpace(label)) return false;
                 // Wortgleich zu den Konfigurationsfenstern, inklusive des Wortes
                 // "Schalter": derselbe Bedienelementtyp muss ueberall gleich
@@ -3676,14 +3676,149 @@ public sealed class UIReaderService : IDisposable
                 return true;
 
             case ComponentType.NumericInput:
-                var value = GetTextFromNodeTree(compNode).Trim();
-                if (string.IsNullOrWhiteSpace(value)) return false;
-                text = AccessibilityStrings.InputFieldValue(value);
+                // Die ZAHL DER KOMPONENTE, nicht ihr Textknoten. GetTextFromNodeTree
+                // wirft einstellige Texte weg (`t.Length > 1`, eine bewusste
+                // Rauschsperre fuer die ganze Oberflaeche), und genau daran war das
+                // Feld "Min." stumm: es stand auf "1". Gemessen 2026-08-24 - die
+                // Sonde las Text5='1', gesprochen wurde nichts.
+                var input = (AtkComponentNumericInput*)comp;
+                text = AccessibilityStrings.InputFieldValue(input->Value.ToString());
+                return true;
+
+            case ComponentType.RadioButton:
+                var option = GetTextFromNodeTree(compNode).Trim();
+                if (string.IsNullOrWhiteSpace(option)) return false;
+                text = $"{option}, "
+                     + (((AtkComponentRadioButton*)comp)->IsSelected
+                            ? AccessibilityStrings.RadioSelected
+                            : AccessibilityStrings.RadioNotSelected);
+                return true;
+
+            case ComponentType.TextInput:
+                // Das Namensfeld traegt keine eigene Beschriftung - was hineingehoert,
+                // sagt der ausgewaehlte Knopf daneben. Ohne ihn blieb nur "5/15,
+                // Azumi": ein Zaehler und ein Wort, aber nicht, wonach gesucht wird.
+                var typed = AtkText.Read(((AtkComponentTextInput*)comp)->AtkTextNode).Trim();
+                var owner = SelectedRadioLabel(compNode);
+                text = owner != null
+                     ? AccessibilityStrings.NamedInputFieldValue(owner, typed)
+                     : AccessibilityStrings.InputFieldValue(typed);
                 return true;
 
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Der Name eines Ankreuzfeldes der Spielersuche, in drei Stufen - weil das
+    /// Fenster drei verschiedene Sorten davon hat und nur die erste eine
+    /// Beschriftung traegt.
+    ///
+    /// <para>
+    /// GEMESSEN 2026-08-24 an einem Auszug des Fensters (77 Knoten) und den
+    /// Sondenzeilen desselben Logs:
+    /// </para>
+    /// <list type="number">
+    /// <item><b>Eigener Text</b> - nur "Welt" (id 27) hat einen. Der wurde schon
+    ///   immer richtig gelesen, und daran fiel nie auf, dass alle anderen
+    ///   durchfielen.</item>
+    /// <item><b>Tooltip</b> - die Reihen SG und Status (id 42 bis 62) tragen ein
+    ///   Symbol und einen Tooltip ("Legion der Unsterblichen", "Mahlstrom",
+    ///   "In Gruppensuche", "Gruppenanfuehrer"). Der allgemeine Leser sagte den
+    ///   Namen, aber NIE den Zustand - angekreuzt und nicht angekreuzt klangen
+    ///   gleich.</item>
+    /// <item><b>Ueberschrift der Zeile plus Position</b> - die vier Sprachfelder
+    ///   (id 66 bis 69) haben WEDER Text NOCH Tooltip. Die Sonde meldete zu allen
+    ///   vieren "NICHTS LESBAR", und gesprochen wurde gar nichts: der Spieler
+    ///   konnte nicht einmal wissen, dass es diesen Filter gibt. Ihre Ueberschrift
+    ///   "Sprache" (id 64) steht links in derselben Zeile und wird ueber
+    ///   <see cref="ConfigLabelByGeometry"/> gefunden - derselbe Weg wie in den
+    ///   Konfigurationsfenstern, wo die Knotenreihenfolge schon einmal
+    ///   systematisch danebenlag.</item>
+    /// </list>
+    ///
+    /// <para>
+    /// Die SPRACHE selbst wird bewusst NICHT benannt. Welches Buchstabenbild
+    /// welche Sprache ist, steht in keiner Quelle, die dieses Projekt gelesen hat;
+    /// die vier Felder benutzen sogar vier verschiedene ULD-Bausteine
+    /// (1021/1019/1018/1020), also nicht einmal eine durchlaufende Nummer. Eine
+    /// geratene Sprache waere schlimmer als eine ehrliche Position - danach legt
+    /// der Spieler den falschen Schalter um. Siehe die offene Messung in
+    /// STATUS.md.
+    /// </para>
+    /// </summary>
+    private unsafe string PlayerSearchSwitchLabel(AtkResNode* node, AtkResNode* compNode)
+    {
+        var own = GetTextFromNodeTree(compNode).Trim();
+        if (!string.IsNullOrWhiteSpace(own)) return own;
+
+        var tip = _tooltips.TryGetTooltipDeep(node);
+        if (!string.IsNullOrWhiteSpace(tip)) return tip.Trim();
+
+        var addon = FindAddonForNode(compNode);
+        if (addon == null) return string.Empty;
+
+        var heading = ConfigLabelByGeometry(addon, compNode, out _).Trim();
+        if (string.IsNullOrWhiteSpace(heading)) return string.Empty;
+
+        // Die Position in der Zeile, damit die vier Felder unterscheidbar bleiben.
+        // Ohne sie hiessen alle vier "Sprache" und der Spieler koennte nicht sagen,
+        // welches er gerade umlegt.
+        var row   = RowSiblings(addon, compNode, ComponentType.CheckBox);
+        var index = row.FindIndex(entry => entry.Ptr == (nint)compNode);
+        return index >= 0 && row.Count > 1
+             ? AccessibilityStrings.GroupMemberPosition(heading, index + 1, row.Count)
+             : heading;
+    }
+
+    /// <summary>
+    /// Die Beschriftung des AUSGEWAEHLTEN Radioknopfes im selben Fenster, oder null,
+    /// wenn es dort keinen gibt.
+    ///
+    /// <para>
+    /// WOZU: Ein Eingabefeld ohne eigene Beschriftung wird von dem Knopf benannt, der
+    /// bestimmt, was hineingehoert. In der Spielersuche stehen "Vorname" und
+    /// "Nachname" rechts neben dem Feld, und je nachdem sucht dasselbe Feld etwas
+    /// anderes.
+    /// </para>
+    ///
+    /// <para>
+    /// UEBER DIE WURZEL DES FOKUSSIERTEN KNOTENS, nie ueber GetAddonByName: dieselbe
+    /// Auflage wie im Tiefen Gewoelbe (siehe <see cref="DeepDungeonPanel"/>) - der
+    /// Namensgriff kann einen geladenen, aber toten Zwilling erwischen, waehrend der
+    /// Fokus immer im lebenden Fenster sitzt.
+    /// </para>
+    /// </summary>
+    private unsafe string? SelectedRadioLabel(AtkResNode* node)
+    {
+        var root = node;
+        var guard = 0;
+        while (root->ParentNode != null && guard++ < 64) root = root->ParentNode;
+        return FindSelectedRadio(root, 0);
+    }
+
+    private unsafe string? FindSelectedRadio(AtkResNode* node, int depth)
+    {
+        if (node == null || depth > 8) return null;
+
+        if ((int)node->Type >= 1000)
+        {
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp != null && comp->GetComponentType() == ComponentType.RadioButton
+                && ((AtkComponentRadioButton*)comp)->IsSelected)
+            {
+                var label = GetTextFromNodeTree(node).Trim();
+                if (!string.IsNullOrWhiteSpace(label)) return label;
+            }
+        }
+
+        for (var child = node->ChildNode; child != null; child = child->PrevSiblingNode)
+        {
+            var found = FindSelectedRadio(child, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     /// <summary>

@@ -84,9 +84,38 @@ public static partial class AccessibilityStrings
     public static string StateOff => IsGerman ? "aus" : "off";
     /// <summary>Radio button is the selected option.</summary>
     public static string RadioSelected => IsGerman ? "ausgewählt" : "selected";
+    /// <summary>
+    /// Radio button is one of the options, but NOT the active one.
+    ///
+    /// <para>
+    /// Existiert, weil das Schweigen hier aktiv in die Irre fuehrt: in der
+    /// Spielersuche klangen "Vorname" und "Nachname" beim Durchtabben identisch,
+    /// und der User hielt das Anfokussieren fuer das Umschalten (Meldung
+    /// 2026-08-24, im Log ohne jedes Auswahl-Ereignis auf dem zweiten Knopf).
+    /// Eine Auswahl, die man nicht hoert, ist keine.
+    /// </para>
+    /// </summary>
+    public static string RadioNotSelected => IsGerman ? "nicht ausgewählt" : "not selected";
     /// <summary>Control-type word for a checkbox, so the user knows it is a
     /// toggle they can flip - not just an informational label.</summary>
     public static string SwitchControl => IsGerman ? "Schalter" : "switch";
+
+    /// <summary>
+    /// A switch that has NO name of its own - neither text nor tooltip - named by
+    /// the heading of its row plus where it sits in that row.
+    ///
+    /// <para>
+    /// WARUM DIE POSITION UND NICHT DER NAME: Die vier Sprach-Ankreuzfelder der
+    /// Spielersuche tragen nur ein Buchstabenbild. Aus welchem Bild welche Sprache
+    /// wird, sagt keine nachschlagbare Quelle - die Reihenfolge waere geraten, und
+    /// eine geratene Sprache ist schlimmer als eine ehrliche Nummer, weil der
+    /// Spieler danach den falschen Schalter umlegt. "Sprache, 3 von 4" ist
+    /// gemessen: die Ueberschrift steht links in derselben Zeile, die Position
+    /// ergibt sich aus den Bildschirmkoordinaten.
+    /// </para>
+    /// </summary>
+    public static string GroupMemberPosition(string group, int index, int count) =>
+        IsGerman ? $"{group}, {index} von {count}" : $"{group}, {index} of {count}";
     /// <summary>Control is greyed out / not currently changeable (NodeFlags.Enabled
     /// cleared) - e.g. a sub-toggle while its master switch is off.</summary>
     public static string StateDisabled => IsGerman ? "ausgegraut" : "greyed out";
@@ -1128,6 +1157,22 @@ public static partial class AccessibilityStrings
         typed.Length > 0
             ? (IsGerman ? $"Eingabefeld: {typed}" : $"Input field: {typed}")
             : (IsGerman ? "Eingabefeld, leer"     : "Input field, empty");
+
+    /// <summary>
+    /// An input field that carries no label of its own, named by the control that
+    /// says what it is for.
+    ///
+    /// <para>
+    /// Gebaut fuer die Spielersuche: das Namensfeld hat keine eigene Beschriftung,
+    /// und was hineingehoert, entscheidet der ausgewaehlte Knopf daneben
+    /// (Vorname / Nachname). Ohne diesen Namen sagte das Feld nur "5/15, Azumi" -
+    /// ein Zaehler und ein Wort, aber nicht, wonach ueberhaupt gesucht wird.
+    /// </para>
+    /// </summary>
+    public static string NamedInputFieldValue(string label, string typed) =>
+        typed.Length > 0
+            ? (IsGerman ? $"{label}, Eingabefeld: {typed}" : $"{label}, input field: {typed}")
+            : (IsGerman ? $"{label}, Eingabefeld, leer"    : $"{label}, input field, empty");
 
     // ── Zahl mit ihrer Beschriftung ──────────────────────────────────
     /// <summary>
