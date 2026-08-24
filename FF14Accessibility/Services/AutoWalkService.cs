@@ -118,7 +118,7 @@ public sealed class AutoWalkService : IDisposable
     /// <summary>Counts as "reached the far end of the trail". Wider than the
     /// normal arrival slack: the recording ends wherever the player happened to
     /// stand, and the point of a crossing is being on the other side, not on a
-    /// particular metre of it.</summary>
+    /// particular metre of it. Capped per crossing by <see cref="TrailArrival"/>.</summary>
     private const float TrailArrivalRange = 4f;
 
     /// <summary>Grace period before an empty waypoint list counts as the end of
@@ -200,6 +200,12 @@ public sealed class AutoWalkService : IDisposable
     /// tatsaechlich etwas liegt - im gewoehnlichen Lauf kostet sie nichts.</summary>
     private const int CeilingSpokes = 8;
 
+    /// <summary>From which height difference a dead end gets called out as one:
+    /// "the target is above you". Same 1,5 m as <see cref="CeilingClearance"/> and
+    /// for the same reason - below that it is a kerb or a slope, and naming it
+    /// would turn every ordinary stop into a height report.</summary>
+    private const float LedgeAnnounceRise = 1.5f;
+
     private enum Phase
     {
         /// <summary>Nothing running.</summary>
@@ -273,7 +279,61 @@ public sealed class AutoWalkService : IDisposable
     private Vector3 _trailEnd;
     private int _trailWaypointsSeen;    // highest waypoint count seen on our own list
     private DateTime _trailStartedAt;
+    private float _trailLength;         // along the driven point list, see TrailArrival
     private readonly HashSet<string> _usedTrails = new();
+
+    /// <summary>
+    /// How close to <see cref="_trailEnd"/> counts as across, for THIS crossing.
+    ///
+    /// <para>
+    /// A recorded trail runs for dozens of metres and <see cref="TrailArrivalRange"/>
+    /// fits it. A measured bridge is a metre or two, and there the flat 4 m is
+    /// longer than the whole crossing: the character may enter from up to
+    /// <c>MeshBridgeService.EntryRange</c> = 4 m away, so "arrived at the far end"
+    /// is already true at the handover frame. Measured 2026-08-24 in Mor Dhona -
+    /// 18 ms between "fahre Bruecke" and "Spur zu Ende", not a step taken, after
+    /// which ordinary pathfinding took the walk 83 m around the long way and left
+    /// the player back under the target.
+    /// </para>
+    ///
+    /// <para>
+    /// Half the crossing is the honest cap: it can never hold at the start, and it
+    /// still leaves the second half as slack. Falls back to the flat range while no
+    /// length is known.
+    /// </para>
+    /// </summary>
+    private float TrailArrival =>
+        _trailLength > 0f ? MathF.Min(TrailArrivalRange, _trailLength * 0.5f) : TrailArrivalRange;
+
+    /// <summary>Length along a driven point list - the distance the character has
+    /// to cover, not the straight line from first to last.</summary>
+    private static float PathLength(IReadOnlyList<Vector3> points)
+    {
+        var total = 0f;
+        for (var i = 1; i < points.Count; i++) total += Vector3.Distance(points[i - 1], points[i]);
+        return total;
+    }
+
+    /// <summary>
+    /// "This is as far as the walkable ground goes" - naming the height difference
+    /// whenever the remaining gap is largely a vertical one.
+    ///
+    /// <para>
+    /// Every place a walk gives up short of its target goes through here, and it
+    /// has to: the flat wording sends the player looking on their own level, and a
+    /// target on a ledge is never found that way. Measured in Mor Dhona on
+    /// 2026-08-24 - "noch 12 Meter nach Nordwesten" while the quest object sat
+    /// 12,4 m straight up a rock face.
+    /// </para>
+    /// </summary>
+    private string MeshEndsMessage(Vector3 position, float distance)
+    {
+        var direction = RouteService.CompassWord(position, _destPosition);
+        var rise = _destPosition.Y - position.Y;
+        return MathF.Abs(rise) >= LedgeAnnounceRise
+            ? AccessibilityStrings.WalkMeshEndsBelowOrAbove(distance, direction, rise)
+            : AccessibilityStrings.WalkMeshEndsHere(distance, direction);
+    }
 
     // Bruecken-Etappe (siehe MeshBridgeService): der Lauf geht zuerst zum
     // diesseitigen Ende der Luecke, faehrt sie dann ab und nimmt danach das
@@ -843,9 +903,8 @@ public sealed class AutoWalkService : IDisposable
         if (_reengageCount > 0)
         {
             var remainingDistance = Vector3.Distance(player.Position, _destPosition);
-            var direction = RouteService.CompassWord(player.Position, _destPosition);
             _log.Info($"[Nav] Auto-Lauf: Nachfassen brachte keinen Weg mehr, dist={remainingDistance:F1}.");
-            Finish(AccessibilityStrings.WalkMeshEndsHere(remainingDistance, direction), "Nachfassen ohne Weg");
+            Finish(MeshEndsMessage(player.Position, remainingDistance), "Nachfassen ohne Weg");
             FacingService.FaceTowards(player, _destPosition);
             return;
         }
@@ -946,8 +1005,7 @@ public sealed class AutoWalkService : IDisposable
             _log.Info($"[Nav] Auto-Lauf: keine Annäherung seit {NoApproachS:F1} s bei restWp={remaining}, " +
                       $"dist={distance:F1} - Netz endet hier.");
             if (TryTakeTrail(player.Position)) return;
-            var far = RouteService.CompassWord(player.Position, _destPosition);
-            Finish(AccessibilityStrings.WalkMeshEndsHere(distance, far), "Netz endet hier (keine Annäherung)");
+            Finish(MeshEndsMessage(player.Position, distance), "Netz endet hier (keine Annäherung)");
             FacingService.FaceTowards(player, _destPosition);
             return;
         }
@@ -976,7 +1034,7 @@ public sealed class AutoWalkService : IDisposable
             // keeps its own wording.
             var blocker = meshEnds ? null : _obstacles?.DescribeBlocker(player.Position, _destPosition);
             Finish(meshEnds
-                    ? AccessibilityStrings.WalkMeshEndsHere(distance, direction)
+                    ? MeshEndsMessage(player.Position, distance)
                     : blocker != null
                         ? AccessibilityStrings.StuckBehind(blocker, distance) + TrailHint()
                         : AccessibilityStrings.StuckRemaining(distance) + TrailHint(),
@@ -1008,8 +1066,9 @@ public sealed class AutoWalkService : IDisposable
             if (TryTakeTrail(player.Position)) return;
             if (TryReengage(distance)) return;
             if (TryNudgeIntoTransition(distance)) return;
-            var direction = RouteService.CompassWord(player.Position, _destPosition);
-            Finish(AccessibilityStrings.WalkMeshEndsHere(distance, direction), "Pfad zu Ende ohne Ankunft");
+            var rise = _destPosition.Y - player.Position.Y;
+            Finish(MeshEndsMessage(player.Position, distance),
+                   $"Pfad zu Ende ohne Ankunft, Hoehe {rise:+0.0;-0.0;0.0}");
             // Turn towards the destination even though we did not reach it: the
             // message names the remaining distance and direction, and walking
             // forward should act on exactly that. After Finish, see above.
@@ -1247,6 +1306,7 @@ public sealed class AutoWalkService : IDisposable
         _destPosition = destination.Value;
         _stopRange = _crossingStopRange;
         _trailEnd = crossing[^1];
+        _trailLength = PathLength(crossing);
         _trailWaypointsSeen = crossing.Count;
         _trailStartedAt = DateTime.UtcNow;
         _phase = Phase.TrailWalking;
@@ -1303,6 +1363,7 @@ public sealed class AutoWalkService : IDisposable
 
         _usedTrails.Add(name);
         _trailEnd = points[^1];
+        _trailLength = PathLength(points);
         _trailWaypointsSeen = points.Count;
         _trailStartedAt = DateTime.UtcNow;
         _phase = Phase.TrailWalking;
@@ -1349,10 +1410,11 @@ public sealed class AutoWalkService : IDisposable
         // crossing is behind us and the normal walk takes over from here. The
         // empty-list case is only trusted after a moment: FollowPath drops
         // waypoints it considers already reached in its first update.
-        if (toEnd <= TrailArrivalRange ||
+        if (toEnd <= TrailArrival ||
             (remaining == 0 && (now - _trailStartedAt).TotalSeconds > TrailSettleS))
         {
-            _log.Info($"[Nav] Auto-Lauf: Spur zu Ende (dist zum Spur-Ende={toEnd:F1}, restWp={remaining}), " +
+            _log.Info($"[Nav] Auto-Lauf: Spur zu Ende (dist zum Spur-Ende={toEnd:F1}, " +
+                      $"Ankunftsmass={TrailArrival:F1}, Spurlaenge={_trailLength:F1}, restWp={remaining}), " +
                       "normaler Lauf geht weiter.");
             _tolk.SpeakInterrupt(AccessibilityStrings.TrailFinished);
             _nav.Stop();

@@ -88,6 +88,28 @@ public sealed class MeshBridgeService
             new Vector3(155.00f, -12.75f, 161.00f),
             40f,
             "navmeshgaps 2026-08-22: surface 1 (1466) <-> surface 47 (36), gap 1,46 m, drop 0,00 m"),
+
+        // Mor Dhona -> the rock ramp above the scrap camp. Quest objects from three
+        // different quests sit up there (QST_GaiUsc601/604/605), the highest at
+        // Y 14,9; the mesh knows the whole ramp as a 26-polygon surface running from
+        // Y 4,2 to Y 14,0, and it hangs off the player's 15578-polygon ground at
+        // exactly one place. The step there is 0,75 m - a mere 25 cm over vnavmesh's
+        // own AgentMaxClimb of 0,50 m (NavmeshSettings.cs:25), which is why recast
+        // cut it. zone-probe at the spot shows bare rock with collision
+        // (l1f1_t1_roc1d.pcb, 1,6 m away) and no railing; the nearest fence stands
+        // 7,6 m off.
+        //
+        // Reach covers the ramp AND the small plateau that hangs off its far end:
+        // the quest object "Untersuchungsort fuer Stoerkommando" at
+        // (-174,9|10,8|-603,8) is 32,0 m from the far end. Crossing here does not
+        // reach that plateau by itself - it is another 3,00 m drop down from the
+        // ramp - but it gets the walk to the ramp instead of leaving it 12 m below
+        // on the ground, which is where it ended before.
+        new(156, "Aufstieg zum Felsplateau",
+            new Vector3(-159.75f, 3.50f, -632.25f),
+            new Vector3(-159.75f, 4.25f, -631.25f),
+            35f,
+            "navmeshgaps 2026-08-24: surface 0 (15578) <-> surface 30 (26), gap 1,00 m, drop 0,75 m"),
     };
 
     /// <summary>

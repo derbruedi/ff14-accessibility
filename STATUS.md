@@ -3,7 +3,147 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-23, "RELEASE v5.91 - ZIEL UNTER EINEM VORSPRUNG, UNGETESTET DRAUSSEN")
+## STAND JETZT (2026-08-24, "ZIEL AUF EINER ERHOEHUNG - IM SPIEL BESTAETIGT")
+
+>>> IM SPIEL BESTAETIGT (Log 2026-08-24, 10:09 bis 10:33). Bruecke, Ankunftsmass
+    und Hoehen-Ansage sind alle drei gemessen. Das Quest-Ziel wurde erreicht UND
+    benutzt - der Fall ist erledigt. Die Belege stehen unten unter ERGEBNIS.
+
+    DER FALL. Quest-Objekt "Untersuchungsort fuer Stoerkommando" (id 100419D48)
+    in Mor Dhona, Territory 156, auf (-174,9|10,8|-603,8). Der Auto-Lauf endete
+    laut Log 09:08/09:10/09:11 dreimal 12,3 m davor. Das ist KEINE waagerechte
+    Luecke: der letzte echte Wegpunkt lag auf (-174,2|-1,5|-605,0), also 1,4 m
+    daneben und 12,3 m TIEFER. Drei Geschwister-Objekte (D47, D4A, D4B) waren
+    erreichbar, nur dieses eine steht oben.
+
+    VOLLSTAENDIG OFFLINE VERMESSEN (navmeshgaps gegen den Cache des Users,
+    zoneprobe gegen das sqpack, Bauparameter aus dem vnavmesh-Quellcode):
+    - Das Objekt steht auf einem Plateau von 2 Polygonen, 4,0 x 5,8 m, Y 10,0
+      bis 10,2. Das ist Flaeche 416 im Netz.
+    - Daneben klettert eine Felsrampe von Y 4,2 bis Y 14,0 (Flaeche 30,
+      26 Polygone, 15,2 x 24,8 m). Dort oben liegen auch Objekte aus
+      QST_GaiUsc604 und 605 - ein Quest-Areal, keine Zufallsklippe.
+    - Die Rampe haengt an genau EINER Stelle fast am Spielerboden (Flaeche 0,
+      15578 Polygone): (-159,75|3,50|-632,25) <-> (-159,75|4,25|-631,25),
+      1,00 m breit, 0,75 m hoch.
+    - Das Plateau haengt an genau EINER Stelle an der Rampe:
+      (-172,5|13,2|-609,8) -> (-173,2|10,2|-609,0), 1,06 m breit, 3,00 m tief.
+      Auch die flachste Stelle im 3-m-Umkreis betraegt 3,00 m - es gibt keine
+      sanftere Verbindung.
+    - Kein dritter Weg. Bei --gap 3 --drop 12 hat Flaeche 416 genau einen
+      Kandidaten (Flaeche 30) und Flaeche 30 genau einen (Flaeche 0).
+
+    WARUM VNAVMESH DORT TRENNT, aus seinem eigenen Baucode (NavmeshSettings.cs:
+    23-26): AgentMaxClimb = 0,50 m, AgentMaxSlopeDeg = 55. Die untere Stufe ist
+    mit 0,75 m nur 25 cm ueber der Kletterschwelle - im Spiel laeuft man da
+    hoch. Die obere ist 3,00 m auf 1,06 m, also rund 70 Grad: ein echter
+    Absprung, und zurueck kommt dort niemand.
+
+    ZONEPROBE AN BEIDEN NAHTSTELLEN: nur Fels mit Kollision
+    (l1f1_t1_roc1d.pcb / roc1g.pcb), kein Gelaender. Der naechste Zaun steht
+    7,6 m weg. Das spricht fuer erodiertes Gelaende, nicht fuer eine Absperrung.
+
+    GEBAUT, ERSTENS: Bruecke "Aufstieg zum Felsplateau" in MeshBridgeService,
+    Territory 156, Reichweite 35 m (deckt Rampe plus das Plateau an ihrem Ende,
+    das 32,0 m vom Brueckenende entfernt liegt). Der Weg dorthin laeuft ueber
+    TryBridgePartialPath, nicht ueber die Vorpruefung - ob Territory 156
+    Flood-Fill-Saatpunkte hat, ist ungeprueft, aber das Log beweist, dass der
+    Teilweg-Zweig in dieser Zone greift.
+
+    GEBAUT, ZWEITENS: WalkMeshEndsBelowOrAbove. Endet ein Lauf vor dem Ziel und
+    liegt das Ziel mindestens 1,5 m hoeher oder tiefer, sagt die Ansage das jetzt
+    ("das Ziel liegt ueber dir"). Vorher hoerte man nur die Restentfernung und
+    suchte auf der eigenen Ebene weiter. Schwelle 1,5 m = dieselbe wie
+    CeilingClearance, damit ein Bordstein keine Hoehenmeldung ausloest.
+
+    ERSTER TEST GELAUFEN (09:47-09:55) - BRUECKE GRIFF, HIELT ABER NICHT.
+    Die Bruecke wurde beide Male gefunden und gestartet, und 18 MILLISEKUNDEN
+    spaeter wieder abgebrochen:
+        09:48:40.161 fahre Bruecke ... (-159,8|3,5|-632,2 -> -159,8|4,2|-631,2)
+        09:48:40.179 Spur zu Ende (dist zum Spur-Ende=2,5, restWp=2)
+    URSACHE, eindeutig: TrailArrivalRange steht bei 4 m. Das ist fuer eine
+    AUFGEZEICHNETE Spur richtig (dutzende Meter lang, Ende irgendwo, wo der
+    Spieler stand), aber eine gemessene Bruecke ist 1,25 m lang - vier Meter
+    Toleranz sind laenger als die Ueberquerung selbst. Da MeshBridgeService.
+    EntryRange den Einstieg bis 4 m vor dem Anfang erlaubt, ist "am Ende
+    angekommen" schon im Uebergabe-Frame wahr. Danach lief die normale Wegsuche
+    83 m im Bogen und setzte den Spieler wieder unter das Plateau
+    (Endstand (-174,8|-1,9|-604,0), Hoehe +12,7 zum Ziel).
+
+    GEFIXT: neues TrailArrival = min(TrailArrivalRange, Spurlaenge / 2), die
+    Spurlaenge wird beim Start der Spur/Bruecke aus der Punktliste gerechnet
+    (PathLength). Fuer eine aufgezeichnete Spur bleiben die 4 m, fuer diese
+    Bruecke sind es 0,63 m - das kann beim Start nie wahr sein. Die Log-Zeile
+    nennt jetzt Ankunftsmass und Spurlaenge mit.
+
+    ZWEITER FUND AUS DEMSELBEN LOG: die Hoehen-Ansage sass an nur einer von vier
+    Abbruchstellen. Der zweite Lauf endete ueber den Stillstands-Zweig ("Netz
+    endet hier") und sagte "noch 12 Meter nach Nordwesten", obwohl das Ziel
+    12,4 m senkrecht darueber lag. Alle vier Stellen laufen jetzt ueber
+    MeshEndsMessage.
+
+    ERGEBNIS DES ZWEITEN TESTS (dalamud.old.log, 2026-08-24) - ALLE DREI FRAGEN
+    BEANTWORTET:
+
+    1. DER ANKUNFTSMASS-FIX HAELT, zweimal gemessen. Vorher brach die Bruecke
+       18 ms nach dem Start ab, jetzt wird sie abgefahren:
+           10:09:38.134 fahre Bruecke -> 10:09:38.490 Spur zu Ende
+           10:11:03.387 fahre Bruecke -> 10:11:03.738 Spur zu Ende
+       beide mit "dist zum Spur-Ende=0,6, Ankunftsmass=0,6, Spurlaenge=1,2,
+       restWp=0". restWp=0 statt vorher restWp=2: die Punktliste war zu Ende,
+       nicht die Toleranz war schuld. 350 ms statt 18 ms.
+
+    2. DER LAUF KAM OBEN AN, ohne zweite Bruecke. Nach der Uebergabe fand
+       vnavmesh den kompletten Rest allein:
+           (-160,5|5,0|-629,8) -> (-165,8|11,8|-618,0) -> (-172,5|13,2|-609,8)
+           -> (-175,6|10,2|-604,8)
+           10:11:08.972 Auto-Lauf: beendet (angekommen, dist=1,2)
+       Der vorletzte Wegpunkt IST die Nahtstelle mit dem 3,00-m-Absprung, die
+       offline als zweite Trennung vermessen wurde. NACH UNTEN nimmt die
+       Wegsuche sie also ohne Hilfe. Die geplanten Ketten-Bruecken waren
+       ueberfluessig - nicht gebaut, und nach diesem Befund auch nicht noetig.
+
+    3. DAS OBJEKT WAR VON DORT BENUTZBAR - das war die eigentliche Frage:
+           10:11:23 "Untersuchungsort fuer Stoerkommando, Objekt, schon
+                     besucht, 2 Meter, suedlich"
+           10:11:35 "Du verwendest einen Blitzwellenwandler."
+           10:11:35 System: "Ein Ziel des Auftrags 'Stoerkommando' wurde
+                     erfuellt!"
+
+    4. DIE HOEHEN-ANSAGE FEUERTE, und zwar aus dem Stillstands-Zweig, der vorher
+       stumm war. Um 10:30 stand der Spieler oben, das Quest-Ziel war
+       weitergerueckt auf (26,9|20,7|-687,4):
+           "Weiter komme ich nicht, hier endet der begehbare Weg. Noch 215
+            Meter nach Osten. Davon 11 Meter nach oben - das Ziel liegt ueber
+            dir."
+       rise = 20,7 - 10,0 = 10,7 -> "11 Meter". Passt.
+
+    DIE SACKGASSE IST ECHT, hat den Spieler aber nicht festgesetzt. Vom Plateau
+    aus lieferte die Wegsuche dreimal nur 2 Wegpunkte bis zur Plateaukante und
+    dann den Rohsprung zum Ziel (10:30:29, 10:30:48, 10:30:51). Um 10:33 stand
+    der Spieler bei (4,3|18,4|-671,0) und lief normal weiter zu Alphinaud und
+    Cid - er hat sich selbst befreit, vermutlich per Sprung. Ein HP-Verlust
+    steht nicht im Log, ist damit aber auch nicht gemessen.
+
+    OFFENE BEOBACHTUNG, NICHT ERKLAERT: dieselbe Naht traegt abwaerts (Punkt 2)
+    und aufwaerts nicht (Sackgasse). Zwischen beiden Messungen wurde das Netz
+    neu gebaut (10:30:14 "Wegenetz-Aufbau gestartet"), das koennte mit
+    reinspielen. Das ist eine Beobachtung aus dem Log, KEIN belegter
+    Mechanismus - wer hier weiterbaut, misst das erst.
+
+    NICHT GEBAUT, weiterhin offen: eine SACKGASSEN-WARNUNG vor Bruecken, die auf
+    eine Flaeche ohne Rueckweg fuehren. WAS EIN STURZ VON 10,75 m IN FFXIV
+    KOSTET, IST NACH WIE VOR NICHT GEMESSEN - vor einer Absprung-Bruecke erst
+    die HP-Ansage bei einem freiwilligen Sprung mitlesen.
+
+    WERKZEUG ERWEITERT: navmeshgaps meldet im Punkt-Modus (--from/--at) jetzt zu
+    jedem abgelehnten Punkt die abgetrennte Flaeche selbst - Polygonzahl,
+    Ausdehnung, Hoehenband - plus die engste UND die flachste Annaeherung an den
+    Spielerboden. Die flachste getrennt, weil nur sie sagt, ob eine Verbindung
+    auch zurueck begehbar waere. Der Ordner tools/navmesh-gaps ist weiterhin
+    NICHT committet, im Gegensatz zu seinen Geschwistern.
+
+## VORGESCHICHTE (2026-08-23, "RELEASE v5.91 - ZIEL UNTER EINEM VORSPRUNG, UNGETESTET DRAUSSEN")
 
 >>> RELEASE v5.91 IST VEROEFFENTLICHT, OBWOHL DER FALL NIE IM SPIEL LIEF. Der
     User hatte die Quest inzwischen weitergespielt, der Testort war weg, und er

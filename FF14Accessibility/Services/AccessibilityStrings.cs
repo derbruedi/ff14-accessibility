@@ -1842,6 +1842,24 @@ public static partial class AccessibilityStrings
     public static string WalkMeshEndsHere(float distance, string direction) =>
         IsGerman ? $"Weiter komme ich nicht, hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}."
                  : $"This is as far as the walkable path goes. {MetersRemaining(distance)} to the {direction}.";
+
+    /// <summary>
+    /// Same dead end, but the remaining metres are mostly VERTICAL. Without this
+    /// the walk reports "6 metres to the south-west" while the target sits on a
+    /// ledge overhead, and the player walks in circles looking for it on their own
+    /// level. <paramref name="rise"/> is signed: positive means the target is
+    /// above, negative below.
+    /// </summary>
+    public static string WalkMeshEndsBelowOrAbove(float distance, string direction, float rise)
+    {
+        var flat = WalkMeshEndsHere(distance, direction);
+        var metres = MathF.Abs(rise);
+        return IsGerman
+            ? $"{flat} Davon {metres:F0} Meter {(rise > 0 ? "nach oben" : "nach unten")} - " +
+              $"das Ziel liegt {(rise > 0 ? "ueber" : "unter")} dir."
+            : $"{flat} {metres:F0} meters of that {(rise > 0 ? "up" : "down")} - " +
+              $"the target is {(rise > 0 ? "above" : "below")} you.";
+    }
     /// <summary>Refuses a walk that would not move the character at all.</summary>
     public static string AlreadyAtTarget(string name) =>
         IsGerman ? $"Du bist schon bei {name}." : $"You are already at {name}.";
