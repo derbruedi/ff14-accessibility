@@ -3,7 +3,34 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-24, "DREI TASTEN WAREN NIE VERDRAHTET - BESTAETIGT")
+## STAND JETZT (2026-08-24, "RELEASE v5.92 - SPIELERSUCHE UNGETESTET DRAUSSEN")
+
+>>> RELEASE v5.92 IST VEROEFFENTLICHT. Der User: "push alles das wird schon
+    passen". Drin sind drei Sachen:
+
+    BESTAETIGT: Ziele auf Erhoehungen (Bruecke Mor Dhona, Ankunftsmass,
+    Hoehen-Ansage) und die drei toten Tastenbelegungen. Beide liefen im Spiel,
+    die Belege stehen unten in der Vorgeschichte.
+
+    NICHT BESTAETIGT: die vier Spielersuche-Fixes (Auswahlknoepfe sagen "nicht
+    ausgewaehlt", Feld "Min." liest AtkComponentNumericInput.Value statt des
+    Textknotens, Namensfeld wird vom ausgewaehlten Knopf benannt, Sprach-Schalter
+    als "Sprache, 3 von 4"). Gebaut Debug 0/0 und Release 0/0, in-game hat sie
+    niemand angefahren. WAS ZU PRUEFEN IST: Spielersuche oeffnen und durchtabben
+    - klingen "Vorname" und "Nachname" jetzt verschieden, spricht "Min." auf dem
+    Wert 1, und sagt das Namensfeld, wonach gesucht wird?
+
+    EBENFALLS OFFEN GEBLIEBEN: Umschalt+Pos1 und Alt+Pos1 hat immer noch niemand
+    gedrueckt. Dass ihre Warnung beim Laden weg ist, beweist nur, dass sie
+    aufloesen.
+
+    Versionen synchron: csproj 5.92.0(.0), Plugin.cs "5.92", repo.json 5.92.0.0
+    (auf GitHub nachgeprueft). Sechs Assets am Release, latest.zip vom
+    Release-Link gezogen und geoeffnet: 1.538.629 Bytes, Manifest 5.92.0.0.
+    Installer unveraendert bei 1.2.1.0, exe + installer.json aus v5.91
+    uebernommen, SHA gegengeprueft. Neu im Repo: `tools/navmesh-gaps`.
+
+## VORGESCHICHTE v5.92 (2026-08-24, "DREI TASTEN WAREN NIE VERDRAHTET - BESTAETIGT")
 
 >>> IM SPIEL BESTAETIGT (2026-08-24, 11:34 bis 11:41). Belege unten unter
     ERGEBNIS.
