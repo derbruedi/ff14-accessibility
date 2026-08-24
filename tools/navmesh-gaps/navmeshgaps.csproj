@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Has to match what vnavmesh itself is built against (Dalamud.NET.Sdk 15),
+         otherwise the reference fails with CS1705 on System.Runtime. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>navmeshgaps</AssemblyName>
+    <RootNamespace>navmeshgaps</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Read with vnavmesh's OWN code rather than a re-implementation of the file
+       format: the cache carries a format version and a customization version, and
+       a parser of ours would drift away from it on the next update. VnavDir points
+       at the installed plugin, which is also the build these caches came from. -->
+  <PropertyGroup>
+    <VnavDir Condition="'$(VnavDir)' == ''">$(APPDATA)\XIVLauncher\devPlugins\vnavmesh</VnavDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="vnavmesh">
+      <HintPath>$(VnavDir)\vnavmesh.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="DotRecast.Core">
+      <HintPath>$(VnavDir)\DotRecast.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="DotRecast.Detour">
+      <HintPath>$(VnavDir)\DotRecast.Detour.dll</HintPath>
+    </Reference>
+
+    <!-- Only to turn a cache file name back into a territory id, which is what
+         picks the zone customization. -->
+    <Reference Include="Lumina">
+      <HintPath>$(DALAMUD_HOME)\Lumina.dll</HintPath>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DALAMUD_HOME)\Lumina.Excel.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
