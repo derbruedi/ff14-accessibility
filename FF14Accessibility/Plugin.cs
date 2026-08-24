@@ -808,45 +808,37 @@ public sealed class Plugin : IDalamudPlugin
         return keys;
     }
 
-    private static readonly Dictionary<string, int> KeyNameToVK = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["F1"]  = 0x70, ["F2"]  = 0x71, ["F3"]  = 0x72, ["F4"]  = 0x73,
-        ["F5"]  = 0x74, ["F6"]  = 0x75, ["F7"]  = 0x76, ["F8"]  = 0x77,
-        ["F9"]  = 0x78, ["F10"] = 0x79, ["F11"] = 0x7A, ["F12"] = 0x7B,
-        ["Escape"] = 0x1B,
-        ["Up"]     = 0x26, ["Down"]   = 0x28,
-        ["Left"]   = 0x25, ["Right"]  = 0x27,
-        ["Return"] = 0x0D,
-        // V5.31: Objekt-Browser auf die Bild-Tasten (N-Familie freigeraeumt).
-        // BildAuf=VK_PRIOR/0x21, BildAb=VK_NEXT/0x22. Bare = CAMERA_ZOOMIN/OUT
-        // im Spiel (nur visuell), Strg+BildAuf/-Ab laut Keybind-Dump frei.
-        ["BildAuf"] = 0x21, ["BildAb"] = 0x22,
-        // Nummernblock â€” TitleDCWorldMap Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
-        ["Numpad2"] = 0x62, ["Numpad4"] = 0x64,
-        ["Numpad6"] = 0x66, ["Numpad8"] = 0x68,
-        // Skill-Menü (V5.61): Numpad0=VK_NUMPAD0 (0x60), Numpad-Komma/Dezimal=
-        // VK_DECIMAL (0x6E). Beide sind im Spiel belegt (OK / CANCEL), werden
-        // aber nur solange das modale Menue offen ist per KeyState=false
-        // geschluckt. Muessen hier stehen, damit UpdateKeyEdges sie trackt.
-        ["Numpad0"] = 0x60, ["NumpadKomma"] = 0x6E,
-        // Freie Tasten laut Keybind-Dump 2026-07-10 (N = einziger freier BARE
-        // Buchstabe). H und L sind bare belegt (MENU_CRAFT / MENU_LINKSHELL),
-        // aber mit Modifier frei - nur so (Strg+H, Strg+L) konfiguriert.
-        ["N"] = 0x4E, ["H"] = 0x48, ["L"] = 0x4C, ["Numpad3"] = 0x63, ["Numpad5"] = 0x65,
-        // Nachlese-Browser (V4.90): Komma/Punkt sind im Spiel nicht belegt
-        // (Keybind-Dump 2026-07-17). VK_OEM_COMMA=0xBC, VK_OEM_PERIOD=0xBE.
-        // Gueltigkeit prueft UpdateKeyEdges via IKeyState.IsVirtualKeyValid.
-        [","] = 0xBC, ["."] = 0xBE,
-        // Ziel folgen (V5.57): die BARE +-Taste (VK_OEM_PLUS=0xBB, NICHT Numpad+)
-        // ist im Keybind-Dump 2026-07-26 NIRGENDS belegt. User-Wunsch: kein Numpad.
-        ["+"] = 0xBB,
-        // V5.25: Entf ist im Keybind-Dump NIRGENDS belegt - anders als H, wo
-        // das Spiel trotz Strg-Modifier MENU_CRAFT ausloeste. VK_DELETE=0x2E.
-        ["Entf"] = 0x2E,
-        // SP-Stand-Ansage (Sammler). Strg+Ende ist im Keybind-Dump CAMERA_SAVE
-        // (rein visuell, folgenlos). VK_END=0x23.
-        ["Ende"] = 0x23,
-    };
+    /// <summary>
+    /// Die EINE Tabelle, die einen Konfigurationsnamen ("Pos1") auf seinen
+    /// Windows-Tastencode abbildet.
+    ///
+    /// <para>
+    /// Hier stand bis 2026-08-24 eine ZWEITE, handgeschriebene Kopie, und die war
+    /// unvollstaendig: sie kannte als Buchstaben nur N, H und L und kein Pos1.
+    /// <see cref="ParseKeySpec"/> schlug in dieser Kopie nach, <see cref="KeyNames"/>
+    /// wurde nur fuer das Einstellungsmenue benutzt - mit dem Ergebnis, dass
+    /// "Strg+F" (Tiefes Gewoelbe), "Umschalt+Pos1" und "Alt+Pos1" beim Laden als
+    /// "Unbekannte Tastenangabe" verworfen wurden und im Spiel einfach nichts taten.
+    /// Der Kommentar in KeyNames.cs behauptete schon damals, ParseKeySpec lese dort
+    /// nach; jetzt stimmt das wieder.
+    /// </para>
+    ///
+    /// <para>
+    /// WARUM DIE DOPPELUNG TOEDLICH WAR und nicht bloss unschoen: die Tabelle
+    /// entscheidet zweimal. <see cref="UpdateKeyEdges"/> verfolgt NUR die Tasten
+    /// darin, und <see cref="ParseKeySpec"/> loest nur Namen daraus auf. Eine Taste,
+    /// die fehlt, hat also weder eine Flanke noch einen Code - sie kann gar nicht
+    /// ausloesen, und der Spieler hoert kein Wort darueber.
+    /// </para>
+    ///
+    /// <para>
+    /// Warum eine bestimmte Taste gewaehlt wurde (welche das Spiel belegt, welche
+    /// der Keybind-Dump frei zeigt), steht bei der jeweiligen Belegung in
+    /// <see cref="Configuration"/> - nicht hier. Diese Tabelle kennt nur Namen und
+    /// Codes und darf ruhig mehr Tasten fuehren, als belegt sind.
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, int> KeyNameToVK => KeyNames.NameToVk;
 
     private readonly bool[] _keyWasDown     = new bool[256];
     private readonly bool[] _keyJustPressed = new bool[256];

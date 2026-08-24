@@ -3,7 +3,56 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-24, "ZIEL AUF EINER ERHOEHUNG - IM SPIEL BESTAETIGT")
+## STAND JETZT (2026-08-24, "DREI TASTEN WAREN NIE VERDRAHTET")
+
+>>> GEBAUT UND DEPLOYT (Debug), IM SPIEL NOCH NICHT GEGENGEPRUEFT.
+
+    DER FALL. Der User meldete "Strg+F funktioniert bei mir nicht" (die Ansage
+    von Gewoelbe und Ebene im Tiefen Gewoelbe). Es war kein Ankunftsproblem der
+    Taste, sondern ein Konfigurationsfehler, den das Plugin BEIM LADEN selbst
+    protokolliert - in jedem Log, seit die Belegung existiert:
+
+        10:28:58.618 [WRN] Unbekannte Tastenangabe in der Konfiguration: 'Strg+F'
+        10:28:58.620 [WRN] Unbekannte Tastenangabe in der Konfiguration: 'Umschalt+Pos1'
+        10:28:58.620 [WRN] Unbekannte Tastenangabe in der Konfiguration: 'Alt+Pos1'
+
+    URSACHE: ZWEI Tastentabellen. `KeyNames.cs` ist die vollstaendige - sie
+    erzeugt A bis Z, 0 bis 9, Numpad0 bis 9 und fuehrt Pos1, Ende, Einfg, Entf.
+    Ihr eigener Klassenkommentar behauptet, `Plugin.ParseKeySpec` schlage dort
+    nach. Das stimmte nicht: `Plugin.cs` fuehrte eine zweite, aeltere,
+    handgeschriebene Tabelle `KeyNameToVK`, und DIE benutzte ParseKeySpec. In ihr
+    standen als Buchstaben nur N, H und L, und Pos1 fehlte ganz.
+
+    WARUM DAS TOETET UND NICHT NUR STOERT: die Tabelle entscheidet zweimal.
+    `UpdateKeyEdges` verfolgt NUR die Tasten darin (sonst gibt es keine Flanke),
+    und `ParseKeySpec` loest nur Namen daraus auf (sonst gibt es keinen Code).
+    Eine fehlende Taste kann also gar nicht ausloesen.
+
+    TOT WAREN DAMIT:
+    - Strg+F        Tiefes Gewoelbe: welches Gewoelbe, welche Ebene
+    - Umschalt+Pos1 Nachlese an den Anfang des Puffers
+    - Alt+Pos1      vorherige Chat-Registerkarte
+
+    GEFIXT: `KeyNameToVK` in Plugin.cs ist geloescht und durch eine Weiterleitung
+    auf `KeyNames.NameToVk` ersetzt - eine Tabelle, beide Verwender. Die
+    Begruendungen zur Tastenwahl standen ohnehin schon bei den Belegungen in
+    Configuration.cs, es ging nichts verloren. `NumpadKomma` (VK_DECIMAL 0x6E)
+    fehlte in KeyNames und ist ergaenzt; die Numpad-Schleife dort erzeugt nur
+    Numpad0 bis Numpad9, und der Rueckwaerts-Schritt des Skill-Menues haengt
+    daran.
+
+    GEGENGEPRUEFT, offline: KeyNames.cs allein in ein Konsolenprojekt kopiert und
+    jeden Namen der alten Tabelle nachgeschlagen. Alle 19 geprueften Namen loesen
+    auf (F=0x46, Pos1=0x24, NumpadKomma=0x6E, dazu N/H/L/Ende/Entf/+/,/./F1-12/
+    BildAuf/BildAb/Numpad0/3/5/Return/Escape), Tabelle jetzt 78 Eintraege. Es ist
+    nichts weggefallen, es sind drei Tasten dazugekommen.
+
+    WAS DER TEST ZEIGEN MUSS: dass die drei WRN-Zeilen beim naechsten Laden NICHT
+    mehr im Log stehen, und dass Strg+F ausserhalb eines Gewoelbes "Kein Tiefes
+    Gewölbe." sagt. Sagt es gar nichts, kommt die Taste wirklich nicht an - dann
+    gilt [[keybind_dump_not_proof_of_arrival]] und es braucht eine andere Taste.
+
+## VORGESCHICHTE (2026-08-24, "ZIEL AUF EINER ERHOEHUNG - IM SPIEL BESTAETIGT")
 
 >>> IM SPIEL BESTAETIGT (Log 2026-08-24, 10:09 bis 10:33). Bruecke, Ankunftsmass
     und Hoehen-Ansage sind alle drei gemessen. Das Quest-Ziel wurde erreicht UND

@@ -34,6 +34,12 @@ public static class KeyNames
         ["BildAuf"] = 0x21, ["BildAb"] = 0x22,
 
         [","] = 0xBC, ["."] = 0xBE, ["-"] = 0xBD, ["+"] = 0xBB,
+
+        // Das Komma des Nummernblocks ist VK_DECIMAL (0x6E) und NICHT das
+        // gewoehnliche Komma 0xBC - der Rueckwaerts-Schritt im Skill-Menue haengt
+        // daran. Steht hier einzeln, weil die Numpad-Schleife weiter unten nur
+        // Numpad0 bis Numpad9 erzeugt.
+        ["NumpadKomma"] = 0x6E,
     };
 
     /// <summary>Spoken form for the settings menu; falls back to the config name.</summary>
