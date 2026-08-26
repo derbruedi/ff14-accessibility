@@ -15,8 +15,27 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     gemeldet hat - Wirkung im Spiel, Ausblenden, Neustart, Nachlese-Liste -
     steht weiter unten als offen; es laeuft vermutlich, ist aber nicht belegt.
 
-    Noch nicht committet und nicht released - der Stand liegt nur als
-    Debug-Build in devPlugins.
+>>> ALS RELEASE v5.93 VEROEFFENTLICHT (2026-08-26). Der User: "commiten und
+    pushen ein release aber nie das bossmod mit pushen das ist nur fuer mich".
+
+    Versionen synchron: csproj 5.93.0(.0), Plugin.cs "5.93", repo.json 5.93.0.0.
+    Sechs Assets am Release. Gegenprobe am ECHTEN Spielerweg: latest.zip vom
+    Release-Link "releases/latest/download/latest.zip" gezogen - 1.546.890 Bytes,
+    Manifest AssemblyVersion 5.93.0.0, und "latest" loest auf v5.93 auf.
+
+    FREMD-PLUGINS: dreifach gegengeprueft, nichts davon im Paket.
+    - Repo durchsucht: nur vier Treffer, alle reine Kommentare/Fliesstext UEBER
+      cactbot (AccessibilityStrings.cs, CombatService.cs, docs/game-api.md,
+      docs/verbesserungsvorschlaege.md). Kein Code, keine Abhaengigkeit.
+      BossMod kommt im ganzen Repo nicht vor.
+    - Der ZIP-Inhalt selbst aufgelistet: nur eigene Dateien plus NAudio, Tolk,
+      nvdaControllerClient64, System.Speech, LICENSE, THIRD-PARTY-NOTICES.
+    - Das heruntergeladene Release-ZIP nach bossmod/iinact/cactbot/browsingway
+      durchsucht: 0 Treffer.
+
+    Installer unveraendert bei 1.2.1.0 - Installer/ hat sich seit v5.92 nicht
+    geaendert (git diff leer), exe + installer.json aus v5.92 uebernommen, SHA
+    gegengeprueft (E75BFE71...4481192, exe und json identisch).
 
 >>> DIE NACHBAR-ANSAGE. Der User: "es waere schoen wenn man sieht was aktuell
     auf dem platz ist wo man es ablegen will".
