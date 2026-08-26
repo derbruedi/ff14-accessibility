@@ -32,13 +32,49 @@ public sealed class LegacyChatHistoryService
     /// with (null for every other channel).</summary>
     private sealed record Entry(string Text, TellTarget? Partner);
 
-    // Reihenfolge beim Durchschalten (vorwärts/rückwärts).
-    private static readonly Category[] Order =
+    // Reihenfolge beim Durchschalten (vorwärts/rückwärts), wie das Plugin sie
+    // ausliefert. Der Spieler darf sie im Einstellungsmenü umsortieren und
+    // einzelne Kategorien ganz abschalten - siehe Order.
+    private static readonly Category[] DefaultOrder =
     {
         Category.Dialogue, Category.Say, Category.Shout, Category.Party,
         Category.Alliance, Category.Tell, Category.FreeCompany, Category.System,
         Category.Loot,
     };
+
+    /// <summary>
+    /// Die Reihenfolge, in der Alt+Bild-auf/-ab durchschaltet: die des Spielers,
+    /// sonst die ausgelieferte.
+    ///
+    /// ABGESCHALTETE KATEGORIEN FEHLEN NUR HIER. Ihr Puffer bleibt bestehen und
+    /// wird weiter gefüllt (siehe <see cref="_buffers"/>) - wer eine Kategorie
+    /// wieder einschaltet, findet den Verlauf der ganzen Sitzung vor und nicht
+    /// eine Lücke ab dem Moment, in dem er sie abgeschaltet hatte.
+    /// </summary>
+    private Category[] Order
+    {
+        get
+        {
+            if (_order == null || _orderStamp != _config.OrderStamp)
+            {
+                _order = ListOrder
+                    .Apply(DefaultOrder, static c => c.ToString(),
+                           _config.LegacyChatCategoryOrder, _config.LegacyChatCategoryHidden)
+                    .ToArray();
+                _orderStamp = _config.OrderStamp;
+                // Der Index zeigte auf eine Position der ALTEN Liste; nach dem
+                // Umsortieren steht dort eine andere Kategorie. Von vorn.
+                _catIndex = 0;
+                _cursor = -1;
+            }
+            return _order;
+        }
+    }
+
+    /// <summary>Die sortierte Liste ALLER Kategorien für das Einstellungsmenü -
+    /// abgeschaltete eingeschlossen, sonst wären sie unerreichbar.</summary>
+    public List<Category> OrderableCategories =>
+        ListOrder.Sort(DefaultOrder, static c => c.ToString(), _config.LegacyChatCategoryOrder);
 
     // Spoken category names are bilingual and live in AccessibilityStrings
     // (LegacyChatCategoryName), so "/acc lang" switches them too.
@@ -48,16 +84,29 @@ public sealed class LegacyChatHistoryService
     // whole chat log back, so cutting the history short took away reach that
     // the game itself grants. Cost is memory only - the entries are short
     // strings, and a session's worth stays in the low megabytes.
+    // Über ALLE Kategorien angelegt, nicht nur über die eingeschalteten: eine
+    // abgeschaltete Kategorie wird weiter mitgeschrieben, sie wird nur nicht
+    // angeboten. Siehe Order.
     private readonly Dictionary<Category, List<Entry>> _buffers = new();
     private readonly TolkService _tolk;
+    private readonly Configuration _config;
 
     private int _catIndex;      // Index in Order der aktuell gewählten Kategorie
     private int _cursor = -1;   // zuletzt vorgelesene Nachricht, -1 = nicht am Blättern
 
-    public LegacyChatHistoryService(TolkService tolk)
+    /// <summary>Die vom Spieler gesetzte Reihenfolge, oder null solange sie noch
+    /// nie gebraucht wurde. Siehe <see cref="Order"/>.</summary>
+    private Category[]? _order;
+
+    /// <summary>Startet auf einem Wert, den kein gespeicherter Stempel treffen
+    /// kann, damit der erste Zugriff in jedem Fall neu baut.</summary>
+    private int _orderStamp = int.MinValue;
+
+    public LegacyChatHistoryService(TolkService tolk, Configuration config)
     {
         _tolk = tolk;
-        foreach (var c in Order) _buffers[c] = new List<Entry>();
+        _config = config;
+        foreach (var c in DefaultOrder) _buffers[c] = new List<Entry>();
     }
 
     /// <summary>Adds a message to a category's ring buffer (newest last).</summary>
@@ -87,10 +136,16 @@ public sealed class LegacyChatHistoryService
     /// <summary>Cycles to the next/previous category and announces it with count.</summary>
     public void SwitchCategory(int dir)
     {
-        _catIndex = (_catIndex + dir + Order.Length) % Order.Length;
+        // ZUERST holen, dann rechnen. Order kann den Index zurücksetzen (nach
+        // einer Umsortierung), und in "_catIndex + dir + Order.Length" wäre
+        // _catIndex bereits gelesen, bevor Order das tut - der Reset ginge
+        // verloren und der Sprung landete auf einer Kategorie, die der Spieler
+        // nicht gewählt hat.
+        var order = Order;
+        _catIndex = (_catIndex + dir + order.Length) % order.Length;
         _cursor   = -1;
         LastActivity = DateTime.UtcNow;
-        var cat = Order[_catIndex];
+        var cat = order[_catIndex];
         var n   = _buffers[cat].Count;
         _tolk.SpeakInterrupt(AccessibilityStrings.CategorySummary(AccessibilityStrings.LegacyChatCategoryName(cat), n));
     }

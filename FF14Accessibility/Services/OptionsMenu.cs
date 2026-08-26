@@ -54,10 +54,19 @@ public sealed class OptionsMenu
     // [Warnstimme] Nur zum Vorhoeren einer Stimme und um zu wissen, ob das
     // System ueberhaupt eine anbietet - gesprochen wird von hier aus nichts.
     private readonly WarningVoiceService _warnVoice;
+    // [Reihenfolge] Die drei Listen, die der Spieler sortieren darf, kommen von
+    // ihren eigenen Diensten - das Menue fuehrt keine eigene Kopie. Eine zweite
+    // Liste derselben Kategorien waere genau die Abweichung, die niemand bemerkt,
+    // bis eine Kategorie im Menue steht, die es im Browser nicht mehr gibt.
+    private readonly NavigationService _nav;
+    private readonly LegacyChatHistoryService _legacyHistory;
+    private readonly MessageHistoryService _history;
 
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
                        HeadingService heading, GameChatFilters chatFilters,
-                       AoeWarningService aoeWarning, WarningVoiceService warnVoice)
+                       AoeWarningService aoeWarning, WarningVoiceService warnVoice,
+                       NavigationService nav, LegacyChatHistoryService legacyHistory,
+                       MessageHistoryService history)
     {
         _config  = config;
         _save    = save;
@@ -67,6 +76,9 @@ public sealed class OptionsMenu
         _chatFilters = chatFilters;
         _aoeWarning = aoeWarning;
         _warnVoice  = warnVoice;
+        _nav = nav;
+        _legacyHistory = legacyHistory;
+        _history = history;
     }
 
     /// <summary>Builds the top level. Called fresh on every open, so the labels
@@ -84,6 +96,7 @@ public sealed class OptionsMenu
 
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsSounds,        Submenu = BuildSounds });
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements });
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsOrder,         Submenu = BuildOrder });
 
         // "CHAT-KANAELE" GIBT ES IN BEIDEN SYSTEMEN, an derselben Stelle und mit
         // derselben Bedeutung: eine flache Liste, eine Zeile je Kanal, aus. Nur die
@@ -149,6 +162,237 @@ public sealed class OptionsMenu
             _log.Info($"[Einstellungen] Chatsystem -> {(legacy ? "alt (feste Kategorien)" : "neu (Register des Spiels)")}");
         },
     };
+
+    // ── Reihenfolge der Kategorien (User-Wunsch 2026-08-26) ───────
+
+    /// <summary>
+    /// Der Abschnitt, in dem der Spieler festlegt, in welcher Reihenfolge er die
+    /// Kategorien durchblättert und welche er gar nicht erst angeboten bekommt.
+    ///
+    /// VIER ZEILEN UND NICHT ZWEI: Reihenfolge und An/Aus sind getrennte Ebenen,
+    /// obwohl beide dieselbe Liste zeigen. Der Grund ist die Bestätigungstaste.
+    /// Sie kann pro Ebene nur eines bedeuten, und die Alternative wäre eine
+    /// zweite, nur hier gültige Taste - also eine Sonderregel in genau dem Menü,
+    /// dessen ganzer Zweck es ist, überall gleich zu funktionieren. So bleibt
+    /// Numpad0 das, was es überall ist: in der einen Ebene nimmt es eine Zeile
+    /// auf, in der anderen schaltet es sie um.
+    ///
+    /// Die Sortier-Ebene sagt trotzdem "aus" bei den abgeschalteten mit, damit
+    /// man beim Sortieren sieht, was man einsortiert, ohne die Ebene zu wechseln.
+    /// </summary>
+    private MenuLevel BuildOrder()
+    {
+        var level = new MenuLevel
+        {
+            Title = AccessibilityStrings.OptionsOrder,
+            Rebuild = BuildOrder,
+        };
+
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsOrderObjects, Submenu = BuildObjectOrder });
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsShowObjects,  Submenu = BuildObjectVisibility });
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsOrderChat,    Submenu = BuildChatOrder });
+        level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsShowChat,     Submenu = BuildChatVisibility });
+        return level;
+    }
+
+    // ── Objekt-Browser-Kategorien ─────────────────────────────────
+
+    /// <summary>
+    /// Welcher der beiden Kategoriensätze gerade gilt, und wohin er gespeichert
+    /// wird. In einem Tiefen Gewölbe ersetzt ein eigener, kürzerer Satz den
+    /// Weltsatz vollständig (siehe NavigationService) - dieselbe Liste für beide
+    /// hieße, dass Sortieren in der Welt die Gewölbe-Kategorien ans Ende schiebt,
+    /// die dort mit Absicht vorn stehen.
+    /// </summary>
+    private (List<string> Order, List<string> Hidden, string SetName) ObjectLists()
+        => _nav.DeepCategorySetActive
+            ? (_config.DeepCategoryOrder,   _config.DeepCategoryHidden,   AccessibilityStrings.OrderSetDeepDungeon)
+            : (_config.ObjectCategoryOrder, _config.ObjectCategoryHidden, AccessibilityStrings.OrderSetWorld);
+
+    /// <summary>Die Sortier-Ebene der Objekt-Browser-Kategorien.</summary>
+    private MenuLevel BuildObjectOrder()
+    {
+        var (order, hidden, setName) = ObjectLists();
+
+        var level = new MenuLevel
+        {
+            Title = AccessibilityStrings.OrderTitle(setName),
+            Intro = AccessibilityStrings.OrderHint,
+            Reordered = entries => StoreOrder(order, entries, "Objekt-Kategorien"),
+        };
+
+        foreach (var cat in _nav.OrderableCategories)
+        {
+            var key  = cat.ToString();
+            var name = NavigationService.CategoryLabelOf(cat);
+            level.Entries.Add(new MenuEntry
+            {
+                Key   = key,
+                Label = AccessibilityStrings.OrderRow(name, !ListOrder.IsHidden(hidden, key)),
+                // Ohne das "aus": als Nachbar genannt, gehörte der Zusatz sonst
+                // scheinbar zu der Zeile, die der Spieler gerade trägt.
+                NeighbourLabel = name,
+            });
+        }
+        return level;
+    }
+
+    /// <summary>Die An/Aus-Ebene der Objekt-Browser-Kategorien.</summary>
+    private MenuLevel BuildObjectVisibility()
+    {
+        var (_, hidden, setName) = ObjectLists();
+        var cats = _nav.OrderableCategories;
+        var keys = cats.ConvertAll(static c => c.ToString());
+
+        var level = new MenuLevel
+        {
+            Title   = setName,
+            Rebuild = BuildObjectVisibility,
+        };
+
+        foreach (var cat in cats)
+        {
+            var key   = cat.ToString();
+            var label = NavigationService.CategoryLabelOf(cat);
+            level.Entries.Add(new MenuEntry
+            {
+                Key      = key,
+                Label    = AccessibilityStrings.OptionToggle(label, !ListOrder.IsHidden(hidden, key)),
+                StayOpen = true,
+                Activate = () => ToggleVisibility(hidden, keys, key, label),
+            });
+        }
+        return level;
+    }
+
+    // ── Nachlese-Kategorien ───────────────────────────────────────
+
+    /// <summary>
+    /// Die Kategorien der Nachlese, wie sie im GERADE LAUFENDEN Chatsystem
+    /// heißen - beide Systeme haben eine Liste, aber nicht dieselbe.
+    ///
+    /// Im gewohnten sind es die neun festen Kategorien des Plugins. Im neuen sind
+    /// es die Kanäle und Register des SPIELS, und zwar VOLLSTÄNDIG aus den Sheets:
+    /// die Puffer selbst entstehen erst, wenn ihr Kanal zum ersten Mal etwas
+    /// sagt, und ein Sortiermenü, das kurz nach dem Anmelden drei Zeilen zeigt,
+    /// wäre keins. Siehe MessageHistoryService.OrderableBuffers.
+    /// </summary>
+    private (List<(string Key, string Name)> Rows, List<string> Order, List<string> Hidden) ChatLists()
+    {
+        if (_config.UseLegacyChatSystem)
+        {
+            var rows = _legacyHistory.OrderableCategories
+                .ConvertAll(c => (c.ToString(), AccessibilityStrings.LegacyChatCategoryName(c)));
+            return (rows, _config.LegacyChatCategoryOrder, _config.LegacyChatCategoryHidden);
+        }
+
+        return (_history.OrderableBuffers(_chatFilters), _config.ChatBufferOrder, _config.ChatBufferHidden);
+    }
+
+    /// <summary>Die Sortier-Ebene der Nachlese-Kategorien.</summary>
+    private MenuLevel BuildChatOrder()
+    {
+        var (rows, order, hidden) = ChatLists();
+
+        var level = new MenuLevel
+        {
+            Title = AccessibilityStrings.OrderTitle(AccessibilityStrings.OrderSetChat),
+            Intro = AccessibilityStrings.OrderHint,
+            Reordered = entries => StoreOrder(order, entries, "Nachlese-Kategorien"),
+        };
+
+        foreach (var (key, name) in rows)
+            level.Entries.Add(new MenuEntry
+            {
+                Key   = key,
+                Label = AccessibilityStrings.OrderRow(name, !ListOrder.IsHidden(hidden, key)),
+                // Siehe BuildObjectOrder: als Nachbar ohne das angehängte "aus".
+                NeighbourLabel = name,
+            });
+
+        return level;
+    }
+
+    /// <summary>Die An/Aus-Ebene der Nachlese-Kategorien.</summary>
+    private MenuLevel BuildChatVisibility()
+    {
+        var (rows, _, hidden) = ChatLists();
+        var keys = rows.ConvertAll(static r => r.Key);
+
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OrderSetChat,
+            Rebuild = BuildChatVisibility,
+        };
+
+        foreach (var (key, name) in rows)
+            level.Entries.Add(new MenuEntry
+            {
+                Key      = key,
+                Label    = AccessibilityStrings.OptionToggle(name, !ListOrder.IsHidden(hidden, key)),
+                StayOpen = true,
+                Activate = () => ToggleVisibility(hidden, keys, key, name),
+            });
+
+        return level;
+    }
+
+    // ── Gemeinsames Speichern ─────────────────────────────────────
+
+    /// <summary>
+    /// Hält die neue Reihenfolge fest. Wird nach JEDEM einzelnen Schritt gerufen
+    /// (siehe MenuLevel.Reordered), nicht erst beim Ablegen.
+    ///
+    /// Der Stempel danach ist kein Beiwerk: er ist das Einzige, was den Diensten
+    /// sagt, dass sie ihre sortierten Listen neu bauen müssen. Ohne ihn wäre die
+    /// Einstellung gespeichert und wirkungslos - und der Spieler hätte gehört,
+    /// dass es geklappt hat.
+    /// </summary>
+    private void StoreOrder(List<string> order, IReadOnlyList<MenuEntry> entries, string what)
+    {
+        var keys = new List<string>(entries.Count);
+        foreach (var entry in entries) keys.Add(entry.Key);
+
+        ListOrder.Store(order, keys);
+        _config.OrderStamp++;
+        Persist();
+        _log.Info($"[Einstellungen] Reihenfolge {what}: {string.Join(", ", keys)}");
+    }
+
+    /// <summary>
+    /// Schaltet eine Kategorie an oder aus - und weigert sich, die letzte
+    /// eingeschaltete abzuschalten.
+    ///
+    /// Die Weigerung ist der Punkt. Eine Liste ohne einen einzigen Eintrag
+    /// antwortet auf die Blättertasten mit gar nichts, und "gar nichts" ist für
+    /// einen blinden Spieler von einer kaputten Mod nicht zu unterscheiden -
+    /// er hätte keinen Anhaltspunkt, dass er selbst es war und wo er es
+    /// rückgängig macht. Die Ansage nennt deshalb den Grund und nicht nur, dass
+    /// es nicht ging.
+    /// </summary>
+    private void ToggleVisibility(List<string> hidden, IReadOnlyList<string> allKeys, string key, string label)
+    {
+        if (!ListOrder.IsHidden(hidden, key))
+        {
+            var othersVisible = 0;
+            foreach (var other in allKeys)
+                if (!string.Equals(other, key, StringComparison.Ordinal) && !ListOrder.IsHidden(hidden, other))
+                    othersVisible++;
+
+            if (othersVisible == 0)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.OrderLastOneStays(label));
+                _log.Info($"[Einstellungen] '{label}' bleibt an - letzte eingeschaltete Kategorie.");
+                return;
+            }
+        }
+
+        var visible = ListOrder.ToggleHidden(hidden, key);
+        _config.OrderStamp++;
+        Persist();
+        _tolk.SpeakInterrupt(AccessibilityStrings.OptionToggled(label, visible));
+        _log.Info($"[Einstellungen] '{label}' -> {(visible ? "an" : "aus")}");
+    }
 
     // ── Chat-Kanäle des gewohnten Systems ─────────────────────────
 

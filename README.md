@@ -74,6 +74,17 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Angelplätze, Ätheryten, Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit
   Name, Art, Entfernung und Richtung; das Objekt wird gleichzeitig
   anvisiert.
+- **Die Reihenfolge der Kategorien bestimmst du selbst** (Einstellungen →
+  Reihenfolge). Die, die du am häufigsten brauchst, kommen nach vorn; die,
+  die du nie brauchst, lassen sich ganz abschalten und tauchen beim
+  Durchblättern nicht mehr auf. Dasselbe gilt für die Nachlese-Kategorien.
+  Im Sortier-Menü nimmst du eine Zeile mit **Numpad0** auf, schiebst sie mit
+  **Numpad 8/2** hoch und runter — **Pos1** und **Ende** schicken sie ganz
+  nach vorn oder ganz nach hinten — und legst sie mit **Numpad0** wieder ab.
+  Jeder Schritt sagt dir, **zwischen welchen beiden Kategorien** du gerade
+  stehst („Gegner, jetzt 3 von 21. Zwischen Händler und Verbündete."), damit
+  du nicht nach der Platznummer sortieren musst. Jeder Schritt wird sofort
+  gespeichert.
 - Bei einem **Fang-Freibrief** („besänftige das Ziel mit dem Emote
   *Beruhigen*") sagt die Ansage **„schon gezähmt"**, wenn du diesen Gegner
   bereits hattest, und **„rasend, nicht zähmbar"**, wenn ein Versuch an ihm

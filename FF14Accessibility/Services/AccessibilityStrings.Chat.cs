@@ -30,6 +30,68 @@ public static partial class AccessibilityStrings
 
     public static string MenuEmpty => IsGerman ? "Keine Einträge." : "No entries.";
 
+    // ── Umsortieren: Zeile aufnehmen, schieben, ablegen ───────────
+    //
+    // Jede dieser vier Ansagen nennt die Position mit, weil sie das Einzige ist,
+    // was den Zustand verrät: eine aufgenommene Zeile sieht man nicht, und ob
+    // sie sich beim letzten Druck bewegt hat, hört man sonst nirgends.
+    // "aufgenommen" und "abgelegt" sind die Klammern darum - solange sie nicht
+    // gefallen ist, ist die Zeile noch in der Hand.
+
+    /// <summary>Beim Aufnehmen einer Zeile: "Gegner aufgenommen, 4 von 21".</summary>
+    public static string MenuGrabbed(string label, int index, int count) =>
+        IsGerman ? $"{label} aufgenommen, {index} von {count}."
+                 : $"{label} picked up, {index} of {count}.";
+
+    /// <summary>Nach jedem Schritt: "Gegner, jetzt 3 von 21".</summary>
+    public static string MenuMovedTo(string label, int index, int count) =>
+        IsGerman ? $"{label}, jetzt {index} von {count}."
+                 : $"{label}, now {index} of {count}.";
+
+    /// <summary>Wenn es in diese Richtung nicht weitergeht. Sagt die Position
+    /// erneut, damit ein Druck ins Leere nicht wie ein verschluckter klingt.</summary>
+    public static string MenuMoveEnd(string label, int index, int count) =>
+        IsGerman ? $"{label} bleibt auf {index} von {count}."
+                 : $"{label} stays at {index} of {count}.";
+
+    /// <summary>Beim Ablegen: "Gegner abgelegt auf Platz 2".</summary>
+    public static string MenuDropped(string label, int index) =>
+        IsGerman ? $"{label} abgelegt auf Platz {index}."
+                 : $"{label} dropped at position {index}.";
+
+    /// <summary>
+    /// Wird an jede Verschiebe-Ansage angehängt und sagt, WOZWISCHEN die
+    /// aufgenommene Zeile jetzt steht: " zwischen Händler und Spieler."
+    ///
+    /// Sortiert wird nicht nach Platznummern, sondern nach Nachbarschaft - "die
+    /// Gegner sollen gleich hinter Alles kommen". Die Platznummer allein
+    /// beantwortet diese Frage nicht, und ohne die Nachbarn musste der Spieler
+    /// die Zeile ablegen, die Liste ablaufen und sie wieder aufnehmen, nur um zu
+    /// hören, wo er gelandet war (Wunsch vom 2026-08-26).
+    ///
+    /// AN DEN ENDEN wird nur genannt, was wirklich da ist. Dass Platz 1 der
+    /// erste ist, steht schon in "1 von 21" - ein zusätzliches "ganz vorn" wäre
+    /// dieselbe Auskunft zum zweiten Mal. Bleibt eine Liste mit nur einer Zeile,
+    /// gibt es keine Nachbarn und der Satz entfällt ganz.
+    ///
+    /// Führendes Leerzeichen, weil er immer angehängt wird.
+    /// </summary>
+    /// <param name="before">Die Zeile darüber, oder leer am Anfang der Liste.</param>
+    /// <param name="after">Die Zeile darunter, oder leer am Ende der Liste.</param>
+    public static string MenuBetween(string before, string after)
+    {
+        var hasBefore = before.Length > 0;
+        var hasAfter  = after.Length > 0;
+
+        if (hasBefore && hasAfter)
+            return IsGerman ? $" Zwischen {before} und {after}." : $" Between {before} and {after}.";
+        if (hasBefore)
+            return IsGerman ? $" Hinter {before}." : $" After {before}.";
+        if (hasAfter)
+            return IsGerman ? $" Vor {after}." : $" Before {after}.";
+        return string.Empty;
+    }
+
     // ── Einstellungsmenü ──────────────────────────────────────────
 
     public static string OptionsTitle => IsGerman ? "Einstellungen" : "Settings";
@@ -246,6 +308,17 @@ public static partial class AccessibilityStrings
     public static string BufferTabAll => IsGerman ? "Alles" : "All";
 
     /// <summary>
+    /// Derselbe Puffer, aber mit dem Register davor: "Allgemein, alles".
+    ///
+    /// Beim Nachlesen reicht "Alles", weil das Register der Kontext ist, in dem
+    /// man gerade steht. In der Sortierliste des Einstellungsmenüs stehen die
+    /// Register aller Reiter untereinander - dort wären es mehrere Zeilen, die
+    /// gleich heißen und Verschiedenes bedeuten.
+    /// </summary>
+    public static string BufferTabAllOf(string tabName) =>
+        IsGerman ? $"{tabName}, alles" : $"{tabName}, all";
+
+    /// <summary>
     /// Wird EINMAL gesagt, wenn der Filterzustand des Spiels nicht gelesen werden kann.
     /// Die Alternative wäre, dass die Pufferliste ohne Angabe eines Grundes falsch
     /// aussieht. Es landet weiterhin alles in einem Puffer und alles außer dem
@@ -325,6 +398,78 @@ public static partial class AccessibilityStrings
     /// Zustand er ist.</summary>
     public static string OptChatFallback =>
         IsGerman ? "Chat vorlesen (Register nicht lesbar)" : "Read chat aloud (tabs unreadable)";
+
+    // ── Einstellungen: eigene Reihenfolge der Kategorien ──────────
+    //
+    // ZWEI GETRENNTE UNTERMENÜS für Reihenfolge und An/Aus, obwohl beide
+    // dieselbe Liste zeigen. Der Grund ist die Bestätigungstaste: sie kann pro
+    // Ebene nur eines von beidem bedeuten, und eine zweite Taste dafür zu
+    // erfinden hieße, dem Spieler eine Sondertaste beizubringen, die es sonst
+    // in keinem Menü der Mod gibt. So bleibt Numpad0 überall das, was es überall
+    // ist - in der einen Ebene nimmt es auf, in der anderen schaltet es um.
+
+    public static string OptionsOrder => IsGerman ? "Reihenfolge" : "Order";
+
+    /// <summary>Der Abschnitt für die Objekt-Browser-Kategorien. "Objekte
+    /// durchblättern" und nicht "Kategorien", weil der Spieler die Liste über die
+    /// Bild-Tasten kennt und nicht über ihren internen Namen.</summary>
+    public static string OptionsOrderObjects =>
+        IsGerman ? "Reihenfolge beim Objekte-Durchblättern" : "Order when browsing objects";
+
+    /// <summary>Derselbe Abschnitt für die Nachlese-Kategorien.</summary>
+    public static string OptionsOrderChat =>
+        IsGerman ? "Reihenfolge der Nachlese-Kategorien" : "Order of chat history categories";
+
+    public static string OptionsShowObjects =>
+        IsGerman ? "Objekt-Kategorien ein- und ausschalten" : "Switch object categories on and off";
+
+    public static string OptionsShowChat =>
+        IsGerman ? "Nachlese-Kategorien ein- und ausschalten" : "Switch chat history categories on and off";
+
+    /// <summary>
+    /// Der Titel der Sortier-Ebene. Sagt den Kategoriensatz mit, weil es zwei
+    /// davon gibt und der Spieler sonst nicht wüsste, welchen er gerade
+    /// umsortiert: in einem Tiefen Gewölbe gilt ein eigener, kürzerer Satz.
+    /// </summary>
+    public static string OrderTitle(string set) =>
+        IsGerman ? $"Reihenfolge: {set}" : $"Order: {set}";
+
+    public static string OrderSetWorld => IsGerman ? "Welt" : "World";
+    public static string OrderSetDeepDungeon => IsGerman ? "Tiefes Gewölbe" : "Deep dungeon";
+    public static string OrderSetChat => IsGerman ? "Nachlese" : "Chat history";
+
+    /// <summary>
+    /// Eine Zeile in der Sortier-Ebene. Sagt "aus" mit, wenn die Kategorie
+    /// abgeschaltet ist - man soll beim Sortieren sehen, was man da einsortiert,
+    /// ohne zwischen zwei Untermenüs hin und her zu wechseln. Eingeschaltete
+    /// Zeilen sagen NICHTS dazu: das ist der Normalfall, und ein "an" hinter
+    /// zwanzig von einundzwanzig Zeilen ist nur Lärm.
+    /// </summary>
+    public static string OrderRow(string name, bool visible) =>
+        visible ? name : (IsGerman ? $"{name}, aus" : $"{name}, off");
+
+    /// <summary>
+    /// Die Ansage beim Öffnen einer Sortier-Ebene: sie muss die Bedienung
+    /// erklären, weil sie die einzige Ebene der Mod ist, in der die
+    /// Bestätigungstaste etwas anderes tut als sonst.
+    /// </summary>
+    public static string OrderHint =>
+        IsGerman
+            ? "Bestätigen nimmt eine Zeile auf, hoch und runter verschiebt sie, Bestätigen legt sie wieder ab."
+            : "Confirm picks a row up, up and down move it, confirm puts it down again.";
+
+    /// <summary>
+    /// Wenn der Spieler die letzte eingeschaltete Kategorie abschalten will.
+    ///
+    /// Verweigert statt zugelassen: ein Browser ohne jede Kategorie antwortet auf
+    /// die Bild-Tasten mit gar nichts, und "gar nichts" ist für einen blinden
+    /// Spieler von einer kaputten Mod nicht zu unterscheiden. Die Ansage sagt
+    /// deshalb den Grund und nicht nur, dass es nicht ging.
+    /// </summary>
+    public static string OrderLastOneStays(string name) =>
+        IsGerman
+            ? $"{name} bleibt an - es ist die letzte eingeschaltete Kategorie."
+            : $"{name} stays on - it is the last category left switched on.";
 
     // ── Einstellungen: die Kanäle des GEWOHNTEN Chatsystems ───────
 

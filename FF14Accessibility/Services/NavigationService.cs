@@ -664,16 +664,91 @@ public sealed class NavigationService
     /// [Tiefes Gewoelbe] Der gerade gueltige Kategoriensatz. Der Wechsel zwischen beiden Saetzen wird in
     /// <see cref="Update"/> erkannt, das jeden Frame laeuft; die Begrenzung hier ist nur
     /// eine Absicherung, damit ein Index aus dem anderen Satz nie ausserhalb liest.
+    ///
+    /// SEIT 2026-08-26 GEHT DER SATZ DURCH DIE REIHENFOLGE DES SPIELERS: er darf
+    /// die Kategorien im Einstellungsmenue sortieren und einzelne ganz
+    /// abschalten (siehe <see cref="ListOrder"/> und Configuration).
+    ///
+    /// GECACHT, und das ist kein vorschnelles Optimieren: diese Property wird von
+    /// einem Dutzend anderer Properties gelesen, die ihrerseits in jedem Frame
+    /// laufen. Ohne Cache sortierte und filterte die Mod die Liste mehrfach pro
+    /// Frame, obwohl sich das Ergebnis nur beim Umsortieren aendert. Der
+    /// Konfigurations-Stempel sagt genau das an - siehe Configuration.OrderStamp.
     /// </summary>
     private (NavCategory Cat, ObjectKind[]? Kinds)[] Categories
     {
         get
         {
-            var set = DeepDungeon?.IsActive == true ? DeepDungeonCategories : WorldCategories;
-            if (_categoryIndex >= set.Length) _categoryIndex = 0;
-            return set;
+            var deep = DeepDungeon?.IsActive == true;
+            if (_orderedCategories == null || _orderedForDeep != deep || _orderedStamp != _config.OrderStamp)
+                RebuildCategoryOrder(deep);
+
+            if (_categoryIndex >= _orderedCategories!.Length) _categoryIndex = 0;
+            return _orderedCategories;
         }
     }
+
+    /// <summary>
+    /// Baut den sortierten und gefilterten Kategoriensatz neu.
+    ///
+    /// Setzt den Browser dabei auf die erste Kategorie zurueck. Der Index zeigt
+    /// nach einer Umsortierung sonst auf eine ANDERE Kategorie als vorher, ohne
+    /// dass irgendetwas das sagt - der Spieler drueckt Bild-ab und bekommt einen
+    /// Gegenstand aus einer Kategorie, die er nie gewaehlt hat. Von vorn
+    /// anzufangen ist der einzige Zustand, der nach dem Umsortieren noch stimmt.
+    /// </summary>
+    private void RebuildCategoryOrder(bool deep)
+    {
+        var set    = deep ? DeepDungeonCategories        : WorldCategories;
+        var order  = deep ? _config.DeepCategoryOrder    : _config.ObjectCategoryOrder;
+        var hidden = deep ? _config.DeepCategoryHidden   : _config.ObjectCategoryHidden;
+
+        _orderedCategories = ListOrder.Apply(set, CategoryKey, order, hidden).ToArray();
+        _orderedForDeep = deep;
+        _orderedStamp = _config.OrderStamp;
+        _categoryIndex = 0;
+        _cycleIndex = -1;
+
+        _log.Info($"[Browser] Kategoriensatz neu geordnet ({(deep ? "Gewölbe" : "Welt")}): " +
+                  $"{_orderedCategories.Length} von {set.Length} sichtbar.");
+    }
+
+    /// <summary>Der gespeicherte Schluessel einer Kategorie: der Enum-NAME, nie
+    /// sein Zahlenwert und nie die gesprochene Beschriftung. Beides aendert sich -
+    /// der Zahlenwert, sobald jemand einen Wert einfuegt, die Beschriftung mit
+    /// "/acc lang".</summary>
+    private static string CategoryKey((NavCategory Cat, ObjectKind[]? Kinds) entry) => entry.Cat.ToString();
+
+    /// <summary>Der gerade gueltige Kategoriensatz fuer das Einstellungsmenue:
+    /// sortiert wie der Spieler es festgelegt hat, aber NICHTS ausgeblendet - eine
+    /// abgeschaltete Kategorie muss erreichbar bleiben, sonst kann er sie nie
+    /// wieder einschalten.</summary>
+    internal List<NavCategory> OrderableCategories
+    {
+        get
+        {
+            var deep = DeepDungeon?.IsActive == true;
+            var set   = deep ? DeepDungeonCategories     : WorldCategories;
+            var order = deep ? _config.DeepCategoryOrder : _config.ObjectCategoryOrder;
+            return ListOrder.Sort(set, CategoryKey, order).ConvertAll(static e => e.Cat);
+        }
+    }
+
+    /// <summary>Ob gerade der Gewoelbe-Satz gilt - das Einstellungsmenue sagt es im
+    /// Titel, damit der Spieler weiss, welche der beiden Listen er umsortiert.</summary>
+    internal bool DeepCategorySetActive => DeepDungeon?.IsActive == true;
+
+    /// <summary>Die gesprochene Beschriftung einer Kategorie, in der aktiven
+    /// Sprache. Oeffentlich, weil das Einstellungsmenue dieselben Namen braucht,
+    /// die der Browser ansagt - zwei Namensquellen fuer dieselbe Kategorie waeren
+    /// genau die Art Abweichung, die niemand bemerkt.</summary>
+    internal static string CategoryLabelOf(NavCategory cat) => cat switch
+    {
+        NavCategory.DeepRooms    => AccessibilityStrings.DeepCategoryRooms,
+        NavCategory.DeepTreasure => AccessibilityStrings.DeepCategoryTreasure,
+        NavCategory.DeepCairns   => AccessibilityStrings.DeepCategoryCairns,
+        _                        => AccessibilityStrings.CategoryLabel(cat),
+    };
 
     /// <summary>
     /// [Tiefes Gewoelbe] Der Gewoelbe-Leser, oder null, solange er nicht gesetzt ist - dann verhaelt sich
@@ -698,14 +773,20 @@ public sealed class NavigationService
     /// Verlassen eines Gewoelbes den Browser zuruecksetzen kann.</summary>
     private bool _deepCategoriesActive;
 
+    /// <summary>Der sortierte und gefilterte Kategoriensatz, oder null solange er
+    /// noch nie gebraucht wurde. Siehe <see cref="Categories"/>.</summary>
+    private (NavCategory Cat, ObjectKind[]? Kinds)[]? _orderedCategories;
+
+    /// <summary>Fuer welchen der beiden Saetze <see cref="_orderedCategories"/> gilt.</summary>
+    private bool _orderedForDeep;
+
+    /// <summary>Der Konfigurations-Stempel, mit dem <see cref="_orderedCategories"/>
+    /// gebaut wurde. Startet auf einem Wert, den kein gespeicherter Stempel treffen
+    /// kann, damit der erste Zugriff in jedem Fall neu baut.</summary>
+    private int _orderedStamp = int.MinValue;
+
     /// <summary>The spoken label of the current category, in the active language.</summary>
-    private string CurrentCategoryLabel => Categories[_categoryIndex].Cat switch
-    {
-        NavCategory.DeepRooms    => AccessibilityStrings.DeepCategoryRooms,
-        NavCategory.DeepTreasure => AccessibilityStrings.DeepCategoryTreasure,
-        NavCategory.DeepCairns   => AccessibilityStrings.DeepCategoryCairns,
-        var cat                  => AccessibilityStrings.CategoryLabel(cat),
-    };
+    private string CurrentCategoryLabel => CategoryLabelOf(Categories[_categoryIndex].Cat);
 
     /// <summary>[Tiefes Gewoelbe] Ob der Browser gerade auf der Raumliste steht.</summary>
     private bool IsDeepRoomCategory => Categories[_categoryIndex].Cat == NavCategory.DeepRooms;

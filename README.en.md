@@ -73,6 +73,15 @@ cues — including braille display output and automatic walking.
   fishing spots, aetherytes, map waypoints such as zone exits). Announces
   name, kind, distance and direction; the object is targeted at the same
   time.
+- **You decide the order of the categories** (Settings → Order). Move the
+  ones you reach for most to the front; switch the ones you never use off
+  entirely and they stop appearing as you cycle. The same goes for the chat
+  history categories. In the sorting menu, **Numpad0** picks a row up,
+  **Numpad 8/2** move it up and down — **Home** and **End** send it all the
+  way to either end — and **Numpad0** puts it back down. Every step tells you
+  **which two categories you are now between** ("Enemies, now 3 of 21. Between
+  merchants and allies."), so you never have to sort by position number. Every
+  step is saved immediately.
 - On a **taming levequest** ("pacify the target with the *Soothe* emote") the
   announcement adds **"already tamed"** for an enemy you have already dealt
   with, and **"agitated, cannot be tamed"** for one where an attempt failed.

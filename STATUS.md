@@ -3,26 +3,141 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-24, "RELEASE v5.92 - SPIELERSUCHE UNGETESTET DRAUSSEN")
+## STAND JETZT (2026-08-26, "EIGENE REIHENFOLGE DER KATEGORIEN - KOMPLETT BESTAETIGT")
 
->>> RELEASE v5.92 IST VEROEFFENTLICHT. Der User: "push alles das wird schon
-    passen". Drin sind drei Sachen:
+>>> FERTIG UND IM SPIEL BESTAETIGT, in zwei Durchgaengen:
+    - Grundfunktion: "ok es funktioniert so weit" - Aufnehmen, Schieben,
+      Ablegen und das Speichern tragen.
+    - Nachbar-Ansage: "sehr gut funktioniert" - die beiden Nachbarn werden
+      richtig genannt, auch an Platz 1 und am Listenende.
 
-    BESTAETIGT: Ziele auf Erhoehungen (Bruecke Mor Dhona, Ankunftsmass,
-    Hoehen-Ansage) und die drei toten Tastenbelegungen. Beide liefen im Spiel,
-    die Belege stehen unten in der Vorgeschichte.
+    DAS SORTIERMENUE SELBST IST DAMIT DURCH. Was der User nicht ausdruecklich
+    gemeldet hat - Wirkung im Spiel, Ausblenden, Neustart, Nachlese-Liste -
+    steht weiter unten als offen; es laeuft vermutlich, ist aber nicht belegt.
 
-    NICHT BESTAETIGT: die vier Spielersuche-Fixes (Auswahlknoepfe sagen "nicht
-    ausgewaehlt", Feld "Min." liest AtkComponentNumericInput.Value statt des
-    Textknotens, Namensfeld wird vom ausgewaehlten Knopf benannt, Sprach-Schalter
-    als "Sprache, 3 von 4"). Gebaut Debug 0/0 und Release 0/0, in-game hat sie
-    niemand angefahren. WAS ZU PRUEFEN IST: Spielersuche oeffnen und durchtabben
-    - klingen "Vorname" und "Nachname" jetzt verschieden, spricht "Min." auf dem
-    Wert 1, und sagt das Namensfeld, wonach gesucht wird?
+    Noch nicht committet und nicht released - der Stand liegt nur als
+    Debug-Build in devPlugins.
 
-    EBENFALLS OFFEN GEBLIEBEN: Umschalt+Pos1 und Alt+Pos1 hat immer noch niemand
-    gedrueckt. Dass ihre Warnung beim Laden weg ist, beweist nur, dass sie
-    aufloesen.
+>>> DIE NACHBAR-ANSAGE. Der User: "es waere schoen wenn man sieht was aktuell
+    auf dem platz ist wo man es ablegen will".
+
+    Jede Verschiebe-Ansage haengt jetzt an, wozwischen die getragene Zeile
+    steht: "Gegner, jetzt 3 von 21. Zwischen Haendler und Verbuendete." Am Anfang
+    der Liste nur "Vor X.", am Ende nur "Hinter X." - dass Platz 1 der erste ist,
+    steht schon in "1 von 21", ein zusaetzliches "ganz vorn" waere dieselbe
+    Auskunft zum zweiten Mal. Gilt fuer Aufnehmen, jeden Schritt und das Ablegen.
+
+    WARUM DIE PLATZNUMMER ALLEIN NICHT REICHTE: sortiert wird nicht nach
+    Positionen, sondern nach Nachbarschaft - "die Gegner sollen gleich hinter
+    Alles kommen". Um das zu pruefen, musste der Spieler bisher ablegen, die
+    Liste ablaufen und wieder aufnehmen.
+
+    EINE FALLE DABEI, gleich mitgebaut: die Zeilen der Sortierliste tragen bei
+    abgeschalteten Kategorien ein ", aus" im Namen. Als Nachbar genannt haette
+    das geklungen wie "zwischen Haendler und Angelplaetze, aus" - und dieses
+    "aus" haette sich auf die getragene Zeile bezogen. MenuEntry.NeighbourLabel
+    fuehrt deshalb den reinen Namen fuer genau diesen Zweck.
+
+    Gebaut Debug 0/0, liegt in devPlugins. Im Spiel bestaetigt.
+
+>>> URSPRUNGSWUNSCH: "die reihenfolge der kategorieen selber fest zu legen sowohl
+    die normalen als auch die chats". Auf Nachfrage entschieden:
+    Aufnehmen-und-Ablegen als Bedienung, und Ausblenden zusaetzlich zum
+    Sortieren.
+
+    WAS DER SPIELER JETZT KANN. Einstellungen (Umschalt+F9) -> "Reihenfolge",
+    vier Zeilen:
+    - Reihenfolge beim Objekte-Durchblaettern
+    - Objekt-Kategorien ein- und ausschalten
+    - Reihenfolge der Nachlese-Kategorien
+    - Nachlese-Kategorien ein- und ausschalten
+
+    In den Sortier-Ebenen nimmt Numpad0 eine Zeile auf, Numpad8/2 schieben sie,
+    Pos1/Ende schicken sie an die Enden, Numpad0 legt sie ab. Jeder Schritt wird
+    sofort gespeichert.
+
+    WARUM ZWEI EBENEN JE LISTE statt einer. Die Bestaetigungstaste kann pro Ebene
+    nur eines bedeuten - aufnehmen ODER umschalten. Eine zweite, nur dort gueltige
+    Taste zu erfinden hiesse eine Sonderregel in genau dem Menue, dessen Zweck es
+    ist, ueberall gleich zu funktionieren. Die Sortier-Ebene sagt "aus" bei den
+    abgeschalteten trotzdem mit.
+
+    DREI ENTSCHEIDUNGEN, DIE MAN SPAETER NICHT MEHR SIEHT:
+    - GESPEICHERT WERDEN STRINGS (Enum-Namen, Puffer-Schluessel), nie Indizes.
+      Eine neue Kategorie mitten in NavCategory haette bei Indizes jeden
+      gespeicherten Eintrag auf die falsche Kategorie zeigen lassen, ohne dass
+      irgendetwas fehlschlaegt.
+    - EINE UNBEKANNTE KATEGORIE FAELLT NIE HERAUS. Die gespeicherte Reihenfolge
+      bestimmt die Position dessen, was sie kennt; alles andere behaelt seine
+      Auslieferungsordnung und folgt am Ende. Sonst waere ein Feature nach einem
+      Update unsichtbar, ohne Hinweis warum.
+    - "ALLES AUSGEBLENDET" WIRD IGNORIERT, und das Menue verweigert vorher schon
+      das Abschalten der letzten eingeschalteten Kategorie. Eine leere Liste
+      antwortet auf die Blaettertasten mit gar nichts, und "gar nichts" ist von
+      einer kaputten Mod nicht zu unterscheiden.
+
+    ZWEI GETRENNTE LISTEN FUER DEN OBJEKT-BROWSER: Welt und Tiefes Gewoelbe. Der
+    Gewoelbe-Satz ersetzt den Weltsatz vollstaendig und hat eine eigene sinnvolle
+    Reihenfolge (Raeume gleich nach Alles); eine gemeinsame Liste haette die
+    Gewoelbe-Kategorien ans Ende geschoben, sobald jemand in der Welt sortiert.
+    Das Menue sortiert den Satz, in dem der Spieler gerade steht, und sagt im
+    Titel welchen.
+
+    NEUES CHATSYSTEM - EINE FALLE, DIE ICH BEIM BAUEN GEFUNDEN HABE. Die Puffer
+    dort entstehen erst, wenn ihr Kanal zum ersten Mal etwas sagt (bewusst so,
+    damit die Sitzung nicht siebzig leere Eintraege mitschleppt). Ein Sortiermenue
+    aus dieser Liste haette kurz nach dem Anmelden drei Zeilen gezeigt und keine
+    Erklaerung, wo "Gilde" ist. Das Menue baut die Liste deshalb VOLLSTAENDIG aus
+    den Sheets (GameChatFilters.Channels/Tabs) auf und registriert dabei nichts -
+    die gespeicherte Reihenfolge besteht aus Schluesseln, und ein Schluessel
+    braucht seinen Puffer nicht.
+
+    ABGESCHALTETE KANAELE WERDEN WEITER MITGESCHRIEBEN. Nur das Durchblaettern
+    ueberspringt sie. Wer einen wieder einschaltet, findet den Verlauf der ganzen
+    Sitzung vor und keine Luecke - in beiden Chatsystemen.
+
+    OFFLINE GEGENGEPRUEFT: elf Pruefungen gegen die echte ListOrder.cs (per
+    Compile-Include, keine Kopie), alle bestanden - teilweise Reihenfolge, neue
+    Kategorie, verschwundene Kategorie, Ausblenden, alles-ausgeblendet, doppelter
+    Eintrag, Umschalten hin und zurueck, und der komplette Menue-Weg
+    (anzeigen -> schieben -> speichern -> erneut anwenden).
+
+    Gebaut Debug 0/0 und Release 0/0, Debug liegt in devPlugins.
+
+    WAS DER USER GESAGT HAT, WOERTLICH: "ok es funktioniert so weit" und
+    "sehr gut funktioniert". Das belegt das Sortiermenue selbst - Aufnehmen,
+    Schieben, Ablegen, Nachbar-Ansage.
+
+    NICHT AUSDRUECKLICH GEMELDET, und deshalb hier ehrlich als offen gefuehrt.
+    Wahrscheinlich laeuft es, aber "wahrscheinlich" ist kein Beleg:
+    - Wirkt die neue Reihenfolge auch im Spiel, also bei Strg+Bild-auf/-ab?
+    - Verschwindet eine abgeschaltete Kategorie wirklich aus dem Durchblaettern?
+    - Ist die Reihenfolge nach einem Neustart noch da?
+    - Stehen bei der Nachlese die Kanaele des SPIELS in der Liste (der User
+      laeuft auf dem neuen Chatsystem), nicht neun feste Kategorien?
+
+## VORGESCHICHTE (2026-08-26, "RELEASE v5.92 - ALLES BESTAETIGT, KEINE OFFENEN TESTS")
+
+>>> RELEASE v5.92 IST VEROEFFENTLICHT UND VOLLSTAENDIG IM SPIEL BESTAETIGT.
+    Die beiden letzten offenen Tests hat der User am 2026-08-26 abgehakt.
+
+    BESTAETIGT (2026-08-24): Ziele auf Erhoehungen (Bruecke Mor Dhona,
+    Ankunftsmass, Hoehen-Ansage) und die drei toten Tastenbelegungen. Beide
+    liefen im Spiel, die Belege stehen unten in der Vorgeschichte.
+
+    BESTAETIGT (2026-08-26, Spielermeldung): die vier Spielersuche-Fixes
+    (Auswahlknoepfe sagen "nicht ausgewaehlt", Feld "Min." liest
+    AtkComponentNumericInput.Value statt des Textknotens, Namensfeld wird vom
+    ausgewaehlten Knopf benannt, Sprach-Schalter als "Sprache, 3 von 4").
+    Der User dazu: "punkt 1 funktioniert auch". Damit ist die Spielersuche
+    durchtabbbar, Vorname und Nachname klingen verschieden, "Min." spricht
+    seinen Wert.
+
+    BESTAETIGT (2026-08-26, Spielermeldung): Umschalt+Pos1 (Nachlese an den
+    Anfang des Puffers) und Alt+Pos1 (vorherige Chat-Registerkarte) sind
+    gedrueckt worden und tun, was sie sollen. Der User dazu: "punkt 2 ist ok".
+    Das schliesst den Tastentabellen-Fix aus v5.92 endgueltig ab - vorher war
+    nur belegt, dass die Namen aufloesen, jetzt auch, dass die Tasten wirken.
 
     Versionen synchron: csproj 5.92.0(.0), Plugin.cs "5.92", repo.json 5.92.0.0
     (auf GitHub nachgeprueft). Sechs Assets am Release, latest.zip vom

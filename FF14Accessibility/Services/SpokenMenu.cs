@@ -9,6 +9,30 @@ public sealed class MenuEntry
 {
     public string Label { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Stable identity of what this row stands for, for levels the player can
+    /// reorder (<see cref="MenuLevel.Reordered"/>). Empty for every other row.
+    ///
+    /// It exists because the LABEL cannot carry that identity: labels are
+    /// translated and can change with "/acc lang" between two sessions, and a
+    /// saved order keyed by a translated label would silently stop matching.
+    /// </summary>
+    public string Key { get; init; } = string.Empty;
+
+    /// <summary>
+    /// How this row is named when it is mentioned as somebody ELSE'S NEIGHBOUR
+    /// while reordering ("between merchants and players"). Falls back to
+    /// <see cref="Label"/> when empty.
+    ///
+    /// It exists because a row's own label may carry its state, and a state
+    /// tacked onto a neighbour's name lands on the wrong subject: the sorting
+    /// list writes a switched-off category as "fishing spots, off", so the
+    /// neighbour sentence would come out as "enemies, now 3 of 21, between
+    /// merchants and fishing spots, off" - and that trailing "off" reads as if it
+    /// described the row being carried.
+    /// </summary>
+    public string NeighbourLabel { get; init; } = string.Empty;
+
     /// <summary>Builds the child level when chosen. null for a leaf.</summary>
     public Func<MenuLevel>? Submenu { get; init; }
 
@@ -32,6 +56,31 @@ public sealed class MenuLevel
 
     /// <summary>Rebuilds this level in place after a <see cref="MenuEntry.StayOpen"/> action.</summary>
     public Func<MenuLevel>? Rebuild { get; init; }
+
+    /// <summary>
+    /// When set, this level's rows can be PICKED UP AND MOVED, and confirm on a
+    /// row means "pick up" rather than "activate" - see <see cref="SpokenMenu"/>.
+    /// Called after every single move with the level's rows in their new order,
+    /// so the caller stores and saves.
+    ///
+    /// Called on every step rather than once on drop: a player who alt-tabs away
+    /// or whose game crashes mid-move should not lose the sorting they just did,
+    /// and there is no cost worth counting to writing a list of a few dozen
+    /// strings.
+    /// </summary>
+    public Action<IReadOnlyList<MenuEntry>>? Reordered { get; init; }
+
+    /// <summary>
+    /// Spoken once when the level is ENTERED, between the title and the first
+    /// row. For a level whose keys do not work the way every other level's keys
+    /// work - which right now means the reorder levels, where confirm picks up
+    /// instead of activating.
+    ///
+    /// Deliberately not spoken when returning from a submenu: an explanation you
+    /// have to sit through every time you back out of something stops being an
+    /// explanation and becomes an obstacle.
+    /// </summary>
+    public string Intro { get; init; } = string.Empty;
 
     internal int Cursor;
 }
@@ -162,6 +211,10 @@ public sealed class SpokenMenu
     private readonly IPluginLog _log;
     private readonly List<MenuLevel> _stack = new();
 
+    /// <summary>Index of the row the player is currently carrying on the top
+    /// level, or -1 when nothing is picked up. See <see cref="MenuLevel.Reordered"/>.</summary>
+    private int _grabbed = -1;
+
     public SpokenMenu(TolkService tolk, IPluginLog log)
     {
         _tolk = tolk;
@@ -176,6 +229,7 @@ public sealed class SpokenMenu
     public void Open(MenuLevel level)
     {
         _stack.Clear();
+        _grabbed = -1;
         Push(level, announce: true);
     }
 
@@ -183,6 +237,7 @@ public sealed class SpokenMenu
     {
         if (!IsOpen) return;
         _stack.Clear();
+        _grabbed = -1;
         _tolk.SpeakInterrupt(AccessibilityStrings.MenuClosed);
         _log.Info("[Menü] geschlossen.");
     }
@@ -199,8 +254,9 @@ public sealed class SpokenMenu
         if (announce)
         {
             _log.Info($"[Menü] '{level.Title}' mit {level.Entries.Count} Einträgen geöffnet.");
+            var intro = level.Intro.Length > 0 ? level.Intro + " " : string.Empty;
             _tolk.SpeakInterrupt(
-                AccessibilityStrings.MenuOpened(level.Title) + " " +
+                AccessibilityStrings.MenuOpened(level.Title) + " " + intro +
                 AccessibilityStrings.MenuEntry(level.Entries[level.Cursor].Label, level.Cursor + 1, level.Entries.Count));
         }
     }
@@ -216,6 +272,13 @@ public sealed class SpokenMenu
         // Take the keys away from the game FIRST, so even a frame we decide to
         // ignore never leaks a cursor move into the window underneath.
         input.ConsumeAll();
+
+        // WHILE A ROW IS PICKED UP, every key means something else, and no key
+        // leaves the level. Handled before anything below, so there is no path
+        // out of the menu that strands the player holding a row - back and close
+        // put it down instead of closing, and the player presses again to leave.
+        // Leaving with a row in hand is a state nobody can see they are in.
+        if (_grabbed >= 0) { HandleGrabbedKeys(input); return true; }
 
         if (input.JustAny(KeysClose)) { Close(); return true; }
 
@@ -239,12 +302,141 @@ public sealed class SpokenMenu
         if (input.JustAny(KeysFirst)) { level.Cursor = 0; SpeakCursor(false); return true; }
         if (input.JustAny(KeysLast)) { level.Cursor = level.Entries.Count - 1; SpeakCursor(false); return true; }
 
-        if (input.JustAny(KeysConfirm)) { Activate(); return true; }
+        if (input.JustAny(KeysConfirm))
+        {
+            // On a reorderable level, confirm PICKS UP instead of activating.
+            // The rows there stand for a position in a list, not for an action -
+            // there is nothing else confirm could sensibly do.
+            if (level.Reordered != null) Grab();
+            else Activate();
+            return true;
+        }
 
         var c = input.JustChar();
         if (c != '\0') TypeAhead(c);
 
         return true;
+    }
+
+    /// <summary>
+    /// One frame of input while a row is picked up. Up/down MOVE the row (the
+    /// cursor travels with it, because the cursor and the row are the same thing
+    /// now), Home/End send it to either end, and everything else puts it down.
+    /// </summary>
+    private void HandleGrabbedKeys(MenuInput input)
+    {
+        var level = Current;
+
+        if (input.JustAny(KeysUp))    { MoveGrabbed(_grabbed - 1); return; }
+        if (input.JustAny(KeysDown))  { MoveGrabbed(_grabbed + 1); return; }
+        if (input.JustAny(KeysFirst)) { MoveGrabbed(0); return; }
+        if (input.JustAny(KeysLast))  { MoveGrabbed(level.Entries.Count - 1); return; }
+
+        // Confirm, back and close all mean the same thing here. Three keys for
+        // one action is right when the alternative is a player pressing the key
+        // they always press to get out and staying stuck.
+        if (input.JustAny(KeysConfirm) || input.JustAny(KeysBack) || input.JustAny(KeysClose)) Drop();
+
+        // Type-ahead is deliberately dead while carrying a row: it moves the
+        // CURSOR, and the cursor is the row. A stray letter would silently
+        // teleport what the player is holding.
+    }
+
+    /// <summary>Picks up the row under the cursor.</summary>
+    private void Grab()
+    {
+        var level = Current;
+        _grabbed = level.Cursor;
+        var entry = level.Entries[_grabbed];
+        _log.Info($"[Menü] '{entry.Label}' aufgenommen (Platz {_grabbed + 1} von {level.Entries.Count}).");
+        _tolk.SpeakInterrupt(AccessibilityStrings.MenuGrabbed(entry.Label, _grabbed + 1, level.Entries.Count)
+                             + Neighbours(_grabbed));
+    }
+
+    /// <summary>
+    /// Which rows the carried one currently sits between, as a sentence to append
+    /// to a move announcement - " zwischen Händler und Spieler.".
+    ///
+    /// WHY THE NUMBER ALONE WAS NOT ENOUGH (user, 2026-08-26: "es wäre schön wenn
+    /// man sieht was aktuell auf dem platz ist wo man es ablegen will"). Sorting
+    /// is not done by position, it is done by relation - "enemies should come
+    /// right after everything". "Now 3 of 21" answers a question nobody is
+    /// asking, and to answer the real one the player had to drop the row, walk
+    /// the list to see where they had landed, and pick it up again.
+    ///
+    /// Both neighbours, not just the one just jumped over, because the two
+    /// directions ask different things: moving up, the interesting row is the one
+    /// now above; moving down, it is the one now below - the next one that will
+    /// be jumped. Naming both answers either without the player having to know
+    /// which way they were going.
+    ///
+    /// The ends say only what is actually there. "1 of 21" already means the
+    /// front, so adding "at the front" would be the same fact twice.
+    /// </summary>
+    private string Neighbours(int at)
+    {
+        var entries = Current.Entries;
+        var before = at > 0 ? NameOf(entries[at - 1]) : string.Empty;
+        var after = at < entries.Count - 1 ? NameOf(entries[at + 1]) : string.Empty;
+        return AccessibilityStrings.MenuBetween(before, after);
+    }
+
+    /// <summary>The row's name for a neighbour sentence - see
+    /// <see cref="MenuEntry.NeighbourLabel"/>.</summary>
+    private static string NameOf(MenuEntry entry)
+        => entry.NeighbourLabel.Length > 0 ? entry.NeighbourLabel : entry.Label;
+
+    /// <summary>
+    /// Moves the carried row to <paramref name="to"/>, or says the list ended.
+    ///
+    /// Deliberately does NOT wrap, unlike cursor movement: wrapping a cursor
+    /// costs one keypress to undo, wrapping a row you are carrying flings it to
+    /// the far end of a list you cannot see. Hitting the end says so and leaves
+    /// the row where it is - Home and End are there for the long jump.
+    /// </summary>
+    private void MoveGrabbed(int to)
+    {
+        var level = Current;
+        var n = level.Entries.Count;
+        if (to < 0 || to >= n || to == _grabbed)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.MenuMoveEnd(
+                level.Entries[_grabbed].Label, _grabbed + 1, n));
+            return;
+        }
+
+        var entry = level.Entries[_grabbed];
+        level.Entries.RemoveAt(_grabbed);
+        level.Entries.Insert(to, entry);
+        _grabbed = to;
+        level.Cursor = to;
+
+        // Stored on every step, not on drop - see MenuLevel.Reordered.
+        try
+        {
+            level.Reordered?.Invoke(level.Entries);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, $"[Menü] Reihenfolge in '{level.Title}' konnte nicht gespeichert werden.");
+        }
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.MenuMovedTo(entry.Label, to + 1, n) + Neighbours(to));
+    }
+
+    /// <summary>Puts the carried row down where it is.</summary>
+    private void Drop()
+    {
+        var level = Current;
+        var entry = level.Entries[_grabbed];
+        var at = _grabbed;
+        _log.Info($"[Menü] '{entry.Label}' abgelegt auf Platz {at + 1}.");
+        // Auch beim Ablegen die Nachbarn: das ist die Bestaetigung, wo die Zeile
+        // endgueltig liegt, und sie muss die Frage beantworten, die den Spieler
+        // ueberhaupt zum Verschieben gebracht hat - nicht die Platznummer.
+        var line = AccessibilityStrings.MenuDropped(entry.Label, at + 1) + Neighbours(at);
+        _grabbed = -1;
+        _tolk.SpeakInterrupt(line);
     }
 
     private void Move(int direction)

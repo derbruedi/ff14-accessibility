@@ -276,6 +276,76 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool UseLegacyChatSystem = true;
 
+    // ── Eigene Reihenfolge der Kategorien (User-Wunsch 2026-08-26) ──────────
+    //
+    // Vier Listen, die alle dasselbe tun: die Reihenfolge festhalten, in der der
+    // Spieler die Kategorien durchblaettern will, und welche davon er gar nicht
+    // erst angeboten bekommen moechte. Ausgewertet werden sie zentral in
+    // ListOrder - dort steht auch, warum eine unbekannte Kategorie nie
+    // herausfallen darf und warum "alles versteckt" ignoriert wird.
+    //
+    // GESPEICHERT WERDEN STRINGS, nicht Indizes und nicht Enum-Werte: eine
+    // gespeicherte Reihenfolge muss ueberleben, dass eine neue Kategorie mitten
+    // in NavCategory dazukommt. Bei Indizes zeigte danach jeder Eintrag auf die
+    // falsche Kategorie, ohne dass irgendetwas fehlschlaegt - genau die Art
+    // Fehler, die ein blinder Spieler nicht sehen kann.
+    //
+    // LEER = UNVERAENDERT. Wer nie sortiert, bekommt die Reihenfolge, die das
+    // Plugin ausliefert.
+
+    /// <summary>Reihenfolge der Objekt-Browser-Kategorien in der offenen Welt,
+    /// als NavCategory-Namen. Siehe NavigationService.WorldCategories.</summary>
+    public List<string> ObjectCategoryOrder = new();
+
+    /// <summary>Objekt-Browser-Kategorien, die in der offenen Welt gar nicht
+    /// angeboten werden sollen.</summary>
+    public List<string> ObjectCategoryHidden = new();
+
+    /// <summary>Reihenfolge der Kategorien INNERHALB eines Tiefen Gewoelbes.
+    /// Eigene Liste und nicht dieselbe wie oben, weil es ein eigener, kuerzerer
+    /// Kategoriensatz ist - siehe NavigationService.DeepDungeonCategories. Eine
+    /// gemeinsame Liste haette bedeutet, dass Sortieren in der Welt die
+    /// Gewoelbe-Kategorien ans Ende schiebt, die dort mit Absicht vorn stehen.</summary>
+    public List<string> DeepCategoryOrder = new();
+
+    /// <summary>Kategorien, die im Tiefen Gewoelbe nicht angeboten werden.</summary>
+    public List<string> DeepCategoryHidden = new();
+
+    /// <summary>Reihenfolge der Nachlese-Kategorien im GEWOHNTEN Chatsystem, als
+    /// LegacyChatHistoryService.Category-Namen.</summary>
+    public List<string> LegacyChatCategoryOrder = new();
+
+    /// <summary>Nachlese-Kategorien des gewohnten Chatsystems, die beim
+    /// Durchblaettern uebersprungen werden. Mitgeschrieben wird trotzdem, damit
+    /// beim Wiedereinschalten der Verlauf da ist.</summary>
+    public List<string> LegacyChatCategoryHidden = new();
+
+    /// <summary>Reihenfolge der Nachlese-Puffer im NEUEN Chatsystem, als
+    /// Puffer-Schluessel (MessageHistoryService.DialogueKey, "channel:23",
+    /// "tab:0", ...).</summary>
+    public List<string> ChatBufferOrder = new();
+
+    /// <summary>Nachlese-Puffer des neuen Chatsystems, die beim Durchblaettern
+    /// uebersprungen werden. Wie oben: mitgeschrieben wird weiter.</summary>
+    public List<string> ChatBufferHidden = new();
+
+    /// <summary>
+    /// Zaehlt hoch, sobald eine der acht Listen darueber sich aendert.
+    ///
+    /// Es gibt sie, weil NavigationService.Categories in jedem Frame mehrfach
+    /// gelesen wird - eine Property, die pro Aufruf sortiert und filtert, waere
+    /// Arbeit ohne Anlass. Der Zaehler ist das Signal zum Neuberechnen: er
+    /// aendert sich genau dann, wenn das Ergebnis sich aendern kann, und sonst nie.
+    ///
+    /// Der ABSOLUTE Wert bedeutet nichts, nur die Aenderung. Deshalb ist es
+    /// gleichgueltig, ob die Dalamud-Konfiguration ihn mitschreibt oder nicht
+    /// (das <c>NonSerialized</c> ist die Absicht, kein geprueftes Verhalten):
+    /// jeder Cache startet mit einem Stempel, den kein gespeicherter Wert
+    /// treffen kann, und baut sich beim ersten Zugriff neu auf.
+    /// </summary>
+    [NonSerialized]
+    public int OrderStamp;
+
     // Chat
     public bool ReadSayChat        = true;
     public bool ReadShoutChat      = true;

@@ -139,8 +139,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.92";
-    private const string PluginVersionTag = "Ziele auf Erhoehungen erreichbar, drei tote Tastenbelegungen repariert, Spielersuche spricht";
+    private const string PluginVersion    = "5.93";
+    private const string PluginVersionTag = "Reihenfolge der Kategorien selbst bestimmbar, einzelne abschaltbar";
 
     public Plugin()
     {
@@ -361,11 +361,14 @@ public sealed class Plugin : IDalamudPlugin
         // Static, so it needs its log handed over once. Without it the turn still
         // happens, only the follow-up measurement in FacingService.Tick stays mute.
         FacingService.Configure(Log);
-        _history    = new MessageHistoryService(_tolk);
+        // Die Konfiguration wegen der eigenen Reihenfolge der Nachlese-Kategorien
+        // (User-Wunsch 2026-08-26): welcher Puffer wann drankommt und welcher gar
+        // nicht, steht dort - siehe Configuration.ChatBufferOrder.
+        _history    = new MessageHistoryService(_tolk, _config);
         // Die alte Nachlese laeuft parallel mit. Sie wird nur von den beiden
-        // Chat-Lesern und dem Spiegel unten gefuellt, hat also keine Abhaengigkeit
-        // ausser dem Sprecher.
-        _legacyHistory = new LegacyChatHistoryService(_tolk);
+        // Chat-Lesern und dem Spiegel unten gefuellt - ausser dem Sprecher braucht
+        // sie nur die Konfiguration, aus demselben Grund wie die neue.
+        _legacyHistory = new LegacyChatHistoryService(_tolk, _config);
         // WAS DIE ALTE NACHLESE SONST NICHT SEHEN WUERDE: Dialogfenster und
         // System-Meldungen kommen aus dem UIReader, die Erfahrungspunkte aus dem
         // CombatService, und alle drei kennen nur den NEUEN Dienst. Der Spiegel
@@ -469,7 +472,11 @@ public sealed class Plugin : IDalamudPlugin
         _menu       = new SpokenMenu(_tolk, Log);
         _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
-                                      _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice);
+                                      _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice,
+                                      // [Reihenfolge] Die drei Dienste, die die
+                                      // sortierbaren Listen fuehren. Alle drei sind
+                                      // hier oben schon gebaut.
+                                      _navigation, _legacyHistory, _history);
 
         // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros

@@ -124,6 +124,19 @@ public sealed class MessageHistoryService
     private const int SortSystem   = 1_000_000;
 
     /// <summary>
+    /// Where a buffer the PLAYER has sorted lands: below every default sort key,
+    /// in the order they put them in.
+    ///
+    /// Negative, and that is the whole trick. The player's list almost never
+    /// names every buffer - there are around seventy channels and they will sort
+    /// the handful they use - so the two groups have to coexist: sorted ones
+    /// first in the player's order, then everything else in the game's order,
+    /// untouched. Giving the sorted ones a range that starts below zero achieves
+    /// that without a second sort pass and without renumbering anything.
+    /// </summary>
+    private const int SortUserBase = -1_000_000;
+
+    /// <summary>
     /// Whether a buffer is offered by the tab the game is
     /// currently showing. Set by <c>Plugin</c>; every buffer is offered until it is.
     ///
@@ -151,7 +164,15 @@ public sealed class MessageHistoryService
     private sealed class Buffer(string key, int sort, Func<string> name)
     {
         public string Key { get; } = key;
-        public int Sort { get; } = sort;
+
+        /// <summary>What the mod ships. Kept alongside <see cref="Sort"/> because
+        /// a player who un-sorts a buffer has to fall back to something, and that
+        /// something is the game's own order.</summary>
+        public int DefaultSort { get; } = sort;
+
+        /// <summary>Where this buffer currently sits. Settable, because the
+        /// player can reorder the list while the mod is running.</summary>
+        public int Sort { get; set; } = sort;
         public Func<string> NameSource { get; set; } = name;
         public string Name => NameSource();
         public List<Entry> Entries { get; } = new();
@@ -171,13 +192,20 @@ public sealed class MessageHistoryService
     private readonly Dictionary<string, Buffer> _byKey = new();
     private readonly List<Buffer> _order = new();
     private readonly TolkService _tolk;
+    private readonly Configuration _config;
+
+    /// <summary>Der Konfigurations-Stempel, mit dem <see cref="_order"/> zuletzt
+    /// sortiert wurde. Startet auf einem Wert, den kein gespeicherter Stempel
+    /// treffen kann, damit der erste Zugriff in jedem Fall neu sortiert.</summary>
+    private int _orderStamp = int.MinValue;
 
     private string _currentKey = DialogueKey;
     private int _cursor = -1;   // zuletzt vorgelesene Nachricht, -1 = nicht am Blättern
 
-    public MessageHistoryService(TolkService tolk)
+    public MessageHistoryService(TolkService tolk, Configuration config)
     {
         _tolk = tolk;
+        _config = config;
         Register(DialogueKey, SortDialogue, () => AccessibilityStrings.BufferDialogue);
         Register(SystemKey, SortSystem, () => AccessibilityStrings.BufferSystem);
     }
@@ -244,13 +272,98 @@ public sealed class MessageHistoryService
     private void Register(string key, int sort, Func<string> name)
     {
         var buffer = new Buffer(key, sort, name);
+        buffer.Sort = UserSort(key) ?? sort;
         _byKey[key] = buffer;
 
         // Kept sorted on insert, so the browse order is stable no matter when a tab
         // shows up - and the player's current buffer is tracked by KEY, so a tab
         // appearing mid-session cannot slide the selection onto a different one.
-        var at = _order.FindIndex(b => b.Sort > sort);
+        var at = _order.FindIndex(b => b.Sort > buffer.Sort);
         if (at < 0) _order.Add(buffer); else _order.Insert(at, buffer);
+    }
+
+    /// <summary>Wo der Spieler diesen Puffer hin sortiert hat, oder null wenn er
+    /// ihn nicht angefasst hat. Siehe <see cref="SortUserBase"/>.</summary>
+    private int? UserSort(string key)
+    {
+        var list = _config.ChatBufferOrder;
+        for (var i = 0; i < list.Count; i++)
+            if (string.Equals(list[i], key, StringComparison.Ordinal)) return SortUserBase + i;
+        return null;
+    }
+
+    /// <summary>
+    /// Zieht die Reihenfolge des Spielers nach, falls sie sich geaendert hat.
+    ///
+    /// Muss vor jedem Lesen von <see cref="_order"/> laufen, das die REIHENFOLGE
+    /// braucht - die Puffer werden waehrend der Sitzung nach und nach angelegt
+    /// (siehe <see cref="EnsureChannelBuffer"/>), also gibt es keinen einzelnen
+    /// Zeitpunkt, an dem "jetzt einmal sortieren" vollstaendig waere.
+    /// </summary>
+    private void ResortIfNeeded()
+    {
+        if (_orderStamp == _config.OrderStamp) return;
+        _orderStamp = _config.OrderStamp;
+
+        foreach (var buffer in _order)
+            buffer.Sort = UserSort(buffer.Key) ?? buffer.DefaultSort;
+
+        _order.Sort(static (a, b) => a.Sort.CompareTo(b.Sort));
+    }
+
+    /// <summary>
+    /// Alle Puffer, die es in dieser Sitzung geben KANN, in ihrer aktuellen
+    /// Reihenfolge - fuer das Einstellungsmenue.
+    ///
+    /// NICHT aus <see cref="_order"/>, und das ist der Punkt. Puffer werden
+    /// angelegt, sobald ihr Kanal zum ersten Mal etwas sagt (siehe
+    /// <see cref="EnsureChannelBuffer"/>) - eine bewusste Entscheidung, damit die
+    /// Sitzung nicht siebzig sicher leere Eintraege mit sich schleppt. Fuer die
+    /// Nachlese ist das richtig; fuer ein Sortiermenue waere es unbrauchbar. Wer
+    /// die Reihenfolge kurz nach dem Anmelden festlegen will, bekaeme drei Zeilen
+    /// zu sehen und keine Erklaerung, wo "Gilde" geblieben ist.
+    ///
+    /// Also wird hier die VOLLSTAENDIGE Liste aus den Sheets aufgebaut - dieselbe
+    /// Quelle, aus der die Puffer spaeter entstehen. Registriert wird dabei
+    /// nichts: die gespeicherte Reihenfolge besteht aus Schluesseln, und ein
+    /// Schluessel braucht seinen Puffer nicht, um sortiert zu werden. Taucht der
+    /// Kanal spaeter auf, liest <see cref="UserSort"/> die Position einfach nach.
+    ///
+    /// Ausgeblendete sind dabei - sie muessen erreichbar bleiben, sonst kann der
+    /// Spieler sie nie wieder einschalten.
+    /// </summary>
+    /// <param name="filters">Die Kanaele und Register des Spiels. Sind sie nicht
+    /// lesbar, bleibt nur, was diese Sitzung schon angelegt hat.</param>
+    /// <returns>Je Puffer der Schluessel und der gesprochene Name.</returns>
+    public List<(string Key, string Name)> OrderableBuffers(GameChatFilters filters)
+    {
+        var all = new List<(string Key, string Name, int Sort)>
+        {
+            (DialogueKey, AccessibilityStrings.BufferDialogue, SortDialogue),
+        };
+
+        if (filters.Available)
+        {
+            foreach (var tab in filters.Tabs)
+                all.Add((TabKey(tab.Index), AccessibilityStrings.BufferTabAllOf(tab.Name), SortTabBase + tab.Index));
+            foreach (var channel in filters.Channels)
+                all.Add((ChannelKey(channel.Key), channel.Name, SortChannelBase + channel.Sort));
+        }
+        else
+        {
+            // Filterzustand unlesbar: die Sheets koennen wir nicht befragen, also
+            // bleibt genau das, was diese Sitzung tatsaechlich angelegt hat. Das
+            // ist wenig, aber es ist wahr - eine erfundene Kanalliste waere es nicht.
+            foreach (var buffer in _order)
+                if (buffer.Key != DialogueKey && buffer.Key != SystemKey)
+                    all.Add((buffer.Key, buffer.Name, buffer.DefaultSort));
+        }
+
+        all.Add((SystemKey, AccessibilityStrings.BufferSystem, SortSystem));
+        all.Sort(static (a, b) => a.Sort.CompareTo(b.Sort));
+
+        return ListOrder.Sort(all, static e => e.Key, _config.ChatBufferOrder)
+                        .ConvertAll(static e => (e.Key, e.Name));
     }
 
     /// <summary>
@@ -373,6 +486,10 @@ public sealed class MessageHistoryService
         LastActivity = DateTime.UtcNow;
         _cursor = -1;
 
+        // Die Reihenfolge des Spielers nachziehen, falls er sie seit dem letzten
+        // Durchschalten geaendert hat - das ist die Stelle, an der sie zaehlt.
+        ResortIfNeeded();
+
         // Step at least once, then keep stepping over what this tab does not offer.
         // Bounded by the number of buffers, so a completely empty history cannot loop.
         var index = CurrentIndex();
@@ -421,6 +538,12 @@ public sealed class MessageHistoryService
     private bool Browsable(Buffer buffer)
     {
         if (buffer.Entries.Count == 0) return false;
+
+        // Vom Spieler abgeschaltet. NUR das Durchblaettern ueberspringt ihn -
+        // gefuellt wird der Puffer weiter, damit ein Wiedereinschalten den
+        // Verlauf der ganzen Sitzung vorfindet und nicht eine Luecke.
+        if (ListOrder.IsHidden(_config.ChatBufferHidden, buffer.Key)) return false;
+
         return BufferOffered?.Invoke(buffer.Key) ?? true;
     }
 
