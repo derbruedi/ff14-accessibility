@@ -1769,6 +1769,35 @@ public static partial class AccessibilityStrings
     public static string SoundTestMpGain    => IsGerman ? "Mana, Aufladung"   : "Mana, restored";
     public static string SoundTestMpSpend   => IsGerman ? "Mana, Verbrauch"   : "Mana, spent";
 
+    // Gruppen-Heilmonitor: die Nummer sagt WER, die Tonhoehe sagt WIE SCHLIMM.
+    /// <summary>Spoken before the heal-monitor audition in "/acc soundtest".</summary>
+    public static string SoundTestPartyMonitor =>
+        IsGerman
+            ? "Heilmonitor: Nummer drei bei vollem Leben, halb, und fast tot."
+            : "Heal monitor: number three at full health, half, and nearly dead.";
+
+    /// <summary>Spoken when the heal monitor is switched on.</summary>
+    public static string PartyMonitorOn =>
+        IsGerman ? "Heilmonitor an" : "Heal monitor on";
+
+    /// <summary>Spoken when the heal monitor is switched off.</summary>
+    public static string PartyMonitorOff =>
+        IsGerman ? "Heilmonitor aus" : "Heal monitor off";
+
+    /// <summary>Spoken when the monitor is on but the clips are still loading.</summary>
+    public static string PartyMonitorPreparing =>
+        IsGerman
+            ? "Heilmonitor an, Klänge werden noch geladen."
+            : "Heal monitor on, sounds are still loading.";
+
+    /// <summary>Spoken for the roster readout when the player is not in a party.</summary>
+    public static string PartyMonitorNoParty =>
+        IsGerman ? "Keine Gruppe" : "No party";
+
+    /// <summary>Introduces the numbered roster readout.</summary>
+    public static string PartyMonitorRosterIntro =>
+        IsGerman ? "Gruppe" : "Party";
+
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>
         IsGerman

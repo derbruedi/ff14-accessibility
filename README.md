@@ -237,6 +237,21 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
   die Stereo-Position den Füllstand an).
+- **Heilmonitor für die Gruppe**: Wer heilt, muss acht Lebensbalken
+  gleichzeitig im Blick haben — genau das, was ein Screenreader nicht
+  leisten kann, weil er nacheinander vorliest. Der Monitor packt deshalb
+  **zwei Angaben in ein einziges kurzes Wort**: gesprochen wird die
+  Gruppennummer, und die **Tonhöhe** dieses Zahlworts sagt, wie schlimm es
+  steht. Volles Leben klingt tief und ruhig, fast tot hoch und panisch.
+  Ein Wort von einer drittel Sekunde beantwortet also „wer" und „wie
+  schlimm" zugleich. Die Nummer ist dabei gleich die Zieltaste: „fünf"
+  heißt F5 drücken. Gemeldet wird nur, was zählt — eine Änderung muss zwei
+  Schwellen zugleich reißen, sonst plappert der Monitor bei jedem
+  Regenerationstick. Wer stabil schwer verletzt bleibt, wird alle drei
+  Sekunden wiederholt, damit er nicht in der Stille verschwindet; der Tank
+  hat dabei Vorrang. **Standardmäßig aus**, der Zustand wird gespeichert.
+  Die Zahlwörter stammen aus dem WoW-Addon Sku, wo blinde Heilerinnen und
+  Heiler dasselbe Verfahren seit Jahren benutzen.
 - Erfahrungsgewinn und Beute werden angesagt und in der Nachlese archiviert.
 - **Beute-Verlosungen**: offene Würfe der Gruppe vorlesen (mit den
   Ausrüstungswerten des Gegenstands, damit sich Bedarf oder Gier überhaupt
@@ -469,6 +484,10 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
   **Standardmäßig aus**, weil die Formerkennung im Spiel noch nicht
   abschließend bestätigt ist — ein falscher Warnton im Kampf wäre
   schlimmer als keiner
+- **Strg+Umschalt+F11** — Heilmonitor an/aus. **Standardmäßig aus**, der
+  Zustand wird gespeichert
+- **Strg+Umschalt+F12** — Gruppe mit Nummern vorlesen: welche Nummer ist
+  wer, mit Job und Namen. Die Nummer ist zugleich die Zieltaste
 - **Umschalt+F7** — offene Beute-Verlosungen vorlesen
 - **Umschalt+F8** — in das Verlosungs-Fenster springen (dort wählt der
   Nummernblock Bedarf, Gier oder Passen). Bewusst eine eigene Taste: ein
