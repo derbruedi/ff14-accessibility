@@ -56,6 +56,11 @@ internal enum NavCategory
     // Numpad3 fuehrt wie bei den Quests ueber die Zonenuebergaenge dorthin. Siehe
     // DutyEntranceService.
     WorldDuties,
+    // Dungeon: die Stationen des Wegs durch die Instanz, in Laufreihenfolge.
+    // Einzige Kategorie, die NICHT nach Entfernung sortiert - die Reihenfolge ist
+    // ihr ganzer Zweck. Quelle sind Pfaddateien im Konfigurationsordner, siehe
+    // DungeonRouteService.
+    DungeonRoute,
     Aetherytes,
     QuestGoals,
     AcceptableQuests,
@@ -97,6 +102,7 @@ public sealed class NavigationService
     private readonly ShopNpcService _shops;
     private readonly HuntingLogService _huntingLog;
     private readonly DutyEntranceService _dutyEntrances;
+    private readonly DungeonRouteService _dungeonRoute;
     private readonly LevequestEnemyService _leveEnemies;
     private readonly ObjectNameService _objectNames;
     private readonly ObjectMemoryService _memory;
@@ -127,6 +133,7 @@ public sealed class NavigationService
         ShopNpcService shops,
         HuntingLogService huntingLog,
         DutyEntranceService dutyEntrances,
+        DungeonRouteService dungeonRoute,
         LevequestEnemyService leveEnemies,
         ObjectNameService objectNames,
         ObjectMemoryService memory,
@@ -151,6 +158,7 @@ public sealed class NavigationService
         _shops = shops;
         _huntingLog = huntingLog;
         _dutyEntrances = dutyEntrances;
+        _dungeonRoute = dungeonRoute;
         _leveEnemies = leveEnemies;
         _objectNames = objectNames;
         _memory = memory;
@@ -248,6 +256,7 @@ public sealed class NavigationService
                 SelectedObjectDestination = null;
                 SelectedHuntTarget = null;
                 SelectedDutyEntrance = null;
+                SelectedDungeonStep = null;
             }
         }
 
@@ -606,6 +615,11 @@ public sealed class NavigationService
         // ObjectTable. Genau das ist der Punkt - die Kategorie "Inhalte" darueber
         // kennt nur geladene Tueren, diese kennt jede Tuer der Welt samt Stufe.
         (NavCategory.WorldDuties,     null),
+        // Dungeon: kommt aus einer Pfaddatei (DungeonRouteService), nicht aus der
+        // ObjectTable und nicht aus den Sheets. Steht direkt hinter den beiden
+        // Tuer-Kategorien, weil es die Fortsetzung derselben Frage ist: erst
+        // hinein, dann hindurch.
+        (NavCategory.DungeonRoute,    null),
         // Ätheryten kommen aus den Kartendaten (PlacesService), nicht aus der
         // ObjectTable: die Marker kennen ALLE Ätheryten + Aethernet-Splitter
         // der Zone, die Objektsuche nur die in ~100 m (User-Wunsch 2026-07-13).
@@ -800,6 +814,7 @@ public sealed class NavigationService
     private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
     private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
+    private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -831,6 +846,18 @@ public sealed class NavigationService
     /// fuehrt Plugin.cs Numpad3 wie bei einem Quest-Ziel ueber die Zonenuebergaenge.
     /// </summary>
     public DutyEntrance? SelectedDutyEntrance { get; private set; }
+
+    /// <summary>
+    /// Die Station des Dungeon-Wegs, die der Browser gewaehlt hat, oder null.
+    ///
+    /// <para>
+    /// Sie hat KEIN Spielobjekt, mit Absicht: eine Station ist ein Ort aus einer
+    /// Datei, und der Auto-Lauf soll auch dorthin fuehren, wo gerade nichts
+    /// geladen ist - genau wie bei Quest-Zielen und Aetheryten. Plugin.cs nimmt
+    /// deshalb die Position, nicht das Ziel.
+    /// </para>
+    /// </summary>
+    public DungeonStep? SelectedDungeonStep { get; private set; }
 
     /// <summary>
     /// The world object selected via the browser (the plain object categories),
@@ -875,6 +902,7 @@ public sealed class NavigationService
         SelectedObjectDestination = null;
         SelectedHuntTarget = null;
         SelectedDutyEntrance = null;
+        SelectedDungeonStep = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -935,6 +963,25 @@ public sealed class NavigationService
             var targets = _huntingLog.GetOpenTargets();
             var here = targets.Count(t => t.InCurrentZone);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(targets.Count, here));
+            return;
+        }
+
+        if (IsDungeonRouteCategory)
+        {
+            // Die zweite Zahl ist die Station, bei der das naechste Blaettern
+            // einsteigt - nicht die Listenlaenge noch einmal. Sie beantwortet
+            // "wie weit bin ich", und das ist beim Durchqueren die Frage.
+            var steps = _dungeonRoute.GetStepsForCurrentZone();
+            if (steps.Count == 0)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.NoDungeonRoute);
+                return;
+            }
+
+            // Ohne Spielerfigur gibt es kein "wo bin ich" - dann nennt die
+            // Kopfansage die erste Station statt zu schweigen.
+            var resume = _objectTable.LocalPlayer is { } me ? NextDungeonStepIndex(steps, me) : 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryDungeonCount(steps.Count, steps[resume].Number));
             return;
         }
 
@@ -1024,6 +1071,12 @@ public sealed class NavigationService
         if (IsWorldDutyCategory)
         {
             CycleWorldDuty(direction, player);
+            return;
+        }
+
+        if (IsDungeonRouteCategory)
+        {
+            CycleDungeonStep(direction, player);
             return;
         }
 
@@ -1904,6 +1957,89 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Dungeon: die Stationen des Wegs, in Laufreihenfolge ──
+    //
+    // DIE EINZIGE KATEGORIE OHNE ENTFERNUNGSSORTIERUNG, und das ist ihr Zweck.
+    // Ueberall sonst ist "das Naechste" die beste Antwort, weil der Spieler
+    // waehlt, wohin er will. Hier waehlt er es nicht - der Dungeon gibt die
+    // Reihenfolge vor, und eine nach Naehe sortierte Liste zerstoert genau die
+    // Auskunft, wegen der es die Kategorie gibt (Wunsch 2026-08-29: "so das man
+    // sie nach der reie ablaufen kann").
+    private void CycleDungeonStep(int direction, IGameObject player)
+    {
+        var steps = _dungeonRoute.GetStepsForCurrentZone();
+        if (steps.Count == 0)
+        {
+            SelectedDungeonStep = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoDungeonRoute);
+            return;
+        }
+
+        var count = steps.Count;
+
+        // DER EINSTIEG IST DIE NAECHSTE STATION, NICHT DIE ERSTE. Wer auf halber
+        // Strecke steht und die Kategorie oeffnet, will dort weitermachen, wo er
+        // ist - sonst blaettert er sich jedes Mal durch den halben Dungeon, den
+        // er schon hinter sich hat. Ab dem zweiten Druck laeuft die Liste dann
+        // stur der Reihe nach, weil nur das eine Reihenfolge ist.
+        _cycleIndex = _cycleIndex < 0
+            ? NextDungeonStepIndex(steps, player)
+            : ((_cycleIndex + direction) % count + count) % count;
+
+        var step = steps[_cycleIndex];
+        SelectedDungeonStep = step;
+
+        var text = AccessibilityStrings.DungeonStepEntry(
+            step.Number,
+            count,
+            AccessibilityStrings.DungeonStepKindWord(step.Kind),
+            step.Name,
+            FormatDistance(Vector3.Distance(player.Position, step.Position)),
+            CalculateDirection(player, step.Position));
+
+        // Das Ende wird gesagt, weil es eine Auskunft ist: der Weg hoert hier
+        // auf, es kommt nichts mehr. Ein stilles Umbrechen auf Station 1 waere
+        // dieselbe Ansage wie ein weiterer Schritt.
+        if (step.Number == count) text += " " + AccessibilityStrings.DungeonRouteEnd;
+
+        _log.Info($"[Dungeon] Auswahl: {text}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
+    /// Bei welcher Station der Browser einsteigt: der naechstgelegenen.
+    ///
+    /// <para>
+    /// WARUM DIE NAECHSTGELEGENE UND NICHT "DIE ERSTE NOCH NICHT BESUCHTE": das
+    /// Plugin sieht den Fortschritt des Dungeons nicht. Es weiss nicht, welcher
+    /// Boss gefallen ist. Was es sieht, ist wo der Spieler STEHT, und in einem
+    /// Dungeon, der linear durchlaufen wird, ist die naechste Station zugleich
+    /// die, an der er gerade arbeitet. Das ist eine Naeherung und sie steht hier,
+    /// damit sie beim ersten Fehlgriff nicht gesucht werden muss.
+    /// </para>
+    ///
+    /// <para>
+    /// DIE HOEHE ZAEHLT VOLL MIT, anders als bei den Kartenmarkern: Dungeons sind
+    /// gestapelt. Zwei Stationen koennen auf der Karte uebereinander liegen und
+    /// dreissig Meter Treppe auseinander - eine 2D-Naehe waehlte dort die falsche.
+    /// </para>
+    /// </summary>
+    private static int NextDungeonStepIndex(IReadOnlyList<DungeonStep> steps, IGameObject player)
+    {
+        var best = 0;
+        var bestDistance = float.MaxValue;
+
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var distance = Vector3.Distance(player.Position, steps[i].Position);
+            if (distance >= bestDistance) continue;
+            bestDistance = distance;
+            best = i;
+        }
+
+        return best;
+    }
+
     /// <summary>
     /// Quest objectives, nearest first. In-zone markers come first, sorted by
     /// straight-line distance. Cross-zone markers follow, sorted by the walking
@@ -2061,6 +2197,13 @@ public sealed class NavigationService
         // Durchblättern nur ein Tastendruck Rauschen (Regel wie oben).
         if (Categories[index].Cat == NavCategory.HuntingTargets)
             return _huntingLog.GetOpenTargets().Count > 0;
+
+        // Dungeon nur, wo fuer diese Zone ueberhaupt ein Weg hinterlegt ist. Das
+        // ist die grosse Mehrheit der Zonen NICHT - in der offenen Welt waere die
+        // Kategorie sonst in jedem Durchblaettern ein Tastendruck Rauschen, und
+        // zwar einer, der nie etwas antworten kann (Regel wie bei Angelplaetzen).
+        if (Categories[index].Cat == NavCategory.DungeonRoute)
+            return _dungeonRoute.GetStepsForCurrentZone().Count > 0;
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;

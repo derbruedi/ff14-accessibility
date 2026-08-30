@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.Text;
 
@@ -396,6 +397,10 @@ public static partial class AccessibilityStrings
         NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
         NavCategory.Levequests       => IsGerman ? "Freibriefe"        : "Levequests",
         NavCategory.Waypoints        => IsGerman ? "Wegpunkte"         : "Waypoints",
+        // Das Wort des Users (2026-08-29). Es steht bewusst neben "Inhalte" und
+        // "Alle Inhalte", ohne sich mit ihnen zu schneiden: jene beiden führen zu
+        // einer TÜR, diese führt DURCH das, was hinter ihr liegt.
+        NavCategory.DungeonRoute     => IsGerman ? "Dungeon"           : "Dungeon",
         _                            => cat.ToString(),
     };
 
@@ -550,6 +555,77 @@ public static partial class AccessibilityStrings
         IsGerman
             ? $"Alle Inhalte: {total}, davon {unlocked} freigeschaltet."
             : $"All duties: {total}, {unlocked} of them unlocked.";
+
+    // ── Dungeon: die Stationen des Wegs, in Reihenfolge ──
+
+    /// <summary>
+    /// Kopfansage der Kategorie. Nennt die Zahl der Stationen UND die, bei der
+    /// der Browser gerade steht - die zweite Zahl ist die eigentliche Auskunft:
+    /// "wie weit bin ich" ist beim Durchqueren eines Dungeons die Frage, nicht
+    /// "wie lang ist die Liste".
+    /// </summary>
+    public static string CategoryDungeonCount(int total, int next) =>
+        IsGerman
+            ? $"Dungeon: {total} Stationen, weiter bei {next}."
+            : $"Dungeon: {total} stations, continuing at {next}.";
+
+    /// <summary>
+    /// Für diesen Ort liegt keine Wegdatei vor. Wird gesagt und nicht
+    /// verschwiegen: die Kategorie erscheint nur, wo es eine gibt, also ist ein
+    /// leerer Fall hier immer ein Hinweis, dass etwas mit der Datei nicht stimmt.
+    /// </summary>
+    public static string NoDungeonRoute =>
+        IsGerman
+            ? "Für diesen Ort ist kein Weg hinterlegt."
+            : "No route is stored for this place.";
+
+    /// <summary>Wie eine Station heißt, die weder Art noch Namen trägt. Nur der
+    /// Auto-Lauf braucht das Wort wirklich - er sagt "Laufe zu ...", und dort
+    /// darf nichts Leeres stehen.</summary>
+    public static string DungeonWaypointWord =>
+        IsGerman ? "Wegpunkt" : "waypoint";
+
+    /// <summary>Die Art einer Station, gesprochen. Ein reiner Wegpunkt trägt
+    /// keine Art - er heißt nur nach seiner Nummer, alles andere wäre Füllwort.</summary>
+    public static string DungeonStepKindWord(DungeonStepKind kind) => kind switch
+    {
+        DungeonStepKind.Interact => IsGerman ? "benutzen"      : "interact",
+        DungeonStepKind.Boss     => IsGerman ? "Boss"          : "boss",
+        DungeonStepKind.Treasure => IsGerman ? "Schatztruhe"   : "treasure coffer",
+        DungeonStepKind.Jump     => IsGerman ? "springen"      : "jump",
+        _                        => string.Empty,
+    };
+
+    /// <summary>
+    /// Eine Station im Browser.
+    ///
+    /// <para>
+    /// DIE NUMMER STEHT VORN, anders als in jeder anderen Kategorie. Dort ist die
+    /// Zählung eine Nebenauskunft am Satzende ("3 von 12"); hier IST sie die
+    /// Auskunft - die Reihenfolge ist der ganze Grund, warum es die Kategorie
+    /// gibt, und der Spieler soll sie hören, bevor der Rest des Satzes läuft.
+    /// </para>
+    /// </summary>
+    public static string DungeonStepEntry(
+        int number, int total, string kindWord, string name, string distance, string direction)
+    {
+        var head = IsGerman ? $"{number} von {total}" : $"{number} of {total}";
+
+        // Art und Name sind beide oft da, oft nur eines, manchmal keines - ein
+        // Wegpunkt hat weder das eine noch das andere. Zusammensetzen statt
+        // vier Formatvarianten zu pflegen.
+        var what = string.Join(", ", new[] { kindWord, name }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrEmpty(what)) what = DungeonWaypointWord;
+
+        return $"{head}: {what}, {distance}, {direction}.";
+    }
+
+    /// <summary>Die letzte Station ist erreicht. Der Dungeon endet mit einem
+    /// Boss, also ist das eine echte Auskunft und kein Listenende.</summary>
+    public static string DungeonRouteEnd =>
+        IsGerman
+            ? "Letzte Station des Wegs."
+            : "Last station of the route.";
 
     /// <summary>Die Liste ist leer - kann nur passieren, wenn die Sheets nicht lesbar waren.</summary>
     public static string NoWorldDuties =>
@@ -951,6 +1027,20 @@ public static partial class AccessibilityStrings
         IsGerman ? $"{distance:F0} Meter nach {compass}" : $"{distance:F0} meters {compass}";
     public static string RouteThen => IsGerman ? ", dann " : ", then ";
     public static string RouteAndOn => IsGerman ? ", dann weiter" : ", then onward";
+
+    /// <summary>Der Hoehenanteil des Weges, angehaengt an die Vorschau. Getrennt
+    /// nach Auf und Ab, weil eine Verrechnung die Treppe verschweigen wuerde, ueber
+    /// die es hoch und wieder herunter geht.</summary>
+    public static string RouteClimb(float up, float down)
+    {
+        if (up > 0f && down > 0f)
+            return IsGerman
+                ? $" Dabei {up:F0} Meter aufwärts und {down:F0} Meter abwärts."
+                : $" Along the way {up:F0} meters up and {down:F0} meters down.";
+        if (up > 0f)
+            return IsGerman ? $" Dabei {up:F0} Meter aufwärts." : $" Along the way {up:F0} meters up.";
+        return IsGerman ? $" Dabei {down:F0} Meter abwärts." : $" Along the way {down:F0} meters down.";
+    }
 
     // ── Datenzentrums-Auswahl (TitleDCWorldMap) ──────────────────────
     public static string DCSelected(string dc, IReadOnlyCollection<string> worlds) =>

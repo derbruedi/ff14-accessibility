@@ -264,6 +264,45 @@ public sealed class RouteService
     private const int MaxSpokenSegments = 4;
 
     /// <summary>
+    /// From how many metres of climb the route preview mentions height at all.
+    /// The same 1,5 m as <c>AutoWalkService.LedgeAnnounceRise</c> and for the same
+    /// reason: below that it is a kerb or a gentle slope, and naming it would turn
+    /// every ordinary walk into a height report.
+    /// </summary>
+    private const float ClimbAnnounceThreshold = 1.5f;
+
+    /// <summary>
+    /// How much the route goes UP and how much it goes DOWN, in metres, summed
+    /// over the waypoint hops. Kept apart on purpose: netting them out would
+    /// silence exactly the case this exists for - a staircase up and back down
+    /// again cancels to zero, and the player would hear nothing about either.
+    ///
+    /// <para>
+    /// WHAT THIS CAN AND CANNOT SEE. The Y of a waypoint is its height on the
+    /// walkable mesh, so a staircase between two waypoints is fully contained in
+    /// their difference - that part is exact. What it cannot resolve is WHERE
+    /// along the leg the climb sits: vnavmesh smooths the path with string
+    /// pulling (<c>NavmeshManager.cs:155</c>), which places corners by the
+    /// top-down projection, and a staircase running straight ahead makes no
+    /// corner there. A rise and fall entirely BETWEEN two waypoints would also be
+    /// missed, which needs a leg with no turn over a hump - rare, and the reason
+    /// the wording says "along the way" rather than naming a spot.
+    /// </para>
+    /// </summary>
+    public static (float Up, float Down) BuildClimb(IReadOnlyList<Vector3> waypoints)
+    {
+        var up = 0f;
+        var down = 0f;
+        for (var i = 1; i < waypoints.Count; i++)
+        {
+            var dy = waypoints[i].Y - waypoints[i - 1].Y;
+            if (dy > 0f) up += dy;
+            else down -= dy;
+        }
+        return (up, down);
+    }
+
+    /// <summary>
     /// The spoken route preview: "Weg zu X, 62 Meter: 25 Meter nach Norden,
     /// dann 30 Meter nach Nordosten, dann weiter." Compass words on purpose -
     /// relative directions are meaningless several segments ahead; the live
@@ -299,11 +338,21 @@ public sealed class RouteService
         if (segments.Count > MaxSpokenSegments) sb.Append(AccessibilityStrings.RouteAndOn);
         sb.Append('.');
 
+        // Height last, as its own sentence: it belongs to the whole route, not to
+        // the segment it happens to follow, and gluing it onto the last compass
+        // leg would read as if only that leg climbed.
+        var (up, down) = BuildClimb(waypoints);
+        var spokenUp = up >= ClimbAnnounceThreshold ? up : 0f;
+        var spokenDown = down >= ClimbAnnounceThreshold ? down : 0f;
+        if (spokenUp > 0f || spokenDown > 0f)
+            sb.Append(AccessibilityStrings.RouteClimb(spokenUp, spokenDown));
+
         // Compass audit: first hop vector next to its spoken word (see mapping note above).
         var first = segments[0];
         _log.Info($"[Route] Vorschau '{targetName}': {waypoints.Count} Wegpunkte, {segments.Count} Segmente, " +
                   $"gesamt {total:F0} m; Segment 1 = {first.Distance:F0} m {CompassWords[first.Sector]} " +
-                  $"(Start ({waypoints[0].X:F0}|{waypoints[0].Z:F0}))");
+                  $"(Start ({waypoints[0].X:F0}|{waypoints[0].Z:F0})); " +
+                  $"Hoehe auf {up:F1} m / ab {down:F1} m");
         return sb.ToString();
     }
 }

@@ -232,6 +232,19 @@ public sealed class ObjectNameService
         public static readonly ObjectPurpose None = new(0, string.Empty, string.Empty);
     }
 
+    /// <summary>
+    /// The sheet name of a data id, for callers that have no live object.
+    ///
+    /// <para>
+    /// A dungeon path file names a door by its data id and nothing else - the
+    /// object is not loaded, and often not even in the same room. This is the
+    /// same lookup <see cref="Resolve"/> falls back to, deliberately shared:
+    /// two name sources for the same door would drift, and the browser must
+    /// call the thing on the route exactly what it calls it up close.
+    /// </para>
+    /// </summary>
+    public string NameForDataId(uint baseId, ObjectKind kind) => FromSheet(baseId, kind);
+
     /// <summary>Sheet name for a data id, or "" when the sheet has none either.</summary>
     private string FromSheet(uint baseId, ObjectKind kind)
     {

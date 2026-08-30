@@ -63,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly BestiaryService    _bestiary;
     private readonly HuntingLogService  _huntingLog;
     private readonly DutyEntranceService _dutyEntrances;
+    private readonly DungeonRouteService _dungeonRoute;
 #if DEBUG
     private readonly LiftProbe _liftProbe;
     private readonly ZoneExitProbe _zoneExitProbe;
@@ -139,8 +140,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.93";
-    private const string PluginVersionTag = "Reihenfolge der Kategorien selbst bestimmbar, einzelne abschaltbar";
+    private const string PluginVersion    = "5.94";
+    private const string PluginVersionTag = "Kategorie Dungeon: die Stationen in Laufreihenfolge; Routen-Vorschau nennt die Höhe";
 
     public Plugin()
     {
@@ -332,10 +333,16 @@ public sealed class Plugin : IDalamudPlugin
         // Shared by browser, target announcement, auto-walk and follow so all
         // four call the same object by the same name (user report 2026-08-08).
         _objectNames  = new ObjectNameService(DataManager);
+        // Die Stationen des Wegs DURCH eine Instanz, in Reihenfolge - der
+        // Gegenentwurf zu allen anderen Kategorien, die nach Naehe sortieren
+        // (Spielerwunsch 2026-08-29: *"eine kategorie die sich dungeon nennt so
+        // das man sie nach der reie ablaufen kann"*). Braucht _objectNames, weil
+        // eine Station nur ihre DataId mitbringt und der Name aus dem Sheet kommt.
+        _dungeonRoute = new DungeonRouteService(PluginInterface, ClientState, _objectNames, Log);
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -2171,6 +2178,34 @@ public sealed class Plugin : IDalamudPlugin
             // Tuer benutzen, nicht in ihrer Naehe stehenbleiben.
             stopRange = AutoWalkService.StopRange;
             Log.Info($"[Inhalte] Laufe zu '{duty.Name}' in Zone {duty.TerritoryTypeId} auf {position}.");
+            return MarkerResolve.Resolved;
+        }
+
+        // Station des Dungeon-Wegs. Sie steht IMMER in der aktuellen Zone - ein
+        // Weg gilt fuer genau eine Instanz, und wer sie verlaesst, verliert die
+        // Kategorie ohnehin. Deshalb keine Zonenlogik wie bei Tuer oder Quest.
+        var dungeonStep = _navigation.SelectedDungeonStep;
+        if (dungeonStep != null)
+        {
+            // Die Hoehe stammt aus der Pfaddatei und ist echt gemessen, nicht wie
+            // bei Kartenmarkern geraten. ResolveFloorPoint bleibt trotzdem davor,
+            // weil ein aufgezeichneter Punkt in der Luft stehen kann, wenn die
+            // Aufnahme im Sprung lag - und dann faende der Lauf nichts.
+            position = _autoWalk.ResolveFloorPoint(dungeonStep.Position) ?? dungeonStep.Position;
+            var kindWord = AccessibilityStrings.DungeonStepKindWord(dungeonStep.Kind);
+            name = dungeonStep.Name.Length > 0 ? dungeonStep.Name
+                 : kindWord.Length > 0        ? kindWord
+                 : AccessibilityStrings.DungeonWaypointWord;
+
+            // Etwas zum Benutzen will in Reichweite erreicht werden, ein
+            // Wegpunkt nur ueberhaupt. Dieselbe Unterscheidung wie zwischen
+            // Objekt und Kartenmarker.
+            stopRange = dungeonStep.Kind == DungeonStepKind.Waypoint
+                ? _config.AutoWalkPlaceStopRange
+                : AutoWalkService.StopRange;
+
+            Log.Info($"[Dungeon] Laufe zu Station {dungeonStep.Number} " +
+                     $"({dungeonStep.Kind}) auf {position}.");
             return MarkerResolve.Resolved;
         }
 
