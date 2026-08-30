@@ -3,6 +3,367 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-08-30): RELEASE v5.94 VERÖFFENTLICHT
+
+>>> INHALT DES RELEASES, zwei Features, beide vom User im Spiel bestätigt:
+    Kategorie „Dungeon" (Stationen in Laufreihenfolge) und die Höhe in der
+    Routen-Vorschau („Dabei 6 Meter aufwärts"). Der Rundumblick ist NICHT dabei —
+    er wurde am selben Tag ausgebaut (Abschnitt darunter) und hat nie ein Release
+    gesehen; in den Release-Notes steht er deshalb auch nicht.
+
+>>> VERSIONEN SYNCHRON auf 5.94: csproj (Version/AssemblyVersion/FileVersion),
+    Plugin.cs (PluginVersion + Tag), repo.json (AssemblyVersion). Commit 770e499,
+    main gepusht, Tag v5.94.
+
+>>> SECHS ASSETS wie bei v5.93: latest.zip, FF14Accessibility-v5.94.0.zip,
+    FF14AccessibilityInstaller.exe, installer.json, LICENSE,
+    THIRD-PARTY-NOTICES.md. Der Installer-Quellcode war unverändert, also blieb
+    die exe von v5.93 samt InstallerVersion 1.2.1.0 — der SHA in installer.json
+    wurde gegen die Datei nachgerechnet und stimmt. Angehängt wurde sie trotzdem,
+    sonst verlieren Nutzer mit älterem Installer den Update-Pfad.
+
+>>> VERIFIZIERT, nicht angenommen — der Spielerweg wurde nachgegangen:
+    - `gh release list`: v5.94 ist „Latest".
+    - `releases/latest/download/latest.zip` HERUNTERGELADEN: 1.554.325 Bytes, und
+      das Manifest darin trägt `"AssemblyVersion": "5.94.0.0"`.
+    - `repo.json` auf main (raw.githubusercontent) trägt 5.94.0.0 — das ist das
+      Feld, das Dalamud vergleicht.
+    - Fremd-Plugin-Prüfung am HERUNTERGELADENEN ZIP: 0 Treffer für BossMod,
+      IINACT, cactbot, Browsingway. Im ZIP liegt nur das eigene Plugin plus
+      Tolk, NVDA-Client, NAudio und System.Speech; vnavmesh holt der Installer
+      zur Laufzeit von puni.sh.
+
+## VORGESCHICHTE (2026-08-30): RUNDUMBLICK WIEDER AUSGEBAUT
+
+>>> AUF WUNSCH DES USERS, wörtlich: *"den runtum blick kannste erstmal wieder
+    ausbauen"*. Ein Grund wurde nicht genannt und wird hier auch nicht vermutet.
+    Das „erstmal" ist festgehalten: das Feature war im Praetorium nachweislich
+    nützlich (zwölf Scans im Log, der User kam damit aus dem Raum heraus), es
+    kann also wiederkommen. Die Herleitung dazu steht unverändert weiter unten
+    unter TEIL B — nichts davon ist gelöscht, nur der Code.
+
+>>> WAS ENTFERNT WURDE, vollständig, ein Repo-weites `grep` findet nichts mehr:
+    - `Services/SurroundingsService.cs` gelöscht (war noch nie committet).
+    - `Plugin.cs`: Feld, Konstruktion, `AnnounceSurroundings`, `RadarStopRange`
+      und die Taste in der Abfrageschleife.
+    - `Configuration.cs`: `KeySurroundings`. Damit ist **Strg+Umschalt+F10
+      wieder frei** und aus der Konfliktprüfung raus.
+    - `AccessibilityStrings.cs`: der gesamte Radar-Block (7 Strings, DE+EN).
+    - `DungeonRouteService.cs`: der `<see cref="SurroundingsService"/>` im
+      Klassenkommentar — sonst eine Doku-Warnung. Die Aussage des Satzes
+      (Boden-Wissen beantwortet nicht, welche Richtung weiterführt) bleibt.
+
+>>> WAS BEWUSST BLEIBT: die Höhen-Ansage in der Routen-Vorschau
+    (`RouteService.BuildClimb`, "Dabei 6 Meter aufwärts"). Sie war TEIL A
+    derselben Sitzung, hängt aber an keiner Zeile des Radars und wurde vom User
+    nicht genannt.
+
+>>> GEBAUT Debug 0 Warnungen / 0 Fehler, liegt in devPlugins.
+
+## VORGESCHICHTE (2026-08-29): KATEGORIE „DUNGEON" — IM SPIEL BESTÄTIGT
+
+>>> DER WUNSCH DES USERS, wörtlich: *"eine kategorie die sich dungeon nennt so
+    das man sie nach der reie ablaufen kann"*. Ausgangspunkt war seine Frage, ob
+    sich die Koordinaten aus AutoDuty auslesen lassen. Antwort: ja, und der Weg
+    dorthin ist geprüft statt vermutet.
+
+>>> WAS DIE QUELLE IST. AutoDuty (github.com/ffxivcode/AutoDuty, archiviert;
+    aktiver Fork erdelf/AutoDuty) legt je Instanz eine JSON-Datei ab, benannt
+    `(TerritoryId) Name.json`. Geklont und ausgezählt: **254 Dateien, 7.894
+    Schritte**, davon 2.482 MoveTo, 604 Boss, 435 Schatztruhen, 342 Interactable.
+    Das Argument eines Interactable ist die **DataId** — belegt in
+    `AutoDuty.cs:1837` (`Svc.Objects.Where(x => Interactables.Contains(x.DataId))`)
+    und in der Aktionsbeschreibung `ActionsManager.cs:34`.
+
+>>> LIZENZ — DER GRUND, WARUM NICHTS MITGELIEFERT WIRD. Das Repo hat KEINE
+    Lizenzdatei, und die README sagt ausdrücklich *"Unlicensed code, which
+    follows default copyright law"*. Beim aktiven Fork steht dieselbe Zeile.
+    Also: alle Rechte vorbehalten. Das Plugin liest die Dateien deshalb ZUR
+    LAUFZEIT aus `pluginConfigs\FF14Accessibility\DungeonPaths\` und liefert
+    selbst nichts aus — dieselbe Trennung wie bei BossMod und cactbot
+    (siehe `no_third_party_plugins_in_release`). Die 254 Dateien liegen beim
+    User in genau diesem Ordner; das Repo ist unberührt.
+
+>>> WAS GEBAUT WURDE.
+    - `Services/DungeonRouteService.cs` (neu). Liest den Ordner einmal ein,
+      parst die Datei der aktuellen Zone, gibt `DungeonStep`-Stationen in
+      Laufreihenfolge. Frisst BEIDE Dateiformate: 31 Dateien schreiben
+      `"Actions"`, 223 schreiben `"actions"` — ohne
+      `PropertyNameCaseInsensitive` läse sich der Ordner zu drei Vierteln
+      still leer.
+    - Nur ORTE werden Stationen. Wait, StopForCombat, Rotation, Kommentare
+      haben keine Stelle, zu der man laufen kann, und würden die Liste strecken.
+    - `NavCategory.DungeonRoute` + `CycleDungeonStep` in `NavigationService`.
+      **Die einzige Kategorie ohne Entfernungssortierung** — die Reihenfolge ist
+      ihr ganzer Zweck. Der Einstieg steht bei der nächstgelegenen Station, ab
+      dem zweiten Druck läuft die Liste stur der Reihe nach.
+    - Name aus dem SHEET, nicht aus der englischen Notiz der Datei:
+      `ObjectNameService.NameForDataId` (neu, delegiert an das vorhandene
+      `FromSheet`). Damit heißt die Tür auf dem Weg genau wie im Objekt-Browser.
+    - Numpad3 in `Plugin.cs`: Station hat kein Spielobjekt, es wird die Position
+      gelaufen. Haltereichweite je nach Art — etwas zum Benutzen in
+      Interaktionsreichweite, ein reiner Wegpunkt nur ungefähr.
+    - Sichtbar nur, wo es für die Zone einen Weg gibt (Regel wie Angelplätze).
+
+>>> DIE ZAHL, DIE DIE ERWARTUNG SETZT — GEMESSEN, NICHT GESCHÄTZT:
+    **208 Dungeons mit auswertbarem Weg, Median 16 Stationen, Median 43,4 Meter
+    zwischen zwei Stationen.** Das ist ein SKELETT, kein Raumplan. Es beantwortet
+    „wo geht es weiter", nicht „welche Tür ist in diesem Raum". Zwischen zwei
+    Stationen läuft vnavmesh wie überall sonst — Netzlücken schließt das nicht.
+
+>>> DER PRAETORIUM-GEGENTEST, und er fällt ernüchternd aus: 14 Stationen, Median
+    60 m, größte Lücke 438 m. Von der Stelle, an der der User am 2026-08-29
+    feststeckte (82,8|67,3|0), ist die nächste Station **92,5 Meter** entfernt
+    (Nr. 5, „Magitek Terminal"). Für seinen konkreten Fall hätte diese Kategorie
+    also nur eine Richtung geliefert, keine Tür. Der Praetorium ist allerdings
+    ein Fahrzeug-/Zwischensequenz-Dungeon und damit der dünnste Fall, nicht der
+    typische.
+
+>>> BEKANNTE GRENZE, BEWUSST UND GELOGGT: zwei Zonen haben mehrere gleichrangige
+    Wege — Mount Rokkon (12 Ausgänge) und Aloalo Island (4 Pfade), beides
+    verzweigte Varianten-Dungeons. Welchen Zweig der Spieler genommen hat, ist
+    von außen nicht erkennbar. Es gilt einer, die anderen entfallen, und
+    `ScanFolder` schreibt dafür eine WARNUNG ins Log statt still zu wählen.
+    Beide sind Stufe 90+, der User ist Stufe 30 — kein akutes Problem.
+
+>>> GEBAUT Debug 0 Warnungen / 0 Fehler, liegt in devPlugins.
+
+>>> IM SPIEL BESTÄTIGT (User, 2026-08-29): *"funktioniert"*. Die Kategorie
+    erscheint, blättert in Reihenfolge und der Auto-Lauf führt zu den Stationen.
+
+    GENAUIGKEIT DIESER BESTÄTIGUNG, damit sie später nicht mehr wiegt als sie
+    darf: der User hat das Feature als Ganzes abgenommen, nicht die vier
+    Testpunkte einzeln durchgemeldet. Nicht gesondert belegt sind damit:
+    - dass die Kategorie in der offenen Welt wirklich AUSBLEIBT,
+    - dass der Einstieg bei der nächstgelegenen statt bei der ersten Station steht,
+    - dass die Türnamen aus dem deutschen Sheet und nicht aus der englischen
+      Notiz kommen.
+    Alle drei sind Verhalten, das nur an EINER Stelle im Code entsteht und beim
+    normalen Spielen auffiele — sie stehen hier als offen, nicht als verdächtig.
+
+## VORGESCHICHTE (2026-08-29): RUNDUMBLICK + HÖHE IM WEG — IM SPIEL BESTÄTIGT
+
+>>> BEIDES LIEF AM 2026-08-29 IM PRAETORIUM, zwölf Rundumblicke zwischen 10:15
+    und 11:05 im Log. Der User kam damit aus einem Raum heraus, in dem er nicht
+    weiterwusste: von (82,8|67,3|0) auf Ebene q3 hinauf auf (152,8|102,0|-41,2)
+    auf q2 — siebzig Meter nach Osten und 35 Meter höher.
+
+>>> DIE KOSTENFRAGE IST BEANTWORTET, gemessen statt geschätzt: **94 bis 158
+    Bodenabfragen in 1 bis 7 Millisekunden.** Die Schrittweite von einem Meter
+    bleibt, sie kostet praktisch nichts. Damit ist der einzige Punkt erledigt,
+    der die Auslegung hätte kippen können.
+
+>>> DIE HÖHEN-ANSAGE TRÄGT AUCH BEIM AUTO-LAUF, Beleg im Log:
+    `[Route] Vorschau 'Übergang nach Praetorium': 15 Wegpunkte, 7 Segmente,
+    gesamt 273 m; ... Hoehe auf 36,4 m / ab 27,2 m`. Genau der Fall, für den Auf
+    und Ab NICHT verrechnet werden: netto wären es 9 Meter gewesen, tatsächlich
+    ging es 36 hinauf und 27 hinunter.
+
+>>> WIE EMPFINDLICH DIE STRAHLEN AUF DIE STANDPOSITION REAGIEREN, auch gemessen:
+    zwischen (149,2|101,9|-27,4) und (150,6|101,9|-28,7) — anderthalb Meter —
+    wuchs Westen von 5 auf 15 Meter und Nordwesten kam mit 39 Metern neu dazu.
+    Das ist kein Fehler, sondern eine Türöffnung, die aus dem einen Stand nicht
+    im Strahl liegt und aus dem anderen schon. Es heißt aber: EIN Rundumblick ist
+    eine Momentaufnahme, kein Raumplan. Bei "hier ist zu" lohnt ein Schritt zur
+    Seite und ein zweiter Druck.
+
+>>> NEUER FEHLER GEFUNDEN, NOCH NICHT BEHOBEN: **Strg+F5 erreicht die
+    Objektsonde in einem Dungeon nie.** Die Taste dumpt zuerst das aktive Fenster
+    und fällt nur auf `DumpNearbyObjects` zurück, wenn gar kein Fenster offen ist
+    (Plugin.cs, Kommentar an der Taste). In einer Instanz sind immer welche offen
+    — gemessen 2026-08-29 11:06: "25 sichtbare Fenster gedumpt". Der Spieler
+    kommt dort also per Taste nicht an die Objektliste, nur über `/acc objprobe`.
+    Das trifft genau die Diagnose, die im Dungeon am meisten gebraucht wird.
+
+>>> OFFEN AUS DIESER SITZUNG: die Frage des Users, wie er eine Tür oder Barriere
+    findet, die zerstört werden muss. Das Log zeigt an seiner Stelle
+    `[Nav] Browser: 0 von 1 Objekten (1 nicht nutzbar ausgeblendet)` — es gibt
+    dort ein Objekt, das `IsWorthBrowsing` (NavigationService.cs:2187) als
+    namenlos UND nicht anvisierbar aussortiert. Ob das seine Tür war, klärt
+    `/acc objprobe`; der User hat die Instanz vorher verlassen.
+
+Gebaut Debug 0/0 und Release 0/0, Debug liegt in devPlugins.
+
+>>> TEIL A — DIE ROUTEN-VORSCHAU NENNT JETZT DIE HÖHE. `RouteService.BuildClimb`
+    summiert die Auf- und Abwärtsanteile über die Wegpunkte, `DescribeRoute`
+    hängt sie als eigenen Satz an: "Dabei 6 Meter aufwärts." Ab 1,5 Metern,
+    dieselbe Schwelle wie `AutoWalkService.LedgeAnnounceRise` und aus demselben
+    Grund — darunter ist es eine Bordsteinkante.
+
+    AUF UND AB WERDEN NICHT VERRECHNET. Eine Treppe hoch und wieder herunter
+    ergäbe netto null, und genau der Fall ist der, für den das hier existiert.
+
+    DAS GILT AUCH BEIM AUTO-LAUF, ohne zweite Baustelle: der ruft die Vorschau
+    schon selbst auf (`AutoWalkService.cs:977` → `SpeakRoutePreviewOnce` →
+    dieselbe `DescribeRoute` wie Strg+Numpad5).
+
+    WAS DIE METHODE NICHT KANN, im Code dokumentiert: WO auf der Strecke die
+    Steigung liegt. vnavmesh glättet den Weg per String-Pulling
+    (`NavmeshManager.cs:155`), das Ecken nach der Draufsicht setzt — eine
+    geradeaus hochführende Treppe macht dort keine Ecke. Die Höhe stimmt, die
+    Stelle fehlt. Deshalb heißt es "dabei" und nicht "nach 20 Metern".
+
+>>> TEIL B — DER RUNDUMBLICK (Strg+Umschalt+F10), neuer `SurroundingsService`.
+
+    Tastet vom Spieler aus in acht Himmelsrichtungen je einen Meter weit nach
+    außen, bis zu 40 Meter, und fragt an jedem Punkt `Query.Mesh.PointOnFloor`.
+    Ergebnis pro Richtung: wie weit offen, wie viel höher oder tiefer, und ab
+    welcher Entfernung man die Steigung merkt. Ansage als Menü, sortiert nach
+    Weite (die weiteste zuerst — ein Gang, der weiterführt, ist fast immer der
+    längste Strahl). Numpad 2/8 blättert, Numpad 0 schickt den Auto-Lauf dorthin.
+
+    DIE ENTSCHEIDENDE MECHANIK, sonst fände der Radar keine einzige Treppe:
+    `FindPointOnFloor` liefert den höchsten Netzpunkt UNTERHALB der Sonde
+    (vnavmesh `NavmeshQuery.cs:256-261`). Auf Bodenhöhe gezielt fände sie eine
+    Stufe nach oben nie. Die Sonde wird deshalb 2 Meter über die zuletzt
+    gefundene Höhe gesetzt, und diese Höhe wandert von Schritt zu Schritt mit —
+    so läuft der Strahl eine ganze Treppe hoch.
+
+    NACH UNTEN BRAUCHT ES EINE EIGENE GRENZE: die Sonde würde sonst den Grund
+    eines Abgrunds als "da ist Boden" melden. Ab 1,5 Metern Absturz pro
+    Schritt gilt die Richtung als zu Ende. Eine Treppe verliert deutlich
+    weniger je Meter; einen blinden Spieler auf eine Ansage hin über eine Kante
+    laufen zu lassen ist genau der Fehler, den diese Zahl verhindert.
+
+    WAS DER RADAR NICHT IST, und das steht auch im Klassenkommentar: ein
+    zweiter Wegfinder. Er liest DASSELBE Netz, auf dem der Auto-Lauf fährt.
+    Wo das Netz ein Loch hat, meldet er "zu" — genau dort, wo der Lauf ohnehin
+    scheitern würde. Eine Automatik, die Netzlücken selbst überbrückt, gab es
+    zweimal und wurde in V5.78 zurückgebaut; die aufgezeichneten Spuren
+    (Strg+Umschalt+F6) bleiben die Antwort darauf.
+
+    WARUM EIN MENÜ UND KEIN SATZ: acht Richtungen am Stück kann sich niemand
+    merken, und der nützliche nächste Schritt ist nicht "wissen, dass Norden
+    offen ist", sondern hingehen. Als Menü ist jede Richtung ein Eintrag, den
+    dieselbe Numpad0 bestätigt wie überall sonst.
+
+    TASTE: Strg+Umschalt+F10, der nächste freie Platz dieses Clusters (F1-F9
+    sind belegt). In der Konfliktprüfung eingetragen.
+
+>>> VIER ZAHLEN SIND GESETZT UND NICHT GEMESSEN — beim ersten Test darauf achten:
+    - Schrittweite 1 m. Eine Wand, die dünner ist als ein Schritt, würde
+      übersprungen. Fängt der Auto-Lauf ab, wenn kein Weg existiert.
+    - Stufenhöhe 2 m nach oben, Absturzgrenze 1,5 m nach unten.
+    - Reichweite 40 m, Mindestweite 3 m für "offen".
+    - KOSTEN: acht Strahlen mal bis zu vierzig Schritte sind bis zu 320
+      Bodenabfragen auf einen Tastendruck. Der Scan misst sich selbst und
+      schreibt "N Bodenabfragen in M ms" ins Log (`[Radar]`). Wenn das ruckelt,
+      ist die Schrittweite die Stellschraube. NICHT GESCHÄTZT — im Log ablesen.
+
+>>> DER URSPRÜNGLICHE DUNGEON-FALL IST DAMIT NICHT ABGEHAKT. Der User konnte die
+    drei Messungen nicht durchführen ("ich kann das nicht messen weil ich nicht
+    weiss wo ich da hinlaufen muss") — genau deshalb kam der Rundumblick vor der
+    Diagnose. Ob sein Hindernis eine Treppe oder eine Tür war, ist weiter offen;
+    die Strg+F5-Messung steht noch aus.
+
+## VORGESCHICHTE (2026-08-29): TREPPEN UND HÖHEN — RECHERCHE, DIE ZU OBIGEM FÜHRTE
+
+Anlass: der User steckte in einem Dungeon fest — *"da ist anscheinend eine Treppe
+oder ein Weg den ich nicht sehe"*. Frage war, ob sich Treppen aus den extrahierten
+Spieldaten per Koordinaten barrierefrei machen lassen.
+
+BEFUND 1 — DIE LAYOUT-KOORDINATEN TAUGEN NICHT ALS TREPPEN-QUELLE. Die Positionen
+aller platzierten Objekte liegen vor und `tools/zone-probe` liest sie schon offline
+aus dem sqpack. Aber Szenerie trägt in FF14 keinen Namen: gemessen am 2026-08-22,
+dokumentiert im Klassenkommentar von `ObstacleService.cs`, identifiziert sich ein
+Hintergrundteil nur über Modell- und Kollisionsdatei (`f1t0_b0_gatdr.pcb`). Es gibt
+weder ein Sheet noch einen Layout-Typ "Treppe". Eine Treppenliste daraus zu bauen
+hieße, kryptische Modellkürzel zu raten — also nicht der Weg.
+
+BEFUND 2 — DER TRAGFÄHIGE HEBEL IST DAS WEGENETZ. vnavmesh rechnet aus genau diesen
+Daten die begehbare Fläche, Treppen eingeschlossen (sonst könnte der Auto-Lauf sie
+nie benutzen). `Nav.Pathfind` ist eine reine Abfrage ohne loszulaufen — verifiziert
+gegen die installierte DLL, siehe Klassenkommentar `RouteService.cs:13-22` — und
+liefert die Wegpunkte als `Vector3`, also MIT Höhe.
+
+BEFUND 3 — DIE LÜCKE SITZT IN DER ROUTEN-VORSCHAU. Strg+Numpad5 sagt den Weg schon
+ohne zu laufen an ("62 Meter: 25 Meter nach Norden, dann 30 Meter nach Nordosten"),
+wertet aber ausschließlich die Waagerechte aus: der Kompass-Sektor kommt aus dx/dz,
+die Y-Achse wird in `RouteService.BuildSegments` (Zeilen 229-259) nirgends
+angefasst. Dort fehlt das "und dann 6 Meter aufwärts". Kleine Erweiterung an einer
+Stelle, die bereits steht.
+
+NOCH NICHT GEMESSEN, und deshalb noch keine Design-Entscheidung: ob eine Treppe im
+Pfad überhaupt als eigener Wegpunkt auftaucht oder von der Wegglättung zu einer
+einzigen langen Kante zusammengezogen wird. Für die Ansage wäre beides brauchbar,
+aber die Formulierung hängt davon ab.
+
+>>> DER USER PRÜFT AM 2026-08-30 ZWEI DINGE IM SPIEL (Antwort steht aus):
+    - Welcher Dungeon und welche Stelle? Koordinaten per Strg+Umschalt+F2 in die
+      Zwischenablage kopieren und weitergeben — damit lässt sich offline mit
+      zone-probe nachsehen, was dort steht.
+    - Aufgabenliste per Strg+Umschalt+F7 ansagen, dann Auto-Lauf zum Ziel starten:
+      läuft er los und bleibt hängen, oder nennt er gar kein Ziel? Das unterscheidet
+      "an der Treppe fehlt Netz" von "es fehlt bloß die Information, wohin".
+    - NEU UND WICHTIGSTER HANDGRIFF: an der Stelle Strg+F5 drücken
+      (`NavigationService.DumpNearbyObjects`, schreibt `[ObjProbe]` mit allen
+      Objekten im 60-m-Umkreis, auch unsichtbaren und nicht anvisierbaren).
+
+VORSCHLAG VON GEMINI (vom User am 2026-08-29 eingebracht), gegengeprüft: EventObj
+und Exit-Tabellen als Orientierungspunkte im Dungeon registrieren. Zur Hälfte
+längst gebaut, zur anderen Hälfte am Thema vorbei.
+    - SCHON DA: `NavCategory.Objects` sammelt bereits `ObjectKind.EventObj`,
+      `Treasure` und `HousingEventObject` ein, `NavCategory.Duties` filtert
+      `EventObj` auf Inhalts-Türen. Eine benannte Dungeon-Tür steht also heute
+      schon im Objekt-Browser und ist per Numpad3 anlaufbar.
+    - SCHON DA: die `ExitRange`-Boxen aus `planmap.lgb` (das, was Gemini "Exit
+      Node Tables" nennt — der Begriff existiert so nicht) sind offline über alle
+      978 Übergänge vermessen und werden in `ZoneBorderService.cs:317` genutzt.
+    - TRÄGT NICHT FÜR TREPPEN: eine Treppe ist kein EventObj. Die vollständige
+      `InstanceType`-Liste kennt ExitRange, DoorRange, CollisionBox,
+      ClickableRange und nichts weiter in dieser Richtung — schon am 2026-08-19
+      für die Aufzug-Frage durchgesehen, siehe `LiftProbe.cs:18-21`.
+    - OFFEN UND GENAU DESHALB DIE Strg+F5-MESSUNG: ob das Hindernis des Users
+      überhaupt eine Treppe ist oder in Wahrheit eine Tür. Steht im `[ObjProbe]`
+      ein EventObj, fehlt vermutlich nur die Ansage und nicht die Datenquelle;
+      steht dort nichts, ist es reine Geometrie und der Wegenetz-Weg gilt.
+
+Vorgeschichte des Wunsches: 2026-08-01 schon einmal aufgekommen (Schiff Astalicia,
+senkrechter Aufstieg), damals unrecherchiert liegengeblieben.
+
+## NEBENPROJEKT (2026-08-28): BossMod-Laufhilfe-Installer, GEBAUT / UNGETESTET
+
+>>> NACHTRAG 2026-08-30 — BLEIBT VORERST GANZ LOKAL. Der User, wörtlich: *"die
+    bossmod soll nur bei mir lokal bleiben die sollen die anderen spieler nicht
+    haben das machen wir später anders"*. Der Ordner wird deshalb NICHT committet
+    und steht in `.git/info/exclude` — bewusst dort und nicht in `.gitignore`:
+    letztere wird mitgepusht, dann stünde der Name im öffentlichen Repo. Damit
+    ist er auch gegen ein versehentliches `git add .` gesichert. Die sieben
+    Quelldateien liegen also nur auf dem Rechner des Users und sind nirgends
+    gesichert — das ist die bewusst gewählte Seite dieses Tauschs.
+
+Auf Wunsch des Users: eigenes Programm `BossModWalkInstaller/`, das Boss Mod bei
+fremden Spielern so einrichtet, wie es beim User laeuft - nur laufen und
+ausweichen, kein selbstaendiges Kaempfen. Gehoert NICHT ins Accessibility-Release
+und liefert Boss Mod auch nicht mit; das Plugin wird zur Laufzeit von puni.sh
+geladen, genau wie der Hauptinstaller es mit vnavmesh haelt.
+
+Kern der Sache (an BossMod 7.5.5.8 dekompiliert belegt): Die "Lauffunktion" ist
+kein Schalter, sondern das Autorotation-Profil "Laufen" mit genau einem Modul,
+`BossMod.Autorotation.MiscAI.NormalMovement`. Das Modul schreibt nur
+Bewegungshinweise und stellt nie eine Aktion in die Warteschlange; ohne aktives
+Profil tut die Autorotation ohnehin nichts. Die alte KI (`AIConfig`) ist in Boss
+Mod selbst abgekuendigt und bleibt aus. Ein-/Ausschalten im Spiel:
+`/vbm ar set Laufen` bzw. `/vbm ar clear`.
+
+TESTLAUF AM ECHTEN RECHNER (2026-08-28), rueckgaengig gemacht: Die eigene
+presets.db.json wurde beiseitegelegt, der Installer durchlaufen, das Ergebnis
+verglichen, das Original zurueckgestellt.
+    - Das erzeugte Profil ist STRUKTURELL IDENTISCH mit dem, das Boss Mod selbst
+      geschrieben hat (Name, Modul, Track/Option, "version": 8).
+    - dalamudConfig.json blieb inhaltlich unveraendert (idempotent), die
+      Sicherung .bak-bossmod-installer wurde angelegt.
+    - Boss Mod wurde NICHT neu geladen (DLL-Datum unveraendert 17.08.) - der
+      Versionsvergleich gegen puni.sh greift also.
+
+VOM USER BESTAETIGT (2026-08-28): "ja hat alles gut vorgelesen und da stand
+bereits aktuell" - NVDA liest Sprachdialog, Knoepfe und Statusfeld sauber, und
+die Meldung "bereits aktuell" kam wie erwartet.
+
+OFFEN: nur noch der Download-Zweig, also die Erstinstallation auf einem Rechner
+ohne Boss Mod. Der laesst sich hier nicht ausloesen, ohne die eigene
+Installation zu loeschen - das klaert der erste fremde Tester.
+
 ## STAND JETZT (2026-08-26, "EIGENE REIHENFOLGE DER KATEGORIEN - KOMPLETT BESTAETIGT")
 
 >>> FERTIG UND IM SPIEL BESTAETIGT, in zwei Durchgaengen:
