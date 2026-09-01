@@ -239,8 +239,11 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   gleichnamige Gegner sind sonst drei gleiche Ansagen; ein sehender Spieler
   hält sie über ihren Standort auseinander, ein blinder hat dafür nichts. Die
   Farbe bleibt demselben Gegner den ganzen Kampf über erhalten und wird nach
-  seinem Tod **nicht neu vergeben**, damit kein zweiter „Rot" auftaucht,
-  während man noch den ersten sucht. `/acc gegner` liest das ganze Feld vor:
+  seinem Tod **nicht neu vergeben**, solange noch eine unbenutzte da ist —
+  damit kein zweiter „Rot" auftaucht, während man noch den ersten sucht. Sind
+  in einem langen Kampf alle acht durch, kommt die am längsten zurückliegende
+  wieder in Umlauf: ein nachrückender Gegner soll lieber eine schon einmal
+  gehörte Farbe tragen als gar keine. `/acc gegner` liest das ganze Feld vor:
   wie viele es sind, welche Farbe wer ist, mit Leben — und wer davon auf
   **dir** ist statt auf dem Tank. Nach dem Kampf sind alle Farben wieder frei.
   Es wird **kein Zeichen im Spiel gesetzt**: die Zielzeichen gehören der

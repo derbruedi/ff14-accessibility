@@ -54,13 +54,17 @@ public sealed class EnemyMarkerService
     // space avoids a translation that could silently mismatch.
     private readonly Dictionary<uint, int> _live = new();
 
-    // Colours of enemies that have left the fight (dead, despawned, ran off).
-    // They stay BLOCKED until the fight is over. Sku does the same with its
-    // SkuRaidTargetRepoDead, and the reason is worth stating: if the colour were
-    // handed straight on, the "Rot" that just died would be replaced by a fresh,
-    // unrelated "Rot" seconds later, and the player would be tracking a mob that
-    // no longer exists. A used colour is retired for the rest of the fight.
-    private readonly HashSet<int> _spent = new();
+    // Colours of enemies that have left the fight (dead, despawned, ran off),
+    // OLDEST FIRST. They stay blocked while any unused colour is still left. Sku
+    // does the same with its SkuRaidTargetRepoDead, and the reason is worth
+    // stating: if the colour were handed straight on, the "Rot" that just died
+    // would be replaced by a fresh, unrelated "Rot" seconds later, and the player
+    // would be tracking a mob that no longer exists.
+    //
+    // A LIST and not a set, because the order is the point: when the pot runs dry
+    // the LONGEST-retired colour is the one that comes back first. See
+    // NextFreeColor for why they come back at all.
+    private readonly List<int> _spent = new();
 
     // Who has the player on their own hate list, i.e. who is actually swinging at
     // them rather than at the tank. Refreshed every sweep.
@@ -107,12 +111,16 @@ public sealed class EnemyMarkerService
                 _live.Remove(id);
             }
 
-        // Hand a colour to everyone new, in the order the game lists them.
+        // Hand a colour to everyone new, in the order the game lists them. This
+        // runs EVERY frame, not just at the start of a fight: an enemy that walks
+        // into a fight already in progress - an add, a wandering patrol, a second
+        // pull that joins the first - is simply an id that is not in _live yet and
+        // is named here like any other.
         foreach (var id in _order)
         {
             if (_live.ContainsKey(id)) continue;
             var free = NextFreeColor();
-            if (free < 0) continue;   // more than eight enemies: the rest stay unnamed, as in Sku
+            if (free < 0) continue;   // eight enemies alive at once: the ninth stays unnamed, as in Sku
             _live[id] = free;
         }
 
@@ -184,18 +192,63 @@ public sealed class EnemyMarkerService
         _loggedCount = 0;
     }
 
-    /// <summary>Lowest colour that is neither in use nor already retired, or -1.</summary>
+    /// <summary>
+    /// The colour for the next enemy, or -1 if every one of the eight is on a
+    /// LIVING enemy right now.
+    ///
+    /// <para>
+    /// Two passes, and the second one matters. First the lowest colour that is
+    /// neither in use nor retired. If there is none, the longest-retired colour
+    /// is taken back into service.
+    /// </para>
+    ///
+    /// <para>
+    /// WHY RETIRED COLOURS COME BACK: a fight is not eight enemies and done. Kill
+    /// five, and five colours are retired; the adds that walk in afterwards would
+    /// find an empty pot and stay NAMELESS. That is the worse outcome by far - a
+    /// nameless enemy cannot be told from any other, which is the one thing the
+    /// colours exist to fix, and a blind player has no way to notice that a name
+    /// is missing rather than merely unspoken. Reusing "Rot" for a new enemy is a
+    /// small risk of confusion; leaving that enemy anonymous is a guaranteed one.
+    /// Retirement therefore still does its job whenever it can afford to - which
+    /// is every normal pull - and gives way when the alternative is silence.
+    /// </para>
+    ///
+    /// <para>
+    /// Oldest first, so the colour that comes back is the one whose enemy died
+    /// longest ago and is least likely to still be in the player's head. Sku has
+    /// no equivalent - its repo simply runs dry - so this is a deliberate
+    /// departure, noted as such in the project notes.
+    /// </para>
+    /// </summary>
     private int NextFreeColor()
     {
         for (var i = 0; i < ColorCount; i++)
         {
             if (_spent.Contains(i)) continue;
-            var taken = false;
-            foreach (var used in _live.Values)
-                if (used == i) { taken = true; break; }
-            if (!taken) return i;
+            if (!InUse(i)) return i;
         }
+
+        // Pot empty: recycle the longest-retired colour rather than go silent.
+        while (_spent.Count > 0)
+        {
+            var recycled = _spent[0];
+            _spent.RemoveAt(0);
+            if (InUse(recycled)) continue;   // belt and braces; a retired colour is never live
+            _log.Info($"[Gegnerfarben] Alle Farben vergeben - '{AccessibilityStrings.EnemyMarkerColor(recycled)}' " +
+                      "wird wiederverwendet, damit der neue Gegner nicht namenlos bleibt.");
+            return recycled;
+        }
+
         return -1;
+    }
+
+    /// <summary>True while the colour sits on a living enemy.</summary>
+    private bool InUse(int color)
+    {
+        foreach (var used in _live.Values)
+            if (used == color) return true;
+        return false;
     }
 
     /// <summary>
