@@ -243,12 +243,20 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   damit kein zweiter „Rot" auftaucht, während man noch den ersten sucht. Sind
   in einem langen Kampf alle acht durch, kommt die am längsten zurückliegende
   wieder in Umlauf: ein nachrückender Gegner soll lieber eine schon einmal
-  gehörte Farbe tragen als gar keine. `/acc gegner` liest das ganze Feld vor:
+  gehörte Farbe tragen als gar keine. **Setzt jemand in der Gruppe ein echtes
+  Zeichen** — „Angreifen 1", „Binden 2", „Kreis" —, dann gewinnt das: gesprochen
+  wird der Name des Zeichens statt der Farbe, und die Farbe wird wieder frei.
+  Das Zeichen ist der Name, den die ganze Gruppe benutzt; eine eigene Farbe
+  daneben wäre eine zweite, private Wahrheit. Die Namen kommen aus den Daten
+  des Spiels, sind also dieselben Wörter, die am Bildschirm stehen.
+  `/acc gegner` liest das ganze Feld vor:
   wie viele es sind, welche Farbe wer ist, mit Leben — und wer davon auf
   **dir** ist statt auf dem Tank. Nach dem Kampf sind alle Farben wieder frei.
-  Es wird **kein Zeichen im Spiel gesetzt**: die Zielzeichen gehören der
-  Gruppenleitung, die Farbe wird nur gesprochen. Das Verfahren stammt aus dem
-  WoW-Addon Sku, die Farben und ihre Reihenfolge sind von dort übernommen.
+  Es wird **kein Zeichen im Spiel gesetzt**: gelesen werden sie, gesetzt nicht.
+  Die Zielzeichen gehören der Gruppenleitung, die Farbe wird nur gesprochen.
+  Das Verfahren stammt aus dem WoW-Addon Sku, die Farben und ihre Reihenfolge
+  sind von dort übernommen — dort wie hier gilt: ein echtes Zeichen wird beim
+  Namen genannt, eine eigene Vergabe bei der Farbe.
 - **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
   einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt

@@ -358,7 +358,7 @@ public sealed class Plugin : IDalamudPlugin
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
         // Farb-Rufnamen fuer die Gegner im Kampf. VOR der Navigation, weil deren
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
-        _enemyMarkers = new EnemyMarkerService(ObjectTable, _config, Log);
+        _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
