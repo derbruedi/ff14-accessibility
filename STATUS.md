@@ -3,6 +3,51 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-09-01): RELEASE v5.95 VERÖFFENTLICHT — DREI FEATURES, ALLE UNGETESTET
+
+>>> INHALT: Dungeon-Wege werden selbst geladen (Plugin + Installer), Entf sagt
+    die HP des Ziels, Job-Anzeige beim Beschwörer. Die drei Abschnitte darunter
+    beschreiben sie im Einzelnen.
+
+>>> ACHTUNG, UNTERSCHIED ZU v5.94: dieses Release enthält NICHTS, was im Spiel
+    bestätigt wurde. Bei v5.94 waren beide Features vom User abgenommen. Hier ist
+    einzig die steigende Flanke der Job-Anzeige im Log belegt (2026-08-31,
+    17:54:42). Der Dungeon-Download und die Entf-Taste sind nie gedrückt worden.
+    Das war die Entscheidung des Users („dann commite mal und mach ein release") —
+    festgehalten, damit später niemand aus dem Tag einen Beweis liest.
+
+>>> DER FRISCHE BUILD WAR NÖTIG. In `dist/` lagen schon Assets vom 2026-08-31
+    22:34 — aber `JobGaugeService.cs` wurde 23 Sekunden NACH jenem Release-Build
+    noch geändert. Das ZIP war also potenziell veraltet; neu gebaut, 0 Warnungen.
+    (Die Größe blieb zufällig identisch, 1.562.280 Bytes — genau deshalb ist die
+    Dateigröße kein Aktualitätsbeweis.)
+
+>>> VERSIONEN SYNCHRON auf 5.95: csproj (Version/AssemblyVersion/FileVersion),
+    Plugin.cs (PluginVersion + Tag), repo.json (AssemblyVersion). Commit 988db48,
+    main gepusht, Tag v5.95.
+
+>>> SECHS ASSETS: latest.zip, FF14Accessibility-v5.95.0.zip,
+    FF14AccessibilityInstaller.exe, installer.json, LICENSE,
+    THIRD-PARTY-NOTICES.md. Der Installer-Quellcode WAR diesmal geändert (er holt
+    jetzt die Wegdateien), Version 1.2.2.0 — `dotnet publish` lief, der Build war
+    bereits aktuell, und der SHA der exe wurde gegen `installer.json` nachgerechnet:
+    32D2813…310F, stimmt überein.
+
+>>> VERIFIZIERT, nicht angenommen — der Spielerweg wurde nachgegangen:
+    - `gh release list`: v5.95 ist „Latest".
+    - `releases/latest/download/latest.zip` HERUNTERGELADEN: 1.562.280 Bytes, und
+      das Manifest darin trägt `"AssemblyVersion": "5.95.0.0"`.
+    - Die Weiterleitung zeigt auf `releases/download/v5.95/latest.zip`.
+
+>>> OFFEN BLEIBT DIE TESTLISTE (unverändert aus den Abschnitten darunter):
+    1. Menüpunkt „Dungeon-Wege" → „Jetzt herunterladen": danach müssen 309
+       Dateien liegen. Beim User greift die Automatik nicht, sein Ordner ist voll.
+    2. Der echte Beweis kommt von einem Spieler mit leerem Ordner.
+    3. Entf im Kampf: kommt NUR die Ziel-HP?
+    4. Numpad-Komma bei ausgeschaltetem NumLock — sagt es die Ziel-HP an?
+       (Die Behauptung in SpokenMenu.cs:173 ist im Repo nirgends gemessen.)
+    5. Beschwörer Stufe 31: nur Ifrit ansagen, nicht Titan/Garuda.
+
 ## STAND JETZT (2026-08-31): ZIEL-HP AUF ENTF — GEBAUT, UNGETESTET
 
 >>> WUNSCH DES USERS, wörtlich: *"kannst du auf entf machen das man so die hp
