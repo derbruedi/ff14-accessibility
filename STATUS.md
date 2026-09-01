@@ -3,7 +3,303 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-08-30): RELEASE v5.94 VERÖFFENTLICHT
+## STAND JETZT (2026-08-31): ZIEL-HP AUF ENTF — GEBAUT, UNGETESTET
+
+>>> WUNSCH DES USERS, wörtlich: *"kannst du auf entf machen das man so die hp
+    des gegners abfragen kann?"*
+
+>>> ES GAB DIE AUSKUNFT SCHON, aber nur als ANHANG: `Strg+Entf`
+    (`CombatService.AnnounceStatus`) sagt eigene HP, eigene MP und DANN das Ziel.
+    Im Kampf ist das die falsche Reihenfolge für die Frage "überlebt der Gegner
+    den nächsten Schlag" — deshalb eine eigene Taste statt einer Umstellung der
+    bestehenden Ansage, die anderen Zwecken dient.
+
+>>> GEBAUT: `CombatService.AnnounceTargetStatus()`, neue Taste
+    `Configuration.KeyTargetStatus = "Entf"`, verdrahtet in BEIDEN Tabellen
+    (`GetPluginKeys` für die Konfliktprüfung UND die `IsJustPressed`-Auswertung —
+    siehe die Lehre aus den drei toten Belegungen), Hilfetext de+en, README de+en.
+
+>>> PROZENT, KEINE ZAHL. Das Spiel zeigt Ziel-HP auch einem sehenden Spieler nur
+    als Balken. Eigene HP bleiben absolut (HUD zeigt dort eine Zahl). Das Format
+    ist bereits zweimal gekippt worden — hier folgt es der bestehenden Regel,
+    nicht einer neuen Entscheidung.
+
+>>> JEDES Ziel mit HP, nicht nur Gegner (Gruppenmitglied, NPC, gezähmtes Tier).
+    Ein Ziel ohne HP-Leiste (Truhe, Ätheryt) bekommt "Kein Ziel anvisiert".
+
+>>> ENTF IST SPIELSEITIG FREI — dieselbe Feststellung aus dem Keybind-Dump, die
+    schon `Strg+Entf` trägt. Bei aktiver Texteingabe schluckt `IsJustPressed`
+    ohnehin alle Mod-Tasten, im Chat ist Entf also weiter die Löschtaste.
+
+>>> OFFEN / ZU PRÜFEN: `SpokenMenu.KeysClose` enthält 0x2E (Entf) neben
+    Numpad-Dezimal 0x6E. Bei OFFENEM Menü greift das Menü zuerst und gibt
+    `return` — dort gibt es keine Ziel-HP-Ansage, das ist in Ordnung. Der Code
+    behauptet aber zusätzlich (SpokenMenu.cs:173), bei ausgeschaltetem NumLock
+    liefere der Treiber Numpad-Dezimal ALS VK_DELETE. **Diese Behauptung ist im
+    Repo nirgends gemessen.** Trifft sie zu, sagt Numpad-Komma außerhalb jedes
+    Menüs künftig die Ziel-HP an. Muss im Spiel gegengeprüft werden.
+
+## STAND JETZT (2026-08-31): KATEGORIE „DUNGEON" WAR BEI ALLEN SPIELERN TOT — BEHOBEN, UNGETESTET
+
+>>> DER BEFUND, gemeldet vom User: *„die leute sagen das in der released
+    version das mit dem dungeon nicht funktioniert die sehen die kategorie in
+    dungeons nicht"*. Kein Fehler im Code — eine Folge der Lizenz-Entscheidung
+    vom 2026-08-29, die nie zu Ende gedacht wurde.
+
+>>> DIE URSACHE, belegt: Die Kategorie erscheint nur, wenn für die aktuelle Zone
+    eine Wegdatei vorliegt (`NavigationService.cs:2205`), die Dateien werden zur
+    Laufzeit aus `pluginConfigs\FF14Accessibility\DungeonPaths\` gelesen
+    (`DungeonRouteService.PathFolder`) und AUSGELIEFERT WIRD KEINE. Beim User
+    liegen dort 254 Dateien, deshalb funktionierte es bei ihm. Bei jedem Spieler
+    existiert der Ordner überhaupt nicht.
+
+>>> UND ZWAR LAUTLOS. `NoDungeonRoute` („Für diesen Ort ist kein Weg
+    hinterlegt") wird nur gesprochen, wenn man IN der Kategorie steht — wer sie
+    nicht sieht, hört nichts. Für einen blinden Spieler ist eine fehlende
+    Kategorie nicht von einer kaputten zu unterscheiden. In README, Release-Notiz
+    und Installer stand kein Wort über den Ordner (nachgeprüft: null Treffer für
+    „DungeonPaths" und „AutoDuty" in allen Dokumenten). Die Kategorie war in der
+    README überhaupt nicht beschrieben.
+
+>>> DIE ENTSCHEIDUNG DES USERS (2026-08-31): automatischer Download. Vorgelegt
+    waren vier Wege (nur Anleitung / Anleitung + Menü-Hinweis / automatischer
+    Download / Kategorie immer zeigen). Ausgeliefert wird weiterhin NICHTS: die
+    Dateien werden auf dem Rechner des Spielers vom Ursprungs-Repo geholt.
+    Das ist keine Lizenz — das Repo nennt keine, also alle Rechte vorbehalten —
+    sondern eine bewusste Entscheidung, und sie ist im Code so vermerkt.
+
+>>> DIE QUELLE IST GEMESSEN, NICHT GERATEN:
+    `codeload.github.com/erdelf/AutoDuty/zip/refs/heads/master`, der AKTIVE Fork
+    (ffxivcode/AutoDuty ist archiviert). Geladen und ausgewertet am 2026-08-31:
+    - ZIP 754.191 Bytes, 504 Einträge, davon **309 Wegdateien**
+    - entpackt 2.654.365 Bytes, **230 abgedeckte Zonen**
+    - 0 Dateien ohne `(Id)` vorn, 0 unzulässige Namen, 0 über der Größengrenze
+    - 56 Namen tragen Nicht-ASCII (japanische Rollen-Varianten „「Tank W2W…」"),
+      sie kommen unbeschädigt durch und werden vom Leser als Varianten erkannt
+    Der Gegentest lief mit einem Wegwerf-Programm gegen dieselben Prädikate, die
+    `ExtractPathFiles` benutzt — insbesondere `Path.GetFileName(entry.Name) ==
+    entry.Name`, denn wäre das falsch, würde JEDE Datei verworfen.
+
+>>> EIN REQUEST STATT 309. Das ZIP der Momentaufnahme trägt alles; 309
+    Einzeldownloads wären ein Ratelimit, Minuten Wartezeit und ein halb
+    gefüllter Ordner bei jedem Abbruch. Geschrieben wird erst, wenn alles
+    gelesen ist.
+
+>>> WAS GEBAUT WURDE.
+    - `Services/DungeonPathDownloadService.cs` (neu). Holt das ZIP, nimmt nur
+      Einträge unter `/AutoDuty/Paths/`, schreibt nur den nackten Dateinamen
+      (kein Zip-Slip), Grenzen 2 MB je Datei / 64 MB gesamt.
+    - `DungeonRouteService.CountPathFiles()` (neu): der Bestand ohne Parsen.
+    - `Plugin.BeginDungeonPathFetch`: Download im Task, Rückkehr über
+      `Framework.RunOnFrameworkThread` — von dort erst `Reload()`, dann die
+      Ansage. Abbruch beim Entladen über eine CancellationTokenSource.
+    - AUTOMATIK beim Start, wenn der Ordner LEER ist. Entschieden wird am
+      Inhalt des Ordners, nie an einem gespeicherten Merker: ein Merker, der
+      „schon geholt" behauptet, während der Ordner leer ist, ließe die
+      Kategorie genau so lautlos verschwinden wie in v5.94.
+    - Optionsmenü: neuer Punkt **„Dungeon-Wege, N geladen"** mit Bestandszeile
+      (inkl. Datum), „Jetzt herunterladen" und dem Schalter „Automatisch
+      herunterladen" (Standard AN).
+    - Der Fehlschlag wird IMMER gesprochen, auch beim stillen Start-Download.
+    - README (de + en): die Kategorie ist erstmals beschrieben, samt Ordner,
+      Menüpunkt und Herkunft der Daten.
+
+>>> GEBAUT Debug, 0 Warnungen / 0 Fehler, liegt in devPlugins.
+
+>>> DER INSTALLER HOLT SIE EBENFALLS (Frage des Users: *"kann der installer die
+    nicht automatisch laden?"*). `InstallerService.UpdateDungeonPathsAsync`,
+    nach vnavmesh und vor dem Patchen der Konfiguration, mit eigener Zeile in
+    der Zusammenfassung; Loc-Texte de+en. Ein Fehlschlag bricht die Installation
+    NICHT ab — ohne Wegdateien fehlt eine Kategorie, ohne Plugin fehlt alles.
+    Der Installer baut 0 Warnungen / 0 Fehler.
+
+    DAS IST KEIN DOPPEL, SONDERN ZWEI VERSCHIEDENE LÜCKEN: wer das Plugin über
+    das Dalamud-Repo bezieht, sieht den Installer nie, und ein später gelöschter
+    Ordner füllt sich nur wieder, weil das Plugin selbst nachlädt. Der Installer
+    hat dafür den besseren Zeitpunkt — der Netzzugriff ist dort erwartbar und
+    beim ersten Spielstart ist alles schon da.
+
+    ZIELPFAD IST GEGENGEPRÜFT, nicht abgeleitet: der Installer bildet
+    `%APPDATA%\XIVLauncher\pluginConfigs\FF14Accessibility\DungeonPaths`, das
+    Plugin bildet denselben Pfad über `GetPluginConfigDirectory()`. Der Ordner
+    des Users liegt nachweislich genau dort (254 Dateien) — und zwar als
+    DEV-Plugin, der Pfad gilt also für beide Installationsarten.
+
+    ⚠ BEIM RELEASE: die Installer-Version (csproj **und** `installer.json`, jetzt
+    1.2.1) muss mit erhöht werden, sonst zieht sich der Installer beim Nutzer
+    nicht selbst nach und die neue Funktion kommt nie an.
+
+>>> OFFEN, DREI PUNKTE:
+    1. Im Spiel ungetestet — der Ordner des Users ist NICHT leer (254 Dateien),
+       die Automatik greift bei ihm also gar nicht. Sein Test ist der
+       Menüpunkt „Jetzt herunterladen": danach müssen 309 Dateien liegen.
+    2. Der echte Beweis kommt von einem Spieler mit leerem Ordner.
+    3. Beim User bleiben nach dem Nachladen evtl. alte Dateien liegen, die es
+       upstream nicht mehr gibt. Harmlos, aber ungeprüft.
+
+## VORGESCHICHTE (2026-08-31): JOB-ANZEIGE (BESCHWÖRER) — GEBAUT, UNGETESTET
+
+>>> WAS ES TUT: `Services/JobGaugeService.cs` beobachtet die job-eigene
+    Ressourcenleiste und sagt an, wenn dort etwas WIEDER VERFÜGBAR wird — beim
+    Beschwörer Ifrit, Titan, Garuda und der Ätherfluss. Gelesen wird über
+    Dalamuds `IJobGauges`/`SMNGauge`, es wird nichts nachgerechnet. Zusätzlich
+    fragt **Strg+Umschalt+F10** den Zustand auf Nachfrage ab (inkl.
+    Einstimmung); die Taste war seit dem Ausbau des Rundumblicks frei.
+
+>>> NUR DIE STEIGENDE FLANKE, Ansage des Users wörtlich: *"eine voll anzeige
+    reicht nur wenn es leer war bzw nicht voll immer brauche ich die anzeigen
+    bzw ansagen nicht"*. Nichts beim Verbrauchen, nichts im Dauerzustand.
+
+>>> KEIN KAMPF-GATTER (Korrektur 2026-08-31, wörtlich: *"die meldungen ob was
+    bereit ist kann auch ausserhalb vom kampf kommen"*). Der erste Entwurf warf
+    jede Flanke außerhalb des Kampfes weg — damit fiel auch die Ansage direkt
+    NACH einem Kampf weg, wenn die Leiste zurückgesetzt wird. Entfernt.
+
+>>> KANAL: Warnstimme (SAPI) für die Flanken, weil NVDA beim Zaubern von der
+    nächsten Zeile geschnitten wird; Rückfall auf den Screenreader, wenn die
+    Warnstimme aus ist. Die Nachfrage per Taste läuft bewusst über NVDA.
+    Schalter im Optionsmenü: „Job-Anzeige wieder verfügbar", Standard AN.
+
+>>> ERSTER TEST GELAUFEN (Log 2026-08-31, 17:48-17:58). Die Flanke TRÄGT:
+    um 17:54:42 sprang `AetherFlags` von 0x00 auf 0x02 und im selben Frame steht
+    `[Gauge] Verfuegbar geworden: Ätherfluss bereit.` im Log.
+
+>>> „NICHTS BEREIT" WAR KEIN FEHLER, sondern die Wahrheit. Der User meldete es
+    als Verdacht; das Log widerlegt ihn: die beiden Abfragen per
+    Strg+Umschalt+F10 (17:54:23 und 17:57:35) fielen beide in Phasen, in denen
+    die Sonde durchgehend `AetherFlags=0x00 Stapel=0` verzeichnet. Der
+    Ätherfluss füllte sich erst 19 Sekunden nach der ersten Abfrage.
+
+>>> STUFEN-GATTER EINGEBAUT (Frage des Users: *"kann er nur die primae ansagen
+    die ich auch wirklich nutzen kann?"*). Der erste Entwurf behauptete im
+    Kommentar, eine nicht gelernte Beschwörung setze ihr Bit ohnehin nie — das
+    war eine ANNAHME, nie gemessen, und sie trägt jetzt nichts mehr. Stattdessen
+    hängt jede Beschwörung an ihrer eigenen Stufe.
+
+>>> DIE STUFEN SIND GELESEN, NICHT GERATEN. Offline-Dump des Action-Sheets
+    (Lumina, deutscher Client, 2026-08-31, Werkzeug im Scratchpad):
+    - Ifrit-Beschwörung   id 25805, ClassJobLevel 30
+    - Titan-Beschwörung   id 25806, ClassJobLevel 35
+    - Garuda-Beschwörung  id 25807, ClassJobLevel 45
+    Alle drei tragen ClassJob 27, ihre Stufe ist also die des BESCHWÖRERS.
+    Im Code stehen nur die drei IDs fest (der Gauge gibt nackte Bits ohne Bezug
+    zu einer Aktion heraus, die Zuordnung muss einmal genannt werden) — jede
+    Stufe kommt zur Laufzeit aus dem Sheet.
+
+>>> DER SPIELER IST STUFE 31, belegt aus dem Log derselben Sitzung
+    (`[XP] job=27 ... /74000`, Karfunkel Stufe 31). Damit ist erwartbar: Ifrit
+    wird angesagt, Titan und Garuda nicht — genau deshalb stand in der ganzen
+    Sitzung nur 0x00/0x02 im `AetherFlags`.
+
+>>> OFFEN, DREI PUNKTE:
+    1. Gegentest im Spiel: sagt Strg+Umschalt+F10 Ifrit an, sobald er bereit
+       ist, und schweigt bei Titan/Garuda? Die Debug-Zeile
+       `[GaugeProbe] Stufe=… Ifrit>=… Titan>=… Garuda>=…` zeigt das Gatter.
+    2. Der Ätherfluss wird OHNE Zahl angesagt. Ob `AetherflowStacks` eine
+       Stapelzahl oder ein Bitmuster liefert, sagt weder Dalamud noch
+       FFXIVClientStructs — geraten wird hier nicht. Die Debug-Sonde
+       `[GaugeProbe]` schreibt die Rohbytes ins Log. Die bisherige Messung
+       (0x02 bei zwei frischen Stapeln) SPRICHT für eine Zahl — ein Bitfeld
+       müsste bei zwei Stapeln 0x03 zeigen —, beweist es aber nicht, weil der
+       Wert danach in einem Schritt auf 0x00 fiel (Kampfende, beide Stapel
+       verfallen gleichzeitig). Entscheidende Messung: EINEN Stapel im Kampf
+       verbrauchen und sehen, ob 0x01 im Log steht.
+    3. Ansage-Kanal der Job-Anzeige im Spiel noch nicht gegengehört (SAPI).
+
+## BEHOBEN (2026-08-31): SPRINT WURDE NIE ALS „BEREIT" GEMELDET
+
+>>> MELDUNG DES USERS, wörtlich: *"éine meldung fehlt wenn sprint wieder
+    verfügbar ist"*. Ursache gefunden, nicht vermutet: `CooldownService` lief
+    ausschließlich über Leisten-Slots vom Typ `Action` und übersprang jeden
+    anderen Typ wortlos — Sprint liegt aber als **GeneralAction** auf der
+    Leiste, also in einem eigenen Nummernkreis.
+
+>>> BELEGT (Sheet-Dump 2026-08-31): GeneralAction-Zeile 4 „Sprint" verweist auf
+    Action 3, deren `Recast100ms` = 600, also 60 Sekunden — weit über der
+    3-Sekunden-Schwelle, mit der GCD-Fähigkeiten ausgeschlossen werden. Weitere
+    allgemeine Aktionen mit echter Aktion dahinter: Teleport (5),
+    Rückführung (6), Entziffern (1694), Ausgraben (1695). Alle anderen Zeilen
+    (Springen, Limitrausch, Färben …) tragen Action 0 und werden übersprungen.
+
+>>> WIE ES JETZT GELESEN WIRD — jeweils die spieleigene Rechnung, nichts
+    nachgebaut:
+    - Ladungen: `HotbarSlot.GetApparentIconRecastCharges()` — dieselbe Zahl, die
+      das Spiel auf das Symbol malt, und anders als `GetCurrentCharges` NICHT an
+      den Action-Nummernkreis gebunden.
+    - Restzeit: `ActionManager.GetRecastTime` mit dem Typ, den
+      `GetActionTypeForSlotType` für diesen Slot-Typ nennt.
+    - Name und Schlüssel: die echte Aktion hinter der Zeile
+      (`GeneralAction.Action`), damit „Sprint" auch Sprint heißt und Zeile 4
+      nicht mit Aktion 4 in denselben Töpfen landet.
+
+>>> OFFEN: dass die Restzeit unter diesem Typ wirklich ankommt, ist DOKUMENTIERT,
+    aber nicht gemessen. Die Debug-Zeile `[CooldownProbe] Allgemein Zeile=4
+    Aktion=3 Typ=… Ladungen=… gemerkter Recast=…` zeigt es beim ersten Sprint.
+    Kommt trotz Sprint keine Ansage, steht die Antwort dort.
+
+## OFFENE FRAGE (2026-08-31): KARFUNKEL-ARTEN
+
+>>> FRAGE DES USERS, wörtlich: *"und was ist mit den karfunkel arten?"*. Noch
+    NICHTS gebaut — was der Gauge dazu führt, ist erst zur Hälfte geklärt.
+
+>>> WAS BELEGT IST (Offline-Dump 2026-08-31, Action-Sheet + Reflection über
+    Dalamud.dll):
+    - Spieleraktionen, alle ClassJob 26 (Arkanist-Erbe, der Spieler hat mit
+      Stufe 31 also alle): Karfunkel-Beschwörung id 25798 Stufe 2,
+      Rubin-Beschwörung id 25802 Stufe 6, Topas-Beschwörung id 25803 Stufe 15,
+      Smaragd-Beschwörung id 25804 Stufe 22.
+    - `SMNGauge.ReturnSummonGlam` (Enum PetGlam) kennt: None, Emerald(1),
+      Topaz(2), Ruby(3), Carbuncle(4), Ifrit(5), Titan(6), Garuda(7).
+    - `SMNGauge.ReturnSummon` (Enum SummonPet) kennt nur None und Carbuncle(23).
+    - Weiter da, bisher ungenutzt: `IsIfritAttuned`, `IsTitanAttuned`,
+      `IsGarudaAttuned`.
+
+>>> WAS NICHT BELEGT IST: ob `ReturnSummonGlam` die GERADE aktive Karfunkel-Art
+    führt oder die, zu der nach einer Bahamut-/Phönix-Phase zurückgekehrt wird.
+    Der Feldname sagt „return", die Werte sehen nach „aktuell" aus — beides ist
+    eine Lesart, keine Messung. Die Sonde `[GaugeProbe]` loggt das Feld jetzt
+    mit (plus Pet und die drei Eingestimmt-Bits); eine Runde Rubin/Topas/Smaragd
+    im Spiel beantwortet es.
+
+>>> AUCH OFFEN: was der User überhaupt hören will — die Art nur auf Nachfrage
+    (Strg+Umschalt+F10) oder eine Ansage bei jedem Wechsel. Ein Wechsel ist
+    seine EIGENE Aktion, und die Projektregel dazu lautet, dass eigene Aktionen
+    keine Meldung brauchen. Rückfrage läuft.
+
+>>> NEUER BEFUND ZUM ÄTHERFLUSS, er stellt die bisherige Ansage in Frage:
+    `AetherFlags` ist ein BITFELD — Aetherflow1 = 0x01, Aetherflow2 = 0x02,
+    Aetherflow = 0x03 (beide Bits), PhoenixPrimed 0x04, IfritReady 0x20,
+    TitanReady 0x40, GarudaReady 0x80. Dalamud gibt als `AetherflowStacks`
+    aber schlicht die unteren zwei Bits ALS ZAHL zurück. Gemessen wurde nur
+    0x02, was in dieser Lesart „Stapel 2" ergibt, als Bitfeld aber nur EIN
+    gesetztes Bit ist. Solange das nicht gemessen ist, bleibt die Ansage ohne
+    Zahl — und ob „Ätherfluss bereit" hier überhaupt das richtige Wort ist, ist
+    ebenfalls offen.
+
+>>> DER ÄTHERFLUSS BEKOMMT BEWUSST KEIN GATTER. Er wurde beim Spieler auf
+    Stufe 31 nachweislich verfügbar (Log 17:54:42), also kann er ihn nutzen —
+    ein Gatter wäre hier nur schädlich. WARNUNG für später: die Sheet-Zeilen
+    „Ätherfluss" (id 166) und „Energieentzug" (id 167) tragen ClassJobLevel 45
+    bei ClassJobCategory 29, und der Spieler nutzt Energieentzug trotzdem mit
+    Stufe 31 (Log 17:55:43). Bei Aktionen, die sich mehrere Jobs TEILEN, ist
+    ClassJobLevel also NICHT die Wahrheit für jeden einzelnen Job. Das Gatter
+    oben trägt nur, weil die drei Primae-Aktionen ClassJob 27 fest eingetragen
+    haben — dieser Unterschied ist der Grund, warum es hier nicht verallgemeinert
+    werden darf.
+
+>>> „FÄHIGKEIT BEREIT" LÄUFT JETZT AUCH ÜBER DIE WARNSTIMME. User-Ansage
+    2026-08-31, wörtlich: *"mach auch die zauberanzeigen über die sapi
+    sprechbar also wenn man sie wirder nutzen kann"*. `CooldownService.Announce`
+    spricht über `WarningVoiceService` mit Rückfall auf den Screenreader, genau
+    wie die Job-Anzeige — der Ton bleibt unverändert davor. Grund ist derselbe:
+    die Meldung fällt mitten im Kampf, und NVDA wird dort geschnitten. Im Log
+    war das gut zu sehen: 17:55:43 ging `Energieentzug bereit.` noch über
+    `[Speak]`, also über den Screenreader.
+
+>>> GEBAUT Debug, 0 Warnungen / 0 Fehler, liegt in devPlugins. Noch nicht
+    committet, keine Versionsanhebung.
+
+## VORGESCHICHTE (2026-08-30): RELEASE v5.94 VERÖFFENTLICHT
 
 >>> INHALT DES RELEASES, zwei Features, beide vom User im Spiel bestätigt:
     Kategorie „Dungeon" (Stationen in Laufreihenfolge) und die Höhe in der

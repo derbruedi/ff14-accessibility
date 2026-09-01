@@ -61,13 +61,23 @@ public sealed class OptionsMenu
     private readonly NavigationService _nav;
     private readonly LegacyChatHistoryService _legacyHistory;
     private readonly MessageHistoryService _history;
+    // [Dungeon-Wege] Nur gefragt, WIE VIELE Dateien liegen - das Menue liest
+    // keine einzige davon.
+    private readonly DungeonRouteService _dungeonRoute;
+    // Das Laden selbst liegt beim Plugin: es kennt den Spiel-Thread, auf den die
+    // Antwort zurueckkehren muss. Ein Menue, das Threads verwaltet, waere die
+    // Schichtentrennung von hinten aufgezaeumt.
+    private readonly Action _fetchDungeonPaths;
 
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
                        HeadingService heading, GameChatFilters chatFilters,
                        AoeWarningService aoeWarning, WarningVoiceService warnVoice,
                        NavigationService nav, LegacyChatHistoryService legacyHistory,
-                       MessageHistoryService history)
+                       MessageHistoryService history,
+                       DungeonRouteService dungeonRoute, Action fetchDungeonPaths)
     {
+        _dungeonRoute = dungeonRoute;
+        _fetchDungeonPaths = fetchDungeonPaths;
         _config  = config;
         _save    = save;
         _tolk    = tolk;
@@ -97,6 +107,16 @@ public sealed class OptionsMenu
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsSounds,        Submenu = BuildSounds });
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements });
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsOrder,         Submenu = BuildOrder });
+
+        // [Dungeon-Wege] Steht im HAUPTMENUE und nicht unter "Ansagen", weil es
+        // keine Ansage ist, die man abstellt, sondern die Datengrundlage einer
+        // Kategorie - und weil die Zeile ihren Bestand mitspricht. Genau diese
+        // Zahl war in v5.94 nirgends zu erfahren.
+        level.Entries.Add(new MenuEntry
+        {
+            Label   = AccessibilityStrings.OptionsDungeonPaths(_dungeonRoute.CountPathFiles()),
+            Submenu = BuildDungeonPaths,
+        });
 
         // "CHAT-KANAELE" GIBT ES IN BEIDEN SYSTEMEN, an derselben Stelle und mit
         // derselben Bedeutung: eine flache Liste, eine Zeile je Kanal, aus. Nur die
@@ -924,6 +944,10 @@ public sealed class OptionsMenu
             Volume(AccessibilityStrings.OptRouteCues,        () => _config.RouteCueVolume,      v => _config.RouteCueVolume = v),
             Toggle(AccessibilityStrings.OptSkillReady,       () => _config.AnnounceSkillReady,  v => _config.AnnounceSkillReady = v),
             Volume(AccessibilityStrings.OptSkillReadyVolume, () => _config.SkillReadyCueVolume, v => _config.SkillReadyCueVolume = v),
+            // [Job-Anzeige] Gleich hier ins Menue, nicht spaeter: die HP/MP-Toene
+            // liefen ab V5.28 monatelang ohne jede Schaltung mit (Notiz darunter),
+            // und genau das soll sich nicht wiederholen.
+            Toggle(AccessibilityStrings.OptJobGauge,         () => _config.AnnounceJobGauge,    v => _config.AnnounceJobGauge = v),
 
             // HP\MP-TOENE: NACHGETRAGEN 2026-08-23. Sie liefen seit V5.28 ohne
             // jede Schaltung im Menue - und sie sind lauter zu hoeren, als es
@@ -1279,6 +1303,57 @@ public sealed class OptionsMenu
             best = i;
         }
         return best;
+    }
+
+    // ── [Dungeon-Wege] ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Der Bestand an Wegdateien, das Nachladen und der Schalter dafuer.
+    ///
+    /// <para>
+    /// DIE ERSTE ZEILE IST DIE AUSKUNFT, nicht die Aktion: wie viele Wege
+    /// vorliegen und wann sie zuletzt geholt wurden. Sie ist eine reine
+    /// Lesezeile, weil das die Frage ist, mit der ein Spieler hierher kommt -
+    /// "warum sehe ich die Kategorie im Dungeon nicht" beantwortet sich mit
+    /// "null geladen" sofort, und mit einer Aktion an dieser Stelle gar nicht.
+    /// </para>
+    /// </summary>
+    private MenuLevel BuildDungeonPaths()
+    {
+        var level = new MenuLevel
+        {
+            Title = AccessibilityStrings.DungeonPathsTitle,
+            // Nach dem Laden zeigt die Bestandszeile die neue Zahl. Ohne Rebuild
+            // stuende dort weiter die alte - eine Beschriftung, die dem gerade
+            // Gesagten widerspricht.
+            Rebuild = BuildDungeonPaths,
+        };
+
+        var count = _dungeonRoute.CountPathFiles();
+
+        // Eine Zeile ohne Activate und ohne Submenu: sie wird vorgelesen und tut
+        // sonst nichts. Genau das ist hier gewollt.
+        level.Entries.Add(new MenuEntry
+        {
+            Label = AccessibilityStrings.OptionsDungeonPaths(count) + ". " +
+                    AccessibilityStrings.DungeonPathsLast(_config.DungeonPathsLastFetch),
+        });
+
+        level.Entries.Add(new MenuEntry
+        {
+            Label = AccessibilityStrings.DungeonPathsFetchNow,
+            // StayOpen, damit der Spieler die Quittung im Menue hoert und die
+            // Bestandszeile danach neu gelesen werden kann. Das Laden laeuft
+            // nebenher weiter; das Menue wartet auf nichts.
+            StayOpen = true,
+            Activate = _fetchDungeonPaths,
+        });
+
+        level.Entries.Add(Toggle(AccessibilityStrings.DungeonPathsAutoName,
+                                 () => _config.DungeonPathsAutoDownload,
+                                 v => _config.DungeonPathsAutoDownload = v));
+
+        return level;
     }
 
     /// <summary>Writes the config to disk. Every change is saved immediately:

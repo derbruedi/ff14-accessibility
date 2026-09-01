@@ -117,6 +117,33 @@ public sealed class DungeonRouteService
         Path.Combine(_pluginInterface.GetPluginConfigDirectory(), FolderName);
 
     /// <summary>
+    /// How many path files lie in the folder, counted without parsing any of
+    /// them.
+    ///
+    /// It exists for the two questions that must be answerable WITHOUT standing
+    /// in a dungeon: whether the folder needs filling at all (see
+    /// <see cref="DungeonPathDownloadService"/>) and what the settings menu says
+    /// out loud. Both used to be unanswerable, which is how a category nobody
+    /// could see stayed unnoticed for a whole release.
+    /// </summary>
+    public int CountPathFiles()
+    {
+        try
+        {
+            return Directory.Exists(PathFolder)
+                ? Directory.GetFiles(PathFolder, "*.json").Length
+                : 0;
+        }
+        catch (Exception ex)
+        {
+            // The folder is on the player's disk: it can be denied, on a
+            // disconnected drive, or gone between the check and the listing.
+            _log.Error($"[Dungeon] Pfadordner '{PathFolder}' nicht zaehlbar: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// The stations of the duty the player is standing in, in walking order, or
     /// an empty list when no path file covers this zone.
     /// </summary>

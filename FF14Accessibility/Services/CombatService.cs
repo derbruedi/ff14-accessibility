@@ -752,6 +752,53 @@ public sealed class CombatService
         _tolk.SpeakInterrupt(text);
     }
 
+    /// <summary>
+    /// Auf Tastendruck: NUR die HP des anvisierten Ziels.
+    ///
+    /// <para>
+    /// WARUM EIGENS, obwohl <see cref="AnnounceStatus"/> das Ziel schon anhaengt:
+    /// im Kampf ist die Frage "wie weit ist der Gegner noch" eine andere als "wie
+    /// steht es um mich". Die gemeinsame Ansage stellt die eigenen HP und MP
+    /// davor, und genau die will man nicht hoeren, waehrend man zaehlt, ob der
+    /// Gegner den naechsten Schlag noch ueberlebt (Spielerwunsch 2026-08-31).
+    /// </para>
+    ///
+    /// <para>
+    /// PROZENT, KEINE ZAHL - und das ist Absicht, kein Versehen: das Spiel zeigt
+    /// die HP eines Zieles nirgends als Zahl an, nur als Balken. Eine absolute
+    /// Zahl waere Wissen, das ein sehender Spieler nicht hat. Die eigenen HP sind
+    /// der Gegenfall, sie stehen im HUD als Zahl - deshalb sagt
+    /// <see cref="AnnounceStatus"/> sie absolut.
+    /// </para>
+    ///
+    /// <para>
+    /// JEDES Ziel mit HP, nicht nur Gegner: ein Gruppenmitglied, ein NPC oder ein
+    /// gezaehmtes Tier haben genauso HP, und ein Filter auf "Gegner" wuerde bei
+    /// allen anderen schweigen, ohne dass der Spieler den Grund erfaehrt.
+    /// </para>
+    /// </summary>
+    public void AnnounceTargetStatus()
+    {
+        if (_targetManager.Target is not IBattleChara target || target.MaxHp == 0)
+        {
+            // Auch ein Ziel OHNE HP-Leiste landet hier - eine Truhe, ein
+            // Aetheryt, ein Schild. "Kein Ziel anvisiert" ist dafuer die
+            // ehrliche Auskunft: es gibt keine HP, nicht bloss keine Ansage.
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGameTarget);
+            return;
+        }
+
+        var name = target.Name.TextValue;
+        if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.TargetFallbackName;
+
+        _log.Info($"[Ziel-HP] {name}: {target.CurrentHp}/{target.MaxHp}");
+        // Dieselbe Formulierung wie im Anhang der Sammel-Ansage, damit dieselbe
+        // Auskunft nicht je nach Taste anders klingt. Das fuehrende Leerzeichen
+        // der Anhang-Fassung faellt weg, hier ist es der ganze Satz.
+        _tolk.SpeakInterrupt(
+            AccessibilityStrings.TargetStatusClause(name, target.CurrentHp, target.MaxHp).TrimStart());
+    }
+
     // Auf Tastendruck: aktueller SP-Stand (Sammelpunkte, engl. GP). Sammler
     // verbrauchen SP fuer Sammel-Fertigkeiten; der Vorrat regeneriert sich mit
     // jedem Abbauversuch und ueber Zeit. Ein blinder Sammler kann den GP-Balken

@@ -1809,6 +1809,7 @@ public static partial class AccessibilityStrings
           "Strg+F10, Menü vorlesen. " +
           "Strg+F11, Sprache stoppen. " +
           "Strg+Entfernen, HP und MP ansagen. " +
+          "Entfernen, HP des anvisierten Ziels ansagen. " +
           "Strg+F9, gewählte Aktionsleiste vorlesen. " +
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
@@ -1844,6 +1845,7 @@ public static partial class AccessibilityStrings
           "Ctrl+F10, read the current menu. " +
           "Ctrl+F11, stop speech. " +
           "Ctrl+Delete, announce HP and MP. " +
+          "Delete, announce the current target's HP. " +
           "Ctrl+F9, read the selected hotbar. " +
           "Ctrl+F6, read worn equipment. " +
           "Ctrl+F7, apply recommended equipment. " +
@@ -2404,6 +2406,35 @@ public static partial class AccessibilityStrings
         IsGerman ? "Fähigkeit-bereit-Ansage an." : "Ability-ready announcements on.";
     public static string SkillReadyAnnounceOff =>
         IsGerman ? "Fähigkeit-bereit-Ansage aus." : "Ability-ready announcements off.";
+
+    // ── JobGaugeService: Job-Anzeige, etwas ist wieder verfügbar ──
+    // Die Namen der Primae sind Eigennamen und in beiden Sprachen gleich; die
+    // Sätze drumherum nicht.
+    public static string GaugeIfritReady =>
+        IsGerman ? "Ifrit bereit" : "Ifrit ready";
+    public static string GaugeTitanReady =>
+        IsGerman ? "Titan bereit" : "Titan ready";
+    public static string GaugeGarudaReady =>
+        IsGerman ? "Garuda bereit" : "Garuda ready";
+    // Bewusst ohne Stapelzahl: wie das Spiel die Zahl kodiert, ist noch nicht
+    // gemessen (siehe JobGaugeService.CollectSummoner).
+    public static string GaugeAetherflowReady =>
+        IsGerman ? "Ätherfluss bereit" : "Aetherflow ready";
+    public static string GaugeAttunementType(byte type) => type switch
+    {
+        1 => IsGerman ? "Rubin"   : "Ruby",
+        2 => IsGerman ? "Topas"   : "Topaz",
+        3 => IsGerman ? "Smaragd" : "Emerald",
+        _ => IsGerman ? "Einstimmung" : "attunement",
+    };
+    public static string GaugeAttunement(string type, byte count) =>
+        IsGerman ? $"{type} {count}" : $"{type} {count}";
+    public static string GaugeNothingReady =>
+        IsGerman ? "Nichts bereit." : "Nothing ready.";
+    public static string GaugeNoneForJob =>
+        IsGerman
+            ? "Für diesen Job gibt es keine Anzeige."
+            : "This job has no gauge.";
 
     // ════════════════════════════════════════════════════════════════
     //  EmoteService

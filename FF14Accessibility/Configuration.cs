@@ -45,6 +45,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
     public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt
+    public string KeyTargetStatus = "Entf";             // NUR die HP des anvisierten Ziels (Spielerwunsch 2026-08-31). Bare Entf, weil der Keybind-Dump Entf gar nicht belegt - dieselbe Feststellung, die schon Strg+Entf traegt. Im Kampf will man die Gegner-HP OHNE die eigene HP/MP-Litanei davor, deshalb eine eigene Taste statt eines Anhangs an KeyCombatStatus.
     public string KeySpStatus     = "Strg+Ende";        // SP-Stand (Sammelpunkte, engl. GP) ansagen - der Vorrat, den Sammler fuer Sammel-Fertigkeiten verbrauchen. Strg+Ende ist im Keybind-Dump CAMERA_SAVE (Kamera-Preset speichern) - rein visuell, fuer blindes Spiel folgenlos (wie die akzeptierte Kamera-Zoom-Ueberschneidung der Bild-Tasten). Plugin schluckt die Taste nicht.
     public string KeyToggleHeading = "N";               // Himmelsrichtungs-Ansage beim Drehen an/aus. Bare N ist die einzige freie Buchstaben-Taste im Spiel (in V5.31 fuer neue Features freigeraeumt, Keybind-Dump).
     public string KeyDumpUI       = "Strg+F5";          // Node-Tree des aktuellen Addons auf Desktop speichern
@@ -177,6 +178,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyReadUI       = defaults.KeyReadUI;
         KeySilence      = defaults.KeySilence;
         KeyCombatStatus = defaults.KeyCombatStatus;
+        KeyTargetStatus = defaults.KeyTargetStatus;
         KeySpStatus     = defaults.KeySpStatus;
         KeyToggleHeading = defaults.KeyToggleHeading;
         KeyToggleAoeWarning = defaults.KeyToggleAoeWarning;
@@ -346,6 +348,34 @@ public sealed class Configuration : IPluginConfiguration
     [NonSerialized]
     public int OrderStamp;
 
+    // ── Wegdateien fuer die Kategorie "Dungeon" ────────────────────────────
+    //
+    // ANLASS, und er ist ein Fehlschlag: die Kategorie ging in v5.94 heraus und
+    // funktionierte bei keinem einzigen Spieler. Sie erscheint nur, wo fuer die
+    // Zone eine Wegdatei vorliegt, mitgeliefert wird keine, und niemand hat je
+    // erfahren, dass ein Ordner zu fuellen ist. Fuer einen blinden Spieler ist
+    // eine fehlende Kategorie nicht von einer kaputten zu unterscheiden.
+
+    /// <summary>
+    /// Ob das Plugin die Wegdateien selbst holt, wenn der Ordner leer ist.
+    ///
+    /// Standard AN, weil das genau der Fall ist, der ohne dieses Feld schweigend
+    /// nicht funktioniert. Abschaltbar, weil es ein Netzzugriff ist, den der
+    /// Spieler nicht angefordert hat - wer den nicht will, schaltet ihn im
+    /// Optionsmenue aus und fuellt den Ordner von Hand.
+    /// </summary>
+    public bool DungeonPathsAutoDownload = true;
+
+    /// <summary>
+    /// Wann zuletzt geladen wurde, als lesbarer Zeitstempel ("2026-08-31").
+    ///
+    /// Nur zur Auskunft im Optionsmenue - entschieden wird ueber das Laden am
+    /// INHALT des Ordners, nie an diesem Feld. Ein Datum, das behauptet, es sei
+    /// alles da, waehrend der Ordner leer ist, ist genau die Art stiller
+    /// Falschauskunft, die hier nichts verloren hat.
+    /// </summary>
+    public string DungeonPathsLastFetch = string.Empty;
+
     // Chat
     public bool ReadSayChat        = true;
     public bool ReadShoutChat      = true;
@@ -501,6 +531,19 @@ public sealed class Configuration : IPluginConfiguration
     // GCD-Angriffsskills ausgeschlossen (CooldownService). STANDARD AN.
     public bool AnnounceSkillReady = true;
     public float SkillReadyCueVolume = 0.5f;    // 0 = stumm, 1 = volle Lautstärke
+
+    // Job-Anzeige (User-Wunsch 2026-08-31): sagt an, wenn in der Job-eigenen
+    // Leiste etwas WIEDER VERFÜGBAR wird - beim Beschwörer also Ifrit, Titan,
+    // Garuda und der Ätherfluss. Nur die steigende Flanke, ausdrücklich nach
+    // Ansage des Users ("immer brauche ich die anzeigen bzw ansagen nicht") -
+    // aber in UND außer Kampf ("die meldungen ob was bereit ist kann auch
+    // ausserhalb vom kampf kommen", 2026-08-31). Gesprochen wird über die WARNSTIMME (SAPI), weil NVDA
+    // beim Zaubern von der nächsten Zeile unterbrochen wird. STANDARD AN.
+    public bool AnnounceJobGauge = true;
+    // Fragt den Zustand der Job-Anzeige ab, ohne auf eine Flanke zu warten.
+    // Strg+Umschalt+F10 wurde in V5.94 vom ausgebauten Rundumblick frei - und
+    // die Taste ist erwiesen erreichbar, sie hat dort real ausgelöst.
+    public string KeyJobGauge = "Strg+Umschalt+F10";
 
     // Fortschritt / Beute
     // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState

@@ -253,6 +253,7 @@ public static partial class AccessibilityStrings
 
     public static string OptSkillReady => IsGerman ? "Fähigkeit bereit" : "Ability ready";
     public static string OptSkillReadyVolume => IsGerman ? "Fähigkeit bereit Lautstärke" : "Ability ready volume";
+    public static string OptJobGauge => IsGerman ? "Job-Anzeige wieder verfügbar" : "Job gauge back up";
     public static string OptHeading => IsGerman ? "Himmelsrichtung" : "Compass heading";
     public static string OptTargetChanges => IsGerman ? "Zielwechsel" : "Target changes";
     public static string OptTargetHp => IsGerman ? "Ziel-Lebenspunkte" : "Target health";
@@ -409,6 +410,50 @@ public static partial class AccessibilityStrings
     // ist - in der einen Ebene nimmt es auf, in der anderen schaltet es um.
 
     public static string OptionsOrder => IsGerman ? "Reihenfolge" : "Order";
+
+    // ── Einstellungen: Wegdateien für die Kategorie "Dungeon" ──────────
+    //
+    // Der Abschnitt existiert, weil das Fehlen dieser Dateien in v5.94 UNHÖRBAR
+    // war: keine Datei, keine Kategorie, keine Meldung. Hier ist es hörbar - der
+    // Abschnitt nennt seinen Bestand schon in der Zeile, die zu ihm führt.
+
+    /// <summary>Die Zeile im Hauptmenü, mit dem Bestand als Zahl. Ohne die Zahl
+    /// müsste man den Abschnitt öffnen, um die einzige Frage zu beantworten, die
+    /// er beantwortet.</summary>
+    public static string OptionsDungeonPaths(int files) =>
+        IsGerman ? $"Dungeon-Wege, {files} geladen" : $"Dungeon routes, {files} loaded";
+
+    public static string DungeonPathsTitle =>
+        IsGerman ? "Dungeon-Wege" : "Dungeon routes";
+
+    /// <summary>Die Zeile, die das Laden auslöst.</summary>
+    public static string DungeonPathsFetchNow =>
+        IsGerman ? "Jetzt herunterladen" : "Download now";
+
+    public static string DungeonPathsAutoName =>
+        IsGerman ? "Automatisch herunterladen" : "Download automatically";
+
+    /// <summary>Quittung beim Start des Ladens. Sie muss sein: der Download
+    /// dauert Sekunden, und ein Menü, das auf einen Tastendruck schweigt, ist von
+    /// einem, das den Druck verschluckt hat, nicht zu unterscheiden.</summary>
+    public static string DungeonPathsFetching =>
+        IsGerman ? "Dungeon-Wege werden geladen." : "Downloading dungeon routes.";
+
+    public static string DungeonPathsFetched(int files) =>
+        IsGerman ? $"{files} Dungeon-Wege geladen." : $"{files} dungeon routes loaded.";
+
+    /// <summary>Fehlschlag. Nennt den Ordner NICHT - der Pfad ist als Ansage
+    /// unbrauchbar lang; er steht im Log und in der Anleitung.</summary>
+    public static string DungeonPathsFailed =>
+        IsGerman
+            ? "Dungeon-Wege konnten nicht geladen werden. Sieh ins Log."
+            : "Dungeon routes could not be downloaded. Check the log.";
+
+    /// <summary>Wann zuletzt geladen wurde, oder dass es das noch nie gab.</summary>
+    public static string DungeonPathsLast(string date) =>
+        string.IsNullOrEmpty(date)
+            ? (IsGerman ? "Zuletzt geladen: nie" : "Last downloaded: never")
+            : (IsGerman ? $"Zuletzt geladen: {date}" : $"Last downloaded: {date}");
 
     /// <summary>Der Abschnitt für die Objekt-Browser-Kategorien. "Objekte
     /// durchblättern" und nicht "Kategorien", weil der Spieler die Liste über die

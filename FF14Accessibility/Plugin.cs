@@ -42,6 +42,10 @@ public sealed class Plugin : IDalamudPlugin
     // Pomander-Beschreibungen brauchen das: dort steckt das Wort fuer eine Ebene in
     // einem Switch-Makro, und ExtractText() allein wirft es weg (siehe DeepDungeonText).
     [PluginService] private ISeStringEvaluator      SeStringEval    { get; init; } = null!;
+    // [Job-Anzeige] Die job-eigene Ressourcenleiste (Beschwoerer: Primae +
+    // Aetherfluss). Dalamud liest sie fertig aus, es wird hier nichts
+    // nachgerechnet.
+    [PluginService] private IJobGauges              JobGauges       { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -49,6 +53,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly EscapeRouteService _escape;
     private readonly CueService         _cue;
     private readonly CooldownService    _cooldown;
+    private readonly JobGaugeService    _jobGauge;
     private readonly DutyActionService  _dutyActions;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
@@ -64,6 +69,13 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HuntingLogService  _huntingLog;
     private readonly DutyEntranceService _dutyEntrances;
     private readonly DungeonRouteService _dungeonRoute;
+    // Fuellt den Ordner, aus dem der Dienst darueber liest. Getrennt, weil das
+    // eine ein Leser ohne jeden Netzzugriff ist und das andere ein Netzzugriff
+    // ohne jedes Spielwissen.
+    private readonly DungeonPathDownloadService _dungeonPaths;
+    // Bricht einen laufenden Download beim Entladen ab - ohne das haelt ein
+    // haengender Request das Plugin ueber sein Ende hinaus am Leben.
+    private readonly CancellationTokenSource _shutdown = new();
 #if DEBUG
     private readonly LiftProbe _liftProbe;
     private readonly ZoneExitProbe _zoneExitProbe;
@@ -140,8 +152,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.94";
-    private const string PluginVersionTag = "Kategorie Dungeon: die Stationen in Laufreihenfolge; Routen-Vorschau nennt die Höhe";
+    private const string PluginVersion    = "5.95";
+    private const string PluginVersionTag = "Dungeon-Wege werden selbst geladen; Entf sagt die HP des Ziels; Job-Anzeige beim Beschwörer";
 
     public Plugin()
     {
@@ -339,6 +351,7 @@ public sealed class Plugin : IDalamudPlugin
         // das man sie nach der reie ablaufen kann"*). Braucht _objectNames, weil
         // eine Station nur ihre DataId mitbringt und der Name aus dem Sheet kommt.
         _dungeonRoute = new DungeonRouteService(PluginInterface, ClientState, _objectNames, Log);
+        _dungeonPaths = new DungeonPathDownloadService(Log);
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
@@ -461,7 +474,8 @@ public sealed class Plugin : IDalamudPlugin
         _aoeWarn    = new AoeWarningService(_config, Log);
         _warnVoice  = new WarningVoiceService(_config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _warnVoice, _leveEnemies, Log);
-        _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _config, Log);
+        _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _warnVoice, _config, Log);
+        _jobGauge   = new JobGaugeService(JobGauges, ObjectTable, DataManager, _warnVoice, _tolk, _cue, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
@@ -483,7 +497,12 @@ public sealed class Plugin : IDalamudPlugin
                                       // [Reihenfolge] Die drei Dienste, die die
                                       // sortierbaren Listen fuehren. Alle drei sind
                                       // hier oben schon gebaut.
-                                      _navigation, _legacyHistory, _history);
+                                      _navigation, _legacyHistory, _history,
+                                      // [Dungeon-Wege] Der Leser nennt dem Menue den
+                                      // Bestand; das Laden selbst gibt das Menue an
+                                      // das Plugin zurueck, weil dort der
+                                      // Spiel-Thread und die Konfiguration liegen.
+                                      _dungeonRoute, FetchDungeonPaths);
 
         // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
@@ -527,6 +546,84 @@ public sealed class Plugin : IDalamudPlugin
 
         Log.Info($"FF14 Accessibility Plugin V{PluginVersion} [{PluginVersionTag}] geladen.");
         _tolk.Speak(AccessibilityStrings.VersionReady(PluginVersion));
+
+        // [Dungeon-Wege] Einmal beim Start, und nur wenn der Ordner LEER ist.
+        // Entschieden wird am Inhalt des Ordners, nicht an einem gespeicherten
+        // Merker: ein Merker, der "schon geholt" behauptet, waehrend der Ordner
+        // leer ist (geloescht, neuer Rechner, fehlgeschlagenes Entpacken), liesse
+        // die Kategorie genau so lautlos verschwinden wie in v5.94.
+        if (_config.DungeonPathsAutoDownload && _dungeonRoute.CountPathFiles() == 0)
+            BeginDungeonPathFetch(announceStart: false);
+    }
+
+    // ── [Dungeon-Wege] ────────────────────────────────────────────────
+
+    /// <summary>Vom Optionsmenue ausgeloest: laedt die Wegdateien neu, mit
+    /// gesprochener Quittung schon beim Start.</summary>
+    private void FetchDungeonPaths() => BeginDungeonPathFetch(announceStart: true);
+
+    /// <summary>
+    /// Startet den Download und meldet das Ergebnis.
+    ///
+    /// <para>
+    /// DIE RUECKKEHR AUF DEN SPIEL-THREAD IST PFLICHT, nicht Vorsicht: aus dem
+    /// Fortsetzungs-Thread heraus wuerden hier der Screenreader, die
+    /// Konfiguration und der Cache des Lesers angefasst, und keines der drei ist
+    /// dafuer gebaut. <c>RunOnFrameworkThread</c> ist der Weg, den Dalamud dafuer
+    /// anbietet.
+    /// </para>
+    ///
+    /// <para>
+    /// Kein <c>await</c> hier, also auch keine unbeobachtete Ausnahme: der
+    /// Dienst faengt selbst und liefert den Fehlschlag als Ergebnis.
+    /// </para>
+    /// </summary>
+    private void BeginDungeonPathFetch(bool announceStart)
+    {
+        if (_dungeonPaths.IsRunning) return;
+        if (announceStart) _tolk.SpeakInterrupt(AccessibilityStrings.DungeonPathsFetching);
+
+        _ = Task.Run(async () =>
+        {
+            var result = await _dungeonPaths.FetchAsync(_dungeonRoute.PathFolder, _shutdown.Token)
+                                            .ConfigureAwait(false);
+
+            // Das Plugin wird gerade entladen: hier ist NICHTS mehr anzufassen -
+            // weder der Screenreader noch die Konfiguration, und der Sprung auf
+            // den Spiel-Thread selbst wuerde auf ein abgebautes Framework laufen.
+            if (_shutdown.IsCancellationRequested) return;
+
+            try
+            {
+                await Framework.RunOnFrameworkThread(() =>
+                {
+                    if (!result.Ok)
+                    {
+                        // Auch der stille Start meldet den FEHLSCHLAG. Ein Spieler,
+                        // der spaeter im Dungeon keine Kategorie findet, soll
+                        // wissen, dass es daran lag - und nicht am Dungeon.
+                        _tolk.Speak(AccessibilityStrings.DungeonPathsFailed);
+                        return;
+                    }
+
+                    // Erst der Cache, dann die Ansage: der Leser haelt den leeren
+                    // Ordner sonst bis zum naechsten Zonenwechsel fest, und die
+                    // Kategorie bliebe trotz gemeldetem Erfolg aus.
+                    _dungeonRoute.Reload();
+                    _config.DungeonPathsLastFetch = DateTime.Now.ToString("yyyy-MM-dd");
+                    PluginInterface.SavePluginConfig(_config);
+                    _tolk.Speak(AccessibilityStrings.DungeonPathsFetched(result.Files));
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Der Sprung auf den Spiel-Thread ist ein Dalamud-Aufruf und kann
+                // im Entlade-Rennen doch noch werfen. Unbeobachtet duerfte die
+                // Ausnahme nicht bleiben - sie beendete sonst irgendwann den
+                // Finalizer-Thread.
+                Log.Error($"[Dungeon] Ergebnis des Downloads nicht zustellbar: {ex.Message}");
+            }
+        });
     }
 
     private void RegisterCommands()
@@ -772,6 +869,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Menü vorlesen",  _config.KeyReadUI),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
+            ("Ziel-HP",        _config.KeyTargetStatus),
             ("SP-Stand",       _config.KeySpStatus),
             ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
             ("Flächenwarnung an/aus", _config.KeyToggleAoeWarning),
@@ -795,6 +893,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Beste Ausrüstung", _config.KeyEquipBest),
             ("Zufälliges Aussehen", _config.KeyRandomLook),
             ("Skill-Menü",     _config.KeySkillMenu),
+            ("Job-Anzeige",    _config.KeyJobGauge),
             ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
             ("Nachlese älter", _config.KeyChatReadOlder),
@@ -1654,6 +1753,7 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeySilence))       _tolk.Silence();
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
+        if (IsJustPressed(_config.KeyTargetStatus))  _combat.AnnounceTargetStatus();
         if (IsJustPressed(_config.KeyDeepFloor))     AnnounceDeepFloor();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
         if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
@@ -1687,6 +1787,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();
+        // [Job-Anzeige] Zustand auf Nachfrage, ohne auf eine Flanke zu warten.
+        if (IsJustPressed(_config.KeyJobGauge))      _jobGauge.AnnounceCurrent();
         HandleFaceWaypointKey();
         if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
         if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
@@ -1764,6 +1866,9 @@ public sealed class Plugin : IDalamudPlugin
 
         _combat.Update();
         _cooldown.Update();
+        // Job-eigene Ressourcenleiste: meldet nur, wenn etwas WIEDER verfuegbar
+        // wird - im Kampf wie ausserhalb.
+        _jobGauge.Update();
         // Sonderaktionsleiste eines Auftrags: sagt an, wenn sie auftaucht. Das
         // Spiel bietet sie NUR per Mausklick an, ein blinder Spieler erfaehrt
         // sonst nie, dass sie da ist.
@@ -2371,6 +2476,11 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
         ClientState.Login -= OnLogin;
         CommandManager.RemoveHandler("/acc");
+        // Zuerst absagen, dann schliessen: ein laufender Download soll aufhoeren,
+        // bevor ihm der HttpClient unter den Haenden wegfaellt.
+        _shutdown.Cancel();
+        _dungeonPaths.Dispose();
+        _shutdown.Dispose();
         _tooltips.Dispose();
         _toasts.Dispose();
         _chatReader.Dispose();

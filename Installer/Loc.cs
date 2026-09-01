@@ -112,6 +112,17 @@ public static class Loc
             ["SummaryHeader"] = "=== Zusammenfassung ===",
             ["SummaryAccessibility"] = "FF14 Accessibility: {0}",
             ["SummaryVnavmesh"] = "vnavmesh (Auto-Lauf): {0}",
+            ["SummaryDungeonPaths"] = "Dungeon-Wege: {0}",
+
+            // Wegdateien für die Kategorie "Dungeon"
+            ["CheckingDungeonPaths"] = "Lade die Wegdateien für die Kategorie „Dungeon\" ...",
+            ["DungeonPathsWritten"] = "{0} Wegdateien geschrieben nach {1}",
+            ["DungeonPathsSummary"] = "{0} Wege geladen",
+            ["DungeonPathsUnreachable"] = "Die Wegdateien sind gerade nicht erreichbar ({0}). Das Plugin holt sie beim ersten Start selbst nach.",
+            ["DungeonPathsTimeout"] = "Zeitüberschreitung beim Laden der Wegdateien. Das Plugin holt sie beim ersten Start selbst nach.",
+            ["DungeonPathsNothingInArchive"] = "Im geladenen Archiv steckt keine einzige Wegdatei - die Quelle hat ihren Aufbau geändert.",
+            ["DungeonPathsArchiveTooBig"] = "Das Archiv ist unerwartet groß und wurde nicht entpackt.",
+            ["DungeonPathsUnexpectedError"] = "Die Wegdateien konnten nicht geschrieben werden: {0}",
             ["UnexpectedError"] = "Unerwarteter Fehler: {0}",
             ["NoPartialWrite"] = "Es wurde nichts Unvollständiges geschrieben, das dein System beschädigt.",
 
@@ -272,6 +283,17 @@ public static class Loc
             ["SummaryHeader"] = "=== Summary ===",
             ["SummaryAccessibility"] = "FF14 Accessibility: {0}",
             ["SummaryVnavmesh"] = "vnavmesh (auto-walk): {0}",
+            ["SummaryDungeonPaths"] = "Dungeon routes: {0}",
+
+            // Route files for the "dungeon" category
+            ["CheckingDungeonPaths"] = "Downloading the route files for the \"dungeon\" category ...",
+            ["DungeonPathsWritten"] = "Wrote {0} route files to {1}",
+            ["DungeonPathsSummary"] = "{0} routes loaded",
+            ["DungeonPathsUnreachable"] = "The route files cannot be reached right now ({0}). The plugin will fetch them itself on first start.",
+            ["DungeonPathsTimeout"] = "Timed out while downloading the route files. The plugin will fetch them itself on first start.",
+            ["DungeonPathsNothingInArchive"] = "The downloaded archive contains no route file at all - the source has changed its layout.",
+            ["DungeonPathsArchiveTooBig"] = "The archive is unexpectedly large and was not unpacked.",
+            ["DungeonPathsUnexpectedError"] = "The route files could not be written: {0}",
             ["UnexpectedError"] = "Unexpected error: {0}",
             ["NoPartialWrite"] = "Nothing incomplete was written that could damage your system.",
 

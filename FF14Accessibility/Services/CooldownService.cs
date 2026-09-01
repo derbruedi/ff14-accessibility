@@ -3,6 +3,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
+using GeneralAction = Lumina.Excel.Sheets.GeneralAction;
 using LuminaAction = Lumina.Excel.Sheets.Action;
 
 namespace FF14Accessibility.Services;
@@ -34,16 +35,22 @@ public sealed class CooldownService
     private readonly IDataManager _data;
     private readonly CueService   _cue;
     private readonly TolkService  _tolk;
+    // Der zweite Sprachkanal. Die Bereit-Meldung geht hierueber, weil sie
+    // mitten im Kampf faellt und der Screenreader dort von der naechsten Zeile
+    // (Zauberleiste, Chat) geschnitten wird - User-Ansage 2026-08-31.
+    private readonly WarningVoiceService _warnVoice;
     private readonly Configuration _config;
     private readonly IPluginLog   _log;
 
     public CooldownService(IClientState clientState, IDataManager data, CueService cue,
-                           TolkService tolk, Configuration config, IPluginLog log)
+                           TolkService tolk, WarningVoiceService warnVoice,
+                           Configuration config, IPluginLog log)
     {
         _clientState = clientState;
         _data        = data;
         _cue         = cue;
         _tolk        = tolk;
+        _warnVoice   = warnVoice;
         _config      = config;
         _log         = log;
     }
@@ -100,14 +107,88 @@ public sealed class CooldownService
         {
             var s = hotbars->GetSlotById((uint)bar, (uint)slot);
             if (s == null) continue;
-            if (s->CommandType != RaptureHotbarModule.HotbarSlotType.Action)
-                continue;
 
-            var id = s->CommandId;
-            if (id == 0 || !_seen.Add(id)) continue;   // dedupe across slots/bars
+            // ALLGEMEINE AKTIONEN GEHOEREN DAZU (User 2026-08-31: "eine meldung
+            // fehlt wenn sprint wieder verfuegbar ist"). Sprint liegt NICHT als
+            // Action auf der Leiste, sondern als GeneralAction - ein eigener
+            // Slot-Typ, den diese Schleife bisher wortlos uebersprungen hat.
+            // Belegt: GeneralAction-Zeile 4 "Sprint" verweist auf Action 3, und
+            // deren Recast100ms ist 600, also 60 s (Sheet-Dump 2026-08-31).
+            switch (s->CommandType)
+            {
+                case RaptureHotbarModule.HotbarSlotType.Action:
+                    var id = s->CommandId;
+                    if (id == 0 || !_seen.Add(id)) continue;   // dedupe across slots/bars
+                    EvaluateAction(am, id, level);
+                    break;
 
-            EvaluateAction(am, id, level);
+                case RaptureHotbarModule.HotbarSlotType.GeneralAction:
+                    EvaluateGeneralAction(am, s);
+                    break;
+            }
         }
+    }
+
+    /// <summary>
+    /// Eine ALLGEMEINE Aktion auf der Leiste (Sprint, Rueckfuehrung, Ausgraben …).
+    /// Sie laeuft bewusst nicht durch <see cref="EvaluateAction"/>:
+    ///
+    /// <para>
+    /// LADUNGEN KOMMEN VOM SLOT, nicht vom ActionManager. Der Slot rechnet die
+    /// Zahl selbst aus, die auch sein Symbol anzeigt
+    /// (<c>GetApparentIconRecastCharges</c>, laut FFXIVClientStructs-Doku "0 oder
+    /// 1", wenn die Aktion keine Ladungen kennt) - und zwar unabhaengig vom
+    /// Slot-Typ. <c>GetCurrentCharges</c> dagegen nimmt nur eine Action-Id und
+    /// waere fuer eine GeneralAction-Zeile eine Verwechslung zweier Nummernkreise.
+    /// </para>
+    ///
+    /// <para>
+    /// DIE RESTZEIT kommt aus dem ActionManager, aber mit dem Typ, den das Spiel
+    /// selbst fuer diesen Slot-Typ nennt (<c>GetActionTypeForSlotType</c>). Der
+    /// Name und der Schluessel kommen dagegen von der ECHTEN Aktion hinter der
+    /// Zeile (GeneralAction.Action), damit "Sprint" auch Sprint heisst und sich
+    /// die Zeilennummer 4 nicht mit der Aktion 4 in denselben Toepfen mischt.
+    /// </para>
+    /// </summary>
+    private unsafe void EvaluateGeneralAction(ActionManager* am, RaptureHotbarModule.HotbarSlot* s)
+    {
+        var row = s->CommandId;
+        if (row == 0) return;
+
+        // Zeilen ohne echte Aktion dahinter (Springen, Limitrausch, Faerben …)
+        // haben keinen Recast, den man ansagen koennte.
+        if (!_data.GetExcelSheet<GeneralAction>().TryGetRow(row, out var general)) return;
+        var id = general.Action.RowId;
+        if (id == 0 || !_seen.Add(id)) return;
+
+        // Instanzmethode, obwohl sie laut Doku nichts aus dem Slot liest - also
+        // ueber den Slot selbst aufgerufen.
+        var type = s->GetActionTypeForSlotType(s->CommandType);
+        if ((uint)type == uint.MaxValue) return;   // laut Doku: kein Typ gefunden
+
+        var charges = s->GetApparentIconRecastCharges();
+
+        if (charges < 1)
+        {
+            var recast = am->GetRecastTime(type, row);
+            if (recast > 0f) _recastTotal[id] = recast;
+        }
+
+        if (_lastCharges.TryGetValue(id, out var prev) && charges > prev
+            && _recastTotal.TryGetValue(id, out var total) && total > GcdRecastCeiling)
+            Announce(id, charges, 1);
+
+#if DEBUG
+        // Zeigt beim Testen, ob dieser Zweig ueberhaupt Zahlen bekommt: ob der
+        // Recast unter dem genannten Typ ankommt, ist NICHT bewiesen, nur
+        // dokumentiert. Nur bei Aenderung, sonst schriebe es jeden Frame.
+        if (!_lastCharges.TryGetValue(id, out var before) || before != charges)
+            _log.Info($"[CooldownProbe] Allgemein Zeile={row} Aktion={id} Typ={type} " +
+                      $"Ladungen={charges} gemerkter Recast=" +
+                      $"{(_recastTotal.TryGetValue(id, out var t) ? t.ToString("0.0") : "-")}");
+#endif
+
+        _lastCharges[id] = charges;
     }
 
     private unsafe void EvaluateAction(ActionManager* am, uint id, uint level)
@@ -147,10 +228,15 @@ public sealed class CooldownService
         var name = ActionName(id);
         if (string.IsNullOrEmpty(name)) return;
 
-        _cue.PlaySkillReadyTone();
-        _tolk.Speak(maxCharges > 1
+        var text = maxCharges > 1
             ? AccessibilityStrings.SkillChargeReady(name, charges, maxCharges)
-            : AccessibilityStrings.SkillReady(name));
+            : AccessibilityStrings.SkillReady(name);
+
+        _cue.PlaySkillReadyTone();
+        // Warnstimme zuerst, Screenreader als Rueckfall: Speak() gibt false
+        // zurueck, wenn der Kanal aus oder nicht verfuegbar ist - dann darf die
+        // Meldung nicht still verlorengehen.
+        if (!_warnVoice.Speak(text)) _tolk.Speak(text);
         _log.Info($"[Cooldown] Bereit: '{name}' id={id} charges={charges}/{maxCharges}");
     }
 

@@ -103,6 +103,24 @@ cues — including braille display output and automatic walking.
   and direction, otherwise the name of its zone and the next transition
   leading there. **Numpad 3 walks there** — across zone borders, one
   transition at a time, exactly like a quest objective in another zone.
+- The **dungeon** category appears **only inside an instance** and is the only
+  one **not sorted by distance** but **in walking order**: first the terminal,
+  then the boss, then the gate behind it. It answers the question that matters
+  in a dungeon and that no proximity search can answer — *where does it
+  continue*. **Numpad 3 walks to the selected station.** It is a skeleton of
+  sixteen stations on average, not a room plan: between two stations the
+  auto-walk runs exactly as it does everywhere else.
+  - **The installer fetches the required route files** (309 files, about
+    750 KB) into
+    `%AppData%\XIVLauncher\pluginConfigs\FF14Accessibility\DungeonPaths\`.
+    Setting the plugin up without the installer still works: the **plugin
+    downloads them itself on first start** while that folder is empty. As long
+    as it is empty, the category is **not offered at all**.
+  - In the settings menu (**Shift+F9**) the **dungeon routes** entry says how
+    many routes are loaded, re-downloads them on request and switches the
+    automatic download off.
+  - The route files come from the [AutoDuty](https://github.com/erdelf/AutoDuty)
+    project and are fetched **from there** — this plugin ships none of them.
 - **Housing furnishings** can be found too: chocobo stable, mailbox, garden
   beds. Objects the game labels with an icon instead of a word are given the
   word its own interface uses for them.
@@ -417,6 +435,8 @@ navigation keys above the arrow block.
   quest
 - **Ctrl+F11** — stop speech immediately
 - **Ctrl+Delete** — combat status: your HP and MP
+- **Delete** — the current target's HP, as a percentage (the game shows it
+  to a sighted player as a bar only, never as a number)
 - **Ctrl+End** — gathering points (GP) for gatherers
 - **Ctrl+L** — level and missing experience
 - **Shift+L** — rested area and rested bonus

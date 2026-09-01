@@ -108,6 +108,25 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Gebiets und der nächste Zonenübergang dorthin. **Numpad 3 läuft hin** —
   über Gebietsgrenzen hinweg, Übergang für Übergang, genau wie bei einem
   Quest-Ziel in einer anderen Zone.
+- Die Kategorie **Dungeon** erscheint **nur innerhalb einer Instanz** und ist
+  die einzige, die **nicht nach Entfernung** sortiert, sondern **in
+  Laufreihenfolge**: erst das Terminal, dann der Boss, dann das Tor dahinter.
+  Sie beantwortet die Frage, die im Dungeon zählt und die keine Umgebungssuche
+  beantworten kann — *wo geht es weiter*. **Numpad 3 läuft zur gewählten
+  Station.** Es ist ein Skelett von im Schnitt sechzehn Stationen, kein
+  Raumplan: zwischen zwei Stationen läuft der Auto-Lauf wie überall sonst.
+  - Die dafür nötigen **Wegdateien holt der Installer** (309 Dateien, rund
+    750 KB) nach
+    `%AppData%\XIVLauncher\pluginConfigs\FF14Accessibility\DungeonPaths\`.
+    Wer das Plugin ohne den Installer einrichtet, bekommt sie trotzdem: das
+    **Plugin lädt sie beim ersten Start selbst nach**, wenn der Ordner leer ist.
+    Solange er leer ist, wird die Kategorie **gar nicht angeboten**.
+  - Im Einstellungsmenü (**Umschalt+F9**) sagt der Punkt **Dungeon-Wege**, wie
+    viele Wege geladen sind, lädt sie auf Wunsch neu und schaltet das
+    automatische Laden ab.
+  - Die Wegdateien stammen aus dem Projekt
+    [AutoDuty](https://github.com/erdelf/AutoDuty) und werden **von dort**
+    geladen — dieses Plugin liefert selbst keine mit.
 - Auch **Einrichtung** in Wohngebieten ist auffindbar: Chocobo-Stall,
   Briefkasten, Beete. Objekte, die das Spiel nur mit einem Symbol statt mit
   einem Wort beschriftet, bekommen das Wort, das die Oberfläche dafür
@@ -429,6 +448,8 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+F10** — aktuelles Menü vorlesen; bei offenem Journal: Quest vorlesen
 - **Strg+F11** — Sprache sofort stoppen
 - **Strg+Entf** — Kampfstatus: eigene HP und MP
+- **Entf** — HP des anvisierten Ziels, in Prozent (das Spiel zeigt sie
+  auch einem sehenden Spieler nur als Balken, nie als Zahl)
 - **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
 - **Strg+L** — Stufe und fehlende Erfahrung
 - **Umschalt+L** — Ruhebereich und Erholungsbonus

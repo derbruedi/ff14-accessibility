@@ -35,6 +35,33 @@ public sealed partial class InstallerService
     private const string XivLauncherRepoName = "FFXIVQuickLauncher";
     private const string VnavmeshRepositoryJsonUrl = "https://puni.sh/api/repository/veyn";
 
+    // ── Wegdateien für die Kategorie "Dungeon" ─────────────────────────────
+    //
+    // WARUM DER INSTALLER DAS AUCH TUT, obwohl das Plugin es selbst kann: hier
+    // ist der Netzzugriff erwartbar - der Nutzer installiert gerade, hört jede
+    // Zeile mit und wartet ohnehin. Beim ersten Spielstart ist damit alles da,
+    // statt dass mitten im Einloggen eine Ansage aufschlägt.
+    //
+    // ES ERSETZT DEN PLUGIN-WEG NICHT. Wer das Plugin über das Dalamud-Repo
+    // bezieht, sieht diesen Installer nie; und ein gelöschter Ordner füllt sich
+    // nur wieder, wenn das Plugin selbst nachlädt. Zwei Wege für dieselbe Sache
+    // sind hier kein Doppel, sondern zwei verschiedene Lücken.
+    //
+    // Ausgeliefert wird nichts: geholt wird auf dem Rechner des Nutzers, vom
+    // Ursprungs-Repo - dieselbe Trennung wie bei vnavmesh darüber.
+    private const string DungeonPathsZipUrl =
+        "https://codeload.github.com/erdelf/AutoDuty/zip/refs/heads/master";
+
+    /// <summary>Ordnerteil INNERHALB des Archivs. Als Teilstring geprüft, nie als
+    /// Präfix: ein GitHub-Zip packt alles in "&lt;repo&gt;-&lt;branch&gt;/", und ein
+    /// umbenannter Standardzweig würde ein Präfix still ins Leere laufen lassen.</summary>
+    private const string DungeonPathsFolderInZip = "/AutoDuty/Paths/";
+
+    /// <summary>Grenzen gegen ein Archiv, das nicht das ist, wofür es sich
+    /// ausgibt. Eine Wegdatei ist wenige Kilobyte groß.</summary>
+    private const int DungeonPathsMaxEntryBytes = 2 * 1024 * 1024;
+    private const long DungeonPathsMaxTotalBytes = 64L * 1024 * 1024;
+
     // Selbst-Update: kleines Manifest-Asset im Release, das die Installer-Version
     // trägt. Der EXE-Dateiname bleibt bewusst versionslos (stabiler Download-Link).
     private const string InstallerManifestAssetName = "installer.json";
@@ -44,6 +71,12 @@ public sealed partial class InstallerService
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XIVLauncher");
     private static readonly string DevPluginsRoot = Path.Combine(XivLauncherRoot, "devPlugins");
     private static readonly string DalamudConfigPath = Path.Combine(XivLauncherRoot, "dalamudConfig.json");
+
+    /// <summary>Wohin die Wegdateien gehören. MUSS mit
+    /// <c>DungeonRouteService.PathFolder</c> im Plugin übereinstimmen - das
+    /// Plugin bildet denselben Pfad über Dalamuds Konfigurationsordner.</summary>
+    private static readonly string DungeonPathsDir = Path.Combine(
+        XivLauncherRoot, "pluginConfigs", AccessibilityInternalName, "DungeonPaths");
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
 
@@ -101,12 +134,18 @@ public sealed partial class InstallerService
             Info(string.Empty);
             var vnavResult = await UpdateVnavmeshAsync();
             Info(string.Empty);
+            // Nach dem Plugin, vor dem Patchen der Konfiguration: die Dateien
+            // gehören in den Konfigurationsordner des Plugins, und ein
+            // Fehlschlag hier darf die Installation selbst nicht aufhalten.
+            var pathsResult = await UpdateDungeonPathsAsync();
+            Info(string.Empty);
             var patchResult = PatchDalamudConfig();
 
             Info(string.Empty);
             Info(Loc.Get("SummaryHeader"));
             Info(Loc.Get("SummaryAccessibility", accResult));
             Info(Loc.Get("SummaryVnavmesh", vnavResult));
+            Info(Loc.Get("SummaryDungeonPaths", pathsResult));
             Info(patchResult);
         }
         catch (Exception ex)
@@ -384,6 +423,109 @@ public sealed partial class InstallerService
         catch (Exception ex)
         {
             Error(Loc.Get("VnavmeshUnexpectedError", ex.Message));
+            return Loc.Get("ErrorGeneric");
+        }
+    }
+
+    // ── Wegdateien für die Kategorie "Dungeon" ─────────────────────────────
+
+    /// <summary>
+    /// Lädt die Wegdateien und legt sie dorthin, wo das Plugin sie liest.
+    ///
+    /// <para>
+    /// EIN ARCHIV STATT DREIHUNDERT EINZELABRUFE: die Momentaufnahme des Repos
+    /// ist ein Download von rund 750 KB und trägt alle Wegdateien. Einzeln
+    /// geholt wären es über 300 Abrufe gegen ein Ratelimit - und bei jedem
+    /// Abbruch ein halb gefüllter Ordner.
+    /// </para>
+    ///
+    /// <para>
+    /// GESCHRIEBEN WIRD ERST, WENN ALLES GELESEN IST. Ein halber Ordner wäre
+    /// schlimmer als ein leerer: die Kategorie erschiene dann in manchen
+    /// Dungeons und in anderen nicht, ohne dass ein blinder Spieler den Grund
+    /// erfahren könnte.
+    /// </para>
+    ///
+    /// <para>
+    /// EIN FEHLSCHLAG BRICHT DIE INSTALLATION NICHT AB. Ohne Wegdateien fehlt
+    /// eine Kategorie; ohne Plugin fehlt alles. Deshalb meldet diese Methode
+    /// ihren Fehler in die Zusammenfassung und wirft nicht.
+    /// </para>
+    /// </summary>
+    private async Task<string> UpdateDungeonPathsAsync()
+    {
+        Info(Loc.Get("CheckingDungeonPaths"));
+
+        byte[] archive;
+        try
+        {
+            archive = await _http.GetByteArrayAsync(DungeonPathsZipUrl);
+        }
+        catch (HttpRequestException ex)
+        {
+            Warn(Loc.Get("DungeonPathsUnreachable", ex.Message));
+            return Loc.Get("ErrorNoNetwork");
+        }
+        catch (TaskCanceledException)
+        {
+            Warn(Loc.Get("DungeonPathsTimeout"));
+            return Loc.Get("ErrorTimeout");
+        }
+
+        try
+        {
+            var files = new List<(string Name, byte[] Content)>();
+            long total = 0;
+
+            using (var stream = new MemoryStream(archive, writable: false))
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                foreach (var entry in zip.Entries)
+                {
+                    var full = entry.FullName.Replace('\\', '/');
+                    if (full.IndexOf(DungeonPathsFolderInZip, StringComparison.Ordinal) < 0) continue;
+                    if (!full.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // NUR der nackte Dateiname wird zum Ziel, nie der Pfad aus dem
+                    // Archiv: ein Eintrag namens "..\..\irgendwas.json" ist der Weg,
+                    // auf dem ein Archiv außerhalb seines Zielordners schreibt.
+                    var name = Path.GetFileName(entry.Name);
+                    if (string.IsNullOrEmpty(name) || name != entry.Name) continue;
+                    if (entry.Length > DungeonPathsMaxEntryBytes) continue;
+
+                    total += entry.Length;
+                    if (total > DungeonPathsMaxTotalBytes)
+                    {
+                        Warn(Loc.Get("DungeonPathsArchiveTooBig"));
+                        return Loc.Get("ErrorGeneric");
+                    }
+
+                    using var entryStream = entry.Open();
+                    using var buffer = new MemoryStream();
+                    await entryStream.CopyToAsync(buffer);
+                    files.Add((name, buffer.ToArray()));
+                }
+            }
+
+            if (files.Count == 0)
+            {
+                // Archiv erreicht, aber nichts darin gefunden: der Aufbau der
+                // Quelle hat sich geändert. Das ist ein Fehler und darf sich nicht
+                // wie "geladen, 0 Dateien" lesen.
+                Warn(Loc.Get("DungeonPathsNothingInArchive"));
+                return Loc.Get("ErrorNotFound");
+            }
+
+            Directory.CreateDirectory(DungeonPathsDir);
+            foreach (var (name, content) in files)
+                File.WriteAllBytes(Path.Combine(DungeonPathsDir, name), content);
+
+            Info(Loc.Get("DungeonPathsWritten", files.Count, DungeonPathsDir));
+            return Loc.Get("DungeonPathsSummary", files.Count);
+        }
+        catch (Exception ex)
+        {
+            Warn(Loc.Get("DungeonPathsUnexpectedError", ex.Message));
             return Loc.Get("ErrorGeneric");
         }
     }
