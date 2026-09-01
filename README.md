@@ -252,6 +252,10 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   hat dabei Vorrang. **Standardmäßig aus**, der Zustand wird gespeichert.
   Die Zahlwörter stammen aus dem WoW-Addon Sku, wo blinde Heilerinnen und
   Heiler dasselbe Verfahren seit Jahren benutzen.
+  **NPC-Gruppenmitglieder zählen mit**: ein Dungeon mit Duty Support oder
+  einem Trust-Trupp wird genauso überwacht wie eine Gruppe aus Spielern —
+  der Monitor liest die Gruppe so, wie das HUD sie anzeigt, und fragt nicht
+  danach, ob ein Platz von einem Menschen oder einem NPC gefüllt ist.
 - Erfahrungsgewinn und Beute werden angesagt und in der Nachlese archiviert.
 - **Beute-Verlosungen**: offene Würfe der Gruppe vorlesen (mit den
   Ausrüstungswerten des Gegenstands, damit sich Bedarf oder Gier überhaupt
