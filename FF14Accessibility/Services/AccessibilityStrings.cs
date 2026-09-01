@@ -1769,6 +1769,48 @@ public static partial class AccessibilityStrings
     public static string SoundTestMpGain    => IsGerman ? "Mana, Aufladung"   : "Mana, restored";
     public static string SoundTestMpSpend   => IsGerman ? "Mana, Verbrauch"   : "Mana, spent";
 
+    // Gegnerfarben: jeder Gegner im Kampf bekommt eine Farbe als Rufnamen.
+    /// <summary>
+    /// Die acht Farben in Skus eigener Vergabereihenfolge. Uebernommen aus
+    /// <c>SkuCore/aqCombat.lua</c> (Reihenfolge der Marker Totenkopf, Kreuz,
+    /// Quadrat, Dreieck, Diamant, Stern, Kreis, Mond) mit Skus deutschen
+    /// Woertern aus <c>locales/deDE.lua</c>. Bewusst nicht neu erfunden: der
+    /// Spieler hoert diese acht Woerter seit Jahren in derselben Reihenfolge.
+    /// </summary>
+    public static string EnemyMarkerColor(int index)
+    {
+        var german = new[] { "Weiß", "Rot", "Blau", "Grün", "Lila", "Gelb", "Orange", "Grau" };
+        var english = new[] { "White", "Red", "Blue", "Green", "Purple", "Yellow", "Orange", "Grey" };
+        var table = IsGerman ? german : english;
+        return index >= 0 && index < table.Length ? table[index] : string.Empty;
+    }
+
+    /// <summary>Spoken for the enemy readout while the feature is switched off.</summary>
+    public static string EnemyMarkersOff =>
+        IsGerman ? "Gegnerfarben sind aus." : "Enemy colours are off.";
+
+    /// <summary>Spoken for the enemy readout when nothing is engaged.</summary>
+    public static string NoEnemiesEngaged =>
+        IsGerman ? "Kein Gegner im Kampf." : "No enemies engaged.";
+
+    /// <summary>Opens the enemy readout with the count - the "how many" answer.</summary>
+    public static string EnemyCountIntro(int count) =>
+        IsGerman
+            ? (count == 1 ? "Ein Gegner:" : $"{count} Gegner:")
+            : (count == 1 ? "One enemy:" : $"{count} enemies:");
+
+    /// <summary>
+    /// One line of the enemy readout: colour, name, health, and whether that enemy
+    /// is on the player themselves rather than on the tank.
+    /// </summary>
+    public static string EnemyFieldEntry(string color, string name, int hpPercent, bool onMe)
+    {
+        var text = string.IsNullOrEmpty(color) ? name : $"{color}, {name}";
+        if (hpPercent >= 0) text += IsGerman ? $", {hpPercent} Prozent" : $", {hpPercent} percent";
+        if (onMe) text += IsGerman ? ", auf dir" : ", on you";
+        return text + ".";
+    }
+
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>
         IsGerman
@@ -1827,6 +1869,7 @@ public static partial class AccessibilityStrings
           "/acc win, Aktives Fenster ansagen. " +
           "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
           "/acc cooldowns, Fähigkeit-bereit-Ansage an oder aus. " +
+          "/acc gegner, alle Gegner im Kampf mit Farbe, Leben und wer auf dir ist. " +
           "/acc trails, aufgezeichnete Spuren in diesem Gebiet auflisten. " +
           "/acc trail del und die Nummer, eine Spur löschen. " +
           "/acc stop, Sprache stoppen."
@@ -1863,6 +1906,7 @@ public static partial class AccessibilityStrings
           "/acc win, announce the active window. " +
           "/acc keys, save the game's key bindings to the desktop. " +
           "/acc cooldowns, ability-ready announcements on or off. " +
+          "/acc enemies, every engaged enemy with colour, health and who is on you. " +
           "/acc trails, list the trails recorded in this area. " +
           "/acc trail del and the number, delete a trail. " +
           "/acc stop, stop speech.";

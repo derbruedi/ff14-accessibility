@@ -257,6 +257,7 @@ public static partial class AccessibilityStrings
     public static string OptHeading => IsGerman ? "Himmelsrichtung" : "Compass heading";
     public static string OptTargetChanges => IsGerman ? "Zielwechsel" : "Target changes";
     public static string OptTargetHp => IsGerman ? "Ziel-Lebenspunkte" : "Target health";
+    public static string OptEnemyMarkers => IsGerman ? "Gegnerfarben" : "Enemy colours";
     public static string OptEnemyCast => IsGerman ? "Gegner wirkt Aktion" : "Enemy casting";
     public static string OptFineHpDuringLeve => IsGerman
         ? "Feine Ziel-Lebenspunkte im Freibrief"

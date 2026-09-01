@@ -233,6 +233,19 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Mausklick** an — im Tastenbelegungs-Dump hat sie keine einzige Belegung.
   Der Mod sagt mit einem Ton an, sobald sie da ist, und legt sie auf
   Umschalt+F10 und Umschalt+F11; Strg+Umschalt+F8 sagt sie noch einmal an.
+- **Gegnerfarben**: Jeder Gegner, der mit der Gruppe im Kampf steht, bekommt
+  eine Farbe als Rufnamen — Weiß, Rot, Blau, Grün, Lila, Gelb, Orange, Grau —
+  und die wird **vor seinem Namen mitgesprochen**: „Rot, Wüstenwolf". Drei
+  gleichnamige Gegner sind sonst drei gleiche Ansagen; ein sehender Spieler
+  hält sie über ihren Standort auseinander, ein blinder hat dafür nichts. Die
+  Farbe bleibt demselben Gegner den ganzen Kampf über erhalten und wird nach
+  seinem Tod **nicht neu vergeben**, damit kein zweiter „Rot" auftaucht,
+  während man noch den ersten sucht. `/acc gegner` liest das ganze Feld vor:
+  wie viele es sind, welche Farbe wer ist, mit Leben — und wer davon auf
+  **dir** ist statt auf dem Tank. Nach dem Kampf sind alle Farben wieder frei.
+  Es wird **kein Zeichen im Spiel gesetzt**: die Zielzeichen gehören der
+  Gruppenleitung, die Farbe wird nur gesprochen. Das Verfahren stammt aus dem
+  WoW-Addon Sku, die Farben und ihre Reihenfolge sind von dort übernommen.
 - **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
   einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
@@ -569,6 +582,7 @@ Viele Funktionen gibt es auch als Befehl:
 - `/acc fishhere` — aktuellen Standort als Auswurfstelle merken
 - `/acc gather` — Sammelpunkte im Gebiet ansagen
 - `/acc gathergo` — zum nächsten Sammelpunkt laufen
+- `/acc gegner` — alle Gegner im Kampf: Anzahl, Farbe, Name, Leben, wer auf dir ist
 - `/acc trails` — aufgezeichnete Spuren im Gebiet auflisten
 - `/acc cd` (auch `/acc cooldowns`) — Ansage „Fähigkeit bereit" an/aus
 - `/acc soundtest` — die Töne des Plugins zur Probe abspielen

@@ -106,6 +106,7 @@ public sealed class NavigationService
     private readonly LevequestEnemyService _leveEnemies;
     private readonly ObjectNameService _objectNames;
     private readonly ObjectMemoryService _memory;
+    private readonly EnemyMarkerService _enemyMarkers;
     private readonly Configuration _config;
     private readonly IDataManager _data;
     // Only read for the movement mode, which decides whether turning the
@@ -137,6 +138,7 @@ public sealed class NavigationService
         LevequestEnemyService leveEnemies,
         ObjectNameService objectNames,
         ObjectMemoryService memory,
+        EnemyMarkerService enemyMarkers,
         Configuration config,
         IDataManager data,
         IGameConfig gameConfig,
@@ -162,6 +164,7 @@ public sealed class NavigationService
         _leveEnemies = leveEnemies;
         _objectNames = objectNames;
         _memory = memory;
+        _enemyMarkers = enemyMarkers;
         _config = config;
         _data = data;
         _log = log;
@@ -278,7 +281,13 @@ public sealed class NavigationService
             if (target != null && announceTargetChanges && !isOwnSelection)
             {
                 var distance = Vector3.Distance(player.Position, target.Position);
-                var text = $"{AccessibilityStrings.TargetPrefix}{DescribeObject(target)}, " +
+                // Die Farbe steht VOR dem Namen, wie in Sku: sie ist das, was
+                // zwei gleichnamige Gegner ueberhaupt erst auseinanderhaelt, und
+                // sie muss deshalb gehoert werden, bevor der Name kommt. Wer
+                // keine traegt (kein Gegner, nicht im Kampf), bekommt hier eine
+                // leere Zeichenkette und die Ansage klingt wie bisher.
+                var text = $"{AccessibilityStrings.TargetPrefix}{_enemyMarkers.SpokenPrefix(target)}" +
+                           $"{DescribeObject(target)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
                            $"{DescribeTargetHp(target)}{DescribeTamed(target)}.";
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
@@ -1171,7 +1180,11 @@ public sealed class NavigationService
         // bleibt es beim bisherigen Hinweis "nicht anvisiert" - ohne Werte, die auf
         // dem Bildschirm nirgends stehen.
         var stats = (rejected ? string.Empty : DescribeTargetHp(obj)) + DescribeTamed(obj);
-        var text = $"{description}, " +
+        // Auch beim Durchblättern die Farbe voranstellen. Ohne das bliebe genau
+        // der Weg farblos, auf dem der Spieler seine Gegner ueberhaupt findet:
+        // eine Browser-Auswahl visiert selbst an und unterdrueckt deshalb die
+        // Zielwechsel-Ansage weiter oben (_ownSelectionId).
+        var text = $"{_enemyMarkers.SpokenPrefix(obj)}{description}, " +
                    $"{FormatDistance(distance)}, " +
                    $"{CalculateDirection(player, obj.Position)}" +
                    $"{stats}, " +
