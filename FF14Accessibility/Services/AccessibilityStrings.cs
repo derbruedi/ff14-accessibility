@@ -1798,6 +1798,14 @@ public static partial class AccessibilityStrings
     public static string PartyMonitorRosterIntro =>
         IsGerman ? "Gruppe" : "Party";
 
+    /// <summary>
+    /// Wird beim Anvisieren eines Gruppenmitglieds angehaengt, solange der
+    /// Heilmonitor laeuft: die Nummer, die der Monitor spricht - und zugleich die
+    /// Zieltaste. Fuehrendes Komma, weil es immer angehaengt wird.
+    /// </summary>
+    public static string PartyPositionSuffix(int position) =>
+        IsGerman ? $", Gruppe {position}" : $", party {position}";
+
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>
         IsGerman

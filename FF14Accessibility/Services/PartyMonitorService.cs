@@ -6,6 +6,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.ClientState.Party;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using Lumina.Excel.Sheets;
 using NAudio.Wave;
 using ClientFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
@@ -255,10 +256,23 @@ public sealed class PartyMonitorService : IDisposable
         var slots = new List<PartySlot>(NumberVoiceBank.MaxPosition);
 
         var byContentId = new Dictionary<ulong, IPartyMember>(_party.Length);
+        var byEntityId  = new Dictionary<uint, IPartyMember>(_party.Length);
         for (var i = 0; i < _party.Length; i++)
         {
             var m = _party[i];
-            if (m != null) byContentId[m.ContentId] = m;
+            if (m == null) continue;
+            byContentId[m.ContentId] = m;
+            byEntityId[m.EntityId]   = m;
+        }
+
+        // ERSTE WAHL: das Zahlenfeld, das das GRUPPENFENSTER SELBST fuettert.
+        // Naeher an "die Liste, wie sie auf dem Bildschirm steht", geht es nicht -
+        // und genau der folgen die Zieltasten F2 bis F8.
+        var fromWidget = FromPartyListArray(byEntityId);
+        if (fromWidget.Count > 0)
+        {
+            LogOrderMismatch(fromWidget, "Gruppenfenster");
+            return fromWidget;
         }
 
         var hud = AgentHUD.Instance();
@@ -279,6 +293,7 @@ public sealed class PartyMonitorService : IDisposable
                     slots.Add(new PartySlot(
                         i + 1,
                         KeyFor(contentId, entityId),
+                        entityId,
                         chara.Name.TextValue,
                         chara.CurrentHp,
                         chara.MaxHp,
@@ -292,6 +307,7 @@ public sealed class PartyMonitorService : IDisposable
                     slots.Add(new PartySlot(
                         i + 1,
                         KeyFor(contentId, member.EntityId),
+                        member.EntityId,
                         member.Name.TextValue,
                         member.CurrentHP,
                         member.MaxHP,
@@ -300,7 +316,7 @@ public sealed class PartyMonitorService : IDisposable
 
             if (slots.Count > 0)
             {
-                LogOrderMismatch(slots);
+                LogOrderMismatch(slots, "AgentHUD");
                 return slots;
             }
         }
@@ -310,8 +326,93 @@ public sealed class PartyMonitorService : IDisposable
             var m = _party[i];
             if (m != null)
                 slots.Add(new PartySlot(
-                    i + 1, KeyFor(m.ContentId, m.EntityId), m.Name.TextValue,
+                    i + 1, KeyFor(m.ContentId, m.EntityId), m.EntityId, m.Name.TextValue,
                     m.CurrentHP, m.MaxHP, m.ClassJob.RowId));
+        }
+
+        return slots;
+    }
+
+    /// <summary>
+    /// The party in the order the PARTY LIST WIDGET shows it, from the number
+    /// array the game fills for that widget.
+    ///
+    /// <para>
+    /// WHY THIS AND NOT AgentHUD (user report 2026-09-01: *"die uebersicht von
+    /// strg shift f 12 stimmt nicht mit der tatsaechlichen gruppe auf den f
+    /// tasten ueberein"*): the widget array keeps PLAYERS and TRUST NPCS IN TWO
+    /// SEPARATE LISTS - <c>PartyMembers</c> (8) and <c>TrustMembers</c> (7), plus
+    /// <c>Pets</c> - and each entry carries a <c>DisplayRow</c>, which is the row
+    /// it actually occupies on screen. A dungeon with Duty Support therefore has
+    /// the player in one list and the three NPCs in another, and reading only one
+    /// of them - or reading them in the wrong order - produces exactly the
+    /// mismatch reported: the numbers spoken do not line up with F2 to F8.
+    /// </para>
+    ///
+    /// <para>
+    /// DisplayRow decides the order. If the rows come back all-equal or otherwise
+    /// unusable, the insertion order (players, then trust) is kept instead of
+    /// sorting on a value that says nothing - a wrong order is worse than a
+    /// plain one, because the number IS the targeting key.
+    /// </para>
+    /// </summary>
+    private unsafe List<PartySlot> FromPartyListArray(Dictionary<uint, IPartyMember> byEntityId)
+    {
+        var slots = new List<PartySlot>(NumberVoiceBank.MaxPosition);
+
+        var arr = PartyListNumberArray.Instance();
+        if (arr == null || arr->PartyListCount <= 0) return slots;
+
+        var rows = new List<(int DisplayRow, uint EntityId, int CurrentHp, int MaxHp)>();
+
+        // Die ContentId dieses Zahlenfelds wird BEWUSST nicht gelesen:
+        // FFXIVClientStructs hat sie als veraltet markiert ("Use EntityId
+        // Instead"). Die ContentId - die den Verlauf ueber Zonenwechsel hinweg
+        // an der Person haelt - kommt deshalb aus IPartyList, ueber die EntityId
+        // gesucht.
+        void Collect(Span<PartyListNumberArray.PartyListMemberNumberArray> span, int count)
+        {
+            var n = Math.Min(count, span.Length);
+            for (var i = 0; i < n; i++)
+            {
+                var e = span[i];
+                if (e.EntityId == 0 || e.MaxHealth <= 0) continue;
+                rows.Add((e.DisplayRow, e.EntityId, e.CurrentHealth, e.MaxHealth));
+            }
+        }
+
+        Collect(arr->PartyMembers, arr->PartyListCount);
+        Collect(arr->TrustMembers, arr->TrustCount);
+
+        if (rows.Count == 0) return slots;
+
+        // Nur sortieren, wenn DisplayRow ueberhaupt unterscheidet.
+        var distinctRows = new HashSet<int>();
+        foreach (var r in rows) distinctRows.Add(r.DisplayRow);
+        if (distinctRows.Count == rows.Count) rows.Sort((a, b) => a.DisplayRow.CompareTo(b.DisplayRow));
+
+        for (var i = 0; i < rows.Count && i < NumberVoiceBank.MaxPosition; i++)
+        {
+            var r = rows[i];
+            byEntityId.TryGetValue(r.EntityId, out var listMember);
+            var contentId = listMember?.ContentId ?? 0UL;
+
+            // Werte bevorzugt vom lebenden Objekt: dort steht auch der Job, und
+            // das Zahlenfeld fuehrt nur ein Klassen-SYMBOL, keine Job-Nummer.
+            if (_objects.SearchByEntityId(r.EntityId) is ICharacter chara && chara.MaxHp > 0)
+            {
+                slots.Add(new PartySlot(
+                    i + 1, KeyFor(contentId, r.EntityId), r.EntityId, chara.Name.TextValue,
+                    chara.CurrentHp, chara.MaxHp, chara.ClassJob.RowId));
+                continue;
+            }
+
+            // Sonst die Werte des Zahlenfelds; Job bleibt unbekannt (Rolle
+            // "sonstige"), Leben stimmt trotzdem.
+            var name = listMember?.Name.TextValue ?? string.Empty;
+            slots.Add(new PartySlot(
+                i + 1, KeyFor(contentId, r.EntityId), r.EntityId, name,
+                (uint)Math.Max(0, r.CurrentHp), (uint)r.MaxHp, 0));
         }
 
         return slots;
@@ -338,26 +439,57 @@ public sealed class PartyMonitorService : IDisposable
     /// is the evidence that settles which source is right - a blind player cannot
     /// see the party list to check, so the log has to say it.
     /// </summary>
-    private void LogOrderMismatch(List<PartySlot> hudOrder)
+    private unsafe void LogOrderMismatch(List<PartySlot> order, string source)
     {
-        var signature = string.Join(",", hudOrder.Select(s => s.Key));
+        var signature = source + ":" + string.Join(",", order.Select(s => s.Key));
         if (signature == _loggedOrderSignature) return;
         _loggedOrderSignature = signature;
 
-        var differs = false;
-        for (var i = 0; i < hudOrder.Count && i < _party.Length; i++)
-            if (KeyFor(_party[i]?.ContentId ?? 0, _party[i]?.EntityId ?? 0) != hudOrder[i].Key)
-            { differs = true; break; }
+        // ALLE Quellen nebeneinander, weil genau ihr Auseinandergehen der Fehler
+        // ist, der zweimal zugeschlagen hat: erst schwieg der Monitor in
+        // NPC-Gruppen, dann stimmten die Nummern nicht mit F2 bis F8 ueberein.
+        // Ein blinder Spieler kann die Gruppenliste nicht ansehen, um zu
+        // vergleichen - also muss das Log den Vergleich anstellen.
+        var used = string.Join(", ", order.Select(s => $"{s.Position} {s.Name}"));
+        _log.Info($"[PartyMonitor] Benutzte Reihenfolge ({source}): {used}");
 
-        // Die Zahl der IPartyList-Eintraege steht mit dabei, weil sie die Frage
-        // beantwortet, die den NPC-Fehler ausgeloest hat: fuehrt die Gruppenliste
-        // des Spiels die Trupp-NPCs ueberhaupt? Steht hier "HUD 4, IPartyList 0",
-        // ist die Antwort nein - und genau daran ist der Monitor damals still
-        // geblieben.
-        var names = string.Join(", ", hudOrder.Select(s => $"{s.Position} {s.Name}"));
-        _log.Info($"[PartyMonitor] Reihenfolge aus dem HUD: {names}" +
-                  $" (HUD {hudOrder.Count}, IPartyList {_party.Length})" +
-                  $" - {(differs ? "WEICHT AB von IPartyList" : "gleich wie IPartyList")}");
+        var arr = PartyListNumberArray.Instance();
+        if (arr != null)
+            _log.Info($"[PartyMonitor] Gruppenfenster: {arr->PartyListCount} Spieler, " +
+                      $"{arr->TrustCount} Trupp-NPCs, {arr->ChocoboCount} Chocobo, {arr->PetCount} Begleiter." +
+                      $" DisplayRows: {DisplayRowDump(arr)}");
+
+        var hud = AgentHUD.Instance();
+        if (hud != null)
+        {
+            var members = hud->PartyMembers;
+            var count = Math.Min((int)hud->PartyMemberCount, members.Length);
+            var hudNames = new List<string>(count);
+            for (var i = 0; i < count; i++)
+                hudNames.Add($"{i + 1} {members[i].Name.ToString()}");
+            _log.Info($"[PartyMonitor] AgentHUD ({count}): {string.Join(", ", hudNames)}");
+        }
+
+        var partyNames = new List<string>(_party.Length);
+        for (var i = 0; i < _party.Length; i++)
+            partyNames.Add($"{i + 1} {_party[i]?.Name.TextValue ?? "-"}");
+        _log.Info($"[PartyMonitor] IPartyList ({_party.Length}): {string.Join(", ", partyNames)}");
+    }
+
+    /// <summary>Die DisplayRow jeder Zeile des Gruppenfensters, fuer das Log.</summary>
+    private static unsafe string DisplayRowDump(PartyListNumberArray* arr)
+    {
+        var parts = new List<string>();
+
+        var players = arr->PartyMembers;
+        for (var i = 0; i < Math.Min(arr->PartyListCount, players.Length); i++)
+            if (players[i].EntityId != 0) parts.Add($"Spieler{i}=Zeile{players[i].DisplayRow}");
+
+        var trust = arr->TrustMembers;
+        for (var i = 0; i < Math.Min(arr->TrustCount, trust.Length); i++)
+            if (trust[i].EntityId != 0) parts.Add($"NPC{i}=Zeile{trust[i].DisplayRow}");
+
+        return parts.Count > 0 ? string.Join(" ", parts) : "keine";
     }
 
     /// <summary>Forgets members who left, so their history cannot resurface later.</summary>
@@ -524,6 +656,28 @@ public sealed class PartyMonitorService : IDisposable
         return list;
     }
 
+    /// <summary>
+    /// Die Gruppennummer eines Wesens, oder 0, wenn es nicht in der Gruppe ist.
+    ///
+    /// <para>
+    /// Dafuer da, dass die Nummer beim Anvisieren MITGESPROCHEN werden kann - und
+    /// das ist mehr als eine Bequemlichkeit: es ist die einzige Gegenprobe, die
+    /// ein blinder Spieler selbst durchfuehren kann. F3 druecken und "Gruppe 3"
+    /// hoeren heisst, die Nummerierung stimmt; hoert man "Gruppe 4", ist sie
+    /// verschoben. Ohne das bleibt nur, die Gruppenliste anzusehen - und genau
+    /// das geht hier nicht.
+    /// </para>
+    /// </summary>
+    public int PositionOf(uint entityId)
+    {
+        if (!_config.PartyMonitorEnabled || entityId == 0) return 0;
+
+        foreach (var slot in OrderedParty())
+            if (slot.EntityId == entityId) return slot.Position;
+
+        return 0;
+    }
+
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
     private bool EnsureOutput()
     {
@@ -573,7 +727,7 @@ public sealed class PartyMonitorService : IDisposable
     /// it. See OrderedParty.
     /// </summary>
     private readonly record struct PartySlot(
-        int Position, ulong Key, string Name, uint CurrentHp, uint MaxHp, uint JobId);
+        int Position, ulong Key, uint EntityId, string Name, uint CurrentHp, uint MaxHp, uint JobId);
 }
 
 /// <summary>

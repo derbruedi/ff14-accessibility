@@ -506,6 +506,9 @@ public sealed class Plugin : IDalamudPlugin
             System.IO.Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? string.Empty,
                 "assets", "partymonitor"));
+        // Erst jetzt: die Zielansage haengt die Gruppennummer an, und der Monitor
+        // wird nach der Navigation gebaut (siehe NavigationService.PartyMonitor).
+        _navigation.PartyMonitor = _partyMonitor;
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
