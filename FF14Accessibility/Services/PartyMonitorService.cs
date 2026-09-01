@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.ClientState.Party;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
@@ -56,6 +57,7 @@ public sealed class PartyMonitorService : IDisposable
     private const byte GameRoleHealer = 4;
 
     private readonly IPartyList     _party;
+    private readonly IObjectTable   _objects;
     private readonly IDataManager   _data;
     private readonly Configuration  _config;
     private readonly IPluginLog     _log;
@@ -86,10 +88,12 @@ public sealed class PartyMonitorService : IDisposable
     private string _loggedOrderSignature = string.Empty;
 
     public PartyMonitorService(
-        IPartyList party, IDataManager data, Configuration config, IPluginLog log, string assetDir)
+        IPartyList party, IObjectTable objects, IDataManager data, Configuration config,
+        IPluginLog log, string assetDir)
     {
-        _party  = party;
-        _data   = data;
+        _party   = party;
+        _objects = objects;
+        _data    = data;
         _config = config;
         _log    = log;
         _bank   = new NumberVoiceBank(
@@ -147,14 +151,15 @@ public sealed class PartyMonitorService : IDisposable
     {
         _seen.Clear();
 
-        foreach (var (position, member) in party)
+        foreach (var slot in party)
         {
-            if (member.MaxHP == 0) continue;
+            if (slot.MaxHp == 0) continue;
 
-            var id      = member.ContentId;
-            var percent = (int)(member.CurrentHP * 100u / member.MaxHP);
-            var step    = StepFor(percent);
-            var role    = RoleFor(member.ClassJob.RowId);
+            var position = slot.Position;
+            var id       = slot.Key;
+            var percent  = (int)(slot.CurrentHp * 100u / slot.MaxHp);
+            var step     = StepFor(percent);
+            var role     = RoleFor(slot.JobId);
             _seen.Add(id);
 
             if (!_state.TryGetValue(id, out var prev))
@@ -192,13 +197,14 @@ public sealed class PartyMonitorService : IDisposable
     /// </summary>
     private void SweepContinuous(List<PartySlot> party)
     {
-        foreach (var (position, member) in party)
+        foreach (var slot in party)
         {
-            if (member.MaxHP == 0) continue;
+            if (slot.MaxHp == 0) continue;
 
-            var percent = (int)(member.CurrentHP * 100u / member.MaxHP);
-            var role    = RoleFor(member.ClassJob.RowId);
-            var alarmAt = Setting(_config.PartyMonitorContinuousStartAt, role, 70);
+            var position = slot.Position;
+            var percent  = (int)(slot.CurrentHp * 100u / slot.MaxHp);
+            var role     = RoleFor(slot.JobId);
+            var alarmAt  = Setting(_config.PartyMonitorContinuousStartAt, role, 70);
 
             if (percent > alarmAt) continue;
             if (_config.PartyMonitorSilentAtFullAndZero && (percent == 0 || percent == 100)) continue;
@@ -219,10 +225,30 @@ public sealed class PartyMonitorService : IDisposable
     /// AgentHUD.PartyMembers holds. IPartyList exposes the game's party array,
     /// which is not documented to carry the same order.
     ///
-    /// So the ORDER comes from the HUD and the DATA (hp, job) from Dalamud's
-    /// supported interface, matched by ContentId. If the HUD is not available -
-    /// loading, or a layout without a party list - the code falls back to
-    /// IPartyList's order rather than going silent.
+    /// So the ORDER comes from the HUD, and the DATA (hp, job) from Dalamud's
+    /// supported interfaces. If the HUD is not available - loading, or a layout
+    /// without a party list - the code falls back to IPartyList's order rather
+    /// than going silent.
+    ///
+    /// <para>
+    /// NPC PARTY MEMBERS COUNT (user report 2026-09-01: *"man kann instanzen auch
+    /// mit npc betreten, da springt der heilmonitor nicht an"*). A dungeon run
+    /// with Duty Support or a Trust squad has NPCs in the party slots, and those
+    /// carry no ContentId - the monitor used to join HUD slots to IPartyList by
+    /// ContentId and dropped every one of them, then bailed out entirely at
+    /// "IPartyList is empty". A healer running with NPCs got SILENCE, which is
+    /// the one failure mode this whole feature exists to prevent.
+    /// </para>
+    ///
+    /// <para>
+    /// The fix is to stop going through ContentId at all: the HUD slot carries an
+    /// <c>EntityId</c>, and <c>IObjectTable.SearchByEntityId</c> turns that into
+    /// an <see cref="ICharacter"/> for anyone in the party - player or NPC alike -
+    /// with CurrentHp, MaxHp and ClassJob on it. Same source of truth as before,
+    /// one indirection less, and it no longer cares what kind of being fills the
+    /// slot. IPartyList stays as the fallback for a player the object table does
+    /// not have (out of range), and for the no-HUD case.
+    /// </para>
     /// </summary>
     private unsafe List<PartySlot> OrderedParty()
     {
@@ -235,8 +261,6 @@ public sealed class PartyMonitorService : IDisposable
             if (m != null) byContentId[m.ContentId] = m;
         }
 
-        if (byContentId.Count == 0) return slots;
-
         var hud = AgentHUD.Instance();
         if (hud != null && hud->PartyMemberCount > 0)
         {
@@ -245,9 +269,33 @@ public sealed class PartyMonitorService : IDisposable
 
             for (var i = 0; i < count; i++)
             {
+                var entityId  = members[i].EntityId;
                 var contentId = members[i].ContentId;
-                if (contentId != 0 && byContentId.TryGetValue(contentId, out var member))
-                    slots.Add(new PartySlot(i + 1, member));
+
+                // Erste Wahl: das lebende Objekt. Gilt fuer Spieler wie fuer
+                // Trupp-NPCs, und nur dieser Weg kennt beide.
+                if (entityId != 0 && _objects.SearchByEntityId(entityId) is ICharacter chara && chara.MaxHp > 0)
+                {
+                    slots.Add(new PartySlot(
+                        i + 1,
+                        KeyFor(contentId, entityId),
+                        chara.Name.TextValue,
+                        chara.CurrentHp,
+                        chara.MaxHp,
+                        chara.ClassJob.RowId));
+                    continue;
+                }
+
+                // Rueckfall fuer einen Spieler, den die Objekttabelle gerade nicht
+                // fuehrt - ausser Reichweite, aber in der Gruppe.
+                if (contentId != 0 && byContentId.TryGetValue(contentId, out var member) && member.MaxHP > 0)
+                    slots.Add(new PartySlot(
+                        i + 1,
+                        KeyFor(contentId, member.EntityId),
+                        member.Name.TextValue,
+                        member.CurrentHP,
+                        member.MaxHP,
+                        member.ClassJob.RowId));
             }
 
             if (slots.Count > 0)
@@ -260,11 +308,30 @@ public sealed class PartyMonitorService : IDisposable
         for (var i = 0; i < Math.Min(_party.Length, NumberVoiceBank.MaxPosition); i++)
         {
             var m = _party[i];
-            if (m != null) slots.Add(new PartySlot(i + 1, m));
+            if (m != null)
+                slots.Add(new PartySlot(
+                    i + 1, KeyFor(m.ContentId, m.EntityId), m.Name.TextValue,
+                    m.CurrentHP, m.MaxHP, m.ClassJob.RowId));
         }
 
         return slots;
     }
+
+    /// <summary>
+    /// The key the health history is filed under. ContentId where there is one,
+    /// because it follows a PERSON across zoning and party reshuffles; EntityId
+    /// for everyone else, which is what an NPC party member has.
+    ///
+    /// <para>
+    /// The NPC key is lifted into the top of the range so it can never collide
+    /// with a real ContentId. Why that matters: a collision would make the
+    /// monitor compare one being's health against another's and announce damage
+    /// that never happened - the exact bug that made this history ContentId-keyed
+    /// instead of slot-keyed in the first place.
+    /// </para>
+    /// </summary>
+    private static ulong KeyFor(ulong contentId, uint entityId)
+        => contentId != 0 ? contentId : (0xFFFF_FFFF_0000_0000UL | entityId);
 
     /// <summary>
     /// Logs once per roster whether the HUD order differs from IPartyList's. This
@@ -273,16 +340,23 @@ public sealed class PartyMonitorService : IDisposable
     /// </summary>
     private void LogOrderMismatch(List<PartySlot> hudOrder)
     {
-        var signature = string.Join(",", hudOrder.Select(s => s.Member.ContentId));
+        var signature = string.Join(",", hudOrder.Select(s => s.Key));
         if (signature == _loggedOrderSignature) return;
         _loggedOrderSignature = signature;
 
         var differs = false;
         for (var i = 0; i < hudOrder.Count && i < _party.Length; i++)
-            if (_party[i]?.ContentId != hudOrder[i].Member.ContentId) { differs = true; break; }
+            if (KeyFor(_party[i]?.ContentId ?? 0, _party[i]?.EntityId ?? 0) != hudOrder[i].Key)
+            { differs = true; break; }
 
-        var names = string.Join(", ", hudOrder.Select(s => $"{s.Position} {s.Member.Name.TextValue}"));
+        // Die Zahl der IPartyList-Eintraege steht mit dabei, weil sie die Frage
+        // beantwortet, die den NPC-Fehler ausgeloest hat: fuehrt die Gruppenliste
+        // des Spiels die Trupp-NPCs ueberhaupt? Steht hier "HUD 4, IPartyList 0",
+        // ist die Antwort nein - und genau daran ist der Monitor damals still
+        // geblieben.
+        var names = string.Join(", ", hudOrder.Select(s => $"{s.Position} {s.Name}"));
         _log.Info($"[PartyMonitor] Reihenfolge aus dem HUD: {names}" +
+                  $" (HUD {hudOrder.Count}, IPartyList {_party.Length})" +
                   $" - {(differs ? "WEICHT AB von IPartyList" : "gleich wie IPartyList")}");
     }
 
@@ -431,13 +505,14 @@ public sealed class PartyMonitorService : IDisposable
     {
         var list = new List<(int, string)>();
 
-        foreach (var (position, member) in OrderedParty())
+        foreach (var slot in OrderedParty())
         {
+            var position = slot.Position;
             // The job goes with the name: checking the numbering against the
             // F-keys is far easier when you hear "three, warrior, Name" than a
             // bare name, because you already know who plays what.
-            var name = member.Name.TextValue;
-            if (_data.GetExcelSheet<ClassJob>().TryGetRow(member.ClassJob.RowId, out var job))
+            var name = slot.Name;
+            if (_data.GetExcelSheet<ClassJob>().TryGetRow(slot.JobId, out var job))
             {
                 var jobName = job.Name.ExtractText();
                 if (!string.IsNullOrWhiteSpace(jobName)) name = $"{jobName} {name}";
@@ -491,7 +566,14 @@ public sealed class PartyMonitorService : IDisposable
     private readonly record struct PendingCall(int Position, int Step, float Volume, int Percent);
 
     /// <summary>One party member together with the number the monitor calls them by.</summary>
-    private readonly record struct PartySlot(int Position, IPartyMember Member);
+    /// <summary>
+    /// One party slot, flattened to the values the monitor actually uses. Flat and
+    /// not an IPartyMember on purpose: a slot can be held by a player OR by an NPC
+    /// (Duty Support, Trust), and only one of those two has an IPartyMember behind
+    /// it. See OrderedParty.
+    /// </summary>
+    private readonly record struct PartySlot(
+        int Position, ulong Key, string Name, uint CurrentHp, uint MaxHp, uint JobId);
 }
 
 /// <summary>

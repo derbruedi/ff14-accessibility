@@ -502,7 +502,7 @@ public sealed class Plugin : IDalamudPlugin
         // Die Zahlwoerter des Heilmonitors liegen als fertige Klangdateien neben
         // der Plugin-DLL (assets\partymonitor), uebernommen aus Sku.
         _partyMonitor = new PartyMonitorService(
-            PartyList, DataManager, _config, Log,
+            PartyList, ObjectTable, DataManager, _config, Log,
             System.IO.Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? string.Empty,
                 "assets", "partymonitor"));
