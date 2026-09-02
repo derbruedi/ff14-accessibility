@@ -88,6 +88,27 @@ public sealed class AutoWalkService : IDisposable
     /// "no route". Covers pathfind time on large zones with room to spare.</summary>
     private const double StartTimeoutS = 6.0;
 
+    /// <summary>
+    /// Same for a FLIGHT, but as an emergency brake rather than a verdict: what
+    /// decides is <c>NavmeshIpc.PathfindInProgress</c>, and this only caps how long
+    /// we believe it.
+    ///
+    /// <para>WHY IT IS SEVEN TIMES <see cref="StartTimeoutS"/>: the voxel search
+    /// through open air is not the mesh search. Measured on 2026-09-01 (log
+    /// 21:11-21:13) over 814 to 894 m: 24.8 s, 21.6 s, 18.9 s, 20.7 s. The 6 s of
+    /// <see cref="StartTimeoutS"/> declared every one of them a failure while
+    /// vnavmesh was still working - and the flight path then arrived twenty
+    /// seconds later, steering against the ground walk that had been started in
+    /// the meantime.</para>
+    /// </summary>
+    private const double FlightStartTimeoutS = 45.0;
+
+    /// <summary>A flight search running longer than this gets said out loud, once.
+    /// Short hops finish well below it and stay silent - the sentence exists for
+    /// the twenty-second waits, where silence is indistinguishable from a
+    /// crash.</summary>
+    private const double FlightSearchNoticeS = 3.0;
+
     /// <summary>The character has not moved this long while a path claims to run:
     /// wedged on geometry, or shoved against the edge of the mesh towards a
     /// destination the mesh cannot reach.</summary>
@@ -130,6 +151,24 @@ public sealed class AutoWalkService : IDisposable
     /// that was already computing when we stopped still gets handed to FollowPath
     /// and would walk off unsupervised (fact 1).</summary>
     private const double StopGuardS = 3.0;
+
+    /// <summary>
+    /// Hard end of the guard window when a pathfind is STILL running at the end of
+    /// <see cref="StopGuardS"/>.
+    ///
+    /// <para>WHY THE THREE SECONDS ARE NOT ENOUGH ANY MORE: they were measured
+    /// against mesh searches, which finish in well under a second. A voxel search
+    /// through open air takes 19 to 25 s (2026-09-01). Its result is handed to
+    /// FollowPath whether or not anybody is still waiting for it - so a guard that
+    /// has already expired lets through exactly the path it exists to catch, and
+    /// the character flies off unsupervised half a minute after the walk ended.
+    /// </para>
+    ///
+    /// <para>Capped rather than open-ended: the guard stops EVERY path, including
+    /// one another plugin legitimately started. Waiting out our own search is
+    /// right; blocking the movement of the whole game is not.</para>
+    /// </summary>
+    private const double StopGuardMaxS = 60.0;
 
     /// <summary>
     /// How far the last REAL waypoint may sit from the destination before the path
@@ -206,6 +245,55 @@ public sealed class AutoWalkService : IDisposable
     /// would turn every ordinary stop into a height report.</summary>
     private const float LedgeAnnounceRise = 1.5f;
 
+    // ── Fliegen ──────────────────────────────────────────────────────
+    // Ein Flug ist kein schnellerer Lauf, sondern ein anderer Suchraum: vnavmesh
+    // sucht dann im Voxel-Volumen der Luft statt auf der Gehflaeche (siehe
+    // NavmeshIpc.MoveCloseTo). Damit sind Netzluecken, Steilhaenge und
+    // Hoehenspruenge - die Ursache fast jeder abgebrochenen Strecke in diesem
+    // Dienst - schlicht kein Thema mehr.
+    //
+    // ANGESTOSSEN WIRD EIN FLUG NICHT VON HIER. Der Spieler ruft sein Reittier
+    // selbst und hebt selbst ab; dieser Dienst stellt nur fest, dass die Figur in
+    // der Luft ist, und nimmt dann den richtigen Suchraum (siehe ShouldFly).
+    // Damit merkt niemand, der noch nicht fliegen kann, ueberhaupt etwas davon.
+
+    /// <summary>Wie oft der Sinkflug neu angestossen wird. vnavmesh wirft seine
+    /// eigene Punktliste weg, sobald sein Steckenbleib-Zaehler zuschlaegt (siehe
+    /// <see cref="NavmeshIpc.MoveAlong"/>), und ein erneutes Setzen kostet
+    /// nichts.</summary>
+    private const double DescendRepathS = 0.5;
+
+    /// <summary>Wie weit seitlich nach dem Boden unter der Figur gesucht wird.
+    /// Eng gehalten: gefragt ist der Boden GENAU hier, nicht der in der
+    /// Nachbarschaft.</summary>
+    private const float DescendProbeXZ = 3f;
+
+    /// <summary>Wie tief das Sinkziel gelegt wird, wenn das Netz hier keinen Boden
+    /// kennt (ueber Wasser, ueber einer Schlucht). Das Spiel stoppt den Sinkflug
+    /// am Boden von selbst - ein zu tiefes Ziel schadet also nicht, ein zu hohes
+    /// laesst die Figur schweben.</summary>
+    private const float DescendFallback = 50f;
+
+    /// <summary>Wie lange nach dem Absteigen noch gewartet wird, bevor die
+    /// Ankunft gesprochen wird. Der Fall aus <see cref="LandingHeight"/> dauert
+    /// einen Moment, und "angekommen und gelandet" waere mitten im Fall gelogen.
+    /// </summary>
+    private const double LandingSettleS = 1.5;
+
+    /// <summary>
+    /// Nach dieser Zeit wird die Ankunft auch dann gemeldet, wenn die Figur noch
+    /// auf dem Reittier sitzt.
+    /// <para>
+    /// UNVERZICHTBAR: Absteigen kann dauerhaft verweigert werden - im Kampf, in
+    /// einer Szene, waehrend eines Zaubers. Ohne Frist bliebe der Lauf ewig in
+    /// <see cref="Phase.Landing"/> haengen, der Spieler hoerte NIE, dass er
+    /// angekommen ist, und <see cref="IsActive"/> unterdrueckte weiter die
+    /// Ziel-Ansagen. Ein Spieler, der auf dem Reittier am Ziel steht, ist besser
+    /// dran als einer, dem niemand sagt, dass er da ist.
+    /// </para>
+    /// </summary>
+    private const double LandingTimeoutS = 6.0;
+
     private enum Phase
     {
         /// <summary>Nothing running.</summary>
@@ -217,6 +305,9 @@ public sealed class AutoWalkService : IDisposable
         /// <summary>Driving a recorded trail over a gap in the mesh (see
         /// <see cref="TryTakeTrail"/>), with vnavmesh's pathfinding out of the loop.</summary>
         TrailWalking,
+        /// <summary>Am Ziel angekommen, aber noch in der Luft: absteigen und den
+        /// Fall abwarten, bevor die Ankunft gesprochen wird.</summary>
+        Landing,
         /// <summary>Walk over; suppressing late revivals (see <see cref="StopGuardS"/>).</summary>
         Guarding,
     }
@@ -256,6 +347,11 @@ public sealed class AutoWalkService : IDisposable
     private float _reengageBestDistance; // closest approach when we last re-requested
     private DateTime _startedAt;
     private DateTime _guardUntil;
+
+    /// <summary>Latest point the guard may be extended to while a pathfind is still
+    /// running - see <see cref="StopGuardMaxS"/>.</summary>
+    private DateTime _guardHardUntil;
+
     private bool _guardWarned;          // late revival reported once per walk
 
     private ulong _targetId;            // 0 for position destinations (quest markers)
@@ -359,11 +455,60 @@ public sealed class AutoWalkService : IDisposable
     /// not the player's question.</summary>
     private Vector3? _ceilingDestination;
 
+    // ── Zustand des laufenden Fluges ─────────────────────────────────
+
+    /// <summary>Ob DIESER Lauf ein Flug ist. Steuert drei Dinge: den
+    /// <c>fly</c>-Parameter der Wegsuche, das Ueberspringen aller
+    /// Netzlücken-Umwege (Bruecken, Spuren, Vorsprung-Umleitung - im Luftraum
+    /// gibt es die Probleme nicht, die sie loesen) und die Landung am Ziel.</summary>
+    private bool _flying;
+
+    /// <summary>
+    /// Dieser Auftrag hat das Fliegen schon versucht und es hat nicht getragen.
+    ///
+    /// <para>
+    /// UNVERZICHTBAR, weil jeder Rueckfall auf den Bodenweg ueber
+    /// <see cref="Begin"/> laeuft - und Begin fragt als Erstes wieder
+    /// <see cref="ShouldFly"/>. Nach einem gescheiterten Aufstieg sitzt die Figur
+    /// dann aber auf dem Reittier, die Antwort waere also erneut "ja" und der Lauf
+    /// liefe im Kreis: Flugpfad, Frist, Rueckfall, Flugpfad. Der Riegel faellt
+    /// erst mit dem naechsten Tastendruck des Spielers
+    /// (<see cref="Toggle"/>/<see cref="ToggleToPosition"/>).
+    /// </para>
+    /// </summary>
+    private bool _flightDeclined;
+
+    /// <summary>Ob <see cref="AccessibilityStrings.FlightPathSearching"/> fuer den
+    /// laufenden Auftrag schon gesprochen wurde. Einmal pro Auftrag, nicht pro
+    /// Frame - siehe <see cref="FlightSearchNoticeS"/>.</summary>
+    private bool _flightSearchAnnounced;
+
+    /// <summary>Wann das Absteigen ausgeloest wurde (<see cref="Phase.Landing"/>).</summary>
+    private DateTime _landingSince;
+
+    /// <summary>Was nach der Landung gesprochen wird. Ein Flug endet nicht nur am
+    /// Ziel - er kann auch unterwegs aufgeben - und in beiden Faellen muss die
+    /// Figur erst herunter, bevor die Auskunft stimmt.</summary>
+    private string _landingMessage = string.Empty;
+    private string _landingReason = string.Empty;
+
+    /// <summary>Wann der Sinkflug zuletzt gesetzt wurde (<see cref="DescendRepathS"/>).</summary>
+    private DateTime _lastDescendAt = DateTime.MinValue;
+
     /// <summary>Whether an auto-walk is currently running. Plugin.cs suppresses
     /// automatic target-change announcements while this is true - passing NPCs
     /// grab the soft target every few steps and each one would be announced
     /// with distance and direction (user feedback 2026-07-10).</summary>
-    public bool IsActive => _phase is Phase.Starting or Phase.Walking or Phase.TrailWalking;
+    public bool IsActive => _phase is Phase.Starting or Phase.Walking
+                                   or Phase.TrailWalking or Phase.Landing;
+
+    /// <summary>
+    /// Kennt die Flugbedingungen des Spiels und ruft das Reittier. NACH dem
+    /// Konstruktor gesetzt, wie <see cref="Transitions"/> und <see cref="Obstacles"/>.
+    /// Optional: fehlt er, laeuft jeder Lauf genau wie bisher am Boden.
+    /// </summary>
+    public FlightService? Flight { private get => _flight; set => _flight = value; }
+    private FlightService? _flight;
 
     /// <summary>Whether the follow mode is currently running (see <see cref="ToggleFollow"/>).</summary>
     public bool IsFollowing => _following;
@@ -639,6 +784,11 @@ public sealed class AutoWalkService : IDisposable
         // no object at all in it (log 2026-08-15 15:56, garden bed 40000591).
         // Describe is the one place that knows the sheet names, the icon-named
         // objects and the honest "Objekt ohne Namen" stand-in.
+        // Neuer Auftrag des Spielers, also neuer Flugversuch. Der Riegel wird HIER
+        // geloest und nicht in Begin: der Rueckfall auf den Bodenweg ruft Begin
+        // selbst wieder auf, und dort geloest waere er wirkungslos.
+        _flightDeclined = false;
+
         Begin(target.Position, _objectNames.Describe(target), StopRange, target.GameObjectId);
     }
 
@@ -660,6 +810,7 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
+        _flightDeclined = false;   // neuer Auftrag, neuer Flugversuch - siehe Toggle
         Begin(position, name, stopRange, 0);
     }
 
@@ -701,6 +852,21 @@ public sealed class AutoWalkService : IDisposable
                     ? AccessibilityStrings.MeshStillLoading(progress * 100)
                     : AccessibilityStrings.MeshNotReady);
             }
+            return;
+        }
+
+        // Ab hier ist der Lauf ein Bodenlauf, bis BeginFlightPath etwas anderes
+        // sagt. Ohne diese Zeile bliebe das Flug-Flag eines vorherigen Laufs
+        // stehen und der naechste Bodenlauf ueberspraenge alle Netzlücken-Umwege.
+        _flying = false;
+
+        // Fliegt der Spieler gerade? Dann den Flugpfad nehmen. Die Frage faellt
+        // HIER, vor allem anderen: ein Flug ueberspringt die Vorsprung-Umleitung,
+        // die Bruecken und die Spuren gleich mit, weil die alle Loesungen fuer
+        // Probleme des Bodennetzes sind, die es im Luftraum nicht gibt.
+        if (fresh && ShouldFly())
+        {
+            BeginFlightPath(destination, name, stopRange, targetId);
             return;
         }
 
@@ -826,6 +992,290 @@ public sealed class AutoWalkService : IDisposable
                 : AccessibilityStrings.WalkingTo(name));
     }
 
+    // ── Fliegen ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Whether this walk should be a flight: ONLY when the player is already in
+    /// the air, having summoned a mount and taken off themselves.
+    ///
+    /// <para>
+    /// USER'S CALL, 2026-09-01, replacing a version in which the plugin summoned a
+    /// mount and took off by itself: "mach das mal so das man das reittier manuell
+    /// rufen muss und selber los fliegen muss denn so bekommen leute die noch
+    /// nicht fliegen koennen keine probleme". Whoever cannot fly yet never touches
+    /// any of this - their walk is exactly the walk it was before V5.96.
+    /// </para>
+    ///
+    /// <para>
+    /// It also disposes of a question this plugin could not answer. Whether the
+    /// character is ALLOWED to fly here would have needed
+    /// <c>IsAetherCurrentZoneComplete</c>, whose behaviour in the base game's zones
+    /// was never measured - they all share aether current set 19, yet have no
+    /// currents to collect. A character who IS airborne has settled that question
+    /// by being airborne. The game is the authority, not our prediction.
+    /// </para>
+    ///
+    /// <para>
+    /// No distance threshold either: in the air a ground path is not slower, it is
+    /// WRONG. vnavmesh would steer along the walkable surface far below and drive
+    /// the mount through whatever stands in between.
+    /// </para>
+    /// </summary>
+    private bool ShouldFly()
+    {
+        if (_flight == null) return false;
+        if (!_config.AutoWalkFlyEnabled) return false;
+        // Schon versucht, hat nicht getragen - siehe _flightDeclined.
+        if (_flightDeclined) return false;
+
+        // Die eine Bedingung. Am Boden wird gelaufen, ohne Wenn und Aber.
+        if (!_flight.IsInFlight) return false;
+
+        // Baut vnavmesh hier ueberhaupt einen Luftraum? Ohne Volumen antwortet
+        // PathfindVolume mit einer leeren Liste und der Lauf stuende still. Diese
+        // Pruefung bleibt, weil sie NICHT den Spieler betrifft, sondern das
+        // Wegenetz - fliegen darf er hier nachweislich, er tut es ja gerade.
+        if (!_flight.HasFlightRoutes)
+        {
+            _log.Info("[Flug] Spieler fliegt, aber vnavmesh baut fuer dieses Gebiet " +
+                      "kein Flugvolumen - laufe.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Requests the FLYING path and enters <see cref="Phase.Starting"/>.
+    ///
+    /// <para>
+    /// Deliberately much shorter than <see cref="Begin"/>: bridges, recorded trails
+    /// and the under-an-overhang detour all exist to work around holes in the
+    /// WALKABLE mesh, and the voxel volume has none of those holes. Running them
+    /// on a flight would send it to a ground bridge it does not need.
+    /// </para>
+    /// </summary>
+    private void BeginFlightPath(Vector3 destination, string name, float stopRange, ulong targetId)
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { Finish(null, "Spieler weg"); return; }
+
+        var distance = Vector3.Distance(player.Position, destination);
+
+        _nav.Stop();
+
+        if (!_nav.MoveCloseTo(destination, stopRange, fly: true))
+        {
+            // WARUM HIER UNTERSCHIEDEN WIRD: "abgelehnt" hat zwei ganz
+            // verschiedene Bedeutungen. AsyncMoveRequest.MoveTo gibt false zurueck,
+            // solange eine Suche laeuft ("Pathfinding task is in progress...", im
+            // Log vom 2026-09-01 viermal). Diesen Fall auf den Bodenweg umzuleiten
+            // war falsch: die alte Suche rechnet weiter, liefert ihren Pfad und
+            // steuert dann gegen den Bodenlauf. Ein Abbruch ist nicht moeglich,
+            // also wird gewartet statt ausgewichen.
+            if (_nav.PathfindInProgress)
+            {
+                _log.Info("[Flug] Wegsuche laeuft noch - neuer Auftrag nicht angenommen.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.PathSearchStillBusy);
+                Finish(null, "Wegsuche belegt");
+                return;
+            }
+
+            // Es rechnet nichts - die Ablehnung kam also nicht aus der
+            // Warteschlange, sondern vnavmesh ist nicht erreichbar. Zu Fuss weiter
+            // statt schweigend stehen: der Spieler hat einen Lauf angefordert,
+            // nicht einen Flug.
+            _log.Info("[Flug] Wegsuche abgelehnt - laufe stattdessen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFlightPathWalkingInstead);
+            _flying = false;
+            _flightDeclined = true;
+            Begin(destination, name, stopRange, targetId);
+            return;
+        }
+
+        _flying = true;
+
+        // Ein Flug nimmt keine Bruecke und keine Spur - siehe oben.
+        _pendingCrossing = null;
+        _crossingDestination = null;
+        _ceilingDestination = null;
+        _partialPathChecked = true;
+
+        _targetId = targetId;
+        _targetName = name;
+        _destPosition = destination;
+        _stopRange = stopRange;
+        _startTerritory = (ushort)_clientState.TerritoryType;
+
+        _phase = Phase.Starting;
+        _startedAt = DateTime.UtcNow;
+        _lastPosition = player.Position;
+        _lastMoveAt = _startedAt;
+        _lastProgressDistance = distance;
+        _bestDistance = distance;
+        _lastApproachAt = _startedAt;
+        _lastDiagAt = _startedAt;
+        _pathQuiet = false;
+        _routeSpoken = false;
+        _guardWarned = false;
+        _lastWaypointCount = 0;
+        _flightSearchAnnounced = false;
+
+        _log.Info($"[Flug] Flugpfad angefordert zu {name} ({Fmt(destination)}), " +
+                  $"dist={distance:F1}, stopRange={stopRange:F1}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.FlyingTo(name));
+    }
+
+    /// <summary>
+    /// Lands at the destination and announces the arrival once the character is
+    /// down.
+    ///
+    /// <para>
+    /// Dismounting is the landing: the game sets the character down and they drop,
+    /// which FFXIV does without fall damage. It is only issued once the ground is
+    /// within <see cref="LandingHeight"/>, so the drop is a landing rather than a
+    /// long unexplained fall - the flight path ends at the destination's own floor
+    /// point, so that is normally true on the first frame.
+    /// </para>
+    /// </summary>
+    /// <summary>
+    /// Ends a flight by putting the character on the ground first. ALWAYS the way
+    /// a flight ends, whether it arrived or gave up: leaving the player hovering
+    /// would be the one state in which none of the things they flew there to do
+    /// are possible.
+    /// </summary>
+    private void EnterLanding(string message, string reason)
+    {
+        // KEIN Path.Stop hier. Der Sinkflug ist das Landen (siehe LandingUpdate),
+        // und ein Stopp liesse die Figur genau in dem steuerlosen Schweben, aus
+        // dem sie herunter soll. Gestoppt wird erst, wenn sie am Boden steht.
+        _phase = Phase.Landing;
+        _lastDescendAt = DateTime.MinValue;   // sofort sinken, nicht erst im Takt
+        _landingSince = DateTime.UtcNow;
+        _landingMessage = message;
+        _landingReason = reason;
+        _log.Info($"[Flug] Lande ({reason}).");
+    }
+
+    /// <summary>
+    /// A flight gave up short of its destination: land, and say how far is left.
+    ///
+    /// <para>
+    /// Takes the place of the recorded trails, the bridges and the re-request for a
+    /// flight - all three answer holes in the walkable mesh, and none of them
+    /// applies in the air. What is left is the honest report, and it must not use
+    /// the ground wording: "this is as far as the walkable path goes" would be
+    /// plainly false a hundred metres up.
+    /// </para>
+    /// </summary>
+    /// <returns>True when this was a flight and the landing has taken over.</returns>
+    private bool EndFlightShort(Vector3 position, float distance, string reason)
+    {
+        if (!_flying) return false;
+
+        var direction = RouteService.CompassWord(position, _destPosition);
+        var rise = _destPosition.Y - position.Y;
+        EnterLanding(AccessibilityStrings.FlightEndedRemaining(distance, direction, rise),
+                     $"Flug abgebrochen: {reason}, dist={distance:F1}");
+        return true;
+    }
+
+    private void LandingUpdate()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { Finish(null, "Spieler weg"); return; }
+
+        var elapsed = (DateTime.UtcNow - _landingSince).TotalSeconds;
+
+        // ── 1. Noch in der Luft: SINKEN, nicht absteigen ─────────────────────
+        //
+        // GEMESSEN 2026-09-01 (Log 18:26:42 bis 18:27:59): "Absteigen" wird in
+        // der Luft angenommen und tut NICHTS. GetActionStatus meldete 0,
+        // UseAction gab True zurueck - und die Figur blieb zwoelf Aufrufe lang
+        // aufgesessen. In FFXIV gibt es dafuer auch keine API: die ganze
+        // Assembly kennt ausser MountContainer.DismountTimer nichts zum Thema
+        // Landen. Gelandet wird, indem man nach unten FLIEGT, bis die Figur
+        // aufsetzt - das ist die Spielmechanik, und sie ist die einzige.
+        //
+        // Der alte Ablauf konnte das gar nicht: EnterLanding rief Path.Stop, die
+        // Figur schwebte danach steuerlos, und dagegen half kein Absteigen.
+        if (_flight is { IsInFlight: true } && elapsed < LandingSettleS + LandingTimeoutS)
+        {
+            Descend(player.Position);
+            return;
+        }
+
+        // ── 2. Am Boden: absteigen ───────────────────────────────────────────
+        if (_flight is { IsMounted: true })
+        {
+            // Erst jetzt den Sinkflug einstellen - sonst schiebt FollowPath die
+            // Figur weiter gegen den Boden, waehrend sie absteigen soll.
+            _nav.Stop();
+
+            if (elapsed < LandingTimeoutS)
+            {
+                _flight.TryDismount();
+                return;
+            }
+
+            // Absteigen kommt dauerhaft nicht durch (Kampf, Szene, laufender
+            // Zauber). Die Ankunft trotzdem melden: ein Spieler, der aufgesessen
+            // am Ziel steht, ist besser dran als einer, dem niemand sagt, dass er
+            // da ist.
+            _log.Info($"[Flug] Absteigen nach {LandingTimeoutS:F0} s nicht durchgekommen - " +
+                      "melde die Ankunft trotzdem.");
+            Finish(_landingMessage, _landingReason + ", noch aufgesessen");
+            FacingService.FaceTowards(player, _destPosition);
+            return;
+        }
+
+        // ── 3. Abgestiegen ───────────────────────────────────────────────────
+        _nav.Stop();
+        Finish(_landingMessage, _landingReason);
+        FacingService.FaceTowards(player, _destPosition);
+    }
+
+    /// <summary>
+    /// Steers the mount straight down until the game sets the character on the
+    /// ground. The one way to land in FFXIV - see the measurement in
+    /// <see cref="LandingUpdate"/>.
+    ///
+    /// <para>
+    /// Uses <c>Path.MoveTo</c> with <c>fly: true</c> rather than a pathfind: the
+    /// target is a point directly below the character, and asking the voxel search
+    /// for a route to it would answer "you are already there". With
+    /// <c>fly: true</c> the waypoint only counts as reached once the HEIGHT
+    /// matches too (<c>FollowPath.IgnoreDeltaY</c> stays false), so the descent
+    /// keeps being driven all the way down.
+    /// </para>
+    ///
+    /// <para>Re-issued on an interval, not every frame: vnavmesh drops its own
+    /// waypoint list when its stuck-retry fires (see the caution on
+    /// <see cref="NavmeshIpc.MoveAlong"/>), and re-arming it costs nothing.</para>
+    /// </summary>
+    private void Descend(Vector3 position)
+    {
+        var now = DateTime.UtcNow;
+        if (now - _lastDescendAt < TimeSpan.FromSeconds(DescendRepathS)) return;
+        _lastDescendAt = now;
+
+        // Der Boden unter der Figur. Kennt das Netz hier keinen (ueber Wasser,
+        // ueber einer Schlucht), wird ein Punkt weit darunter angesteuert - das
+        // Spiel stoppt den Sinkflug am Boden von selbst, ein zu tiefes Ziel
+        // schadet also nicht, ein zu hohes laesst die Figur schweben.
+        var ground = _nav.PointOnFloor(position, DescendProbeXZ);
+        var target = ground ?? position with { Y = position.Y - DescendFallback };
+
+        // Senkrecht: X und Z der Figur behalten. Der Lauf ist am Ziel angekommen,
+        // waagerecht ist also nichts mehr zu tun, und ein schraeger Sinkflug
+        // truege sie wieder davon weg.
+        target = target with { X = position.X, Z = position.Z };
+
+        _log.Info($"[Flug] Sinkflug nach ({Fmt(target)}), " +
+                  $"Hoehe darueber {position.Y - target.Y:F1} m, Boden bekannt={ground.HasValue}.");
+        _nav.MoveAlong(new List<Vector3> { target }, fly: true);
+    }
+
     /// <summary>
     /// Ends the walk: clears vnavmesh's path, announces <paramref name="spoken"/>
     /// (null for silent) and enters the guard phase. ALWAYS the way a walk ends -
@@ -838,8 +1288,44 @@ public sealed class AutoWalkService : IDisposable
         _nav.Stop();
         _phase = Phase.Guarding;
         _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+        _guardHardUntil = DateTime.UtcNow.AddSeconds(StopGuardMaxS);
         _log.Info($"[Nav] Auto-Lauf: beendet ({reason}).");
         if (spoken != null) _tolk.SpeakInterrupt(spoken);
+    }
+
+    /// <summary>
+    /// Lands the character on the spot, without a walk being involved. For the
+    /// flight the player flew themselves: there is no landing key in FFXIV, one
+    /// descends until the character sets down, and doing that blind means holding
+    /// a key and guessing when the ground arrives.
+    ///
+    /// <para>Runs through the same <see cref="Phase.Landing"/> as the end of an
+    /// auto-flight, so there is exactly one landing procedure in this service, not
+    /// two that can drift apart.</para>
+    /// </summary>
+    public void LandNow()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+
+        if (_flight is not { IsMounted: true })
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotFlying);
+            return;
+        }
+
+        StopFollowQuiet();
+        if (IsActive) Finish(null, "Landung angefordert");
+
+        // Am Fleck landen: das Ziel IST die eigene Stelle, damit die Ansage danach
+        // keine Restentfernung zu einem Ziel erfindet, das es hier nicht gibt.
+        _destPosition = player.Position;
+        _targetName = string.Empty;
+        _flying = true;
+
+        _log.Info("[Flug] Landung auf Anforderung des Spielers.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.Landing);
+        EnterLanding(AccessibilityStrings.Landed, "vom Spieler angefordert");
     }
 
     /// <summary>Stops a running auto-walk without any announcement (e.g. when the
@@ -867,6 +1353,7 @@ public sealed class AutoWalkService : IDisposable
             case Phase.Starting: StartingUpdate(); return;
             case Phase.Walking:  WalkingUpdate(); return;
             case Phase.TrailWalking: TrailWalkingUpdate(); return;
+            case Phase.Landing:  LandingUpdate(); return;
             default: return;
         }
     }
@@ -885,7 +1372,9 @@ public sealed class AutoWalkService : IDisposable
         {
             // The path exists - but does it reach the destination? Asked here
             // because this is the one frame where the whole list is still present.
-            if (TryBridgePartialPath(player.Position)) return;
+            // Not for a flight: the check hunts for a gap in the WALKABLE mesh and
+            // would answer about ground the flight never touches.
+            if (!_flying && TryBridgePartialPath(player.Position)) return;
 
             _phase = Phase.Walking;
             _lastMoveAt = DateTime.UtcNow;
@@ -894,8 +1383,67 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
+        var waited = (DateTime.UtcNow - _startedAt).TotalSeconds;
+
+        // ── Der Flug wartet, solange vnavmesh rechnet ─────────────────────────
+        //
+        // WAS HIER FRUEHER FALSCH WAR (gemessen 2026-09-01, Log 21:11-21:13): die
+        // Frist unten galt auch fuer den Flug, und sie war um ein Vielfaches zu
+        // kurz. Die Voxel-Suche brauchte fuer 814 bis 894 m zwischen 18,9 und
+        // 24,8 s, wurde nach 6 s fuer gescheitert erklaert - und lief trotzdem
+        // weiter. Es gibt keinen Abbruch: Nav.PathfindCancelAll laedt in
+        // Wahrheit das ganze Wegenetz neu (IPCProvider:25). Der Flugpfad kam also
+        // zwanzig Sekunden spaeter doch noch an und steuerte gegen den
+        // Bodenlauf, der inzwischen gestartet war. Das war das Haengen.
+        //
+        // Statt der Uhr entscheidet jetzt vnavmeshs eigene Auskunft. Die Frist
+        // bleibt nur als Notbremse.
+        if (_flying)
+        {
+            var searching = _nav.PathfindInProgress;
+
+            // Nach ein paar Sekunden einmal sagen, dass gewartet wird. Kurze
+            // Strecken kommen hier nie an - deren Suche ist laengst durch.
+            if (searching && !_flightSearchAnnounced && waited > FlightSearchNoticeS)
+            {
+                _flightSearchAnnounced = true;
+                _log.Info($"[Flug] Wegsuche laeuft seit {waited:F1} s - Ansage an den Spieler.");
+                _tolk.Speak(AccessibilityStrings.FlightPathSearching);
+            }
+
+            // Es rechnet noch: warten. Die alten StartTimeoutS bleiben als
+            // Mindestgeduld, damit ein einzelner Frame zwischen "Suche fertig"
+            // und "Pfad steht" nicht als Fehlschlag durchgeht.
+            if (waited <= FlightStartTimeoutS && (searching || waited <= StartTimeoutS))
+                return;
+
+            // Notbremse: es rechnet IMMER noch. Kein Rueckfall auf den Bodenweg -
+            // die Suche laeuft ja weiter und wuerde genau da hineinsteuern, wo
+            // der Bodenlauf gerade angefangen hat. Lieber ehrlich abbrechen.
+            if (searching)
+            {
+                _log.Info($"[Flug] Wegsuche laeuft nach {waited:F0} s immer noch - " +
+                          $"Abbruch ohne Bodenweg, ein Abbruch der Suche ist nicht moeglich.");
+                _flying = false;
+                _flightDeclined = true;
+                Finish(AccessibilityStrings.FlightSearchTooSlow, "Flugsuche zu langsam");
+                return;
+            }
+
+            // Die Suche ist durch und hat nichts geliefert. JETZT ist der Bodenweg
+            // die richtige Antwort - und er kann gefahrlos starten, weil nichts
+            // mehr rechnet, was ihm spaeter dazwischenfahren koennte.
+            _log.Info($"[Flug] Kein Flugpfad zu {_targetName} nach {waited:F1} s - laufe stattdessen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoFlightPathWalkingInstead);
+            _flying = false;
+            _flightDeclined = true;
+            _phase = Phase.Idle;
+            Begin(_destPosition, _targetName, _stopRange, _targetId);
+            return;
+        }
+
         // Still computing is fine; only give up once nothing is coming.
-        if ((DateTime.UtcNow - _startedAt).TotalSeconds <= StartTimeoutS) return;
+        if (waited <= StartTimeoutS) return;
 
         // After a re-request, "no route at all" would be the wrong story: we walked
         // most of the way and are standing a few metres short. Tell the player what
@@ -943,6 +1491,16 @@ public sealed class AutoWalkService : IDisposable
         // goes quiet for a second on every stuck-retry too.
         if (distance <= _stopRange + ArrivalSlack)
         {
+            // Ein Flug endet ueber dem Ziel - erst absteigen, dann melden. In der
+            // Luft laesst sich weder reden noch sammeln noch kaempfen, "Ziel
+            // erreicht" waere dort also die halbe Wahrheit.
+            if (_flying)
+            {
+                EnterLanding(AccessibilityStrings.FlightArrived(_targetName),
+                             $"Flug angekommen, dist={distance:F1}");
+                return;
+            }
+
             // Arrived at the near end of a measured gap: drive across it, then pick
             // the real destination back up. Not an arrival for the player - they
             // asked to go somewhere else and are not there yet.
@@ -1004,6 +1562,7 @@ public sealed class AutoWalkService : IDisposable
         {
             _log.Info($"[Nav] Auto-Lauf: keine Annäherung seit {NoApproachS:F1} s bei restWp={remaining}, " +
                       $"dist={distance:F1} - Netz endet hier.");
+            if (EndFlightShort(player.Position, distance, "keine Annäherung")) return;
             if (TryTakeTrail(player.Position)) return;
             Finish(MeshEndsMessage(player.Position, distance), "Netz endet hier (keine Annäherung)");
             FacingService.FaceTowards(player, _destPosition);
@@ -1019,6 +1578,7 @@ public sealed class AutoWalkService : IDisposable
             var meshEnds = remaining <= 1;
             _log.Info($"[Nav] Auto-Lauf: keine Bewegung seit {StallS:F0} s, dist={distance:F1}, " +
                       $"restWp={remaining}, Netzende={meshEnds}");
+            if (EndFlightShort(player.Position, distance, "steht in der Luft")) return;
             // A trail is tried for BOTH stall causes now, not just for the mesh
             // edge. Being wedged on geometry is precisely the case a recorded
             // trail exists for, and skipping the lookup here meant a player who
@@ -1063,6 +1623,7 @@ public sealed class AutoWalkService : IDisposable
         if (_pathQuiet && (now - _pathQuietSince).TotalSeconds >= PathEndDebounceS)
         {
             _log.Info($"[Nav] Auto-Lauf: Pfad zu Ende, dist={distance:F1}, restWp={remaining}");
+            if (EndFlightShort(player.Position, distance, "Flugpfad zu Ende")) return;
             if (TryTakeTrail(player.Position)) return;
             if (TryReengage(distance)) return;
             if (TryNudgeIntoTransition(distance)) return;
@@ -1469,6 +2030,18 @@ public sealed class AutoWalkService : IDisposable
 
         if (DateTime.UtcNow >= _guardUntil)
         {
+            // Die Frist ist um - aber es rechnet noch. Ein Ergebnis, das jetzt
+            // kommt, geht ungefragt an FollowPath (AsyncMoveRequest.Update:50),
+            // und der Guard ist genau dagegen gebaut. Bei einer Flugsuche liegen
+            // zwischen Ende und Ergebnis gemessene 19 bis 25 s, also ein
+            // Vielfaches von StopGuardS - ohne dieses Nachschieben fliegt die
+            // Figur eine halbe Minute nach dem Abbruch unbeaufsichtigt los.
+            if (_nav.PathfindInProgress && DateTime.UtcNow < _guardHardUntil)
+            {
+                _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+                return;
+            }
+
             _phase = Phase.Idle;
             return;
         }
@@ -1748,6 +2321,7 @@ public sealed class AutoWalkService : IDisposable
         // Same guard as the one-shot walk: a pathfind in flight would revive it.
         _phase = Phase.Guarding;
         _guardUntil = DateTime.UtcNow.AddSeconds(StopGuardS);
+        _guardHardUntil = DateTime.UtcNow.AddSeconds(StopGuardMaxS);
         _guardWarned = false;
         _log.Info("[Nav] Folgen: gestoppt.");
         if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.FollowStopped);

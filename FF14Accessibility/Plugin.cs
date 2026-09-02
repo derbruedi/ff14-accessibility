@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -46,6 +47,9 @@ public sealed class Plugin : IDalamudPlugin
     // Aetherfluss). Dalamud liest sie fertig aus, es wird hier nichts
     // nachgerechnet.
     [PluginService] private IJobGauges              JobGauges       { get; init; } = null!;
+    // [Fliegen] Aufgesessen, in der Luft, mitten in der Beschwoerung - der
+    // Zustand, an dem der Flug-Auto-Lauf haengt (siehe FlightService).
+    [PluginService] private ICondition              Condition       { get; init; } = null!;
 
     private readonly Configuration      _config;
     private readonly TolkService        _tolk;
@@ -67,12 +71,19 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GatheringService   _gathering;
     private readonly BestiaryService    _bestiary;
     private readonly HuntingLogService  _huntingLog;
+    private readonly AreaRangeService   _areaRanges;
+    private readonly AozSpellSourceService _aozSources;
     private readonly DutyEntranceService _dutyEntrances;
     private readonly DungeonRouteService _dungeonRoute;
     // Fuellt den Ordner, aus dem der Dienst darueber liest. Getrennt, weil das
     // eine ein Leser ohne jeden Netzzugriff ist und das andere ein Netzzugriff
     // ohne jedes Spielwissen.
     private readonly DungeonPathDownloadService _dungeonPaths;
+    // [Aktualisierung] Holt eine neue Fassung aus dem GitHub-Release und schreibt
+    // sie in den eigenen Ordner. Braucht den Pfad der eigenen DLL, weil er ueber
+    // beides entscheidet: wohin geschrieben wird und ob ueberhaupt (nur ein
+    // DevPlugin-Ordner gehoert uns - siehe UpdateService.CanSelfUpdate).
+    private readonly UpdateService _updates;
     // Bricht einen laufenden Download beim Entladen ab - ohne das haelt ein
     // haengender Request das Plugin ueber sein Ende hinaus am Leben.
     private readonly CancellationTokenSource _shutdown = new();
@@ -80,6 +91,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly LiftProbe _liftProbe;
     private readonly ZoneExitProbe _zoneExitProbe;
     private readonly CollisionProbe _collisionProbe;
+    private readonly ActionSignalProbe _actionProbe;
+    private readonly FlightProbe _flightProbe;
+    private readonly AozNotebookProbe _aozProbe;
 #endif
     private readonly ZoneBorderService _zoneBorders;
     private readonly LevequestEnemyService _leveEnemies;
@@ -88,6 +102,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ShopNpcService     _shops;
     private readonly ObjectNameService  _objectNames;
     private readonly ObstacleService    _obstacles;
+    private readonly FlightService      _flight;
     private readonly ObjectMemoryService _objectMemory;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
@@ -152,8 +167,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.95";
-    private const string PluginVersionTag = "Dungeon-Wege werden selbst geladen; Entf sagt die HP des Ziels; Job-Anzeige beim Beschwörer";
+    private const string PluginVersion    = "5.96";
+    private const string PluginVersionTag = "Der Auto-Lauf fliegt: Reittier rufen, hinfliegen, landen";
 
     public Plugin()
     {
@@ -315,12 +330,19 @@ public sealed class Plugin : IDalamudPlugin
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _huntingLog   = new HuntingLogService(DataManager, ObjectTable, ClientState, _places, Log);
+        // Die echten Umrisse der benannten Gebiete aus dem Zonen-Layout: die
+        // Karte kennt fuer ein Gebiet nur ihre Beschriftung, das Layout kennt
+        // alle seine Teilstuecke. Der Jagd-Suchlauf haengt daran.
+        _areaRanges   = new AreaRangeService(DataManager, Log);
         // Alle Dungeon-, Pruefungs- und Raid-Eingaenge der WELT mit Stufe und Ort,
         // fuer die Browser-Kategorie "Alle Inhalte" (Spielerwunsch 2026-08-19:
         // *"eine kategorie wo man zu den dungeons laufen kann ... nach stufe
         // sortiert ... map uebergreifend hinlaufen"*). Braucht _places fuer die
         // Zonenrouten und muss deshalb dahinter stehen.
         _dutyEntrances = new DutyEntranceService(DataManager, ClientState, _places, Log);
+        // Blaumagie als Wegweiser: welche Zauber fehlen, und wo sie zu holen sind.
+        // Braucht _places fuer die Karten-Aufloesung, sonst nur die Sheets.
+        _aozSources   = new AozSpellSourceService(DataManager, _places, Log);
 #if DEBUG
         // Misst am Aufzug, was ein Aufzug ueberhaupt ist - siehe LiftProbe.
         _liftProbe = new LiftProbe(ObjectTable, TargetManager, _tolk, Log);
@@ -330,6 +352,9 @@ public sealed class Plugin : IDalamudPlugin
         // Beantwortet, ob die Absperrung am Tor zum Tiefen Wald gerade STEHT -
         // siehe CollisionProbe. Aus dem laufenden Layout, nicht aus der .lgb.
         _collisionProbe = new CollisionProbe(ObjectTable, ClientState, _tolk, Log);
+        // Misst, welches Spiel-Signal ehrlich sagt, ob eine Aktion einsetzbar ist -
+        // Grundlage fuer die Job-Anzeigen UND die Kombo-Ansage, siehe ActionSignalProbe.
+        _actionProbe = new ActionSignalProbe(DataManager, TargetManager, JobGauges, _tolk, Log);
 #endif
         // Echte Zonengrenzen statt Kartensymbol - nur als Zielgeber, siehe ZoneBorderService.
         _zoneBorders = new ZoneBorderService(DataManager, ClientState, Log);
@@ -352,10 +377,11 @@ public sealed class Plugin : IDalamudPlugin
         // eine Station nur ihre DataId mitbringt und der Name aus dem Sheet kommt.
         _dungeonRoute = new DungeonRouteService(PluginInterface, ClientState, _objectNames, Log);
         _dungeonPaths = new DungeonPathDownloadService(Log);
+        _updates = new UpdateService(Log, PluginInterface.AssemblyLocation.FullName);
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -371,6 +397,16 @@ public sealed class Plugin : IDalamudPlugin
         // Spieler tut: ein Spieler geht gleich weiter, eine Absperrung nie.
         _obstacles   = new ObstacleService(ObjectTable, _objectNames, Log);
         _autoWalk.Obstacles = _obstacles;
+        // Fliegen (V5.96): kennt die Flugbedingungen des Spiels und ruft das
+        // Reittier. Wie die beiden Nachbarn optional - fehlt er, laeuft jeder Lauf
+        // am Boden, genau wie vorher.
+        _flight      = new FlightService(ClientState, Condition, DataManager, Log);
+        _autoWalk.Flight = _flight;
+#if DEBUG
+        // Erst hier, nicht oben bei den uebrigen Sonden: sie misst das Urteil
+        // DIESES Dienstes mit, muss ihn also schon haben.
+        _flightProbe = new FlightProbe(ClientState, Condition, DataManager, _flight, _tolk, Log);
+#endif
         _transitions = new ZoneTransitionHandler(ObjectTable, ClientState, _autoWalk.Navmesh, _tolk, _obstacles, Log);
         _autoWalk.Transitions = _transitions;
         // Der Peil-Ton spielt nur, solange ein Lauf laeuft - dafuer muss der
@@ -411,6 +447,11 @@ public sealed class Plugin : IDalamudPlugin
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls);
+#if DEBUG
+        // Teilt sich den Leser mit dem Fenster-Leser: dort haengen die geladenen
+        // Sheet-Tabellen des Zauberbuchs.
+        _aozProbe   = new AozNotebookProbe(_uiReader.AozNotebook, _aozSources, _tolk, Log);
+#endif
         // [Chat-Puffer] Vor dem Chat-Leser gebaut, der sie fragt, welche Register eine
         // eingehende Zeile zeigen wuerden. Die aus den Sheets abgeleiteten Tabellen
         // entstehen hier; der LIVE-Zustand wird erst bei Bedarf gelesen, denn weder das
@@ -502,7 +543,11 @@ public sealed class Plugin : IDalamudPlugin
                                       // Bestand; das Laden selbst gibt das Menue an
                                       // das Plugin zurueck, weil dort der
                                       // Spiel-Thread und die Konfiguration liegen.
-                                      _dungeonRoute, FetchDungeonPaths);
+                                      _dungeonRoute, FetchDungeonPaths,
+                                      // [Aktualisierung] Dasselbe Muster: der Dienst
+                                      // sagt dem Menue, was er weiss; die beiden
+                                      // Handlungen gehen ans Plugin zurueck.
+                                      _updates, CheckForUpdate, InstallUpdate);
 
         // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
@@ -622,6 +667,118 @@ public sealed class Plugin : IDalamudPlugin
                 // Ausnahme nicht bleiben - sie beendete sonst irgendwann den
                 // Finalizer-Thread.
                 Log.Error($"[Dungeon] Ergebnis des Downloads nicht zustellbar: {ex.Message}");
+            }
+        });
+    }
+
+    // ── [Aktualisierung] ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fragt GitHub nach einer neueren Fassung und sagt das Ergebnis an.
+    ///
+    /// <para>Dieselbe Bauweise wie <see cref="BeginDungeonPathFetch"/>: der Dienst
+    /// faengt selbst, die Antwort kehrt ueber
+    /// <c>Framework.RunOnFrameworkThread</c> zurueck, weil von dort aus der
+    /// Screenreader angefasst wird.</para>
+    /// </summary>
+    private void CheckForUpdate()
+    {
+        if (_updates.IsRunning) return;
+        _tolk.SpeakInterrupt(AccessibilityStrings.UpdateChecking);
+
+        _ = Task.Run(async () =>
+        {
+            var result = await _updates.CheckAsync(_shutdown.Token).ConfigureAwait(false);
+            if (_shutdown.IsCancellationRequested) return;
+
+            try
+            {
+                await Framework.RunOnFrameworkThread(() =>
+                {
+                    if (!result.Ok)
+                    {
+                        _tolk.Speak(AccessibilityStrings.UpdateFailed);
+                        return;
+                    }
+
+                    _tolk.Speak(result.IsNewer
+                        ? AccessibilityStrings.UpdateAvailable(result.RemoteVersion)
+                        : AccessibilityStrings.UpdateUpToDate(result.LocalVersion));
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[Update] Ergebnis der Abfrage nicht zustellbar: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Spielt die zuletzt gefundene Fassung ein.
+    ///
+    /// <para>
+    /// WARUM NICHT IM KAMPF UND NICHT WAEHREND EINER LAUFSTRECKE: geschriebene
+    /// Plugin-DLL heisst Neuladen durch Dalamud, und ein Neuladen nimmt in dem
+    /// Moment alles mit - Tastenbelegung, Ansagen, den laufenden Weg. Wer gerade
+    /// kaempft oder unterwegs ist, stuende ohne Vorwarnung ohne Plugin da und
+    /// koennte den Grund nicht sehen. Die paar Sekunden Aufschub sind billiger
+    /// als diese Ueberraschung.
+    /// </para>
+    ///
+    /// <para>
+    /// NACH DEM ERFOLG WIRD NICHTS MEHR ANGEFASST. Die Ansage geht raus, bevor
+    /// Dalamud in etwa einer halben Sekunde neu laedt und diese Assembly mitnimmt
+    /// (LocalDevPlugin.OnFileChanged). Alles, was danach noch liefe, liefe auf
+    /// einem Plugin, das es nicht mehr gibt.
+    /// </para>
+    /// </summary>
+    private void InstallUpdate()
+    {
+        if (_updates.IsRunning) return;
+
+        var pending = _updates.LastCheck;
+        if (pending is not { Ok: true, IsNewer: true, DownloadUrl: not null })
+        {
+            // Ohne Fund gibt es nichts einzuspielen. Kann der Spieler ueber das
+            // Menue nicht ausloesen (die Zeile erscheint nur nach einem Fund),
+            // aber ein stiller Fehlschlag waere hier die schlechteste Auskunft.
+            _tolk.SpeakInterrupt(AccessibilityStrings.UpdateFailed);
+            return;
+        }
+
+        if (Condition[ConditionFlag.InCombat] || _autoWalk.IsActive || _autoWalk.IsFollowing)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.UpdateBusyNow);
+            return;
+        }
+
+        var version = pending.RemoteVersion;
+        _tolk.SpeakInterrupt(AccessibilityStrings.UpdateInstalling(version));
+
+        _ = Task.Run(async () =>
+        {
+            var result = await _updates.InstallAsync(pending.DownloadUrl, _shutdown.Token)
+                                       .ConfigureAwait(false);
+            if (_shutdown.IsCancellationRequested) return;
+
+            try
+            {
+                await Framework.RunOnFrameworkThread(() =>
+                {
+                    if (result.Ok)
+                    {
+                        _tolk.Speak(AccessibilityStrings.UpdateInstalledRestarting(version));
+                        return;
+                    }
+
+                    _tolk.Speak(result.BlockedFiles.Count > 0
+                        ? AccessibilityStrings.UpdateNeedsInstaller
+                        : AccessibilityStrings.UpdateFailed);
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[Update] Ergebnis des Einspielens nicht zustellbar: {ex.Message}");
             }
         });
     }
@@ -758,10 +915,44 @@ public sealed class Plugin : IDalamudPlugin
             case "collprobe":
                 _collisionProbe.Dump();
                 break;
+            // Welches Signal sagt ehrlich "jetzt einsetzbar"? Schnappschuss aller
+            // Leisten-Aktionen mit Status, Leuchten, Ressourcen und Kombo.
+            case "ap":
+            case "actionprobe":
+                _actionProbe.Dump();
+                break;
+            // Traegt IsAetherCurrentZoneComplete auch fuer die Gebiete des
+            // Grundspiels? Die eine Flugbedingung, die keine Quelle beantwortet -
+            // siehe FlightProbe.
+            case "flyprobe":
+                _flightProbe.Dump();
+                break;
+            // Zauberbuch der Blaumagie: Schnappschuss aller 16 Kacheln, 24
+            // Plaetze und des Detail-Feldes. Klaert die drei Fragen, die der
+            // Quellcode offen laesst - siehe AozNotebookProbe.
+            case "aoz":
+            case "aozprobe":
+                _aozProbe.Dump();
+                break;
 #endif
             case "cooldowns":
             case "cd":
                 ToggleSkillReady();
+                break;
+            // Fliegen beim Auto-Lauf: umschalten, und dabei sagen, ob es hier
+            // ueberhaupt geht. Der Grund gehoert zum Schalter, nicht in jeden
+            // Lauf - in einer Stadt waere er sonst bei jedem Numpad3 zu hoeren.
+            case "fly":
+            case "fliegen":
+                ToggleFlying();
+                break;
+            // Landen. FF14 hat dafuer KEINE Taste - man sinkt, bis die Figur
+            // aufsetzt (gemessen 2026-09-01: "Absteigen" wirkt in der Luft
+            // nicht). Blind heisst das: eine Taste halten und raten, wann der
+            // Boden kommt. Das nimmt der Befehl ab.
+            case "land":
+            case "landen":
+                _autoWalk.LandNow();
                 break;
             case "help":
                 AnnounceHelp();
@@ -1414,6 +1605,33 @@ public sealed class Plugin : IDalamudPlugin
         _tolk.SpeakInterrupt(_config.AnnounceSkillReady
             ? AccessibilityStrings.SkillReadyAnnounceOn
             : AccessibilityStrings.SkillReadyAnnounceOff);
+    }
+
+    /// <summary>
+    /// Turns flying during auto-walk on or off, and says whether it would do
+    /// anything HERE.
+    ///
+    /// <para>
+    /// The reason belongs to the switch rather than to each walk: in a city the
+    /// answer is always "no air routes here", and saying it on every Numpad3 would
+    /// be a line of noise on top of a walk that works perfectly well. Said once, on
+    /// request, it is the answer to "why did it not fly just now".
+    /// </para>
+    /// </summary>
+    private void ToggleFlying()
+    {
+        _config.AutoWalkFlyEnabled = !_config.AutoWalkFlyEnabled;
+        PluginInterface.SavePluginConfig(_config);
+
+        var message = AccessibilityStrings.FlightToggled(_config.AutoWalkFlyEnabled);
+        // Beim Einschalten gleich die Lage vor Ort dazu - beim Ausschalten waere
+        // sie belanglos.
+        if (_config.AutoWalkFlyEnabled)
+            message += " " + AccessibilityStrings.FlightBlockedReason(_flight.Blocked());
+
+        Log.Info($"[Flug] Umschalter: {_config.AutoWalkFlyEnabled}, Lage hier: {_flight.Blocked()}, " +
+                 $"Gebiet {ClientState.TerritoryType}.");
+        _tolk.SpeakInterrupt(message);
     }
 
     private const uint CF_UNICODETEXT = 13;
@@ -2161,6 +2379,102 @@ public sealed class Plugin : IDalamudPlugin
             return MarkerResolve.Resolved;
         }
 
+        // Blaumagie-Zauber aus dem Browser. Gleiche Wegfuehrung wie beim
+        // Jagdziel darunter, mit einem Unterschied, der aus den Daten kommt und
+        // nicht aus einer Designentscheidung: es gibt KEIN Monster, zu dem
+        // gelaufen werden koennte. Das Spiel fuehrt fuer Blaumagie nur einen
+        // Fundort - ein Gebiet oder eine Instanz (siehe AozSpellSourceService).
+        // Also fuehrt der Weg dorthin, und im Gebiet endet er.
+        var spell = _navigation.SelectedBlueMagicTarget;
+        if (spell != null)
+        {
+            switch (spell.Kind)
+            {
+                case AozSourceKind.World when spell.MapId != 0 && spell.MapId != ClientState.MapId:
+                {
+                    // Andere Zone: zum Uebergang, exakt wie beim Jagdziel.
+                    var hop = _places.FindFirstHopToMap(spell.MapId, out _);
+                    if (hop == null)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BlueMagicNoRoute(spell.SpellName, spell.PlaceName));
+                        return MarkerResolve.Failed;
+                    }
+                    var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                    var hopWalk = _autoWalk.ResolveFloorPoint(hop.Position with { Y = hopY });
+                    if (hopWalk == null)
+                    {
+                        _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                        return MarkerResolve.Failed;
+                    }
+                    position      = hopWalk.Value;
+                    name          = hop.Name;
+                    stopRange     = _config.AutoWalkTransitionStopRange;
+                    heightIsGuess = true;
+                    return MarkerResolve.Resolved;
+                }
+
+                case AozSourceKind.World:
+                    // Schon im richtigen Gebiet. Es gibt hier NICHTS Feineres:
+                    // das Sheet nennt nur die Zone, keinen Unterort. Ein Lauf
+                    // ins Nichts waere schlechter als die ehrliche Auskunft.
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BlueMagicHere);
+                    return MarkerResolve.Failed;
+
+                case AozSourceKind.Duty:
+                {
+                    // Instanz: Ziel ist ihr Eingang. Der steht bereits in der
+                    // weltweiten Tuerliste - dieselbe Quelle, die die Kategorie
+                    // "Alle Inhalte" benutzt, samt echter Hoehe.
+                    var door = _dutyEntrances.GetAll()
+                        .Where(d => d.ContentId == spell.InstanceContentId)
+                        .OrderBy(d => d.MapId == ClientState.MapId ? 0 : 1)
+                        .FirstOrDefault();
+                    if (door == null)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BlueMagicNoDoor(spell.SpellName, spell.PlaceName));
+                        return MarkerResolve.Failed;
+                    }
+
+                    if (door.MapId != 0 && door.MapId != ClientState.MapId)
+                    {
+                        var hop = _places.FindFirstHopToMap(door.MapId, out _);
+                        if (hop == null)
+                        {
+                            _tolk.SpeakInterrupt(
+                                AccessibilityStrings.BlueMagicNoRoute(spell.SpellName, door.ZoneName));
+                            return MarkerResolve.Failed;
+                        }
+                        var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                        var hopWalk = _autoWalk.ResolveFloorPoint(hop.Position with { Y = hopY });
+                        if (hopWalk == null)
+                        {
+                            _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                            return MarkerResolve.Failed;
+                        }
+                        position      = hopWalk.Value;
+                        name          = hop.Name;
+                        stopRange     = _config.AutoWalkTransitionStopRange;
+                        heightIsGuess = true;
+                        return MarkerResolve.Resolved;
+                    }
+
+                    // Tuer in dieser Zone: die Position ist volle 3D mit echter
+                    // Hoehe, sie braucht keinen Boden-Schaetzer.
+                    position  = door.Position;
+                    name      = door.Name;
+                    stopRange = AutoWalkService.StopRange;
+                    return MarkerResolve.Resolved;
+                }
+
+                default:
+                    // Karneval-Belohnung oder Startzauber: kein Ort, kein Weg.
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BlueMagicNoPlace);
+                    return MarkerResolve.Failed;
+            }
+        }
+
         // Jagdziel aus dem Browser. Same routing as a quest goal, for the same
         // reason: the monster's home area is a place on the map, and in another
         // zone the only thing worth walking to is the transition that leads
@@ -2218,16 +2532,34 @@ public sealed class Plugin : IDalamudPlugin
                 return MarkerResolve.Resolved;
             }
 
-            // 40 of the 647 habitats are dungeon areas the map never marks. Say
-            // so instead of walking somewhere arbitrary.
-            if (hunt.Position is not { } area)
+            // AREAL ABSUCHEN. Der Lebensraum ist ein GEBIET, und die
+            // Kartenbeschriftung ist nur einer seiner Punkte - "Sandtor"
+            // besteht aus sechs Teilstuecken ueber rund 500 mal 400 Meter, und
+            // wer zur Beschriftung laeuft, steht am Rand und findet nichts
+            // (User 2026-09-02). Der Suchlauf fuehrt deshalb der Reihe nach
+            // durch die Teilstuecke; jeder weitere Tastendruck geht zum
+            // naechsten, sobald der Spieler am aktuellen war. Siehe
+            // AreaRangeService und NavigationService.NextHuntSearchPart.
+            var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+            var searchPart = _navigation.NextHuntSearchPart(playerPos);
+
+            // 40 of the 647 habitats are dungeon areas the map never marks, and
+            // for some of those the layout has no named range either. Say so
+            // instead of walking somewhere arbitrary.
+            var area = searchPart?.Position ?? hunt.Position;
+            if (area is not { } areaPos)
             {
                 _tolk.SpeakInterrupt(AccessibilityStrings.HuntingAreaUnknown(hunt.MonsterName, hunt.AreaName));
                 return MarkerResolve.Failed;
             }
 
             var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-            var areaWalk = _autoWalk.ResolveFloorPoint(area with { Y = areaY });
+            // Ein Teilstueck aus dem Zonen-Layout traegt eine ECHTE Hoehe, ein
+            // Kartenmarker nicht (Kartendaten sind flach). Die eigene Hoehe
+            // unterzuschieben waere dort also schlechter als das, was die Datei
+            // sagt - deshalb nur beim Marker.
+            var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
+            var areaWalk = _autoWalk.ResolveFloorPoint(areaSeed);
             if (areaWalk == null)
             {
                 _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(hunt.AreaName));
@@ -2237,9 +2569,13 @@ public sealed class Plugin : IDalamudPlugin
             // Both parts are spoken: the monster is what the player picked, the
             // area is where they are actually being taken - the marker is the
             // centre of the area, not the monster.
-            name = hunt.AreaName.Length > 0 ? $"{hunt.MonsterName}, {hunt.AreaName}" : hunt.MonsterName;
+            var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
+            name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
             heightIsGuess = true;
             stopRange = _config.AutoWalkPlaceStopRange;
+            if (searchPart is { } sp)
+                Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' " +
+                         $"({sp.Position.X:F0}|{sp.Position.Y:F0}|{sp.Position.Z:F0}) fuer '{hunt.MonsterName}'.");
             return MarkerResolve.Resolved;
         }
 
@@ -2480,6 +2816,7 @@ public sealed class Plugin : IDalamudPlugin
         // bevor ihm der HttpClient unter den Haenden wegfaellt.
         _shutdown.Cancel();
         _dungeonPaths.Dispose();
+        _updates.Dispose();
         _shutdown.Dispose();
         _tooltips.Dispose();
         _toasts.Dispose();

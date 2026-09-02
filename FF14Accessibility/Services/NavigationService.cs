@@ -49,6 +49,22 @@ internal enum NavCategory
     // Kommt weder aus der Objekttabelle noch aus der Zone - Quelle sind
     // Jagdtagebuch-Fortschritt und Kartenmarker, siehe HuntingLogService.
     HuntingTargets,
+    // Dasselbe fuer das Jagdtagebuch der Staatlichen Gesellschaft: eigener
+    // Block, eigener Rang, eigener Fortschritt. Eine ZWEITE Kategorie und keine
+    // gemischte Liste, weil beide Tagebuecher unabhaengig voneinander laufen -
+    // wer einen Kill sucht, muss wissen, fuer welches Buch er zaehlt.
+    GrandCompanyHunt,
+    // Blaumagie: die Zauber, die dem Spieler noch fehlen, mit dem Ort, an dem
+    // sie zu holen sind. Wie die Jagdziele eine Kategorie aus SHEETS statt aus
+    // der Objekttabelle - und aus demselben Grund: die Frage ist "wo muss ich
+    // hin", nicht "was steht hier".
+    //
+    // ABSICHTLICHER UNTERSCHIED ZU DEN JAGDZIELEN: dort fuehrt die Liste zum
+    // MONSTER, hier nur zum ORT. Das Spiel fuehrt fuer Blaumagie keine
+    // Zuordnung Zauber -> Monster (gegen alle drei Aoz-Sheets geprueft, siehe
+    // AozSpellSourceService); wer ankommt, muss den Traeger selbst suchen -
+    // dafuer ist die Kategorie "Gegner" einen Tastendruck entfernt.
+    BlueMagic,
     FishingSpots,
     // Dungeonliste: JEDER Eingang zu Dungeon, Pruefung oder Raid im Spiel, nach
     // Stufe sortiert - nicht nur die Tuer in Sichtweite (das ist Duties). Quelle
@@ -101,6 +117,10 @@ public sealed class NavigationService
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
     private readonly HuntingLogService _huntingLog;
+    // Die echten Umrisse eines benannten Gebiets - die Kartenbeschriftung ist
+    // nur EIN Punkt davon, siehe AreaRangeService.
+    private readonly AreaRangeService _areaRanges;
+    private readonly AozSpellSourceService _aozSources;
     private readonly DutyEntranceService _dutyEntrances;
     private readonly DungeonRouteService _dungeonRoute;
     private readonly LevequestEnemyService _leveEnemies;
@@ -132,6 +152,8 @@ public sealed class NavigationService
         RouteService routes,
         ShopNpcService shops,
         HuntingLogService huntingLog,
+        AreaRangeService areaRanges,
+        AozSpellSourceService aozSources,
         DutyEntranceService dutyEntrances,
         DungeonRouteService dungeonRoute,
         LevequestEnemyService leveEnemies,
@@ -157,6 +179,8 @@ public sealed class NavigationService
         _routes = routes;
         _shops = shops;
         _huntingLog = huntingLog;
+        _areaRanges = areaRanges;
+        _aozSources = aozSources;
         _dutyEntrances = dutyEntrances;
         _dungeonRoute = dungeonRoute;
         _leveEnemies = leveEnemies;
@@ -206,6 +230,7 @@ public sealed class NavigationService
         }
 
         PollMapFlag(player);
+        PollHuntTargetInRange(player);
 
         // [Tiefes Gewoelbe] Das Betreten oder Verlassen tauscht den gesamten
         // Kategoriensatz, also faengt der Browser von vorne an, statt auf dem Index zu
@@ -224,6 +249,8 @@ public sealed class NavigationService
                 SelectedPlaceDestination  = null;
                 SelectedObjectDestination = null;
                 SelectedHuntTarget        = null;
+
+                SelectedBlueMagicTarget   = null;
                 _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
             }
             DeepDungeon.Poll(player);
@@ -248,6 +275,7 @@ public sealed class NavigationService
             if (hardTargetId != 0 && hardTargetId != _ownSelectionId
                 && (SelectedQuestDestination != null || SelectedPlaceDestination != null
                     || SelectedObjectDestination != null || SelectedHuntTarget != null
+                    || SelectedBlueMagicTarget != null
                     || SelectedDutyEntrance != null))
             {
                 _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
@@ -255,6 +283,7 @@ public sealed class NavigationService
                 SelectedPlaceDestination = null;
                 SelectedObjectDestination = null;
                 SelectedHuntTarget = null;
+                SelectedBlueMagicTarget = null;
                 SelectedDutyEntrance = null;
                 SelectedDungeonStep = null;
             }
@@ -606,6 +635,16 @@ public sealed class NavigationService
         // wenn es in einer anderen Zone liegt - dort fuehrt Numpad3 zum
         // Uebergang statt ins Leere.
         (NavCategory.HuntingTargets,  null),
+        // Jagdziele der Staatlichen Gesellschaft: gleiche Quelle, gleicher Weg,
+        // nur ein anderer Block des Jagdtagebuchs. Steht direkt daneben, weil es
+        // dieselbe Frage beantwortet - nur fuer das andere Buch.
+        (NavCategory.GrandCompanyHunt, null),
+        // Blaumagie: die noch fehlenden Zauber mit ihrem Fundort. Quelle sind
+        // die Aoz-Sheets plus die Freischaltfrage ans Spiel, nicht die
+        // ObjectTable - genau wie bei den Jagdzielen daneben, und aus demselben
+        // Grund: ein Zauber, dessen Ort drei Zonen weiter liegt, steht in keiner
+        // Objektliste. Siehe AozSpellSourceService.
+        (NavCategory.BlueMagic,       null),
         // Angelplätze kommen aus dem FishingSpot-Sheet (FishingService), nicht aus
         // der ObjectTable: das Sheet kennt ALLE Angelplätze der Zone (das Spiel
         // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
@@ -813,6 +852,8 @@ public sealed class NavigationService
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
     private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
     private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
+    private bool IsCompanyHuntCategory     => Categories[_categoryIndex].Cat == NavCategory.GrandCompanyHunt;
+    private bool IsBlueMagicCategory       => Categories[_categoryIndex].Cat == NavCategory.BlueMagic;
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
     private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
 
@@ -837,7 +878,161 @@ public sealed class NavigationService
     /// direction of travel, so Plugin.cs routes it over the zone transitions
     /// exactly like a cross-zone quest goal.
     /// </summary>
-    public HuntingTarget? SelectedHuntTarget { get; private set; }
+    /// <remarks>Das Zuruecksetzen nimmt den Suchlauf mit: die Auswahl wird an
+    /// fuenf Stellen verworfen (Kategoriewechsel, Spielziel, Gewoelbe-Wechsel
+    /// ...), und ein Suchlauf, der eine davon ueberlebt, fuehrt Numpad3
+    /// anschliessend durch das Gebiet eines Monsters, das gar nicht mehr
+    /// gewaehlt ist.</remarks>
+    public HuntingTarget? SelectedHuntTarget
+    {
+        get => _selectedHuntTarget;
+        private set
+        {
+            _selectedHuntTarget = value;
+            if (value == null) _huntSearch = null;
+        }
+    }
+
+    private HuntingTarget? _selectedHuntTarget;
+
+    // ── Areal absuchen: der Weg zu einem Monster, das noch niemand sieht ──
+    //
+    // WARUM ES DAS GIBT (User 2026-09-02: "ich fliege in die gegend wo die
+    // viecher sein sollen aber da sind sie nicht"). Das Jagdtagebuch nennt als
+    // Lebensraum ein GEBIET, und die Karte kennt dafuer nur ihre Beschriftung -
+    // einen Punkt. "Sandtor" besteht in Wahrheit aus sechs Teilstuecken ueber
+    // rund 500 mal 400 Meter, und die Beschriftung liegt an deren Rand, 230
+    // Meter vom Amalj'aa-Feldlager entfernt, das zum selben Gebiet gehoert. Wer
+    // zur Beschriftung laeuft, steht im richtigen Gebiet und trotzdem nirgends.
+    //
+    // Spawnpunkte gibt es im Spielclient nicht (nachgesehen: das Level-Sheet
+    // fuehrt Kampf-NPCs nur fuer Quests). Die einzige Wahrheit ueber ein
+    // lebendes Monster ist die Objekttabelle, und die reicht nur so weit wie
+    // das Spiel laedt. Also faehrt die Mod die Teilstuecke des Gebiets der
+    // Reihe nach an und meldet, sobald ein Exemplar auftaucht - dasselbe, was
+    // ein sehender Spieler tut, nur dass er dabei schauen kann.
+    private sealed class HuntSearch
+    {
+        public required string MonsterName { get; init; }
+        public required uint TerritoryId { get; init; }
+        public required List<AreaPart> Parts { get; init; }
+        public int Index { get; set; }
+        /// <summary>Ob fuer dieses Monster schon gemeldet wurde, dass eines in
+        /// Reichweite steht - sonst wiederholt sich die Meldung im Sekundentakt.</summary>
+        public bool Announced { get; set; }
+    }
+
+    private HuntSearch? _huntSearch;
+
+    /// <summary>Wie nah man einem Teilstueck gewesen sein muss, damit der
+    /// naechste Tastendruck zum naechsten weitergeht. Bewusst grosszuegig: es
+    /// geht nicht darum, einen Punkt zu treffen, sondern darum, dass das Spiel
+    /// die Gegend um ihn herum geladen hat.</summary>
+    private const float HuntPartReached = 30f;
+
+    /// <summary>
+    /// Das Teilstueck des Lebensraums, das der Auto-Lauf als naechstes anfahren
+    /// soll, oder null wenn es fuer dieses Ziel keine Gebietsdaten gibt (dann
+    /// bleibt es beim Kartenmarker wie bisher). Schaltet selbst weiter, sobald
+    /// der Spieler am aktuellen Teilstueck war - so fuehrt wiederholtes Numpad3
+    /// durch das Gebiet, statt immer wieder an dieselbe Stelle.
+    /// </summary>
+    public (Vector3 Position, string Name, int Index, int Count)? NextHuntSearchPart(Vector3 playerPosition)
+    {
+        var search = _huntSearch;
+        if (search == null || search.Parts.Count == 0) return null;
+
+        if (search.Index < search.Parts.Count
+            && Distance2D(playerPosition, search.Parts[search.Index].Centre) <= HuntPartReached)
+        {
+            search.Index++;
+            _log.Info($"[Jagd] Teilstueck erreicht, weiter zu {search.Index + 1} von {search.Parts.Count}.");
+        }
+
+        // Alles abgefahren: von vorn. Ein Monster kann in der Zwischenzeit an
+        // einer Stelle stehen, an der eben keines stand - Stillstand waere hier
+        // die schlechteste Auskunft.
+        if (search.Index >= search.Parts.Count) search.Index = 0;
+
+        var part = search.Parts[search.Index];
+        return (part.Centre, part.SpotName, search.Index + 1, search.Parts.Count);
+    }
+
+    /// <summary>
+    /// Baut den Suchlauf fuer ein Jagdziel auf: die Teilstuecke seines
+    /// Lebensraums, das naechstgelegene zuerst, dazu der Kartenmarker als
+    /// weiterer Punkt. Der Marker bleibt drin, weil er das ist, was das Spiel
+    /// selbst anzeigt - er ist kein falscher Punkt, nur ein unvollstaendiger.
+    /// </summary>
+    private void BuildHuntSearch(HuntingTarget target, Vector3 playerPosition)
+    {
+        _huntSearch = null;
+        if (!target.InCurrentZone || target.TerritoryId == 0) return;
+
+        var parts = _areaRanges.GetParts(target.TerritoryId, target.AreaPlaceNameId,
+                                         target.AreaName, playerPosition);
+        if (target.Position is { } marker
+            && !parts.Any(p => Distance2D(p.Centre, marker) <= HuntPartReached))
+        {
+            parts.Add(new AreaPart(marker, target.AreaName, 0f));
+            // Nach dem Anfuegen neu sortieren, sonst haengt der Marker hinter
+            // Punkten, die viel weiter weg sind - die Reihenfolge ist die ganze
+            // Aussage dieser Liste.
+            parts.Sort((a, b) => Distance2D(playerPosition, a.Centre)
+                                 .CompareTo(Distance2D(playerPosition, b.Centre)));
+        }
+        if (parts.Count == 0) return;
+
+        _huntSearch = new HuntSearch
+        {
+            MonsterName = target.MonsterName,
+            TerritoryId = target.TerritoryId,
+            Parts = parts,
+        };
+        _log.Info($"[Jagd] '{target.MonsterName}' in '{target.AreaName}': {parts.Count} Teilstuecke, " +
+                  $"naechstes {Distance2D(playerPosition, parts[0].Centre):F0} m.");
+    }
+
+    /// <summary>
+    /// Meldet, sobald ein Exemplar des gewaehlten Jagdziels in die
+    /// Objekttabelle kommt - das ist der Moment, auf den der ganze Suchlauf
+    /// hinauslaeuft, und ohne Ansage bemerkt ihn ein blinder Spieler nicht.
+    /// Laeuft aus <see cref="Update"/>, aber nur einmal pro Sekunde: die
+    /// Objekttabelle nach jedem Frame nach einem Namen zu durchsuchen waere
+    /// Arbeit fuer nichts.
+    /// </summary>
+    private void PollHuntTargetInRange(IGameObject player)
+    {
+        var target = SelectedHuntTarget;
+        var search = _huntSearch;
+        if (target == null || search == null) return;
+        if (Environment.TickCount64 - _lastHuntPoll < 1000) return;
+        _lastHuntPoll = Environment.TickCount64;
+
+        var live = _huntingLog.FindNearestLive(target.MonsterName);
+        if (live == null)
+        {
+            // Wieder ausser Sicht: die naechste Ankunft soll erneut melden.
+            search.Announced = false;
+            return;
+        }
+        if (search.Announced) return;
+
+        search.Announced = true;
+        var distance = Distance2D(player.Position, live.Position);
+        _log.Info($"[Jagd] '{target.MonsterName}' in Reichweite: {distance:F0} m.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.HuntingTargetInRange(
+            target.MonsterName, FormatDistance(distance), CalculateDirection(player, live.Position)));
+    }
+
+    private long _lastHuntPoll;
+
+    /// <summary>
+    /// Der im Browser gewaehlte Blaumagie-Zauber, damit Numpad3 zu seinem Ort
+    /// laufen kann. Wie <see cref="SelectedHuntTarget"/> auch dann gesetzt, wenn
+    /// der Ort in einer anderen Zone liegt - dann fuehrt der Lauf zum Uebergang.
+    /// </summary>
+    public AozSpellTarget? SelectedBlueMagicTarget { get; private set; }
 
     /// <summary>
     /// Der Inhalts-Eingang, den der Browser in der Dungeonliste gewaehlt hat,
@@ -901,6 +1096,7 @@ public sealed class NavigationService
         SelectedPlaceDestination = null;
         SelectedObjectDestination = null;
         SelectedHuntTarget = null;
+        SelectedBlueMagicTarget = null;
         SelectedDutyEntrance = null;
         SelectedDungeonStep = null;
 
@@ -963,6 +1159,30 @@ public sealed class NavigationService
             var targets = _huntingLog.GetOpenTargets();
             var here = targets.Count(t => t.InCurrentZone);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(targets.Count, here));
+            return;
+        }
+
+        if (IsCompanyHuntCategory)
+        {
+            // Der NAME der Gesellschaft steht mit in der Kopfansage. Er ist die
+            // Gegenprobe der einzigen Zuordnung, die hier vom Spielstand abhaengt:
+            // haette die Mod die falsche Gesellschaft erkannt, liste sie stumm
+            // deren Monster - so ist es beim ersten Tastendruck hoerbar.
+            var targets = _huntingLog.GetOpenGrandCompanyTargets();
+            var here = targets.Count(t => t.InCurrentZone);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryCompanyHuntCount(
+                _huntingLog.GetGrandCompanyName(), targets.Count, here));
+            return;
+        }
+
+        if (IsBlueMagicCategory)
+        {
+            // Zwei Zahlen wie bei den Jagdzielen: wie viele fehlen insgesamt,
+            // und wie viele davon in DIESER Zone zu holen sind. Die zweite
+            // beantwortet "kann ich hier gerade etwas erledigen".
+            var missing = _aozSources.GetMissing();
+            var here = missing.Count(t => t.Kind == AozSourceKind.World && t.MapId == _clientState.MapId);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryBlueMagicCount(missing.Count, here));
             return;
         }
 
@@ -1064,7 +1284,21 @@ public sealed class NavigationService
 
         if (IsHuntingCategory)
         {
-            CycleHuntTarget(direction, player);
+            CycleHuntTarget(direction, player, _huntingLog.GetOpenTargets(),
+                            AccessibilityStrings.NoHuntingTargets);
+            return;
+        }
+
+        if (IsCompanyHuntCategory)
+        {
+            CycleHuntTarget(direction, player, _huntingLog.GetOpenGrandCompanyTargets(),
+                            AccessibilityStrings.NoCompanyHuntTargets);
+            return;
+        }
+
+        if (IsBlueMagicCategory)
+        {
+            CycleBlueMagicTarget(direction, player);
             return;
         }
 
@@ -1805,7 +2039,93 @@ public sealed class NavigationService
     // the quest goals - in-zone first, cross-zone routed over the transitions -
     // because it is the same problem: a named place a blind player cannot see
     // on the map.
-    private void CycleHuntTarget(int direction, IGameObject player)
+    // ── Blaumagie: welche Zauber fehlen noch, und wo sind sie zu holen ──
+    //
+    // Gleiche Bauart wie die Jagdziele darunter, mit zwei bewussten
+    // Unterschieden:
+    //
+    // 1. Die Liste fuehrt zum ORT, nicht zum Monster. Das Spiel fuehrt fuer
+    //    Blaumagie keine Zuordnung Zauber -> Monster (siehe
+    //    AozSpellSourceService), und ein erfundener Monstername waere schlimmer
+    //    als keiner. Wer im richtigen Gebiet steht, sucht den Traeger ueber die
+    //    Kategorie "Gegner" - genau das sagt die Ansage dann auch.
+    //
+    // 2. Sortiert wird nach der REIHENFOLGE DES ZAUBERBUCHS, nicht nach
+    //    Entfernung (Wunsch des Users 2026-09-02). Die Liste ist damit mit dem
+    //    Buch abgleichbar und ordnet sich nicht bei jedem Zonenwechsel neu. Was
+    //    in dieser Zone zu holen ist, sagt die Kopfansage der Kategorie.
+    private void CycleBlueMagicTarget(int direction, IGameObject player)
+    {
+        var targets = _aozSources.GetMissingInBookOrder();
+        if (targets.Count == 0)
+        {
+            SelectedBlueMagicTarget = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoBlueMagicTargets);
+            return;
+        }
+
+        var count = targets.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var target = targets[_cycleIndex];
+        SelectedBlueMagicTarget = target;
+
+        // Name und Nummer zuerst - das ist der Zauber, um den es geht.
+        var text = AccessibilityStrings.BlueMagicEntry(target.SpellName, target.Number);
+
+        switch (target.Kind)
+        {
+            case AozSourceKind.World when target.MapId == _clientState.MapId:
+                // Schon am Ziel. Es gibt hier NICHTS Feineres zu nennen: das
+                // Sheet fuehrt nur das Gebiet, keinen Unterort - anders als das
+                // Jagdtagebuch, das den Lebensraum kennt. Also ehrlich sagen,
+                // dass der Weg zu Ende ist und die Suche beim Spieler liegt.
+                text += ", " + AccessibilityStrings.BlueMagicHere;
+                break;
+
+            case AozSourceKind.World:
+                // Andere Zone: benennen und die Zahl der Zonenwechsel dazu -
+                // dieselbe Auskunft wie bei den Jagdzielen, denn ein blinder
+                // Spieler kann "Yanxia" nicht auf der Karte nachschlagen.
+                var hops = _places.GetHopDistances();
+                text += ", " + (hops.TryGetValue(target.MapId, out var h)
+                    ? AccessibilityStrings.InAreaWithHops(target.PlaceName, h)
+                    : AccessibilityStrings.InArea(target.PlaceName));
+                break;
+
+            case AozSourceKind.Duty:
+                // Instanz: der Name der Instanz ist die ganze Auskunft, dorthin
+                // fuehrt der Eingang. Ob der Spieler sie freigeschaltet hat,
+                // beantwortet das Spiel - und wenn es schweigt, schweigt auch
+                // die Ansage.
+                text += ", " + AccessibilityStrings.BlueMagicInDuty(target.PlaceName);
+                var unlocked = target.InstanceContentId != 0
+                    ? _dutyEntrances.IsUnlocked(target.InstanceContentId)
+                    : null;
+                if (unlocked == false) text += ", " + AccessibilityStrings.DutyLocked;
+                break;
+
+            default:
+                // Karneval-Belohnung oder Startzauber: das Spiel nennt keinen
+                // Ort. Nicht erfinden.
+                text += ", " + AccessibilityStrings.BlueMagicNoPlace;
+                break;
+        }
+
+        _log.Info($"[AozZiel] {_cycleIndex + 1}/{count}: Nr. {target.Number} '{target.SpellName}' " +
+                  $"{target.Kind} '{target.PlaceName}' Map={target.MapId} Inhalt={target.InstanceContentId}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.MenuPosition(text, _cycleIndex + 1, count));
+    }
+
+    /// <summary>
+    /// Blaettert durch eine Jagdtagebuch-Liste. Nimmt die Liste als Argument,
+    /// weil es zwei davon gibt - die der Klasse und die der Staatlichen
+    /// Gesellschaft. Sie sind bis auf die Quelle identisch, und genau so
+    /// muessen sie sich auch anhoeren.
+    /// </summary>
+    /// <param name="open">Die offenen Ziele des jeweiligen Tagebuchs.</param>
+    /// <param name="emptyMessage">Was gesagt wird, wenn nichts mehr offen ist.</param>
+    private void CycleHuntTarget(int direction, IGameObject player,
+                                 List<HuntingTarget> open, string emptyMessage)
     {
         // A monster the game currently has loaded outranks every marker: the
         // habitat marker is the middle of an area, the live specimen is the
@@ -1813,7 +2133,7 @@ public sealed class NavigationService
         // zum monster läuft und nicht nur in das gebiet"). Looked up once per
         // entry here so the list can be ordered by it AND the announcement can
         // name the real distance.
-        var targets = _huntingLog.GetOpenTargets()
+        var targets = open
             .Select(t => (Target: t, Live: _huntingLog.FindNearestLive(t.MonsterName)))
             .OrderByDescending(x => x.Live != null)
             .ThenBy(x => x.Live != null ? Distance2D(player.Position, x.Live.Position) : float.MaxValue)
@@ -1825,7 +2145,7 @@ public sealed class NavigationService
         if (targets.Count == 0)
         {
             SelectedHuntTarget = null;
-            _tolk.SpeakInterrupt(AccessibilityStrings.NoHuntingTargets);
+            _tolk.SpeakInterrupt(emptyMessage);
             return;
         }
 
@@ -1833,6 +2153,9 @@ public sealed class NavigationService
         _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
         var (target, live) = targets[_cycleIndex];
         SelectedHuntTarget = target;
+        // Der Suchlauf gehoert zum gewaehlten Ziel: bei jedem Wechsel neu, sonst
+        // fuehrt Numpad3 durch das Gebiet des vorigen Monsters.
+        BuildHuntSearch(target, player.Position);
 
         // Name plus what is still missing - the kill count is the whole point of
         // the entry, and without it the list cannot be prioritised.
@@ -1846,6 +2169,21 @@ public sealed class NavigationService
             text += ", " + AccessibilityStrings.HuntingMonsterNearby + ", " +
                     $"{FormatDistance(Distance2D(player.Position, live.Position))}, " +
                     $"{CalculateDirection(player, live.Position)}.";
+            if (_huntSearch != null) _huntSearch.Announced = true;   // schon gesagt
+        }
+        else if (target.InCurrentZone && NextHuntSearchPart(player.Position) is { } part
+                 && part.Count > 1)
+        {
+            // Das Gebiet besteht aus mehreren Stuecken. Die Zahl gehoert in die
+            // Ansage, denn sie ist der Unterschied zwischen "dort ist es" und
+            // "dort faengt die Suche an" - und ohne sie klingt eine
+            // Entfernungsangabe wie die zum Monster (User 2026-09-02).
+            var habitat = AccessibilityStrings.HuntingArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) +
+                    AccessibilityStrings.HuntingSearchPart(
+                        part.Name, part.Index, part.Count,
+                        FormatDistance(Distance2D(player.Position, part.Position)),
+                        CalculateDirection(player, part.Position));
         }
         else if (target.InCurrentZone && target.Position is { } pos)
         {
@@ -2198,6 +2536,28 @@ public sealed class NavigationService
         if (Categories[index].Cat == NavCategory.HuntingTargets)
             return _huntingLog.GetOpenTargets().Count > 0;
 
+        // Dieselbe Regel fuer das Tagebuch der Staatlichen Gesellschaft. Es
+        // faellt zusaetzlich weg, solange der Spieler keiner Gesellschaft
+        // angehoert - das ist bis zur Stufe-20-Story jeder Charakter, und eine
+        // Kategorie, die er noch gar nicht haben KANN, ist reines Rauschen.
+        if (Categories[index].Cat == NavCategory.GrandCompanyHunt)
+            return _huntingLog.GetOpenGrandCompanyTargets().Count > 0;
+
+        // Blaumagie NUR, solange der Spieler auch Blaumagier SPIELT - und nur
+        // solange ihm ueberhaupt Zauber fehlen.
+        //
+        // Die Klassenpruefung ist die wichtigere der beiden. Ohne sie bekaeme
+        // jeder Spieler eine Kategorie mit 124 Eintraegen, denn wer den Job
+        // nicht hat, hat auch keinen Zauber freigeschaltet - alles gilt dann als
+        // "fehlt". Und sie fragt die AKTIVE Klasse, nicht den Besitz des Jobs:
+        // Blaumagie-Zauber lernt man nur, waehrend man Blaumagier ist, also ist
+        // die Liste fuer einen Weissmagier auch dann Rauschen, wenn er den Job
+        // irgendwo liegen hat. Gleiche Regel wie bei Angelplaetzen und
+        // Jagdzielen: eine Kategorie, die gerade nichts beantworten kann, ist im
+        // Durchblaettern nur ein Tastendruck Rauschen.
+        if (Categories[index].Cat == NavCategory.BlueMagic)
+            return IsBlueMageActive() && _aozSources.GetMissing().Count > 0;
+
         // Dungeon nur, wo fuer diese Zone ueberhaupt ein Weg hinterlegt ist. Das
         // ist die grosse Mehrheit der Zonen NICHT - in der offenen Welt waere die
         // Kategorie sonst in jedem Durchblaettern ein Tastendruck Rauschen, und
@@ -2246,6 +2606,39 @@ public sealed class NavigationService
 
         return isGatherer;
     }
+
+    /// <summary>
+    /// Ob der Spieler GERADE Blaumagier ist.
+    ///
+    /// <para>
+    /// Die Klassen-Id kommt aus den Sheets (siehe
+    /// <see cref="AozSpellSourceService.BlueMageJobId"/>), nicht als Zahl im
+    /// Code. Gibt sie 0 zurueck, weil die Ableitung nicht eindeutig war, bleibt
+    /// die Kategorie verborgen - lieber nichts anbieten als das Falsche.
+    /// </para>
+    /// </summary>
+    private bool IsBlueMageActive()
+    {
+        var job = _aozSources.BlueMageJobId;
+        if (job == 0) return false;
+
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return false;
+
+        var isBlue = player.ClassJob.RowId == job;
+        if (player.ClassJob.RowId != _lastLoggedBlueMageJob)
+        {
+            _lastLoggedBlueMageJob = player.ClassJob.RowId;
+            _log.Info($"[AozZiel] Klasse {player.ClassJob.RowId} " +
+                      $"('{player.ClassJob.ValueNullable?.Name.ExtractText()}') " +
+                      $"gegen Blaumagier {job} -> Kategorie {(isBlue ? "sichtbar" : "verborgen")}.");
+        }
+        return isBlue;
+    }
+
+    // Zuletzt geloggte Klasse, damit die Zeile oben einmal pro Wechsel kommt und
+    // nicht in jedem Frame (gleiche Bauart wie _lastLoggedClassJob daneben).
+    private uint _lastLoggedBlueMageJob = uint.MaxValue;
 
     /// <summary>Objects of the given kinds within browse range, distance-sorted.</summary>
     private List<IGameObject> GetObjectsOfKinds(ObjectKind[] kinds)
@@ -3015,6 +3408,10 @@ public sealed class NavigationService
         _walkBeaconKind = SelectedQuestDestination is { } q && q.TerritoryTypeId != _clientState.TerritoryType
                        || SelectedDutyEntrance is { } d && d.TerritoryTypeId != _clientState.TerritoryType
                        || SelectedHuntTarget is { InCurrentZone: false }
+                       // Blaumagie-Weltziel in einer anderen Zone: das Laufziel
+                       // ist dann der Uebergang, nicht das Gebiet dahinter.
+                       || SelectedBlueMagicTarget is { Kind: AozSourceKind.World } bm
+                          && bm.MapId != _clientState.MapId
             ? BeaconKind.Transition
             : BeaconKindForSelection();
         StartWalkGuide(0, name, position, MathF.Max(ArrivalDistance, arrivalRange));
@@ -3025,6 +3422,10 @@ public sealed class NavigationService
     {
         if (SelectedQuestDestination != null) return BeaconKind.Quest;
         if (SelectedHuntTarget != null) return BeaconKind.Enemy;
+        // Blaumagie: bei einem Instanz-Zauber ist das Laufziel die Tuer, also
+        // klingt es auch wie eine. Ein Weltziel in dieser Zone hat gar kein
+        // Laufziel (das Sheet fuehrt nur das Gebiet), es kommt hier nie an.
+        if (SelectedBlueMagicTarget is { Kind: AozSourceKind.Duty }) return BeaconKind.DutyEntrance;
         if (SelectedDutyEntrance != null) return BeaconKind.DutyEntrance;
         if (SelectedPlaceDestination is { } p)
             return p.IsZoneTransition ? BeaconKind.Transition

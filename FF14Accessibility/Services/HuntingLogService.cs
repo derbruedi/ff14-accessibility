@@ -2,6 +2,7 @@ using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 
 namespace FF14Accessibility.Services;
@@ -19,6 +20,12 @@ namespace FF14Accessibility.Services;
 /// <param name="Position">World position of the AREA (its map marker), or null
 /// when the area carries no marker. Y is unknown (map data is 2D) and resolved
 /// via navmesh before walking, like every other waypoint.</param>
+/// <param name="AreaPlaceNameId">Place name row of the habitat. Needed because
+/// the map label is only ONE point of what is often a very large area - the
+/// layout pieces behind that name are looked up with it, see
+/// <see cref="AreaRangeService"/>.</param>
+/// <param name="TerritoryId">Territory of the habitat's map, for the same
+/// lookup. 0 when unknown.</param>
 public sealed record HuntingTarget(
     string MonsterName,
     int Killed,
@@ -27,7 +34,9 @@ public sealed record HuntingTarget(
     string AreaName,
     uint MapId,
     bool InCurrentZone,
-    Vector3? Position);
+    Vector3? Position,
+    uint AreaPlaceNameId = 0,
+    uint TerritoryId = 0);
 
 /// <summary>
 /// The hunting log ("Bestiarium") as a source of PLACES to go, not just a window
@@ -50,6 +59,24 @@ public sealed record HuntingTarget(
 /// - MonsterNoteTarget names up to three habitats per monster as zone plus
 ///   sub-area. 590 of 647 habitat entries have a map marker on their own zone
 ///   map, so their position is known; the 40 without one are dungeon areas.
+///
+/// THE THREE GRAND COMPANY LOGS ARE THE SAME MECHANIC, one block each, and the
+/// game says so itself - measured offline against the sheets 2026-09-02:
+/// - GrandCompany carries a MonsterNote field with exactly the semantics of the
+///   ClassJob one: Mahlstrom 8, Bruderschaft der Morgenviper 9, Legion der
+///   Unsterblichen 10, and 127 for "Keine" - the same 127 the crafters carry.
+///   That closes the only gap: the nine class indices are 0..7 and 11, so which
+///   of the twelve MonsterNoteManager slots belongs to which company was NOT
+///   derivable from the sheet order (Schurke sits at 290001 but on index 11).
+///   Nothing here is guessed from the gap; the number is read from the sheet.
+/// - Their blocks are 1000001, 2000001 and 3000001 and are found by the very
+///   same name match as the classes ("Mahlstrom 01"), once the sheet's
+///   placeholder is dropped: GrandCompany.Name reads "Bruderschaft[p] der
+///   Morgenviper" while the block is called "Bruderschaft der Morgenviper 01".
+/// - A company block holds THREE ranks of ten, not five: rows 31..50 exist but
+///   ask for nothing (all Count entries 0) in all three blocks.
+/// - All 30 targets per company name a habitat, so the category can always say
+///   where to go - checked for all three.
 /// </summary>
 public sealed class HuntingLogService
 {
@@ -63,7 +90,12 @@ public sealed class HuntingLogService
     private const int EntriesPerRank = 10;
     private const int RanksPerClass = 5;
 
-    /// <summary>ClassJob.MonsterNote for a class without a hunting log.</summary>
+    /// <summary>Ranks a grand company log has, against five for a class: rows
+    /// 31..50 of those blocks ask for nothing (measured, see class summary).</summary>
+    private const int RanksPerGrandCompany = 3;
+
+    /// <summary>ClassJob.MonsterNote for a class without a hunting log - and
+    /// GrandCompany.MonsterNote for "Keine", which uses the same value.</summary>
     private const uint NoHuntingLog = 127;
 
     // Class index -> first MonsterNote row of that class's block. Built once
@@ -101,6 +133,84 @@ public sealed class HuntingLogService
     }
 
     /// <summary>
+    /// The hunting log index of the grand company the player belongs to (8, 9
+    /// or 10), or null when they have not joined one yet - which is most of the
+    /// early game, the companies open up in the level 20 story.
+    ///
+    /// PlayerState.GrandCompany is the game's own membership field and indexes
+    /// the GrandCompany sheet (0 = none). The index itself is never derived from
+    /// that number: it is read out of the sheet row, exactly like a class reads
+    /// ClassJob.MonsterNote. A membership value the sheet does not know, or one
+    /// whose row carries no log, yields null instead of a guess.
+    /// </summary>
+    public unsafe uint? GetGrandCompanyIndex()
+    {
+        var state = PlayerState.Instance();
+        if (state == null)
+        {
+            _log.Info("[Jagd] PlayerState.Instance() ist null - Gesellschaft nicht lesbar.");
+            return null;
+        }
+
+        var company = (uint)state->GrandCompany;
+        if (company == 0) return null;                 // keiner Gesellschaft beigetreten
+        if (!_data.GetExcelSheet<GrandCompany>().TryGetRow(company, out var row))
+        {
+            _log.Info($"[Jagd] Gesellschaft {company} steht nicht im GrandCompany-Sheet.");
+            return null;
+        }
+
+        var index = row.MonsterNote.RowId;
+        if (index == NoHuntingLog || index == uint.MaxValue) return null;
+
+        // Einmal pro Wechsel ins Log, nicht bei jeder Abfrage: die Kategorie
+        // fragt beim Blaettern staendig nach. Die Zeile belegt im Testlog, WELCHE
+        // Gesellschaft erkannt wurde und auf welchen Block sie fuehrt.
+        if (company != _lastLoggedCompany)
+        {
+            _lastLoggedCompany = company;
+            _log.Info($"[Jagd] Gesellschaft {company} '{StripPlaceholders(row.Name.ExtractText())}' " +
+                      $"-> Jagdtagebuch-Index {index}.");
+        }
+        return index;
+    }
+
+    /// <summary>Last grand company value written to the log, so the line above
+    /// appears once per change instead of once per browser keypress.</summary>
+    private uint _lastLoggedCompany = uint.MaxValue;
+
+    /// <summary>
+    /// The name of the player's grand company as the game spells it, or an
+    /// empty string when they belong to none. Spoken in the category header so
+    /// a wrong membership would be audible at once instead of silently listing
+    /// the wrong company's monsters.
+    /// </summary>
+    public unsafe string GetGrandCompanyName()
+    {
+        var state = PlayerState.Instance();
+        if (state == null) return string.Empty;
+        var company = (uint)state->GrandCompany;
+        if (company == 0) return string.Empty;
+        if (!_data.GetExcelSheet<GrandCompany>().TryGetRow(company, out var row)) return string.Empty;
+        return StripPlaceholders(row.Name.ExtractText());
+    }
+
+    /// <summary>
+    /// Drops the German sheet's grammar placeholders from a company name
+    /// ("Bruderschaft[p] der Morgenviper"). Unlike a monster name there is no
+    /// ending to fill in - the block the game itself writes is called
+    /// "Bruderschaft der Morgenviper 01", so the placeholder simply goes away.
+    /// </summary>
+    private static string StripPlaceholders(string text)
+    {
+        if (!text.Contains('[')) return text.Trim();
+        return text.Replace("[a]", string.Empty)
+                   .Replace("[p]", string.Empty)
+                   .Replace("[t]", string.Empty)
+                   .Trim();
+    }
+
+    /// <summary>
     /// First MonsterNote row of a class's block, or null when the class has no
     /// block. Matched by name: hunting log entries are called "&lt;class&gt; 21",
     /// which is the only link the sheet carries.
@@ -126,6 +236,19 @@ public sealed class HuntingLogService
             indexByName.TryAdd(name, index);
         }
 
+        // Die drei Gesellschaften stehen in derselben Tabelle und werden ueber
+        // denselben Namen gefunden - nur der Platzhalter der deutschen Zeile
+        // muss weg, sonst passt "Bruderschaft[p] der Morgenviper" nie auf den
+        // Block "Bruderschaft der Morgenviper 01".
+        foreach (var company in _data.GetExcelSheet<GrandCompany>())
+        {
+            var index = company.MonsterNote.RowId;
+            if (index == NoHuntingLog || index == uint.MaxValue) continue;
+            var name = StripPlaceholders(company.Name.ExtractText());
+            if (name.Length == 0) continue;
+            indexByName.TryAdd(name, index);
+        }
+
         var starts = new Dictionary<uint, uint>();
         foreach (var row in _data.GetExcelSheet<MonsterNote>())
         {
@@ -140,19 +263,23 @@ public sealed class HuntingLogService
                 starts[index] = row.RowId;
         }
 
-        _log.Info($"[Jagd] Klassen-Bloecke: {starts.Count} " +
+        _log.Info($"[Jagd] Bloecke (Klassen + Gesellschaften): {starts.Count} " +
                   string.Join(", ", starts.OrderBy(s => s.Key).Select(s => $"{s.Key}->{s.Value}")));
         return starts;
     }
 
     /// <summary>
-    /// The ten MonsterNote rows of one rank (1-based) of a class, in log order.
-    /// Empty when the class has no block or the rank is out of range.
+    /// The ten MonsterNote rows of one rank (1-based) of a class or company, in
+    /// log order. Empty when there is no block or the rank is out of range.
     /// </summary>
-    public List<MonsterNote> GetRankEntries(uint classIndex, int rank)
+    /// <param name="classIndex">Hunting log index (class 0..11, company 8..10).</param>
+    /// <param name="rank">Rank as the window counts it, 1-based.</param>
+    /// <param name="maxRank">Ranks this block has - five for a class, three for
+    /// a company.</param>
+    public List<MonsterNote> GetRankEntries(uint classIndex, int rank, int maxRank = RanksPerClass)
     {
         var result = new List<MonsterNote>();
-        if (rank < 1 || rank > RanksPerClass) return result;
+        if (rank < 1 || rank > maxRank) return result;
         if (GetBlockStart(classIndex) is not { } start) return result;
 
         var sheet = _data.GetExcelSheet<MonsterNote>();
@@ -210,16 +337,45 @@ public sealed class HuntingLogService
     /// I hunt right here" first; otherwise the first habitat with a known
     /// position.
     /// </summary>
-    public unsafe List<HuntingTarget> GetOpenTargets()
+    public List<HuntingTarget> GetOpenTargets()
+        => GetCurrentClassIndex() is { } classIndex
+            ? GetOpenTargetsFor(classIndex, RanksPerClass, "Klasse")
+            : new List<HuntingTarget>();
+
+    /// <summary>
+    /// The same list for the GRAND COMPANY log of the company the player
+    /// belongs to. Empty when they belong to none or the rank is finished.
+    ///
+    /// Deliberately a second list and not merged into the one above: the two
+    /// logs run independently (a company rank is not touched by class kills),
+    /// and mixing them would leave the player unable to tell which log a kill
+    /// still counts for - which is the whole reason to look.
+    /// </summary>
+    public List<HuntingTarget> GetOpenGrandCompanyTargets()
+        => GetGrandCompanyIndex() is { } companyIndex
+            ? GetOpenTargetsFor(companyIndex, RanksPerGrandCompany, "Gesellschaft")
+            : new List<HuntingTarget>();
+
+    /// <summary>
+    /// Shared core of both lists above: the open entries of one block's current
+    /// rank. Kept in one place so a class and a company entry can never be read
+    /// or spelled differently.
+    /// </summary>
+    /// <param name="classIndex">Hunting log index of the block.</param>
+    /// <param name="maxRank">Ranks the block has (5 class, 3 company).</param>
+    /// <param name="what">What to call the block in the log line.</param>
+    private unsafe List<HuntingTarget> GetOpenTargetsFor(uint classIndex, int maxRank, string what)
     {
         var result = new List<HuntingTarget>();
-        if (GetCurrentClassIndex() is not { } classIndex) return result;
         if (GetProgress(classIndex) is not { } progress) return result;
 
-        var rows = GetRankEntries(classIndex, progress.Rank);
+        var rows = GetRankEntries(classIndex, progress.Rank, maxRank);
         if (rows.Count == 0)
         {
-            _log.Info($"[Jagd] Klasse {classIndex}, Rang {progress.Rank}: keine Sheet-Zeilen.");
+            // Ein fertig gejagter Block meldet sich genau so: das Spiel zaehlt
+            // den Rang ueber den letzten hinaus, und dann gibt es keine Zeilen
+            // mehr. Kein Fehler, nur nichts mehr zu tun.
+            _log.Info($"[Jagd] {what} {classIndex}, Rang {progress.Rank}: keine Sheet-Zeilen.");
             return result;
         }
 
@@ -255,11 +411,13 @@ public sealed class HuntingLogService
                     name, killed, required,
                     best.Zone, best.Area, best.MapId,
                     best.MapId != 0 && best.MapId == currentMap,
-                    best.Position));
+                    best.Position,
+                    best.AreaId,
+                    GetTerritoryOfMap(best.MapId)));
             }
         }
 
-        _log.Info($"[Jagd] Klasse {classIndex}, Rang {progress.Rank}: {result.Count} offene Ziele.");
+        _log.Info($"[Jagd] {what} {classIndex}, Rang {progress.Rank}: {result.Count} offene Ziele.");
         return result;
     }
 
@@ -333,13 +491,23 @@ public sealed class HuntingLogService
 #endif
     }
 
+    /// <summary>The territory a map belongs to, 0 when unknown. The layout
+    /// files are keyed by territory, the hunting log only knows the map.</summary>
+    private uint GetTerritoryOfMap(uint mapId)
+        => mapId != 0 && _data.GetExcelSheet<Lumina.Excel.Sheets.Map>().TryGetRow(mapId, out var map)
+            ? map.TerritoryType.RowId
+            : 0;
+
     /// <summary>
     /// Habitats of a hunting log monster as walkable destinations: zone, area
-    /// and - where the area carries a map marker - its world position.
+    /// and - where the area carries a map marker - its world position. The
+    /// area's place name ROW travels with it: the map label is one point of
+    /// what can be a very large area, and the layout pieces behind that name
+    /// are looked up by row (see <see cref="AreaRangeService"/>).
     /// </summary>
-    public List<(string Zone, string Area, uint MapId, Vector3? Position)> GetHabitats(MonsterNoteTarget target)
+    public List<(string Zone, string Area, uint MapId, Vector3? Position, uint AreaId)> GetHabitats(MonsterNoteTarget target)
     {
-        var result = new List<(string, string, uint, Vector3?)>();
+        var result = new List<(string, string, uint, Vector3?, uint)>();
         for (var i = 0; i < target.PlaceNameZone.Count; i++)
         {
             var zoneRef = target.PlaceNameZone[i];
@@ -354,9 +522,9 @@ public sealed class HuntingLogService
             var mapId = _places.FindMapByPlaceName(zoneRef.RowId);
             Vector3? pos = null;
             if (mapId != 0 && areaRef.RowId != 0)
-                pos = _places.FindMarkerPosition(mapId, areaRef.RowId);
+                pos = _places.FindMarkerPosition(mapId, areaRef.RowId, area);
 
-            result.Add((zone, area, mapId, pos));
+            result.Add((zone, area, mapId, pos, areaRef.RowId));
         }
         return result;
     }

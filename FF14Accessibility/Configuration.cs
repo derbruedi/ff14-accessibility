@@ -456,6 +456,23 @@ public sealed class Configuration : IPluginConfiguration
     public float AutoWalkPlaceStopRange = 1.0f;      // Orte, Wegpunkte, Questziele: dicht dran
     public float AutoWalkTransitionStopRange = 0.5f; // Zonen-Übergänge: fast drauf, damit der Übergang auslöst
 
+    // ── Fliegen beim Auto-Lauf (V5.96) ────────────────────────────────────────
+    // Sitzt der Spieler auf einem Reittier IN DER LUFT, sucht der Auto-Lauf den
+    // Weg im Luftraum statt auf der Gehflaeche und fliegt ihn ab; am Ziel wird
+    // gelandet und abgestiegen. Reittier rufen und abheben macht der Spieler
+    // selbst (User-Entscheid 2026-09-01) - wer noch nicht fliegen kann, merkt von
+    // alldem nichts, sein Lauf ist unveraendert der von vorher.
+    //
+    // STANDARD AN: fliegend faellt fast jede Netzlücke weg, an der ein Lauf sonst
+    // scheitert - der Luftraum kennt weder die 55-Grad-Grenze noch die
+    // abgetrennten Netzinseln (siehe docs/game-api.md -> "Warum das Wegenetz
+    // NICHT alle Wege kennt").
+    //
+    // Es gibt bewusst KEINE Mindestentfernung: in der Luft ist der Bodenweg nicht
+    // langsamer, sondern falsch - vnavmesh steuerte sonst der Gehflaeche tief
+    // unter der Figur nach.
+    public bool AutoWalkFlyEnabled = true;
+
     // HP/MP-Töne (V5.28): bei jeder 10-Prozent-Stufe ein kurzer Ton, dessen
     // Stereo-Position den Füllstand abbildet (voll = rechts, leer = links;
     // User-Entscheid 2026-07-20). Gilt auch ausserhalb des Kampfes, weil

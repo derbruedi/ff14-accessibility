@@ -115,12 +115,34 @@ public sealed class NavmeshIpc
     /// short of the destination. False means vnavmesh refused - either a pathfind
     /// was already queued (AsyncMoveRequest.MoveTo returns false then) or the
     /// plugin is unreachable.
+    ///
+    /// <para>
+    /// <paramref name="fly"/> is NOT a comfort switch - it picks a completely
+    /// different search space (NavmeshManager.QueryPath:151):
+    /// <c>false</c> searches the walkable-surface mesh, <c>true</c> searches the
+    /// voxel VOLUME of open air. The volume only exists for territories whose
+    /// <c>TerritoryIntendedUse</c> is 1, 47 or 49 (NavmeshCustomization:29);
+    /// elsewhere <c>PathfindVolume</c> logs "Nav volume was not built" and returns
+    /// an empty list, which reaches us as a walk that never starts.
+    /// </para>
+    ///
+    /// <para>
+    /// It also changes how the character is steered. <c>fly: true</c> leaves
+    /// <c>FollowPath.IgnoreDeltaY</c> false, so height counts both when ticking
+    /// waypoints off and when steering: <c>OverrideMovement.RMIFlyDetour</c> then
+    /// drives the mount's vertical axis as well. And it makes vnavmesh TAKE OFF on
+    /// its own - a waypoint above the player makes <c>FollowPath.Update</c> spam
+    /// the jump action while mounted (FollowPath:147-158). The same branch is why
+    /// a flying path with no mount goes nowhere at all: it disables movement and
+    /// returns, every frame, in silence. See <see cref="FlightService"/> for who
+    /// makes sure there is a mount.
+    /// </para>
     /// </summary>
-    public bool MoveCloseTo(Vector3 destination, float range)
+    public bool MoveCloseTo(Vector3 destination, float range, bool fly = false)
     {
         try
         {
-            var ok = _moveCloseTo.InvokeFunc(destination, false, range);
+            var ok = _moveCloseTo.InvokeFunc(destination, fly, range);
             LastCallFailed = false;
             return ok;
         }
@@ -145,11 +167,17 @@ public sealed class NavmeshIpc
     /// turns the crossing back into a phantom path. Callers must watch the
     /// waypoint count: it may only ever shrink while our list is being walked.
     /// </summary>
-    public bool MoveAlong(List<Vector3> waypoints)
+    /// <param name="fly">Wie bei <see cref="MoveCloseTo"/>, aber hier ohne
+    /// Wegsuche: die Liste geht direkt an <c>FollowPath.Move</c>, und das Flag
+    /// setzt nur <c>IgnoreDeltaY = !fly</c>. Mit <c>true</c> gilt ein Wegpunkt
+    /// erst als erreicht, wenn die Figur ihn auch in der HOEHE getroffen hat -
+    /// genau das braucht der Sinkflug beim Landen, der sonst sofort abgehakt
+    /// waere, weil er senkrecht unter der Figur liegt.</param>
+    public bool MoveAlong(List<Vector3> waypoints, bool fly = false)
     {
         try
         {
-            _moveAlong.InvokeAction(waypoints, false);
+            _moveAlong.InvokeAction(waypoints, fly);
             LastCallFailed = false;
             return true;
         }

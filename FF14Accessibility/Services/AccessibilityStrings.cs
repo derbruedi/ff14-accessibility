@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.Text;
 
@@ -78,6 +79,57 @@ public static partial class AccessibilityStrings
 
     /// <summary>Spoken when the focus lands on the minion guide's search box.</summary>
     public static string MinionSearchField => IsGerman ? "Begleiter suchen, Eingabefeld." : "Minion search, text field.";
+
+    // ── Zauberbuch der Blaumagie (AOZNotebook) ───────────────────────
+    /// <summary>
+    /// A spell tile in the blue magic spellbook grid: name plus its number in
+    /// the book. The tile itself carries only the number ("Nr. 14") - without
+    /// the name, browsing the grid told the player nothing (log 2026-09-02).
+    /// The tick mark says the spell sits in the active set being edited.
+    /// </summary>
+    public static string AozSpellTile(string name, byte number, bool selected)
+    {
+        var head = IsGerman ? $"{name}, Nr. {number}" : $"{name}, no. {number}";
+        if (!selected) return head + ".";
+        return IsGerman ? $"{head}, ausgewählt." : $"{head}, selected.";
+    }
+
+    /// <summary>Spell tile whose action could not be resolved - position only.</summary>
+    public static string AozUnknownSpell(int position) =>
+        IsGerman ? $"Zauberfeld {position}." : $"Spell tile {position}.";
+
+    /// <summary>One of the 24 active-command slots, filled.</summary>
+    public static string AozActiveSlot(int slot, string name, byte number) =>
+        IsGerman ? $"Platz {slot}, {name}, Nr. {number}."
+                 : $"Slot {slot}, {name}, no. {number}.";
+
+    /// <summary>One of the 24 active-command slots, empty.</summary>
+    public static string AozActiveSlotEmpty(int slot) =>
+        IsGerman ? $"Platz {slot}, leer." : $"Slot {slot}, empty.";
+
+    /// <summary>The focused spell is already learned.</summary>
+    public static string AozLearned => IsGerman ? "Erlernt." : "Learned.";
+
+    /// <summary>The focused spell is not learned yet.</summary>
+    public static string AozNotLearned => IsGerman ? "Noch nicht erlernt." : "Not learned yet.";
+
+    /// <summary>
+    /// Overview spoken when the spellbook opens: which tab, how many spells
+    /// learned, how many command slots filled. Both counters are read from the
+    /// window's own fields ("1/124", "1/24"), never recomputed.
+    /// </summary>
+    public static string AozOverview(int tab, int tabCount, string learned, string active)
+    {
+        var parts = new List<string>();
+        parts.Add(IsGerman ? $"Zauberbuch der Blaumagie, Reiter {tab} von {tabCount}."
+                           : $"Blue magic spellbook, tab {tab} of {tabCount}.");
+        if (!string.IsNullOrWhiteSpace(learned))
+            parts.Add(IsGerman ? $"Erlernt {learned.Trim()}." : $"Learned {learned.Trim()}.");
+        if (!string.IsNullOrWhiteSpace(active))
+            parts.Add(IsGerman ? $"Aktive Kommandos {active.Trim()}."
+                               : $"Active commands {active.Trim()}.");
+        return string.Join(" ", parts);
+    }
 
     // ── Umschalt-Zustaende (Checkbox / Radiobutton) ──────────────────
     /// <summary>Checkbox is ticked / unticked.</summary>
@@ -386,6 +438,12 @@ public static partial class AccessibilityStrings
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
         NavCategory.Fates            => "FATEs",
         NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
+        // "Jagdziele der Gesellschaft" statt "Jagdtagebuch der Staatlichen
+        // Gesellschaft": die Beschriftung wird bei jedem Blättern gesprochen,
+        // und sie steht direkt hinter "Jagdziele" - das Wort, das die beiden
+        // unterscheidet, gehört nach vorn und der Rest muss kurz bleiben.
+        NavCategory.GrandCompanyHunt => IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets",
+        NavCategory.BlueMagic        => IsGerman ? "Blaumagie"          : "Blue magic",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
         // Bewusst NICHT "Dungeons", obwohl der Wunsch so formuliert war: die Liste
         // haelt auch Prüfungen und Raids. Und bewusst nicht noch einmal "Inhalte" -
@@ -542,6 +600,124 @@ public static partial class AccessibilityStrings
         IsGerman
             ? "Keine offenen Jagdziele in diesem Rang."
             : "No open hunting targets in this rank.";
+
+    // ── Areal absuchen ──
+    //
+    // Ein Lebensraum ist oft ein GEBIET aus mehreren Stücken, nicht ein Punkt
+    // ("Sandtor" sind sechs Teilstücke über rund 500 mal 400 Meter). Die Zahl
+    // muss mitgesprochen werden: ohne sie klingt die Entfernung wie die zum
+    // Monster, und der Spieler landet auf einem leeren Fleck und hält das für
+    // einen Fehler (genau so passiert, 2026-09-02).
+    /// <summary>One search point of a habitat: which piece it is, and how to get
+    /// there. The piece's own name is spoken when it has one.</summary>
+    public static string HuntingSearchPart(string spotName, int index, int count,
+                                           string distance, string direction) =>
+        spotName.Length > 0
+            ? (IsGerman
+                ? $"Suchpunkt {index} von {count}, {spotName}, {distance}, {direction}."
+                : $"search point {index} of {count}, {spotName}, {distance}, {direction}.")
+            : (IsGerman
+                ? $"Suchpunkt {index} von {count}, {distance}, {direction}."
+                : $"search point {index} of {count}, {distance}, {direction}.");
+
+    /// <summary>Said the moment a specimen of the selected hunting target turns
+    /// up in the object table - the point of the whole search.</summary>
+    public static string HuntingTargetInRange(string monster, string distance, string direction) =>
+        IsGerman
+            ? $"{monster} in Reichweite, {distance}, {direction}."
+            : $"{monster} in range, {distance}, {direction}.";
+
+    // ── Jagdziele der Staatlichen Gesellschaft ──
+    //
+    // Der Name der Gesellschaft steht in der Kopfansage, damit hörbar ist,
+    // WESSEN Liste da läuft - die Zuordnung ist das Einzige an dieser Kategorie,
+    // das vom Spielstand abhängt.
+    public static string CategoryCompanyHuntCount(string company, int total, int here)
+    {
+        var label = company.Length > 0
+            ? company
+            : (IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets");
+        return here > 0
+            ? (IsGerman
+                ? $"{label}: {total} offen, {here} in diesem Gebiet."
+                : $"{label}: {total} open, {here} in this area.")
+            : (IsGerman
+                ? $"{label}: {total} offen, keines in diesem Gebiet."
+                : $"{label}: {total} open, none in this area.");
+    }
+
+    public static string NoCompanyHuntTargets =>
+        IsGerman
+            ? "Keine offenen Jagdziele der Gesellschaft in diesem Rang."
+            : "No open grand company targets in this rank.";
+
+    // ── Blaumagie: die noch fehlenden Zauber und ihr Fundort ──
+    //
+    // Bewusster Unterschied zu den Jagdzielen daneben: dort nennt die Zeile das
+    // MONSTER, hier nur den ORT. Das Spiel fuehrt fuer Blaumagie keine Zuordnung
+    // Zauber -> Monster (siehe AozSpellSourceService), und ein erfundener
+    // Monstername waere schlimmer als keiner.
+    public static string CategoryBlueMagicCount(int total, int here) =>
+        here > 0
+            ? (IsGerman
+                ? $"Blaumagie: {total} Zauber fehlen, {here} in diesem Gebiet."
+                : $"Blue magic: {total} spells missing, {here} in this area.")
+            : (IsGerman
+                ? $"Blaumagie: {total} Zauber fehlen, keiner in diesem Gebiet."
+                : $"Blue magic: {total} spells missing, none in this area.");
+
+    /// <summary>One blue magic line: the spell and its number in the book.</summary>
+    public static string BlueMagicEntry(string spell, byte number) =>
+        IsGerman ? $"{spell}, Nr. {number}" : $"{spell}, no. {number}";
+
+    /// <summary>
+    /// Said when the player already stands in the spell's own area. The sheet
+    /// names the zone and NOTHING finer - unlike the hunting log, which knows
+    /// the habitat - so there is no closer point to walk to. Saying so is the
+    /// honest answer; the carrier has to be found via the enemy category.
+    /// </summary>
+    public static string BlueMagicHere =>
+        IsGerman
+            ? "hier in diesem Gebiet. Das Spiel nennt keine genauere Stelle, such den Träger über die Kategorie Gegner."
+            : "here in this area. The game names no closer spot; find the carrier via the enemy category.";
+
+    /// <summary>The zone plus how many transitions away it is.</summary>
+    public static string InAreaWithHops(string zone, int hops) =>
+        hops <= 0
+            ? InArea(zone)
+            : (IsGerman
+                // "Gebietswechsel" ist im Deutschen in Ein- und Mehrzahl gleich.
+                ? $"im Gebiet {zone}, {hops} Gebietswechsel entfernt."
+                : $"in the area {zone}, {hops} {(hops == 1 ? "transition" : "transitions")} away.");
+
+    /// <summary>The spell is learned inside an instance, named by it.</summary>
+    public static string BlueMagicInDuty(string duty) =>
+        IsGerman ? $"in der Instanz {duty}." : $"in the duty {duty}.";
+
+    /// <summary>
+    /// The game names no place at all for this spell. True for exactly 14 of the
+    /// 124: thirteen Masked Carnivale rewards and the starting spell (measured
+    /// offline 2026-09-02 - their location field is empty, not merely unmapped).
+    /// </summary>
+    public static string BlueMagicNoPlace =>
+        IsGerman
+            ? "kein Fundort in der Welt, Belohnung aus dem Maskierten Karneval oder Startzauber."
+            : "no location in the world; a Masked Carnivale reward or the starting spell.";
+
+    public static string NoBlueMagicTargets =>
+        IsGerman
+            ? "Es fehlt kein Blaumagie-Zauber."
+            : "No blue magic spells missing.";
+
+    public static string BlueMagicNoRoute(string spell, string zone) =>
+        IsGerman
+            ? $"{spell} gibt es in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
+            : $"{spell} is found in {zone}. No route there over zone transitions.";
+
+    public static string BlueMagicNoDoor(string spell, string duty) =>
+        IsGerman
+            ? $"{spell} gibt es in {duty}. Zu diesem Eingang ist kein Ort hinterlegt."
+            : $"{spell} is found in {duty}. No location is recorded for that entrance.";
 
     // ── Alle Inhalte: die weltweite Dungeon-, Prüfungs- und Raid-Liste ──
 
@@ -1096,6 +1272,25 @@ public static partial class AccessibilityStrings
     // stays in the game-client language (Teil 2), these are the spoken frames.
     public static string PageOf(int current, int total) =>
         IsGerman ? $" Seite {current} von {total}." : $" Page {current} of {total}.";
+
+    /// <summary>
+    /// The window's own page indicator, passed through as it reads ("1/2").
+    /// Used where the game already formats it and only the word is missing.
+    /// </summary>
+    public static string PageLabel(string page) =>
+        IsGerman ? $"Seite {page}" : $"Page {page}";
+
+    /// <summary>Next page, for windows whose paging button carries no text.</summary>
+    public static string NextPage => IsGerman ? "Weiter" : "Next";
+
+    /// <summary>
+    /// A control that exists but is switched off right now - a paging button on
+    /// the first page, for instance. Without this the focus lands on a button
+    /// that looks like any other and the player presses into the void, never
+    /// learning why nothing happens.
+    /// </summary>
+    public static string ControlUnavailable(string label) =>
+        IsGerman ? $"{label}, nicht verfügbar" : $"{label}, unavailable";
     public static string EnterCloses    => IsGerman ? " Enter schließt." : " Press Enter to close.";
     public static string EnterPagesOn   => IsGerman ? " Enter blättert weiter." : " Press Enter to continue.";
     public static string Closed         => IsGerman ? "Geschlossen." : "Closed.";
@@ -1827,6 +2022,7 @@ public static partial class AccessibilityStrings
           "/acc win, Aktives Fenster ansagen. " +
           "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
           "/acc cooldowns, Fähigkeit-bereit-Ansage an oder aus. " +
+          "/acc fly, Fliegen beim Auto-Lauf an oder aus, und sagt ob es hier geht. " +
           "/acc trails, aufgezeichnete Spuren in diesem Gebiet auflisten. " +
           "/acc trail del und die Nummer, eine Spur löschen. " +
           "/acc stop, Sprache stoppen."
@@ -1863,6 +2059,7 @@ public static partial class AccessibilityStrings
           "/acc win, announce the active window. " +
           "/acc keys, save the game's key bindings to the desktop. " +
           "/acc cooldowns, ability-ready announcements on or off. " +
+          "/acc fly, flying during auto-walk on or off, and whether it works here. " +
           "/acc trails, list the trails recorded in this area. " +
           "/acc trail del and the number, delete a trail. " +
           "/acc stop, stop speech.";
@@ -1926,6 +2123,210 @@ public static partial class AccessibilityStrings
     public static string ArrivedBelowLedge(string name, float metres, string direction) =>
         IsGerman ? $"Angekommen. {name} ist {MetersRemaining(metres)} nach {direction}, unter dem Vorsprung."
                  : $"Arrived. {name} is {MetersRemaining(metres)} to the {direction}, under the overhang.";
+
+    // ── Fliegen (V5.96) ───────────────────────────────────────────────────────
+    // Der Auto-Lauf fliegt, wo das Spiel es zulaesst. Die Ansagen halten den
+    // Spieler ueber jeden Wechsel des Fortbewegungsmittels auf dem Laufenden:
+    // wer nicht sieht, dass die Figur auf einem Reittier sitzt, muss es hoeren -
+    // sonst erklaert nichts, warum die Tasten sich ploetzlich anders anfuehlen.
+
+    /// <summary>Der Lauf wird ein Flug. Gesprochen statt <see cref="WalkingTo"/>,
+    /// nicht zusaetzlich - zwei Saetze zum Start waeren eine Ansage zu viel.</summary>
+    public static string FlyingTo(string name) =>
+        IsGerman ? $"Fliege zu {name}." : $"Flying to {name}.";
+
+    /// <summary>Angekommen und gelandet. Eigener Satz statt
+    /// <see cref="TargetReached"/>, weil die Landung mit zum Ergebnis gehoert:
+    /// erst am Boden laesst sich reden, sammeln und kaempfen.</summary>
+    public static string FlightArrived(string name) =>
+        IsGerman ? $"Angekommen und gelandet: {name}." : $"Arrived and landed: {name}.";
+
+    /// <summary>Der Spieler fliegt, aber es kam kein Flugweg zustande. Der Lauf
+    /// geht am Boden weiter, und genau das sagt der Satz - Stille waere hier von
+    /// einem Abbruch nicht zu unterscheiden.</summary>
+    public static string NoFlightPathWalkingInstead =>
+        IsGerman ? "Kein Flugweg gefunden, ich laufe."
+                 : "No flight route found, walking instead.";
+
+    /// <summary>
+    /// Die Suche nach dem Flugweg laeuft noch. Gesprochen erst, wenn sie laenger
+    /// dauert als <c>AutoWalkService.FlightSearchNoticeS</c> - bei kurzen Strecken
+    /// ist sie in Sekundenbruchteilen durch und der Satz waere nur Laerm.
+    ///
+    /// <para>WARUM ES DIESEN SATZ BRAUCHT: die Voxel-Suche im Luftraum brauchte
+    /// fuer 800 bis 900 Meter gemessene 19 bis 25 Sekunden (Log 2026-09-01,
+    /// 21:11 bis 21:13). So lange Stille ist von einem Absturz nicht zu
+    /// unterscheiden.</para>
+    /// </summary>
+    public static string FlightPathSearching =>
+        IsGerman ? "Suche den Flugweg."
+                 : "Searching for a flight route.";
+
+    /// <summary>Die Notbremse hat gezogen: vnavmesh rechnet nach
+    /// <c>AutoWalkService.FlightStartTimeoutS</c> immer noch. Es wird NICHT auf den
+    /// Bodenweg ausgewichen - eine laufende Suche laesst sich nicht abbrechen und
+    /// wuerde spaeter in den Bodenlauf hineinsteuern.</summary>
+    public static string FlightSearchTooSlow =>
+        IsGerman ? "Die Suche nach dem Flugweg dauert zu lange. Ich breche ab."
+                 : "The flight route search is taking too long. Stopping.";
+
+    /// <summary>Eine Wegsuche laeuft noch, eine zweite nimmt vnavmesh nicht an
+    /// (<c>AsyncMoveRequest.MoveTo</c> gibt dann false zurueck). Der Spieler wird
+    /// darum gebeten, es gleich noch einmal zu versuchen.</summary>
+    public static string PathSearchStillBusy =>
+        IsGerman ? "Die Wegsuche läuft noch. Gleich noch einmal versuchen."
+                 : "A path search is still running. Try again in a moment.";
+
+    // ── Update über das Menü (V5.97) ──────────────────────────────────────────
+    // Bis hierher hiess ein Update: Spiel beenden, Installer starten. Das Plugin
+    // kann sich selbst erneuern, weil seine geladene DLL nicht gesperrt ist und
+    // Dalamud bei einer Aenderung neu laedt - siehe UpdateService.
+
+    /// <summary>Menuepunkt und Titel der Update-Ebene.</summary>
+    public static string UpdateTitle =>
+        IsGerman ? "Aktualisierung" : "Update";
+
+    /// <summary>Zeile, die die laufende Fassung nennt.</summary>
+    public static string UpdateInstalledVersion(string version) =>
+        IsGerman ? $"Installiert: Fassung {version}"
+                 : $"Installed: version {version}";
+
+    /// <summary>Menuepunkt: beim Server nachfragen.</summary>
+    public static string UpdateCheckNow =>
+        IsGerman ? "Nach Aktualisierung suchen" : "Check for update";
+
+    /// <summary>Quittung beim Start der Abfrage.</summary>
+    public static string UpdateChecking =>
+        IsGerman ? "Suche nach einer neuen Fassung."
+                 : "Checking for a new version.";
+
+    /// <summary>Es gibt nichts Neues.</summary>
+    public static string UpdateUpToDate(string version) =>
+        IsGerman ? $"Fassung {version} ist die neueste."
+                 : $"Version {version} is the latest.";
+
+    /// <summary>Es gibt etwas Neues.</summary>
+    public static string UpdateAvailable(string version) =>
+        IsGerman ? $"Fassung {version} ist verfügbar."
+                 : $"Version {version} is available.";
+
+    /// <summary>Menuepunkt: die gefundene Fassung einspielen.</summary>
+    public static string UpdateInstallNow(string version) =>
+        IsGerman ? $"Fassung {version} jetzt einspielen"
+                 : $"Install version {version} now";
+
+    /// <summary>Quittung beim Start des Einspielens.</summary>
+    public static string UpdateInstalling(string version) =>
+        IsGerman ? $"Lade Fassung {version}. Einen Moment."
+                 : $"Downloading version {version}. One moment.";
+
+    /// <summary>
+    /// Fertig geschrieben. Das Neuladen macht Dalamud danach von selbst - deshalb
+    /// wird hier angekuendigt und nicht gemeldet: die naechste Stimme, die der
+    /// Spieler hoert, ist die des frisch geladenen Plugins.
+    /// </summary>
+    public static string UpdateInstalledRestarting(string version) =>
+        IsGerman ? $"Fassung {version} eingespielt. Das Plugin lädt sich jetzt neu."
+                 : $"Version {version} installed. The plugin is reloading now.";
+
+    /// <summary>Die Abfrage oder das Einspielen ist gescheitert.</summary>
+    public static string UpdateFailed =>
+        IsGerman ? "Die Aktualisierung hat nicht geklappt. Einzelheiten stehen im Log."
+                 : "The update failed. Details are in the log.";
+
+    /// <summary>
+    /// Die neue Fassung aendert Tolk oder die NVDA-Bruecke. Beide haengen im
+    /// Spielprozess und lassen sich nicht ersetzen, solange es laeuft.
+    /// </summary>
+    public static string UpdateNeedsInstaller =>
+        IsGerman ? "Diese Aktualisierung ändert Dateien, die das laufende Spiel " +
+                   "festhält. Bitte das Spiel beenden und den Installer benutzen."
+                 : "This update changes files the running game holds open. " +
+                   "Please close the game and use the installer.";
+
+    /// <summary>
+    /// Das Plugin stammt aus dem Dalamud-Repository, nicht vom Installer. Dort
+    /// gehoeren die Dateien Dalamud, und ein Update von hier aus wuerde seine
+    /// Buchfuehrung ueberschreiben.
+    /// </summary>
+    public static string UpdateNotSelfManaged =>
+        IsGerman ? "Diese Installation wird von Dalamud verwaltet und kann sich " +
+                   "nicht selbst aktualisieren."
+                 : "This installation is managed by Dalamud and cannot update itself.";
+
+    /// <summary>
+    /// Im Kampf oder waehrend eines Auto-Laufs wird nicht eingespielt: das
+    /// Neuladen reisst mitten in der Bewegung alle Tasten und Ansagen weg.
+    /// </summary>
+    public static string UpdateBusyNow =>
+        IsGerman ? "Nicht im Kampf oder während einer Laufstrecke. " +
+                   "Bitte danach noch einmal."
+                 : "Not during combat or while a walk is running. " +
+                   "Please try again afterwards.";
+
+    /// <summary>
+    /// Der Flug hat vor dem Ziel aufgegeben. Bewusst NICHT der Wortlaut des
+    /// Bodenlaufs: "hier endet der begehbare Weg" waere hundert Meter ueber dem
+    /// Boden schlicht falsch. Nennt Richtung und - wenn nennenswert - die Hoehe,
+    /// damit der Spieler nach der Landung weiss, wohin es weitergeht.
+    /// </summary>
+    public static string FlightEndedRemaining(float distance, string direction, float rise) =>
+        MathF.Abs(rise) >= 5f
+            ? (IsGerman
+                ? $"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}, " +
+                  $"{(rise > 0 ? "das Ziel liegt höher" : "das Ziel liegt tiefer")}."
+                : $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}, " +
+                  $"{(rise > 0 ? "the target is higher up" : "the target is further down")}.")
+            : (IsGerman
+                ? $"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}."
+                : $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}.");
+
+    /// <summary>
+    /// Warum hier nicht geflogen wird. Nur auf Nachfrage gesprochen (siehe
+    /// <c>/acc fly</c>) - bei jedem Lauf gesagt waere es in Staedten eine
+    /// Dauerschleife.
+    /// </summary>
+    public static string FlightBlockedReason(FlightBlock reason) => reason switch
+    {
+        FlightBlock.NoVolume => IsGerman
+            ? "Hier kann nicht geflogen werden. In Städten, Dungeons und Innenräumen gibt es keine Flugstrecken."
+            : "Flying is not possible here. Cities, dungeons and interiors have no air routes.",
+        FlightBlock.NoMount => IsGerman
+            ? "Hier sind keine Reittiere erlaubt, also wird auch nicht geflogen."
+            : "Mounts are not allowed here, so there is no flying either.",
+        FlightBlock.AetherCurrents => IsGerman
+            ? "Laut Spielstand fehlen dir hier noch Ätherströme."
+            : "According to your progress you are still missing aether currents here.",
+        _ => IsGerman ? "Hier gibt es Flugstrecken." : "There are air routes here.",
+    };
+
+    /// <summary>Die angeforderte Landung laeuft (<c>/acc land</c>). Gesprochen
+    /// beim Start, weil der Sinkflug je nach Hoehe ein paar Sekunden dauert und
+    /// ohne Ansage nichts zu passieren scheint.</summary>
+    public static string Landing =>
+        IsGerman ? "Lande." : "Landing.";
+
+    /// <summary>Unten und abgestiegen.</summary>
+    public static string Landed =>
+        IsGerman ? "Gelandet." : "Landed.";
+
+    /// <summary>Landen angefordert, ohne auf einem Reittier zu sitzen.</summary>
+    public static string NotFlying =>
+        IsGerman ? "Du sitzt auf keinem Reittier." : "You are not on a mount.";
+
+    /// <summary>
+    /// Zustandsansage des Umschalters (<c>/acc fly</c>). Sagt beim Einschalten
+    /// gleich dazu, dass der Spieler selbst aufsitzen und abheben muss - sonst
+    /// wartet er auf einen Flug, den das Plugin nie anfaengt.
+    /// </summary>
+    public static string FlightToggled(bool enabled) =>
+        IsGerman
+            ? (enabled
+                ? "Fliegen beim Auto-Lauf ein. Ruf dein Reittier und heb selbst ab, dann fliegt der Auto-Lauf."
+                : "Fliegen beim Auto-Lauf aus. Es wird immer gelaufen.")
+            : (enabled
+                ? "Flying during auto-walk on. Summon a mount and take off yourself, then auto-walk flies."
+                : "Flying during auto-walk off. It will always walk.");
 
     public static string AutoWalkStopped =>
         IsGerman ? "Auto-Lauf gestoppt." : "Auto-walk stopped.";

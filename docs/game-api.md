@@ -667,9 +667,10 @@ zu manuell gebauten Testnetzen, nicht zum automatisch geladenen Zonennetz.
   `TerritoryType.TerritoryIntendedUse` 1, 47 und 49; dann baut `NavmeshBuilder`
   zusaetzlich eine `VoxelMap`, und `Nav.Pathfind`/`Path.MoveTo` nehmen ein
   `fly`-Flag. Ein Flugvolumen kennt die 55-Grad-Grenze nicht - fuer Hoehenbrueche
-  in Feldzonen also die grundsaetzlich saubere Umgehung. UNGEPRUEFT ist beides:
-  ob Gebiet 135 einen der drei IntendedUse-Werte hat, und ob der Charakter dort
-  fliegen darf (Aetherstroeme - reiner Spielzustand, steht nicht im Netz).
+  in Feldzonen also die grundsaetzlich saubere Umgehung.
+  → AUSGEBAUT IN V5.96, siehe den eigenen Abschnitt „Fliegen“ weiter unten.
+  Die beiden dort offenen Fragen sind beantwortet: Gebiet 135 hat IntendedUse 1,
+  und die Aetherstrom-Frage beantwortet `PlayerState.IsAetherCurrentZoneComplete`.
 - `seeds-local.json` (`FloodFill.AddPoint` + `Serialize`, Ablage im
   vnavmesh-pluginConfigs-Ordner) markiert nur, welche Flaechen von einem Seed aus
   erreichbar sind, und schaltet damit `NavmeshManager.Prune` scharf. Das schliesst
@@ -690,6 +691,109 @@ Weitere belegte Kleinigkeiten:
 - `CancelMoveOnUserInput`: drückt der Spieler selbst eine Bewegungstaste, ruft
   `FollowPath.Update` `Stop()` — der Pfad ist dann weg, ohne dass unser Plugin
   etwas davon erfährt.
+
+### Fliegen beim Auto-Lauf (V5.96, Quellen geprüft 2026-09-01)
+Der `fly`-Parameter der vnavmesh-IPC war überall auf `false` verdrahtet. V5.96
+nutzt ihn. Quellen: der Klon der installierten vnavmesh 1.2.3.13 unter
+`H:\ffxiv_navmesh`, die Sheets per Lumina offline, FFXIVClientStructs/Dalamud per
+ilspycmd.
+
+**Was `fly=true` in vnavmesh auslöst — drei Dinge, nicht eines:**
+1. **Anderer Suchraum.** `NavmeshManager.QueryPath:151` —
+   `flying ? Query.PathfindVolume(...) : Query.PathfindMesh(...)`. Das Volumen ist
+   der Voxel-Luftraum, nicht die Gehfläche. Damit fallen Netzlücken, die
+   55-Grad-Grenze und abgetrennte Netzinseln als Problem weg.
+2. **Höhe zählt beim Steuern.** `Path.MoveTo(waypoints, fly)` setzt
+   `FollowPath.IgnoreDeltaY = !fly` (IPCProvider:39). Ist sie false, treibt
+   `OverrideMovement.RMIFlyDetour` zusätzlich `PlayerMoveControllerFlyInput.Up` —
+   vnavmesh steigt und sinkt also wirklich, es fliegt nicht nur horizontal.
+3. **vnavmesh hebt selbst ab.** `FollowPath.Update:147-158`: liegt der nächste
+   Wegpunkt höher als der Spieler und ist er weder `InFlight` (77) noch `Diving`
+   (81), wird `ExecuteJump()` gespammt (`GeneralAction 2`, alle 100 ms).
+
+**Die Falle: ohne Reittier passiert GAR NICHTS.** Derselbe Zweig
+(`FollowPath.Update:154-156`) setzt bei nicht aufgesessener Figur
+`_movement.Enabled = false; return;` — jeden Frame, ohne Log, ohne Fehler. Ein
+Flugpfad ohne Reittier ist deshalb kein Fehlschlag, sondern eine stumme Blockade.
+
+**WER DEN FLUG STARTET: der Spieler, nicht das Plugin** (User-Entscheid
+2026-09-01, ersetzt die erste Fassung). Reittier rufen und abheben macht er
+selbst; das Plugin stellt nur fest, dass `ConditionFlag.InFlight` gilt, und nimmt
+dann den Luftraum als Suchraum. Begründung des Users: „so bekommen leute die noch
+nicht fliegen können keine probleme" — wer nicht fliegt, läuft exakt wie vor V5.96.
+→ Das erledigt zugleich die Ätherstrom-Frage unten: **wer in der Luft ist, darf
+fliegen.** Die Prüfung steuert seither nichts mehr und ist nur noch Auskunft für
+`/acc fly`. Punkt 3 oben (Selbst-Abheben per Sprung-Spam) wird damit ebenfalls nie
+ausgelöst — die Figur ist schon oben, wenn der Pfad startet.
+
+**Wo überhaupt geflogen werden kann.** `NavmeshCustomization.IsFlyingSupported:29`
+baut ein Volumen nur für `TerritoryType.TerritoryIntendedUse` ∈ {1, 47, 49}
+(1 = normale Feldzone, 47 = Diadem, 49 = Insel). Sonst antwortet
+`PathfindVolume` mit „Nav volume was not built" und einer LEEREN Liste — beim
+Spieler kommt das als Lauf an, der nie startet. Städte haben IntendedUse 0.
+
+**Wo der Charakter fliegen DARF** (Sheet-Dump 2026-09-01):
+- `TerritoryType.AetherCurrentCompFlgSet` nennt den Ätherstrom-Satz der Region,
+  `PlayerState.IsAetherCurrentZoneComplete(uint)` beantwortet ihn.
+- **Alle Gebiete des Grundspiels teilen sich Satz 19** (135, 137–141, 145–148,
+  152–156, 180). Ab Heavensward hat jedes Gebiet einen eigenen (397→1, 398→2,
+  399→3, 400→4, 401→5, 402→6).
+- 52 Gebiete haben IntendedUse 1/47/49 und `IsInUse`; davon nennen 5 keinen Satz
+  (`AetherCurrentCompFlgSet` 0) — dort ist die Prüfung zu überspringen.
+- `TerritoryType.Mount` (gepacktes Bit, Offset 59 Bit 4) sagt, ob Reittiere
+  erlaubt sind. In Städten false.
+- **OFFEN, ABER HARMLOS:** ob `IsAetherCurrentZoneComplete(19)` für die Gebiete
+  des Grundspiels true liefert. Dort gibt es keine Ätherströme zu sammeln, das
+  Fliegen hängt an der Hauptgeschichte — ob Satz 19 damit gesetzt wird, steht in
+  keiner DLL. **Seit dem Umbau auf „der Spieler hebt selbst ab" steuert die
+  Prüfung nichts mehr**, sie liefert nur die Begründung für `/acc fly`. Ein
+  falsches Ergebnis kostet also höchstens einen irreführenden Satz, keinen
+  blockierten Flug. Sonde: `/acc flyprobe` (siehe `FlightProbe`).
+
+**GeneralAction-Zeilen** (Sheet-Dump 2026-09-01, deutsche Namen):
+- 2 = „Springen" (das, was vnavmesh zum Abheben spammt)
+- 9 = „Reittier-Roulette"
+- 23 = „Absteigen"
+- 24 = „Flugreittier-Roulette" — beschwört garantiert ein flugfähiges Reittier
+- Aufruf: `ActionManager.UseAction(ActionType.GeneralAction, id, 0xE0000000)`.
+  Vorher `GetActionStatus(...)` fragen: 0 = einsetzbar, sonst LogMessage-Nummer
+  mit dem Grund.
+
+**ConditionFlags** (Dalamud, verifiziert): `Mounted` = 4, `Mounting` = 64,
+`Mounting71` = 71, `InFlight` = 77, `Diving` = 81.
+⚠️ `Mounted2` heißt jetzt `RidingPillion` (10) und bedeutet **Mitfahren auf dem
+Reittier eines anderen Spielers** — der Mitfahrer steuert nichts. Nicht als
+„aufgesessen" werten, sonst wartet der Lauf ewig auf einen Aufstieg, den nur der
+andere auslösen kann.
+
+**LANDEN — im Spiel gemessen 2026-09-01, und die Annahme war falsch:**
+„Absteigen" (`GeneralAction 23`) wirkt **in der Luft nicht**. Es wird angenommen
+und tut nichts:
+- `GetActionStatus` meldete **0** (= einsetzbar),
+- `UseAction` gab **True** zurück,
+- und `ConditionFlag.Mounted` blieb über **zwölf** Aufrufe hinweg gesetzt
+  (Log 18:26:42–18:27:59, Sinkflug fehlte).
+
+FFXIVClientStructs kennt auch keine Lande-Funktion — die ganze Assembly enthält
+zum Thema nur `MountContainer.DismountTimer`. **Gelandet wird ausschließlich,
+indem man nach unten fliegt, bis die Figur aufsetzt.** Erst am Boden greift
+`GeneralAction 23`.
+
+→ Konsequenz für `AutoWalkService.Phase.Landing`: am Ziel **kein** `Path.Stop`,
+sondern `Path.MoveTo([Bodenpunkt unter der Figur], fly: true)` im Halbsekundentakt,
+bis `InFlight` fällt; dann stoppen und absteigen. `fly: true` ist hier
+entscheidend — es lässt `IgnoreDeltaY` false, sonst gilt der senkrecht unter der
+Figur liegende Wegpunkt sofort als erreicht und der Sinkflug hört auf, bevor er
+begonnen hat. Bodenpunkt via `Query.Mesh.PointOnFloor`; kennt das Netz hier keinen
+(Wasser, Schlucht), wird ein Punkt 50 m tiefer angesteuert — das Spiel stoppt den
+Sinkflug am Boden von selbst.
+
+Für die selbst geflogene Strecke gibt es `/acc land` (`AutoWalkService.LandNow`),
+das durch dieselbe Landephase läuft.
+
+⚠️ Die alte Notiz in diesem Dokument (Zeile ~309), Z sei die Absteigen-Taste „in
+der Luft", beschreibt die Tastenbelegung richtig, aber nicht die Wirkung: gedrückt
+wird sie in der Luft ohne Folgen bleiben.
 
 ### Spieler „folgen" — KEIN natives API (verifiziert per ilspycmd, 2026-07-26)
 Das Kontextmenü „Folgen" existiert im Spiel, ist aber in FFXIVClientStructs
@@ -2121,3 +2225,209 @@ X = 154,5 - der Spieler stand bei X = 152,5, also nur **2 m** davor, und ein
 Ziel am Boxrand statt in der Boxmitte wuerde den Uebergang ausloesen. Bei
 Vollausdehnung waeren es 10 m. Messbar nur im Spiel: Position beim
 Zonenwechsel protokollieren.
+
+## Job-Anzeigen und "kann ich das jetzt einsetzen?" (Sheet-Dump + ilspycmd, 2026-09-01)
+
+### Welche Anzeigen Dalamud herausgibt
+
+`Dalamud.Game.ClientState.JobGauge.Types` fuehrt 22 Klassen, je eine pro Job mit
+Anzeige. Abgelesen aus der `Dalamud.dll` im dev-Ordner. Die Felder sind sehr
+verschieden gebaut, eine einheitliche "ist bereit"-Fahne gibt es NICHT:
+
+- **Zaehler** (Zahl von 0 bis n): WAR `BeastGauge`, PLD `OathGauge`,
+  DRK `Blood`, NIN `Ninki`/`Kazematoi`, SAM `Kenki`/`MeditationStacks`,
+  MNK `Chakra`, RPR `Soul`/`Shroud`, DNC `Feathers`/`Esprit`,
+  RDM `WhiteMana`/`BlackMana`/`ManaStacks`, WHM `Lily`/`BloodLily`,
+  SCH `Aetherflow`/`FairyGauge`, SGE `Addersgall`/`Addersting`,
+  BRD `Repertoire`/`SoulVoice`, MCH `Heat`/`Battery`, DRG `EyeCount`,
+  GNB `Ammo`, VPR `RattlingCoilStacks`/`SerpentOffering`, PCT `PalleteGauge`/`Paint`
+- **Zeitleisten**: BLM `EnochianTimer`, MCH `OverheatTimeRemaining`,
+  DRG `LOTDTimer`, DRK `DarksideTimeRemaining`, SGE `AddersgallTimer`,
+  WHM `LilyTimer`, BRD `SongTimer`, RPR `EnshroudedTimeRemaining`
+- **Echte An/Aus-Fahnen**: SMN (`IsIfritReady` …), PCT (`MooglePortraitReady`,
+  `CreatureMotifDrawn` …), BLM (`IsParadoxActive`), DNC (`IsDancing`),
+  MCH (`IsOverheated`/`IsRobotActive`)
+- **Zustaende/Aufzaehlungen**: AST `DrawnCards`, SAM `Sen`, MNK `BeastChakra`/`Nadi`,
+  VPR `DreadCombo`, DRK `DeliriumComboStep`, BRD `Coda`
+
+### Der Marodeur hat keine Anzeige (Sheet-Dump, deutscher Client)
+
+Alle 11 Aktionen mit `ClassJob=3` tragen `PrimaryCostType=0`. Die Zorn-Anzeige
+fuellt sich zwar schon als Marodeur, aber die erste Aktion, die sie ausgibt, ist
+`Tier in dir` (id 49) mit `ClassJob=21` (Krieger) und `ClassJobLevel=35`. Fuer
+einen Marodeur gibt es an der Anzeige nichts anzusagen.
+
+### Kosten stehen im Action-Sheet - aber der Typ ist keine Menge
+
+`PrimaryCostType` + `PrimaryCostValue` je Aktion. Gemessene Zuordnung ueber die
+Job-Verteilung (ERSCHLOSSEN, nicht dokumentiert - weder Dalamud noch
+FFXIVClientStructs kennen ein Enum dafuer):
+
+- 3 = MP, 10 = ein vorausgesetzter Status (Wert = Status-Id, z. B. 3870 Donnerkopf)
+- 22 = Zorn (KRG, Wert 50), 25 = Blut (DKR), 27 = Ninki (NIN), 28 = Chakra (MÖN),
+  30 = Aetherfluss (BSW/GLT/HRT), 39 = Kenki (SAM), 41 = Eid (PLD),
+  53 = Federn (TÄN), 54 = Esprit (TÄN)
+- 71 = **Kennung, keine Menge**: Ifrit-Beschwoerung 25805 Wert 1,
+  Titan 25806 Wert 2, Garuda 25807 Wert 3. Ein Vergleich "Anzeige >= Kosten"
+  waere hier schlicht falsch.
+
+**Folgerung: die Verfuegbarkeit nicht selbst ausrechnen.** Das waere verdoppelte
+Spiellogik und bei Typ 71 sofort falsch.
+
+### Was das Spiel selbst beantwortet (ActionManager, ilspycmd)
+
+- `GetActionStatus(ActionType, actionId, targetId = 0xE0000000, checkRecastActive
+  = true, checkCastingActive = true, uint* extra = null)` → **0 = einsetzbar**,
+  sonst eine Zeile im `LogMessage`-Sheet mit dem Grund (572 "Kann noch nicht
+  verwendet werden.", 582 "Noch nicht einsatzbereit ...", 1651/1661 "Aktion kann
+  nicht ausgefuehrt werden.").
+- `IsActionHighlighted(ActionType, actionId)` → das Leuchten des Symbols, also
+  was ein sehender Spieler bei Kombo-Fortsetzung und Procs sieht.
+- `CheckActionResources(ActionType, actionId, void* actionData = null)` → dem
+  Namen nach die reine Ressourcen-Pruefung.
+- `ActionManager.Combo` ist ein `ComboDetail { float Timer; uint Action; }` bei
+  Offset 96 - Restzeit und zuletzt gesetzte Kombo-Aktion. Zusammen mit
+  `Action.ActionCombo` im Sheet (worauf eine Aktion folgt) ist die Kombo
+  vollstaendig ABLESBAR, sie muss nicht nachgebaut werden.
+  Beispiel Marodeur: Gewaltiger Hieb 31 → Verstuemmelung 37 (`ActionCombo=31`)
+  → Sturmkeil 42 / Sturmbrecher 45 (beide `ActionCombo=37`).
+
+**NICHT gemessen (Stand 2026-09-01):** ob `GetActionStatus` auch Ziel- und
+Reichweitengruende meldet (dann waere die steigende Flanke Krach statt Auskunft),
+ob `IsActionHighlighted` auch bei voller Anzeige leuchtet, und ob
+`CheckActionResources` mit `actionData = null` sinnvoll antwortet. Dafuer gibt es
+`/acc actionprobe` (`Services/ActionSignalProbe.cs`, nur Debug).
+
+## Zauberbuch der Blaumagie — AddonAOZNotebook (ilspycmd + Sheet-Dump + UI-Dump, 2026-09-02)
+
+**Das Fenster heisst `AOZNotebook`.** Es hat zwei Reiter (`TabIndex`, `TabCount`):
+das Zauberbuch selbst und den Maskierten Karneval. Der UI-Dump vom 2026-09-02
+enthaelt beide, der Karneval-Teil aber unsichtbar (`F=0x2023` ohne `V`) — seine
+Texte sind dort deshalb durchweg leer. Das ist kein leeres Fenster, sondern der
+gerade nicht gezeigte Reiter.
+
+### `FFXIVClientStructs.FFXIV.Client.UI.AddonAOZNotebook` — alles benannt
+
+Es muss KEINE Knoten-Id geraten werden, das Struct beschreibt das Fenster:
+
+- `SpellbookBlocks` — `Span<SpellbookBlock>`, **16 Stueck** = die Kacheln der
+  aktuellen Seite. Jede mit `ActionId` (uint), `Name` (CStringPointer) und
+  Zeigern auf ihre eigenen Knoten: `AtkComponentBase`, `AtkCollisionNode`,
+  `AtkComponentCheckBox`, `AtkComponentIcon`, `AtkTextNode` (das Nummernschild),
+  `AtkResNode1/2`.
+- `ActiveActions` — `Span<ActiveAction>`, **24 Stueck** = die aktiven Kommandos
+  unten. Je `ActionId`, `Name`, `AtkComponentDragDrop`, `AtkTextNode`.
+- `TabIndex` (Offset 3272), `TabCount` (3276).
+- `SetTab(int tab, bool)` als Member-Funktion.
+
+Die Zahlen 16 und 24 decken sich exakt mit dem Dump: 16 Kacheln `Comp(1027)`
+(id=18..33, Raster 4x4) und 24 Ablagefelder `Comp(1028)` (id=43..66, 2x12).
+Dazu 8 Seiten-Radiobuttons `Comp(1023)` (id=8..15) — 8 x 16 = 128 >= 124 Zauber.
+
+### Warum der allgemeine Leser hier scheiterte (Log 2026-09-02)
+
+Die Kachel traegt **keinen Namen**, nur ein Nummernschild (`id=9`, "Nr. 1"), und
+der Fokus sitzt auf der Kollision ihres Ankreuzfeldes (`id=4`). Der einzige Text,
+den die Textsuche von dort erreicht, ist das Schild. Im Log kam beim Blaettern
+ueber das ganze Buch nichts als "Nr. 14", "Nr. 15", "Nr. 65", "Nr. 80". Der
+Listen-Leser meldete zusaetzlich "Liste noch leer" und "Liste bleibt leer" —
+richtig, denn es gibt hier keine `AtkComponentList`, sondern ein Kachelraster.
+
+### Sheets `AozAction` + `AozActionTransient` (offline gedumpt, deutsche Fassung)
+
+- **124 Zauber**, Zeilen 1..124 (Zeile 0 leer). `AozAction.Action` verweist auf
+  `Action`, `AozAction.Rank` ist der Sternrang.
+- **124 Aktions-Ids, alle verschieden** — der Rueckschluss von `SpellbookBlock.ActionId`
+  auf die Sheet-Zeile ist eindeutig.
+- `AozActionTransient.Number` ist die "Nr." des Fensters, **lueckenlos 1..124**.
+- `Stats` ist mehrzeilig: `Typus: ...`, `Element: ...`, `Rang: ...`. 122 Zauber
+  haben 3 Zeilen, 2 haben 4. Jede Zeile endet auf `\r`.
+- **Die Rang-Zeile malt das Spiel als Sterne**: genau `Rank` mal U+2605, in
+  ALLEN 124 Faellen geprueft. Fuer die Sprachausgabe wird der Stern durch die
+  Zahl ersetzt — gesucht wird ueber das Sternzeichen, nicht ueber das Wort
+  "Rang", damit es in jeder Spielsprache greift.
+- `Description` ist der Beschreibungstext, `Icon` das Symbol.
+- Effekt-Flags: `TargetsEnemy`, `TargetsSelfOrAlly`, `CauseSlow`, `CausePetrify`,
+  `CauseParalysis`, `CauseInterrupt`, `CauseBlind`, `CauseStun`, `CauseSleep`,
+  `CauseBind`, `CauseHeavy`, `CauseDeath` — fuer den Karneval relevant, bisher
+  ungenutzt.
+
+### `Location` ist ein Union-Feld — und deckt NICHT alles ab
+
+`AozActionTransient.Location` wird nach `LocationKey` verschieden gelesen:
+
+- `LocationKey = 1` (33x) → `PlaceName` (Gebiet, z.B. "Tiefer Wald")
+- `LocationKey = 4` (77x) → `ContentFinderCondition` (z.B. "Pharos Sirius")
+- `LocationKey = 2` (13x) → **untypisiert, RowId immer 0** — kein Fundort im Sheet
+- `LocationKey = 3` (1x) → untypisiert, RowId 0; das ist Nr. 1 Wasserkanone
+
+**Daraus folgt eine Design-Entscheidung:** "Erlernbar durch" wird NICHT aus dem
+Sheet zusammengebaut, sondern aus dem Detail-Feld des Fensters gelesen. Fuer die
+14 Zauber ohne Sheet-Fundort schreibt das Spiel dort trotzdem etwas hin (bei
+Wasserkanone "Erster Zauber"), und es ist bereits lokalisiert.
+
+### Knoten des Detail-Feldes rechts (oberste Knotenliste, Dump 2026-09-02)
+
+- `69` Nummer ("Nr. 1") — dient als **Gegenprobe**, welchen Zauber das Feld zeigt
+- `70` Name, `71` Werte, `72` Beschreibung
+- `68` "Noch nicht erlernt." — **die Sichtbarkeit traegt den Zustand**, sichtbar
+  heisst nicht erlernt
+- `73` "Erlernbar durch:", `75` erste Fundstelle, `78` zweite (oft ausgeblendet)
+- `17` Erlernt-Zaehler ("1/124"), `37` Kommando-Zaehler ("1/24")
+
+Das Feld gehoert dem AUSGEWAEHLTEN Zauber, nicht zwingend dem fokussierten.
+Ob es der Tastatur folgt, ist ungemessen — deshalb vergleicht der Leser Knoten 69
+mit der erwarteten Nummer und schweigt bei Nichtpassen, statt zum falschen
+Zauber vorzulesen.
+
+### Was es fuer "erlernt" NICHT gibt
+
+`AozNoteModule` (`FFXIVClientStructs.FFXIV.Client.UI.Misc`) fuehrt die **5
+aktiven Saetze** (`ActiveSets`, je 24 Aktions-Ids, eigener Name, Hotbar-Belegung),
+aber KEINE Freischaltinformation. `ActionManager` hat `BlueMageActions` (Span<uint>,
+24 = die aktuell zugewiesenen) und `GetActiveBlueMageActionInSlot(int)`, aber kein
+`IsActionUnlocked`. In `PlayerState` steht nur `TrackedActionUnlocks`. Die einzige
+belegte Quelle fuer "erlernt" ist damit Knoten 68 des Fensters.
+
+### Blaumagie als Wegweiser: was geht und was nicht (gemessen 2026-09-02)
+
+**Es gibt KEINE Zuordnung Zauber → Monster.** Geprueft gegen alle drei
+Aoz-Sheets; `AozActionXdQZ` existiert nicht einmal als Sheet
+(`SheetNotFoundException`). Zum Vergleich fuehrt `MonsterNoteTarget` fuer das
+Jagdtagebuch genau das: `BNpcName` + `PlaceNameZone[3]` + `PlaceNameLocation[3]`.
+Deshalb kann eine Blaumagie-Kategorie nur zum ORT fuehren, nicht zum Monster.
+Die Monsternamen stehen in den Beschreibungstexten, sind dort aber Prosa.
+
+**Beide Fundort-Arten sind vollstaendig abbildbar:**
+
+- `LocationKey = 1` → `PlaceName` → Karte: **33 von 33** aufloesbar ueber
+  dieselbe Tabelle, die `PlacesService.FindMapByPlaceName` baut (erste Karte je
+  PlaceName gewinnt). Damit greift `FindFirstHopToMap` fuer jeden davon.
+- `LocationKey = 4` → `ContentFinderCondition.Content` → InstanceContent:
+  **77 von 77** aufloesbar. Das ist derselbe Schluessel, den
+  `DutyEntranceService.ContentId` fuehrt — die Tuerliste traegt die Positionen
+  also bereits, samt echter Hoehe.
+- `LocationKey = 2` und `3`: 14 Zauber ohne jeden Ort (13 Karneval-Belohnungen,
+  1 Startzauber).
+
+**`Action.UnlockLink` beantwortet "schon erlernt?" auch ausserhalb des Fensters.**
+Alle 124 Blaumagie-Zauber tragen einen, alle verschieden (102..461), keiner ueber
+0x10000 — es sind also echte Unlock-Links, keine Quest-Ids (die Doku von
+`IsUnlockLinkUnlockedOrQuestCompleted` nennt 0x10000 als Grenze). Gegenprobe:
+gewoehnliche Klassen-Aktionen wie "Vortexschnitt" tragen `UnlockLink = 0`.
+Abgefragt wird ueber `UIState.IsUnlockLinkUnlocked(link)`.
+
+**NICHT gemessen (Stand 2026-09-02):** ob die Abfrage fuer Blaumagie auch das
+Richtige antwortet. Die Gegenprobe steht in `/acc aozprobe`: das Zauberbuch
+fuehrt im Kopf seinen eigenen Zaehler (Knoten 17, "1/124"), und die Sonde
+vergleicht ihn mit der Zahl der ueber `UnlockLink` als erlernt gemeldeten Zauber.
+
+**Ableitung "spielt der Spieler gerade Blaumagier":** ueber die aktive Klasse.
+Alle 124 Zauber zeigen auf dieselbe `Action.ClassJob`, naemlich 36 "Blaumagier"
+(BMA) - die Id ist damit aus den Sheets ableitbar und muss nicht im Code stehen.
+Ohne diese Pruefung meldet die Freischaltabfrage bei jedem Nicht-Blaumagier alle
+124 Zauber als offen.
+
+**NICHT ueber `ClassJob.IsLimitedJob`:** das Flag traegt auch der
+Bestienbaendiger (ClassJob 43), es ist also kein Erkennungsmerkmal fuer
+Blaumagie. Gemessen 2026-09-02.

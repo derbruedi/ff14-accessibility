@@ -3,7 +3,656 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-01): RELEASE v5.95 VERÖFFENTLICHT — DREI FEATURES, ALLE UNGETESTET
+## STAND JETZT (2026-09-02): AREAL ABSUCHEN — DER LEBENSRAUM IST KEIN PUNKT
+
+>>> ANLASS: erster Test der neuen Kategorie (unten). Der User: "an sich
+    funktioniert es aber anscheinend stimmen die wege nicht, ich fliege in die
+    gegend wo die viecher sein sollen aber da sind sie nicht" — Beispiel
+    "Amalj'aa-Jäger, 0 von 3 erlegt, lebt in Sandtor, 4 Meter, westlich."
+
+>>> DIE KATEGORIE SELBST ARBEITETE RICHTIG. Im Log: "Legion der Unsterblichen:
+    5 offen, 4 in diesem Gebiet", Gesellschaft 10 erkannt, Lauf bis auf 5 m ans
+    Ziel. Um ihn herum standen laut Sonde nur Myotragus-Bock, Messingklinge und
+    Tukotuko. Ein geladenes Exemplar hätte die Mod gefunden (die Live-Suche hat
+    KEINE Entfernungsgrenze) — es war keines da.
+
+>>> DIE URSACHE STECKT IN DER DATENQUELLE, GEMESSEN, NICHT VERMUTET:
+    - Der einzige Punkt, den die KARTE für einen Lebensraum kennt, ist ihre
+      Textbeschriftung. Für "Sandtor" liegt die bei Welt (-284|379).
+    - Im ZONEN-LAYOUT (planmap.lgb, LayerEntryType.MapRange) besteht "Sandtor"
+      aus SECHS Teilstücken über rund 500 mal 400 Meter, und es enthält drei
+      benannte Unterorte: Halatali, Amalj'aa-Feldlager und Das Letzte Gebet.
+      Das Amalj'aa-Feldlager liegt bei (-90|275) — 224 m von der Stelle, an der
+      der Spieler stand.
+    - Spawnpunkte für Weltmonster gibt es im Client NICHT. Das Level-Sheet führt
+      Kampf-NPCs nur für Quests: "Amalj'aa-Jäger" (BNpcName 250) steht dort
+      zweimal, in Territory 188 und 233 — nicht in Östliches Thanalan (145).
+      Es gibt also nichts Genaueres zu lesen; die Objekttabelle ist die einzige
+      Wahrheit über ein lebendes Monster.
+
+>>> ZWEITER FUND AUS DEMSELBEN LOG: "Doctore lebt in Halatali. Dieses Gebiet ist
+    auf der Karte nicht verzeichnet." Falsch — der Marker ist da. Das Spiel führt
+    für denselben Ort MEHRERE PlaceName-Zeilen: das Jagdtagebuch nennt Halatali
+    als Zeile 49 (der Inhalt), Karte und Layout kennen ihn als Zeile 305 (der Ort
+    in der Welt). Der reine Zeilenvergleich fand nichts. `FindMarkerPosition`
+    sucht jetzt erst die Zeile und dann den NAMEN.
+
+>>> WAS GEBAUT WURDE (Entscheidung des Users: "Areal absuchen"):
+    - `AreaRangeService` (neu): liest die MapRange-Objekte der Zone aus
+      planmap.lgb/planevent.lgb und liefert alle Teilstücke eines benannten
+      Gebiets samt seiner Unterorte, das nächste zuerst. Einmal pro Zone
+      geladen. bg.lgb wird bewusst NICHT gelesen — 7461 Objekte, kein MapRange.
+    - Numpad3 fährt diese Teilstücke der Reihe nach an: war der Spieler am
+      aktuellen (30 m), geht der nächste Druck zum nächsten. Am Ende beginnt es
+      von vorn — ein Monster kann inzwischen dort stehen, wo eben keines stand.
+    - Die Ansage sagt jetzt "Suchpunkt 2 von 10, Halatali, 84 Meter,
+      nordwestlich" statt einer Entfernung, die wie die zum Monster klingt.
+    - NEU: sobald ein Exemplar des gewählten Ziels in die Objekttabelle kommt,
+      meldet die Mod es von selbst ("Amalj'aa-Jäger in Reichweite, 60 Meter,
+      nordöstlich"). Geprüft wird einmal pro Sekunde, nicht pro Frame.
+    - Die Größe der Teilstücke wird NICHT gesprochen: was Transform.Scale genau
+      bedeutet (Halbmesser?), ist nicht gemessen. Nur die Mittelpunkte werden
+      benutzt, und die sind sicher.
+
+>>> ERWARTUNGSWERTE, vorausberechnet für die Stelle, an der der User stand
+    (-289|378), Ziel "Sandtor" — 10 Suchpunkte:
+    1. 5 m Sandtor (die Kartenbeschriftung, wird als erreicht übersprungen)
+    2. 84 m Halatali, 3. 97 m, 4. 97 m, 5. 131 m, 6. 209 m,
+    7. 224 m Amalj'aa-Feldlager, 8. 307 m, 9. 333 m, 10. 439 m Das Letzte Gebet.
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Jagdziel wählen: kommt "Suchpunkt N von 10" statt einer nackten
+       Entfernung?
+    2. Numpad3 mehrfach: führt jeder Druck zu einem ANDEREN Punkt?
+    3. Kommt unterwegs "Amalj'aa-Jäger in Reichweite, ... Meter, ..."?
+    4. Doctore/Halatali: sagt die Mod immer noch "auf der Karte nicht
+       verzeichnet", oder führt sie jetzt zum Dungeon-Eingang?
+    5. Klassen-Jagdziele (Kategorie daneben): funktionieren die weiter wie
+       vorher? Sie laufen durch denselben Code.
+
+## VORHER (2026-09-02): KATEGORIE "JAGDZIELE DER GESELLSCHAFT" — IM SPIEL BESTÄTIGT
+
+>>> ANLASS: Wunsch des Users — "wir haben ja das bestiarium und darin muss es
+    auch eine liste für das jagd tagebuch für staatliche gesellschaften geben,
+    kannst du die auch in eine kategorie machen?"
+
+>>> DIE EINE FRAGE, AN DER ALLES HING, IST BEANTWORTET — UND ZWAR AUS DEM SHEET,
+    NICHT AUS EINER SONDE. Der Fortschritt aller Jagdtagebücher steht in
+    `MonsterNoteManager.RankData`, zwölf Plätze (ilspycmd-geprüft:
+    `FixedSizeArray12`). Die neun Klassen belegen davon 0..7 und 11 — welcher der
+    übrigen Plätze zu welcher Gesellschaft gehört, war aus der Sheet-Reihenfolge
+    NICHT ableitbar (der Schurken-Block liegt bei 290001, sein Index ist aber
+    11). Die Lücke 8/9/10 legt die Antwort nahe; geraten wurde sie trotzdem
+    nicht: das Sheet `GrandCompany` führt ein eigenes Feld `MonsterNote` mit
+    exakt der Bedeutung des gleichnamigen ClassJob-Feldes —
+    Mahlstrom 8, Bruderschaft der Morgenviper 9, Legion der Unsterblichen 10,
+    "Keine" 127 (dieselbe 127 wie bei den Handwerkern). Offline gemessen
+    2026-09-02 mit Lumina gegen das installierte Spiel.
+
+>>> WEITER OFFLINE GEMESSEN, alles gegen die Sheets:
+    - Die drei Blöcke sind 1000001, 2000001 und 3000001, je 50 Zeilen.
+    - Ein Gesellschafts-Block hat DREI Ränge à zehn, nicht fünf: die Zeilen
+      31..50 verlangen in allen drei Blöcken nichts (alle Count-Werte 0).
+    - Alle 30 Ziele je Gesellschaft nennen einen Lebensraum — die Kategorie kann
+      also immer sagen, wohin. (Ein Teil davon sind Dungeons: Halatali,
+      Versunkener Tempel von Qarn, Palast des Wanderers. Dort gibt es keinen
+      Gebietsmarker, die Ansage nennt dann Gebiet + Weg zum Übergang, wie bei
+      jedem markerlosen Ziel.)
+    - Der Block wird über denselben NAMEN gefunden wie bei den Klassen
+      ("Mahlstrom 01"), sobald der Platzhalter der deutschen Sheet-Zeile
+      wegfällt: "Bruderschaft[p] der Morgenviper" → "Bruderschaft der
+      Morgenviper".
+
+>>> WAS GEBAUT WURDE:
+    - `HuntingLogService`: `GetGrandCompanyIndex()` (liest
+      `PlayerState.GrandCompany`, schlägt den Index im GrandCompany-Sheet nach —
+      der Index wird NIE aus der Mitgliedsnummer gerechnet),
+      `GetGrandCompanyName()`, `GetOpenGrandCompanyTargets()`. Klassenliste und
+      Gesellschaftsliste teilen sich denselben Kern `GetOpenTargetsFor`, damit
+      ein Eintrag nie unterschiedlich gelesen oder geschrieben wird.
+    - `NavigationService`: neue Kategorie `GrandCompanyHunt` direkt hinter
+      "Jagdziele". Eigene Liste, keine gemischte — die beiden Tagebücher laufen
+      unabhängig, und wer einen Kill sucht, muss wissen, für welches Buch er
+      zählt. Numpad3, Peil-Ton und der Vorrang des lebenden Monsters gelten
+      unverändert, weil dieselbe Auswahl-Variable benutzt wird.
+    - Die Kategorie fällt weg, solange der Spieler keiner Gesellschaft angehört
+      oder der Rang fertig ist (Regel wie bei Angelplätzen und Jagdzielen).
+
+>>> DIE KOPFANSAGE NENNT DIE GESELLSCHAFT BEIM NAMEN ("Mahlstrom: 7 offen,
+    2 in diesem Gebiet"). Das ist kein Schmuck: die Zuordnung ist das Einzige an
+    dieser Kategorie, das vom Spielstand abhängt — bei einer falschen Erkennung
+    liefe sonst stumm die Liste der falschen Gesellschaft. Zusätzlich steht die
+    erkannte Gesellschaft samt Index einmal im Log ("[Jagd] Gesellschaft 1
+    'Mahlstrom' -> Jagdtagebuch-Index 8.").
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Objekt-Browser durchblättern: kommt hinter "Jagdziele" die Kategorie
+       "Jagdziele der Gesellschaft"? (Wer die Reihenfolge selbst sortiert hat,
+       findet sie am ENDE der Liste — neue Kategorien hängen sich dort an.)
+    2. Sagt die Kopfansage die RICHTIGE Gesellschaft?
+    3. Mit Bild-auf/-ab durch die Einträge: kommen Monstername, "x von y
+       erlegt", Lebensraum und Entfernung — wie bei den Jagdzielen?
+    4. Numpad3 auf einem Eintrag: läuft er los (zum Monster, wenn eines in der
+       Nähe steht, sonst ins Gebiet oder zum Zonenübergang)?
+    5. Gegenprobe gegen das Bestiarium (Strg+F4): stimmen die Zahlen mit dem
+       überein, was das Fenster im Gesellschafts-Reiter zeigt?
+
+>>> ERWARTUNGSWERTE, vorausberechnet (Rang 1). Damit ist beim ersten Hören
+    prüfbar, ob die richtige Liste läuft:
+    - Mahlstrom: Amalj'aa-Jäger x3 (Östliches Thanalan/Sandtor), Krakeeler-Imp
+      x5, Doctore x3, Pyross x1 (alle Halatali), silvanische Ächzerin x3,
+      silvanische Heulerin x3 (Ostwald/Brombeerlichtung), Kobold-Hauer x3
+      (Oberes La Noscea/Eichenwald), Amalj'aa-Kraftprotz x3 (Südliches
+      Thanalan/Mordsdurst), Ixal-Spitzschnabel x3 (Nordwald/Erlenbrunnen),
+      Ixal-Wildkralle x1 (Zentrales Hochland von Coerthas/Drachenkopf).
+    - Bruderschaft der Morgenviper, Rang 1 beginnt mit Amalj'aa-Speerwerfer x3
+      (Sandtor), Granit-Mantis x5 und Kolosseum-Python x5 (Halatali).
+    - Legion der Unsterblichen, Rang 1 beginnt mit Amalj'aa-Jäger x3 (Sandtor),
+      Doctore x3, Pyross x1, Donnerhall-Guivre x1 (Halatali).
+
+## VORHER (2026-09-02): TUTORIAL-FENSTER "EventTutorial" — GEBAUT, UNGETESTET
+
+>>> ANLASS: User-Meldung "da ist ein menü was ich nicht bedienen kann", dazu
+    Dump und Log vom 2026-09-02, 20:20. Fenster: `EventTutorial`, Titel
+    "ANFÄNGER-ARENA", Thema "Transparenz", zwei Seiten.
+
+>>> ZWEI GETRENNTE FEHLER, BEIDE IM LOG BELEGT:
+
+    1. DER TEXT SCHNITT SICH SELBST AB. Der allgemeine Scanner sprach ZWEI Texte
+       1 ms hintereinander, beide unterbrechend (Log 20:20:02.131 und .132):
+       zuerst den langen Erklärungstext — der mitten im Wort abbricht
+       ("...in aller Heimlichkeit errei...") — und dann die Zwischenzeile
+       "So funktioniert's (1/2)", die ihn abschnitt. Dazu in der falschen
+       Reihenfolge: Fließtext vor Überschrift. Das Thema "Transparenz"
+       (Knoten 3) kam nie vor, die Seitenzahl wurde bewusst übersprungen
+       ("Zaehler, nicht gesprochen").
+
+    2. DIE BLÄTTERKNÖPFE WAREN STUMM. Der Fokus wanderte zwischen ihnen hin und
+       her — acht Wechsel zwischen 20:20:04 und 20:20:08 — und JEDER war
+       "[Focus] STUMM ... Text=''". Es sind reine Bild-Knöpfe ohne Textknoten,
+       und auch keinen Tooltip, den der Fokus-Leser sonst als Ersatz nimmt.
+
+>>> WELCHER KNOPF WELCHER IST, IST AM ZUSTAND ABGELESEN, NICHT AN DER POSITION
+    GERATEN: `NodeFlags.Enabled` ist 0x20 (aus FFXIVClientStructs). Im Dump auf
+    Seite 1 von 2 trägt Knoten 9 die Flags 0x2013 — Enabled-Bit NICHT gesetzt —
+    und Knoten 10 die Flags 0x2033, mit Bit. Ein deaktivierter Blätterknopf auf
+    der ERSTEN Seite kann nur "Zurück" sein. Die Geometrie (Knoten 9 bei x=448,
+    Knoten 10 bei x=544) bestätigt es unabhängig, ist aber nur die Gegenprobe.
+
+>>> WAS JETZT PASSIERT: ein eigener Handler baut EINEN Satz statt zweier
+    Interrupts — Thema, Zwischenzeile, Seite, dann der Erklärungstext. Die
+    Seitenzahl entfällt, wenn sie ohnehin schon in der Zwischenzeile steht
+    ("So funktioniert's (1/2)"), sonst hörte man sie zweimal. Die beiden Knöpfe
+    heißen jetzt "Zurück" und "Weiter", und ein gesperrter sagt "nicht
+    verfügbar" dazu — sonst drückt man ins Leere und erfährt nie, warum nichts
+    geschieht.
+
+>>> BEWUSST MINIMALER EINGRIFF: `EventTutorial` steht NUR in
+    SpecialUpdateAddons (schaltet den kaputten Scanner ab), NICHT in
+    SpecialSetupAddons. Damit bleibt der Menü-Stack-Eintrag beim Öffnen
+    erhalten und mit ihm alles, was daran hängt. Geprüft, was das überhaupt
+    betrifft: `HasActiveMenu` steuert nur die PFEILTASTEN-Navigation, Enter
+    läuft unabhängig über HandleConfirmKey — und der Fokus bewegt sich in
+    diesem Fenster ohnehin spielseitig.
+
+>>> NACHTRAG NACH DEM ERSTEN TEST (Log 20:32): DER TEXT WURDE WIEDER
+    ABGESCHNITTEN — diesmal von den eigenen Knopf-Ansagen. Der Handler lief
+    korrekt und baute den Satz richtig zusammen, aber:
+        20:32:12.032  [EventTutorial] Seite 1/2: 'Transparenz. So funktioniert's...'
+        20:32:12.044  [Focus] Text='Zurück, nicht verfügbar'
+    Zwölf Millisekunden. Nach jedem Seitenwechsel setzt das SPIEL den Fokus um
+    (der gedrückte Knopf ist auf der neuen Seite gesperrt), und die
+    unterbrechende Fokus-Ansage schnitt den Text sofort ab. Der Spieler hörte
+    nur den Schalter — seine Meldung: "es sollen nicht nur die schalter
+    vorgelesen werden sondern auch der text der da steht".
+    GEFIXT über eine Sperrfrist von 700 ms nach der Textansage, in der die
+    Knopf-Ansagen schweigen. Die Zahl ist gemessen, nicht gegriffen: der
+    automatische Fokuswechsel kam binnen 12 ms, zwei ECHTE Tastendrücke des
+    Spielers lagen mindestens 400 ms auseinander (20:32:07.443/.961 und
+    .733/10.010). Gleiches Muster wie InDialogOpenGuard.
+
+>>> ZWEITER FUND AUS DEMSELBEN LOG: dem Erklärungstext fehlten die Leerzeichen
+    an den Zeilenumbrüchen — "...in aller Heimlichkeit erreichen.Du erhältst..."
+    und "...noch anhält.Während Transparenz...". Die Umbrüche verschwanden beim
+    Lesen ersatzlos, sodass Sätze ineinanderliefen. Jetzt werden sie zu
+    Leerzeichen.
+
+>>> IM SPIEL BESTÄTIGT (Log 20:32): die Knopf-Erkennung über das Enabled-Bit
+    trägt. "Zurück, nicht verfügbar" auf Seite 1, "Weiter, nicht verfügbar" auf
+    Seite 2 — genau richtig herum.
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Fenster öffnen: kommt EIN zusammenhängender Satz (Thema, Zwischenzeile,
+       Text) statt zweier sich abschneidender Ansagen?
+    1b. WEITERBLÄTTERN: hört man jetzt den ganzen Text der neuen Seite, statt
+       nur "Weiter, nicht verfügbar"? Das ist der eigentliche Fix.
+    2. Auf die Knöpfe wechseln: heißen sie "Zurück" und "Weiter"?
+    3. Auf Seite 1: sagt "Zurück" dazu "nicht verfügbar"?
+    4. Weiterblättern: wird Seite 2 vorgelesen?
+    5. Doppelt-Kontrolle: sagt beim Öffnen etwas den Text ZWEIMAL? Dann muss
+       auch der Öffnungs-Pfad abgeschaltet werden (siehe oben, bewusst offen).
+
+## VORHER (2026-09-02): ZAUBERBUCH DER BLAUMAGIE — GEBAUT, IM SPIEL UNGETESTET
+
+>>> ANLASS: Auftrag des Users, dazu sein Dump und sein Log vom 2026-09-02.
+
+>>> WAS DAS LOG ZEIGTE, UND ES WAR EINDEUTIG. Beim Blättern über das
+    Zauberraster sagte das Plugin auf JEDEM Feld nur die nackte Nummer: "Nr. 14",
+    "Nr. 15", "Nr. 65", "Nr. 80" — über 40 Fokuswechsel lang, nie ein Name.
+    Grund: die Kachel trägt keinen Namen, nur ein Nummernschild (Knoten 9), und
+    der Fokus sitzt auf der Kollision ihres Ankreuzfeldes (Knoten 4). Weiter
+    kommt die allgemeine Textsuche von dort nicht. Dazu meldete der Listen-Leser
+    "Liste noch leer", dann "Liste bleibt leer" — richtig, denn dieses Fenster
+    führt gar keine Liste, sondern ein Raster aus 16 Kacheln.
+
+>>> ES WURDE KEINE KNOTEN-ID GERATEN. `AddonAOZNotebook` beschreibt das Fenster
+    in FFXIVClientStructs vollständig: `SpellbookBlocks` sind die 16 Kacheln der
+    Seite (je mit Aktions-Id, Name und Zeigern auf ihre eigenen Knoten),
+    `ActiveActions` die 24 Kommando-Plätze, dazu `TabIndex`/`TabCount`. Die
+    Zahlen 16 und 24 decken sich exakt mit dem Dump. Erkannt wird die Kachel über
+    den ZEIGER, nie über ihre Id.
+
+>>> GEGEN DIE SHEETS GEPRÜFT, OFFLINE, ALLE 124 ZAUBER:
+    - 124 Aktions-Ids, alle verschieden → der Rückschluss von der Kachel auf die
+      Sheet-Zeile ist eindeutig.
+    - `Number` läuft lückenlos 1..124 und deckt sich mit dem "Nr." der Kachel.
+      Deshalb trägt der Ersatzweg über das Nummernschild immer, falls eine
+      Aktions-Id einmal fehlt.
+    - Die Rang-Zeile malt das Spiel als STERNE (U+2605), genau `Rank` Stück — in
+      allen 124 Fällen. Vorgelesen wird deshalb die Zahl statt fünf Sternchen.
+      Gesucht wird über das Sternzeichen, nicht über das Wort "Rang", damit es in
+      jeder Spielsprache greift.
+    - Vorausberechnet, wie es klingen wird: kein stehengebliebener Stern, keine
+      leere Werte-Zeile, keine leere Beschreibung. Längste Verweil-Ansage
+      325 Zeichen.
+
+>>> EIN FUND, DER DIE BAUWEISE ENTSCHIED: "Erlernbar durch" steht NICHT
+    vollständig in den Sheets. `Location` ist ein Union-Feld — Schlüssel 1 zeigt
+    auf ein Gebiet (33x), Schlüssel 4 auf einen Dungeon (77x), aber Schlüssel 2
+    (13x) und 3 (1x) haben durchweg RowId 0, also gar keinen Fundort. Das Fenster
+    beschriftet diese Fälle trotzdem (bei Wasserkanone "Erster Zauber"). Deshalb
+    kommt der Fundort aus dem Detail-Feld des Spiels, nicht aus eigener Rechnung.
+
+>>> WAS ES FÜR "ERLERNT" NICHT GIBT, und das ist gesucht worden: `AozNoteModule`
+    führt die 5 aktiven Sätze, aber keine Freischaltung. `ActionManager` hat
+    `BlueMageActions` und `GetActiveBlueMageActionInSlot`, aber kein
+    `IsActionUnlocked`. In `PlayerState` steht nur `TrackedActionUnlocks`. Die
+    einzige belegte Quelle ist der Hinweis "Noch nicht erlernt." im Fenster
+    (Knoten 68), dessen SICHTBARKEIT den Zustand trägt.
+
+>>> WAS JETZT ANGESAGT WIRD:
+    - Beim Öffnen: Reiter, "Erlernt 1/124", "Aktive Kommandos 1/24" — beide
+      Zahlen aus den Feldern des Fensters gelesen, nicht nachgerechnet. Ein
+      Reiterwechsel spricht dadurch von selbst.
+    - Auf einer Kachel sofort: "Wasserkanone, Nr. 1." (plus "ausgewählt", wenn
+      das Ankreuzfeld gesetzt ist).
+    - Nach kurzem Verweilen (0,4 s, wie im Skill-Fenster): Typus, Element, Rang,
+      erlernt-Zustand, Fundort, Beschreibung.
+    - Auf einem der 24 Plätze: "Platz 3, Wasserkanone, Nr. 1." oder "Platz 5,
+      leer."
+
+>>> EINE UNSICHERHEIT, ABGESICHERT STATT VERSCHWIEGEN. Das Detail-Feld rechts
+    gehört dem AUSGEWÄHLTEN Zauber, nicht zwingend dem fokussierten. Ob es der
+    Tastatur folgt, hat noch nie jemand gemessen — im Log liest es niemand mit.
+    Der Leser vergleicht deshalb die Nummer im Feld (Knoten 69) mit der
+    erwarteten und lässt erlernt-Zustand und Fundort WEG, wenn sie nicht passt,
+    statt sie zum falschen Zauber vorzulesen. Jeder Fall steht als
+    "passt"/"passt nicht" im Log.
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Zauberbuch öffnen: kommt "Zauberbuch der Blaumagie, Reiter 1 von 2.
+       Erlernt 1/124. Aktive Kommandos 1/24."?
+    2. Mit Numpad 2/4/6/8 über das Raster: kommt jetzt der NAME statt nur "Nr."?
+    3. Auf einem Zauber kurz stehen bleiben: kommen Typus/Element/Rang und die
+       Beschreibung? Und stehen erlernt-Zustand und Fundort dabei?
+    4. `/acc aozprobe` bei offenem Fenster: klärt die drei Fragen, die der
+       Quellcode offen lässt (siehe unten).
+    5. Auf die 24 Plätze unten wechseln: kommt "Platz N, ..."?
+
+>>> WAS `/acc aozprobe` KLÄREN SOLL (Sonde, nur Debug):
+    - Trägt eine Kachel auch dann eine Aktions-Id, wenn der Zauber NICHT erlernt
+      ist? Falls nein, greift der Ersatzweg über das Nummernschild.
+    - Was bedeutet das Ankreuzfeld der Kachel? Die Ansage sagt "ausgewählt".
+      Steht es in Wahrheit für "erlernt", muss das Wort geändert werden.
+    - Folgt das Detail-Feld der Tastatur? Die Zeilen "[Aoz] Details ... passt /
+      passt nicht" beantworten das im normalen Gebrauch.
+
+## DAZU (2026-09-02): KATEGORIE "BLAUMAGIE" IM OBJEKT-BROWSER — GEBAUT, UNGETESTET
+
+>>> ANLASS: Frage des Users — "kann man die monster die man suchen muss in eine
+    kategorie machen so das man da hinlaufen kann so wie bei dem bestiarium?"
+
+>>> DIE EHRLICHE ANTWORT WAR ZWEIGETEILT, UND SIE IST GEMESSEN:
+    - DIE MONSTER GEHEN NICHT. Das Spiel führt für Blaumagie KEINE Zuordnung
+      Zauber → Monster. Geprüft gegen alle drei Aoz-Sheets (`AozActionXdQZ`
+      existiert nicht einmal als Sheet) und gegen `MonsterNoteTarget`, das
+      genau diese Zuordnung für das Jagdtagebuch führt — dort steht `BNpcName`
+      plus Gebiet plus Unterort, bei Blaumagie an derselben Stelle nur ein
+      Fundort. Die Monsternamen stehen in den BESCHREIBUNGEN ("Angriffszauber
+      der Kraken"), aber das ist Prosa, kein Datenfeld.
+    - DIE FUNDORTE GEHEN VOLLSTÄNDIG. Offline gemessen: alle 33 Weltgebiet-
+      Zauber lassen sich über ihren PlaceName auf eine Karte abbilden (33 von
+      33), und alle 77 Instanz-Zauber über ihre ContentFinderCondition auf eine
+      InstanceContent-Zeile (77 von 77) — denselben Schlüssel, den die
+      vorhandene Kategorie "Alle Inhalte" für die Türen führt.
+
+>>> DER FUND, DER ES ERST PRAKTISCH MACHT: `Action.UnlockLink`. Alle 124 Zauber
+    tragen einen, alle verschieden (102 bis 461), keiner über 0x10000 — also
+    echte Freischalt-Verweise, keine Quest-Prüfungen. Gegenprobe: gewöhnliche
+    Klassen-Aktionen tragen dort 0. Damit beantwortet
+    `UIState.IsUnlockLinkUnlocked` die Frage "fehlt mir der noch?" auch
+    DRAUSSEN, wo das Zauberbuch nicht offen ist. Im Fenster selbst trägt die
+    Sichtbarkeit von "Noch nicht erlernt." den Zustand — nur nützt die beim
+    Durchblättern des Browsers nichts.
+
+>>> WAS DIE KATEGORIE TUT: listet die noch fehlenden Zauber IN DER REIHENFOLGE
+    DES ZAUBERBUCHS, also nach ihrer Nummer (Wunsch des Users 2026-09-02:
+    "kannst du das so sortieren wie es im buch ist"). Vorher war sie nach
+    Erreichbarkeit sortiert; die Buchreihenfolge steht dagegen fest, ist mit dem
+    Zauberbuch abgleichbar und ordnet sich nicht bei jedem Zonenwechsel neu. Was
+    in DIESER Zone zu holen ist, sagt weiterhin die Kopfansage.
+    DASS DAS BUCH NACH NUMMER SORTIERT IST, ist am Log abgelesen und nicht
+    angenommen: beim Seitenblättern sprang dieselbe Rasterposition in
+    Sechzehnerschritten (Nr. 16, 32, 48, 64, 80), innerhalb einer Seite lief es
+    fortlaufend (Nr. 80, 79 ... 65). Also 16 Kacheln je Seite, nach Nummer.
+    Numpad3 führt hin, genau wie bei den Jagdzielen:
+    - Weltgebiet in anderer Zone → zum Gebietsübergang
+    - Weltgebiet, man ist schon da → SAGT DAS, statt ins Nichts zu laufen. Das
+      Sheet nennt nur die Zone und keinen Unterort; die Ansage verweist auf die
+      Kategorie "Gegner", um den Träger zu suchen.
+    - Instanz → zur Tür dieser Instanz (volle 3D-Position aus der Türliste),
+      über Zonenübergänge wenn nötig; "gesperrt" wenn das Spiel es sagt
+    - Karneval-Belohnung oder Startzauber → sagt, dass es keinen Ort gibt
+
+>>> DIE KATEGORIE ERSCHEINT NUR BEI AKTIVEM BLAUMAGIER (Ansage des Users
+    2026-09-02: "die blaumagie kategorie soll nur bei blaumagiern auftauchen").
+    Zwei Dinge stecken darin:
+    - OHNE Klassenprüfung hätte sie bei JEDEM Spieler 124 Einträge gezeigt: wer
+      den Job nicht hat, hat auch keinen Zauber freigeschaltet, also gilt alles
+      als "fehlt".
+    - Gefragt wird die AKTIVE Klasse, nicht der Besitz des Jobs. Blaumagie-
+      Zauber lernt man nur, während man Blaumagier ist — für einen Weißmagier
+      wäre die Liste auch dann Rauschen, wenn der Job irgendwo liegt.
+
+>>> DIE KLASSEN-ID STEHT NICHT IM CODE, sie kommt aus den Sheets. Gemessen:
+    alle 124 Zauber zeigen auf dieselbe Klasse, ClassJob 36 "Blaumagier" (BMA) —
+    die Ableitung ist also eindeutig. Streuten sie je über mehrere Klassen,
+    liefert die Ableitung 0 und die Kategorie bleibt verborgen, statt die
+    häufigste zu raten.
+    NICHT über `ClassJob.IsLimitedJob`: das Flag trägt auch der Bestienbändiger
+    (ClassJob 43), es taugt als Erkennungsmerkmal nicht. Auch das ist gemessen.
+
+>>> ZWEI FEHLER AUS DEM ERSTEN TEST (Log 2026-09-02, 18:45 bis 18:46), BEIDE GEFIXT:
+
+    1. KATEGORIE BLIEB UNSICHTBAR. Log: "Blaumagier-Klasse aus den Sheets: 0
+       (2 Klasse(n) bei den Zaubern gefunden)". Ursache: die Job-Ableitung
+       übersprang Zeile 0 von AozAction NICHT. Deren Action-Verweis zeigt auf
+       Action-Zeile 0, und die trägt ClassJob = 4294967295 (uint.MaxValue,
+       "kein Job" als -1 kodiert) — mein Filter prüfte nur auf 0. Also sah die
+       Ableitung zwei Klassen und gab sicherheitshalber 0 zurück. `Build()`
+       überspringt Zeile 0 korrekt, die Job-Ableitung tat es nicht.
+       Jetzt: Zeile-0-Filter wie überall sonst, plus uint.MaxValue abgefangen.
+
+    2. LOG-FLUT. "[Aoz] Kachel 1: ..." stand zehnmal in 70 ms im Log. Die
+       Kachel-Auflösung läuft pro Frame und wird dabei ZWEIMAL gerufen (Fokus-
+       Zweig und Verweil-Uhr). Jetzt wird nur bei Wechsel der Kachel geloggt.
+
+>>> DAZU EIN BEFUND, DER EINE OFFENE FRAGE BEANTWORTET: Im Log steht
+    "Kachel 1: ActionId=0 -> Nr. 2 'Flammensturm'". Die Kacheln NICHT erlernter
+    Zauber tragen also KEINE Aktions-Id. Der Ersatzweg über das Nummernschild
+    ist damit kein Sicherheitsnetz, sondern der Regelfall — und er trägt, wie
+    dieselbe Zeile zeigt. Ob erlernte Zauber eine Id führen, ist noch offen
+    (`/acc aozprobe` beantwortet es).
+
+>>> WIE MAN IN DIE GEBIETE KOMMT (Frage des Users). vnavmesh rechnet INNERHALB
+    einer Zone. Über Zonen hinweg trägt der Übergangs-Graph: Numpad3 führt zum
+    nächsten Übergang, durchgehen, wieder Numpad3. Existiert kein Laufweg
+    (Fähre, Teleport-only), sagt die Kategorie das — Teleportieren kann das
+    Plugin nicht auslösen, das gibt es im Plugin nirgends.
+    GEMESSEN, was das praktisch heißt (TerritoryType.ExVersion, 2026-09-02):
+    - A Realm Reborn: 17 Zauber in Weltgebieten + 30 in Instanzen = 47 von 124
+    - Heavensward: 9 + 17,  Stormblood: 4 + 15,  Shadowbringers: 3 + 15
+    Für einen ARR-Spieler sind also 47 der 124 überhaupt in Reichweite. Die
+    übrigen stehen weiter in der Liste, mit ihrem Gebiet — nur führt dorthin
+    vorerst kein Weg.
+
+>>> ERWARTUNGSWERTE FÜR DEN ERSTEN TEST (Stand des Users: 1 von 124 erlernt):
+    - Kopfansage: "Blaumagie: 123 Zauber fehlen, ..." — in Limsa/Gridania/Ul'dah
+      selbst steht kein Zauber, dort also "keiner in diesem Gebiet".
+    - Aufschlüsselung im Log: 33 in der Welt, 77 in Instanzen, 13 ohne Ort.
+      (13 statt 14, weil Wasserkanone bereits erlernt ist.)
+    - `/acc aozprobe` muss melden: "UnlockLink stimmt mit dem Fenster überein
+      (1)." Meldet es "TRÄGT NICHT", ist die Kategorie auf Sand gebaut.
+
+>>> ZU PRÜFEN:
+    1. Taucht die Kategorie "Blaumagie" im Objekt-Browser überhaupt auf? Sie
+       steht bei einer gespeicherten Kategorie-Reihenfolge AM ENDE — das ist die
+       dokumentierte Regel von ListOrder, damit nichts unsichtbar wird.
+    2. Nennt sie Zaubernamen samt Gebiet bzw. Instanz?
+    3. Numpad3 auf einem Weltgebiet-Zauber: läuft er zum Übergang?
+    4. Numpad3 auf einem Instanz-Zauber: läuft er zur richtigen Tür?
+    5. `/acc aozprobe`: stimmt die Zahl mit dem Fenster überein?
+
+>>> NOCH NICHT ANGEFASST: der ZWEITE Reiter, der Maskierte Karneval. Im Dump ist
+    er enthalten, aber unsichtbar — eine echte Baumliste (Knoten 86) mit
+    "Bedingungen"/"Details" und den Knöpfen "Teilnehmen"/"Gruppensuche". Anders
+    als das Zauberraster ist das eine richtige Liste, der allgemeine Leser ist
+    dort NICHT abgeschaltet (nur die Öffnungs-Ansage ist ersetzt). Ob er dort
+    trägt, ist ungetestet.
+
+## VORHER (2026-09-02): UPDATE ÜBER DAS MENÜ — GEBAUT, IM SPIEL UNGETESTET
+
+>>> ANLASS: Spielerwunsch des Users ("ist es möglich das man ins menü einbauen
+    kann das man die mod übers menü updaten kann?"). Bisher hieß ein Update:
+    Spiel beenden, Installer starten.
+
+>>> WAS ES TUT: Hauptmenü → "Aktualisierung". Zeigt die laufende Fassung, sucht
+    auf Wunsch bei GitHub nach einer neueren, und bietet sie dann in einer
+    ZWEITEN Zeile zum Einspielen an. Danach lädt Dalamud das Plugin selbst neu —
+    ohne Spielneustart.
+
+>>> DASS DAS ÜBERHAUPT GEHT, IST GEMESSEN UND GELESEN, NICHT ANGENOMMEN:
+    - GEMESSEN 2026-09-01 bei laufendem Spiel und geladenem Plugin: alle
+      verwalteten Dateien im Plugin-Ordner ließen sich exklusiv zum Schreiben
+      öffnen. NUR ZWEI NICHT: `Tolk.dll` und `nvdaControllerClient64.dll` — die
+      sind nativ und hängen per LoadLibrary im Prozess.
+    - GELESEN (Dalamud 15.0.3.2 dekompiliert, `LocalDevPlugin`): der
+      FileSystemWatcher hat `Filter = DllFile.Name` und `NotifyFilter =
+      LastWrite` — er sieht NUR die Haupt-DLL. `OnFileChanged` wartet 500 ms und
+      überspringt sich selbst, wenn die Datei sich nochmal ändert.
+    → DARAUS FOLGT DER ABLAUF: erst alles andere schreiben, die Haupt-DLL
+      ZULETZT. Dann lädt Dalamud genau einmal neu, mit vollständigem Satz.
+
+>>> EIN ECHTER FUND BEIM PRÜFEN (2026-09-02): Die Pfad-Prüfung, die aus
+    `DungeonPathDownloadService` übernommen war, schützt NICHT gegen
+    Unterordner-Einträge. `ZipArchiveEntry.Name` ist in .NET IMMER der bloße
+    Dateiname — `name != Path.GetFileName(name)` vergleicht also einen String mit
+    sich selbst und lässt jeden Eintrag durch, "../../evil.dll" eingeschlossen.
+    Der Verzeichnisteil steht nur in `FullName`. Aufgefallen ist es am echten
+    Archiv: das v5.95-Release enthält `System.Speech.dll` ZWEIMAL, einmal im
+    Wurzelverzeichnis und einmal unter `runtimes/win/lib/net9.0/`. Ohne den Fix
+    hätte der zweite Eintrag den ersten überschrieben, entschieden allein durch
+    die Reihenfolge im Archiv. Jetzt wird nur das Wurzelverzeichnis genommen —
+    dasselbe, was der Installer deployt (`DeployPluginFiles` steigt nur ab, wenn
+    die Wurzel leer ist).
+    → HINWEIS FÜR SPÄTER: dieselbe wirkungslose Prüfung steht noch in
+      `DungeonPathDownloadService.ExtractPathFiles`. Dort ist sie derzeit
+      harmlos, weil zusätzlich auf den Ordner `/AutoDuty/Paths/` und auf `.json`
+      gefiltert wird — aber sie trägt nicht, was ihr Kommentar behauptet.
+
+>>> GEGEN DAS ARCHIV VERIFIZIERT (2026-09-02, echtes v5.95-Release):
+    16 Dateien im Wurzelverzeichnis übernommen, Unterordner-Eintrag übersprungen,
+    Haupt-DLL enthalten. Versionsvergleich in allen Fallen richtig: v5.95 gegen
+    lokal 5.96.0 → kein Downgrade-Angebot; v5.100 → neuer (kein String-Vergleich);
+    v6.0 → neuer. Das Auffüllen auf vier Stellen ist dafür nötig — ohne es gilt
+    "5.97" als KLEINER als "5.96.0.0", weil ungesetzte Stellen als -1 zählen.
+
+>>> ZWEI GRENZEN, BEIDE ANGESAGT STATT VERSCHWIEGEN:
+    - Ändert ein Update `Tolk.dll` oder die NVDA-Brücke, wird NICHTS geschrieben
+      und der Spieler auf den Installer verwiesen. Verglichen wird byteweise, nicht
+      nach Datum — eine neu gebaute, inhaltlich gleiche Datei schickt niemanden los.
+    - Wer das Plugin über das Dalamud-Repo bezieht, kann sich nicht selbst
+      aktualisieren: dort gehören die Dateien Dalamud. Erkannt am eigenen Pfad
+      (`devPlugins`), die Ebene sagt es und bietet gar nichts erst an.
+
+>>> NICHT IM KAMPF, NICHT WÄHREND EINER LAUFSTRECKE. Das Neuladen nimmt in dem
+    Moment alles mit — Tasten, Ansagen, den laufenden Weg. Wer gerade kämpft oder
+    unterwegs ist, stünde ohne Vorwarnung ohne Plugin da.
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Menü → "Aktualisierung": nennt es die laufende Fassung?
+    2. "Nach Aktualisierung suchen" → sagt es "5.96.0 ist die neueste"? (Das ist
+       die richtige Antwort, solange v5.95 das neueste Release ist.)
+    3. DER EINSPIEL-WEG LÄSST SICH ERST MIT EINEM NEUEREN RELEASE TESTEN. Wer ihn
+       vorher sehen will: Version im csproj kurz auf 5.94 setzen, Debug bauen —
+       dann bietet das Menü v5.95 an. Danach wieder auf 5.96 und neu bauen.
+
+## VORHER (2026-09-01, abends): FLUG-WEGSUCHE HING — URSACHE GEFUNDEN UND GEFIXT
+
+>>> SYMPTOM (User): "beim fliegen hängt die wegfindung". Die Figur drehte sich im
+    Kreis statt zu fliegen.
+
+>>> DIE URSACHE WAR EINE VIEL ZU KURZE FRIST, KEINE KAPUTTE WEGSUCHE. Gemessen im
+    Log vom 2026-09-01, 21:11 bis 21:13, vier Versuche über 814 bis 894 m:
+    24,8 s / 21,6 s / 18,9 s / 20,7 s reine Rechenzeit. `StartTimeoutS` gab nach
+    6,0 s auf. Auch der kürzere Versuch um 21:08 (143 m) fiel durch diese Frist.
+    Die Voxel-Suche durch den Luftraum ist eben nicht die Netz-Suche.
+
+>>> WARUM DARAUS EIN HÄNGEN WURDE UND KEIN BLOSSES WARTEN — vier Dinge griffen
+    ineinander:
+    1. Nach 6 s meldete das Plugin "Kein Flugweg gefunden, ich laufe", obwohl
+       vnavmesh noch rechnete.
+    2. Der Bodenweg fand auch nichts: das Ziel <451,5|-17|-191> liegt nicht auf
+       dem Gehnetz ("failed to find polygon on a mesh"). Der Lauf schaltete in den
+       Luftlinien-Modus, und die Figur drehte sich im Kreis — Entfernung im Log
+       703 → 689 → 714 → 741 → 775 m, Richtung springend zwischen 0 und 172 Grad.
+    3. Der aufgegebene Flugpfad kam trotzdem an. Es gibt KEINEN Abbruch:
+       `Nav.PathfindCancelAll` lädt in Wahrheit das ganze Wegenetz neu
+       (IPCProvider:25). `AsyncMoveRequest.Update:50` übergibt das Ergebnis
+       ungefragt an FollowPath — zwanzig Sekunden später steuerten zwei Systeme
+       dieselbe Figur.
+    4. Jede neue Anfrage prallte ab: solange eine Suche läuft, gibt
+       `AsyncMoveRequest.MoveTo` false zurück und loggt "Pathfinding task is in
+       progress..." (viermal im Log). Unser Code las das als "abgelehnt" und fiel
+       wieder auf den Boden zurück. Die Schleife schloss sich.
+
+>>> GEFIXT (V5.96, vier Stellen in AutoWalkService.cs):
+    - `StartingUpdate`: für den Flug entscheidet nicht mehr die Uhr, sondern
+      `SimpleMove.PathfindInProgress` — die IPC war längst verdrahtet
+      (NavmeshIpc.cs:108) und wurde an drei Stellen genutzt, ausgerechnet hier
+      aber nicht. Neue Notbremse `FlightStartTimeoutS` = 45 s (User-Entscheid).
+    - Notbremse ohne Bodenrückfall: rechnet es nach 45 s immer noch, wird ehrlich
+      abgebrochen. Ein Bodenlauf würde nur wieder Punkt 3 auslösen.
+    - `BeginFlightPath`: "abgelehnt" wird jetzt unterschieden. Läuft schon eine
+      Suche → warten und sagen; ist vnavmesh weg → Bodenweg wie bisher.
+    - `GuardUpdate`: das Guard-Fenster (3 s) war gegen genau diese Nachzügler
+      gebaut, aber an Netz-Suchen (<1 s) bemessen. Es schiebt sich jetzt nach,
+      solange eine Suche läuft, gedeckelt durch `StopGuardMaxS` = 60 s — sonst
+      flöge die Figur eine halbe Minute nach dem Abbruch unbeaufsichtigt los.
+    - Neue Ansagen (DE+EN): `FlightPathSearching` (erst nach 3 s, kurze Strecken
+      bleiben still), `FlightSearchTooSlow`, `PathSearchStillBusy`.
+
+>>> NEBENBEFUND, NOCH NICHT ANGEFASST: vnavmesh fordert bei "stuck" von sich aus
+    einen neuen Pfad an — `AsyncMoveRequest`-Konstruktor, `_follow.OnStuck +=
+    ... MoveTo(dest, fly, range)`, gesteuert von `Service.Config.RetryOnStuck`.
+    Das erklärt die fly-to-Anfragen im Log ohne eigene `[Flug]`-Zeile (21:10:02,
+    21:12:21, 21:12:41). Beim Fliegen kostet jeder dieser Selbst-Neustarts eine
+    20-Sekunden-Suche und füllt die Warteschlange: die Anfrage von 21:09:03 wurde
+    erst um 21:09:43 gestartet und war um 21:10:01 fertig — 58 s nach dem Auftrag.
+    Für `RetryOnStuck` gibt es KEINE IPC, von außen ist der Schalter nicht
+    erreichbar. Falls die 45 s in der Praxis reißen, ist das der Grund.
+
+>>> IM SPIEL ZU PRÜFEN: langer Flug (mehrere hundert Meter) — kommt nach der
+    Ansage "Suche den Flugweg" der Flug zustande, statt in den Kreislauf zu
+    fallen? Und die Landung von unten ist weiterhin ungetestet (siehe unten).
+
+## VORHER (2026-09-01): V5.96 GEBAUT — DER AUTO-LAUF FLIEGT (IM SPIEL UNGETESTET)
+
+>>> ANLASS: Der User kann jetzt fliegen ("ich kann jetzt fliegen das autolaufen
+    soll auch beim fliegen funktionieren"). Bis V5.95 war der `fly`-Parameter der
+    vnavmesh-IPC überall auf `false` verdrahtet.
+
+>>> WAS ES TUT (Numpad3, unverändert): **Fliegt der Spieler gerade**, sucht der
+    Auto-Lauf den Weg im Luftraum statt auf der Gehfläche und fliegt ihn ab; am
+    Ziel wird gelandet und abgestiegen. Abschaltbar mit `/acc fly`.
+
+>>> UMGEBAUT AM 2026-09-01 AUF USER-WUNSCH: Reittier rufen und abheben macht der
+    SPIELER SELBST. Die erste Fassung tat beides von sich aus; der User kippte das
+    („mach das mal so das man das reittier manuell rufen muss und selber los
+    fliegen muss denn so bekommen leute die noch nicht fliegen können keine
+    probleme"). Wer nicht fliegt, läuft jetzt exakt wie vor V5.96 — es gibt keinen
+    Pfad durch den neuen Code, der ihn erreicht.
+    → NEBENGEWINN, und kein kleiner: die ungemessene Ätherstrom-Prüfung ist damit
+    AUS DEM ENTSCHEIDUNGSWEG. Wer in der Luft ist, darf fliegen — das Spiel hat
+    die Frage beantwortet, nicht unsere Vorhersage. Sie liefert nur noch die
+    Begründung für `/acc fly` und kann dort höchstens einen irreführenden Satz
+    kosten, keinen blockierten Flug.
+    → ENTFERNT: Phase.Mounting, WatchTakeoff, TrySummonMount, die 30-m-Schwelle
+    (in der Luft ist der Bodenweg nicht langsamer, sondern falsch) und
+    Configuration.FlyMinDistance.
+
+>>> WARUM DAS MEHR IST ALS BEQUEMLICHKEIT: `fly=true` schaltet vnavmesh auf einen
+    ANDEREN SUCHRAUM um — Voxel-Luftraum statt Gehflächennetz. Damit fallen die
+    Netzlücken, die 55-Grad-Grenze und die abgetrennten Netzinseln weg, also die
+    Ursache fast jeder abgebrochenen Strecke der letzten Monate (Östliches La
+    Noscea, Astalicia, Mor Dhona). Fliegend braucht es dafür weder Brücken noch
+    aufgezeichnete Spuren.
+
+>>> DIE FALLE, DIE ES ZU BEACHTEN GALT: Ein Flugpfad OHNE Reittier schlägt nicht
+    fehl — er blockiert stumm. `FollowPath.Update:154-156` setzt jeden Frame
+    `_movement.Enabled = false; return;`, ohne Log, ohne Fehler. Deshalb wird erst
+    aufgesessen (`Phase.Mounting`) und dann der Pfad angefordert.
+
+>>> ZWEI DINGE SIND GEMESSEN, EINES NICHT:
+    - GEMESSEN (Sheet-Dump 2026-09-01): GeneralAction 9/23/24 = Reittier-Roulette
+      / Absteigen / Flugreittier-Roulette. Alle Gebiete des Grundspiels teilen
+      sich `AetherCurrentCompFlgSet` 19, ab Heavensward hat jedes seinen eigenen.
+      Städte haben `TerritoryIntendedUse` 0, bekommen also gar kein Flugvolumen.
+    - GEMESSEN (Quellcode `H:\ffxiv_navmesh`): was `fly=true` in vnavmesh auslöst,
+      inklusive Selbst-Abheben und der Blockade ohne Reittier.
+    - NICHT GEMESSEN: ob `IsAetherCurrentZoneComplete(19)` in den Gebieten des
+      Grundspiels true liefert. Dort gibt es keine Ätherströme, das Fliegen hängt
+      an der Hauptgeschichte — ob der Satz damit gesetzt wird, steht in keiner
+      DLL. **Sonde `/acc flyprobe` liegt bereit und muss laufen.** Meldet sie in
+      einer ARR-Zone `komplett=False`, während der User dort abhebt, ist die
+      Prüfung für diese Gebiete das falsche Werkzeug.
+
+>>> SICHERUNG GEGEN DAS RATEN: Weil die letzte Bedingung sich nicht vorhersagen
+    lässt, wird sie GEMESSEN statt geglaubt. Kommt das Reittier nicht (5 s) oder
+    hebt die Figur nicht ab (8 s), fällt der Lauf auf den Bodenweg zurück und sagt
+    es an. Ein Riegel (`_flightDeclined`) verhindert dabei die Schleife, in die
+    der Rückfall sonst liefe — er ruft `Begin`, und das fragt erneut „fliegen?".
+
+>>> ERSTER TEST 2026-09-01 (User): FLUG TRÄGT, LANDUNG NICHT. Aus dem Log
+    (18:26:36–18:26:42): Reittier gerufen, aufgesessen nach 1,6 s, Flugpfad über
+    66 m, abgehoben nach 1,0 s, angekommen auf 0,7 m. Alles wie gebaut.
+    Die Landung fiel durch — und die Ursache war eine falsche Annahme von mir:
+    **„Absteigen" (GeneralAction 23) wirkt in der Luft NICHT.** GetActionStatus
+    meldete 0, UseAction gab True zurück, und die Figur blieb zwölf Aufrufe lang
+    aufgesessen. FFXIVClientStructs kennt auch keine Lande-Funktion.
+    → Gelandet wird nur durch NACH UNTEN FLIEGEN. Der alte Ablauf konnte das gar
+    nicht: `EnterLanding` rief `Path.Stop`, die Figur schwebte danach steuerlos.
+    → GEFIXT: Landephase steuert jetzt im Halbsekundentakt einen Bodenpunkt unter
+    der Figur an (`Path.MoveTo`, `fly: true` — sonst gilt der senkrecht darunter
+    liegende Punkt sofort als erreicht), stoppt erst am Boden und steigt dann ab.
+    NEU AUCH: `/acc land` landet eine selbst geflogene Strecke.
+    NOCH NICHT NACHGETESTET.
+
+>>> WAS IM SPIEL ZU PRÜFEN IST (Stand nach dem Umbau):
+    1. Selbst aufsitzen, abheben, Numpad3 auf ein entferntes Ziel — fliegt es hin
+       und LANDET es? (Die Landung ist der reparierte Teil, noch nachzutesten.)
+    2. Numpad3 am Boden: läuft es normal, ohne jeden Flugversuch?
+    3. `/acc land`, während der User selbst in der Luft ist.
+    4. `/acc fly` — Umschalter samt Begründung vor Ort.
+    5. `/acc flyprobe` — nur noch für die Güte der Begründung, nicht mehr kritisch.
+
+>>> OFFEN, BEWUSST NICHT ENTSCHIEDEN: Am Ziel wird gelandet UND abgestiegen (so
+    vom User am 2026-09-01 gewählt, vor dem Umbau). Da er jetzt selbst abhebt,
+    heißt das: für jedes weitere Ziel muss er erneut aufsitzen und aufsteigen. Ob
+    das so bleiben soll oder ob am Ziel besser aufgesessen geblieben wird, ist
+    seine Entscheidung — er ist darauf hingewiesen.
+
+## VORHER (2026-09-01): RELEASE v5.95 VERÖFFENTLICHT — DREI FEATURES, ALLE UNGETESTET
 
 >>> INHALT: Dungeon-Wege werden selbst geladen (Plugin + Installer), Entf sagt
     die HP des Ziels, Job-Anzeige beim Beschwörer. Die drei Abschnitte darunter

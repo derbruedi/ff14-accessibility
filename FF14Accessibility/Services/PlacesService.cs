@@ -310,19 +310,49 @@ public sealed class PlacesService
     /// the hunting log names a habitat, not the monster itself. Y is unknown
     /// (map data is 2D) and resolved via navmesh before walking.
     /// </summary>
+    /// <remarks>
+    /// DER NAME ZÄHLT MIT, NICHT NUR DIE ZEILE. Das Spiel führt für denselben
+    /// Ort mehrere PlaceName-Zeilen: das Jagdtagebuch nennt als Lebensraum
+    /// "Halatali" (Zeile 49, der Inhalt), Karte und Zonen-Layout kennen ihn als
+    /// Zeile 305 (der Ort in der Welt). Der reine Zeilenvergleich fand deshalb
+    /// nichts und die Mod antwortete "auf der Karte nicht verzeichnet", obwohl
+    /// der Marker direkt daneben lag (im Spiel-Log belegt, 2026-09-02).
+    ///
+    /// Die Zeile gewinnt weiterhin: erst wird sie gesucht, der Name ist nur der
+    /// Ersatzweg. Gibt es mehrere Marker desselben Namens (auf Karte 22 zweimal
+    /// "Chocobo-Ställe"), gewinnt der erste - dieselbe Regel wie zuvor.
+    /// </remarks>
     public Vector3? FindMarkerPosition(uint mapId, uint placeNameRowId)
+        => FindMarkerPosition(mapId, placeNameRowId, string.Empty);
+
+    /// <inheritdoc cref="FindMarkerPosition(uint,uint)"/>
+    /// <param name="placeNameText">Angezeigter Name des Ortes für den
+    /// Ersatzweg. Leer = nur die Zeile zählt.</param>
+    public Vector3? FindMarkerPosition(uint mapId, uint placeNameRowId, string placeNameText)
     {
-        if (mapId == 0 || placeNameRowId == 0) return null;
+        if (mapId == 0 || (placeNameRowId == 0 && placeNameText.Length == 0)) return null;
         if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map)) return null;
         if (!_data.GetSubrowExcelSheet<MapMarker>().TryGetRow(map.MapMarkerRange, out var markers)) return null;
 
+        Vector3 At(MapMarker m) => new(
+            PixelToWorld(m.X, map.SizeFactor, map.OffsetX),
+            0f,
+            PixelToWorld(m.Y, map.SizeFactor, map.OffsetY));
+
+        foreach (var m in markers)
+            if (placeNameRowId != 0 && m.PlaceNameSubtext.RowId == placeNameRowId)
+                return At(m);
+
+        var wanted = placeNameText.Trim();
+        if (wanted.Length == 0) return null;
+
         foreach (var m in markers)
         {
-            if (m.PlaceNameSubtext.RowId != placeNameRowId) continue;
-            return new Vector3(
-                PixelToWorld(m.X, map.SizeFactor, map.OffsetX),
-                0f,
-                PixelToWorld(m.Y, map.SizeFactor, map.OffsetY));
+            var text = m.PlaceNameSubtext.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            if (text.Length == 0 || !string.Equals(text, wanted, StringComparison.OrdinalIgnoreCase)) continue;
+            _log.Info($"[Orte] '{wanted}' über den Namen gefunden (Zeile {placeNameRowId} steht auf keinem Marker " +
+                      $"der Karte {mapId}, Marker führt Zeile {m.PlaceNameSubtext.RowId}).");
+            return At(m);
         }
         return null;
     }

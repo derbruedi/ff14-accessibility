@@ -46,6 +46,14 @@ public sealed class UIReaderService : IDisposable
     /// <summary>Sagt die FORM einer Wirkflaeche in Worten - das Einzige am
     /// Aktions-Tooltip, das das Spiel ausschliesslich zeichnet.</summary>
     private readonly ActionShapeService _actionShape;
+    private readonly AozNotebookService _aozNotebook;
+
+    /// <summary>
+    /// Der Leser des Blaumagie-Zauberbuchs. Oeffentlich, damit die Debug-Sonde
+    /// dieselbe Instanz benutzt - sie haelt die Sheet-Tabellen, und ein zweiter
+    /// Aufbau waere nur doppelte Arbeit.
+    /// </summary>
+    public AozNotebookService AozNotebook => _aozNotebook;
 
     /// <summary>Nennt die Einheit zu der nackten Preiszahl einer Tausch-Zeile.</summary>
     private readonly SpecialShopService _specialShops;
@@ -154,6 +162,12 @@ public sealed class UIReaderService : IDisposable
         "Bank",               // Gil-Depot beim Gehilfen: eigener Handler (OnBankUpdate)
         "RecipeNote",         // Handwerker-Notizbuch: eigener Handler (OnRecipeNoteUpdate)
         "HowTo",              // Tutorial-Text: eigener Handler (OnHowToUpdate)
+        // Zauberbuch der Blaumagie: eigener Handler (OnAozNotebookUpdate). Der
+        // allgemeine Weg suchte hier eine Liste, die es nicht gibt - das Fenster
+        // fuehrt ein Kachelraster - und meldete "Liste noch leer", dann "Liste
+        // bleibt leer" (Log 2026-09-02 07:11:04 und 07:11:05). Angesagt wurde
+        // dabei nur der Fenstertitel.
+        "AOZNotebook",
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -163,6 +177,18 @@ public sealed class UIReaderService : IDisposable
         "_TextError", "_WideText", "_BattleTalk", "_LocationTitle",
         "LevelUpAnnouncement", "ContentsTutorial", "_ScreenText",
         "ConfigPadCalibration",
+        // Tutorial mit Bild (Anfaenger-Arena): eigener Handler
+        // (OnEventTutorialUpdate). Der allgemeine Scanner sprach hier ZWEI
+        // Texte kurz hintereinander unterbrechend - erst den langen Fliesstext,
+        // dann die Zwischenzeile - und schnitt sich damit selbst ab. Im Log vom
+        // 2026-09-02, 20:20:02.131 und .132, steht genau das: der Erklaerungstext
+        // bricht mitten im Wort ab ("...errei..."), 1 ms spaeter kommt
+        // "So funktioniert's (1/2)". Der eigene Handler baut EINEN Satz daraus,
+        // in der richtigen Reihenfolge und mit dem Thema davor.
+        // NUR hier eingetragen, NICHT in SpecialSetupAddons: der Stack-Eintrag
+        // beim Oeffnen bleibt damit erhalten, und mit ihm alles, was daran
+        // haengt.
+        "EventTutorial",
         "LobbyScreenText",    // fires TimerTick every frame � no useful navigation
         "ConfigSystem",       // eigene Handler + FocusTrack
         "TitleDCWorldMap",    // TimelineActiveLabelChanged feuert alle 300ms � eigener Handler
@@ -359,6 +385,7 @@ public sealed class UIReaderService : IDisposable
         _config         = config;
         _data           = data;
         _actionShape    = new ActionShapeService(data, log);
+        _aozNotebook    = new AozNotebookService(gameGui, data, log);
         _gcRanks        = new GrandCompanyRankText(data, log);
         _dutySettings   = new ContentsFinderSettingText(log);
         _specialShops   = new SpecialShopService(data, log);
@@ -400,6 +427,21 @@ public sealed class UIReaderService : IDisposable
         // popup above). Muted in the generic path via SpecialSetup/UpdateAddons:
         // that path spoke the FOOTNOTE (id=14) on open and nothing afterwards.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "HowTo", OnHowToUpdate);
+
+        // -- EventTutorial (Tutorial mit Bild, z.B. in der Anfaenger-Arena) ----
+        // Auf PostUpdate wie die beiden Tutorial-Fenster darueber: Thema und
+        // Text stehen erst ein paar Frames nach dem Oeffnen, und ein
+        // Seitenwechsel tauscht sie aus, ohne dass das Fenster neu aufgeht. Der
+        // Dedup ueber den fertigen Satz erledigt beides.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "EventTutorial", OnEventTutorialUpdate);
+
+        // -- Zauberbuch der Blaumagie (AOZNotebook) --------------------
+        // Auf PostUpdate statt PostSetup, weil die beiden Zaehler des Fensters
+        // ("1/124", "1/24") erst ein paar Frames spaeter gefuellt sind - genau
+        // der Grund, aus dem auch das Sammel-Fenster und das Handwerker-
+        // Notizbuch hier haengen. Einmal pro Oeffnung, mit Dedup ueber den
+        // zuletzt gesagten Text; der Reiterwechsel spricht dadurch von selbst.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, AozNotebookService.AddonName, OnAozNotebookUpdate);
 
         // -- Anfänger-Arena (Übungsauswahl "BeginnersMansionProblem") ---
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
@@ -2235,6 +2277,16 @@ public sealed class UIReaderService : IDisposable
     private bool _actionDwellDescSpoken;  // description already queued for this dwell?
     private const double ActionDescDwellSeconds = 0.4;
 
+    // Zauberbuch der Blaumagie: gleiche Aufteilung wie beim Skill-Fenster. Name
+    // und Nummer kommen sofort, die langen Werte und die Beschreibung erst, wenn
+    // der Fokus kurz stehen bleibt - ein Raster mit 124 Zaubern waere sonst nicht
+    // durchblaetterbar. Der Zauber wird beim Fokuswechsel gemerkt, damit der
+    // Verweil-Teil ihn nicht ein zweites Mal aufloesen muss.
+    private string    _lastAozOverview = string.Empty; // zuletzt gesagter Ueberblick des Zauberbuchs
+    private AozSpell? _aozDwellSpell;     // Zauber, auf dem die Uhr laeuft (null = keiner)
+    private long      _aozDwellTick;      // Zeitstempel, seit wann der Fokus dort steht
+    private bool      _aozDwellSpoken;    // Details fuer dieses Verweilen schon gesagt?
+
     // Item slots (bags, armoury, shop, hand-over): the name+count is spoken the
     // instant the focus lands; the tooltip DESCRIPTION is only queued after the
     // focus has dwelled on the SAME item for the same interval (user choice
@@ -2473,6 +2525,22 @@ public sealed class UIReaderService : IDisposable
             // the raw, payload-polluted name - never run for these rows.
             text = gatherRow;
         }
+        else if (TryReadEventTutorialFocusRow(node, out var tutorialRow))
+        {
+            // Tutorial-Fenster: seine beiden Blaetterknoepfe sind reine Bilder
+            // ohne Textknoten, der Fokus stand dort vollstaendig stumm (Log
+            // 2026-09-02, 20:20:04 bis 20:20:08 - acht Wechsel, achtmal STUMM).
+            text = tutorialRow;
+        }
+        else if (TryReadAozNotebookFocusRow(node, out var aozRow))
+        {
+            // Zauberbuch der Blaumagie: die Kacheln tragen nur ein Nummernschild,
+            // der Zaubername steht nirgends auf ihnen. Vor dem Gegenstands- und
+            // dem allgemeinen Zweig, weil dort nur "Nr. 14" ankam (Log
+            // 2026-09-02) und ein Zauber-Symbol sonst als Inventar-Gegenstand
+            // nachgeschlagen wuerde.
+            text = aozRow;
+        }
         else if (TryReadActionMenuFocusRow(node, out var actionRow))
         {
             // Skill window (Aktionen & Talente): the list rows are icon-only,
@@ -2554,6 +2622,11 @@ public sealed class UIReaderService : IDisposable
         // ticking while the focus is parked on one skill (the dedup below would
         // otherwise short-circuit every same-skill frame).
         HandleActionMenuDwell(node);
+
+        // Zauberbuch der Blaumagie: gleiche Stelle und derselbe Grund - vor dem
+        // Dedup, damit die Uhr weiterlaeuft, waehrend der Fokus auf einer Kachel
+        // parkt.
+        HandleAozNotebookDwell(node);
 
         // Deferred item description (same reason it runs before the dedup return):
         // after the name was spoken, add the tooltip text once the focus has
@@ -4282,6 +4355,69 @@ public sealed class UIReaderService : IDisposable
     /// signal for empty slots and its normal reading elsewhere. Verified
     /// 2026-07-26: tile icon 4001 -&gt; "Gesellschafts-Chocobo".
     /// </summary>
+    /// <summary>
+    /// Zauberbuch der Blaumagie: der Zauber unter dem Fokus, oder der aktive
+    /// Kommando-Platz unter dem Fokus.
+    ///
+    /// <para>
+    /// WARUM ES DEN ZWEIG BRAUCHT. Die 16 Kacheln des Rasters tragen keinen
+    /// Namen - nur ein Nummernschild. Der Fokus sitzt dabei auf der Kollision
+    /// ihres Ankreuzfeldes, und das Einzige, was die allgemeine Textsuche von
+    /// dort erreicht, ist genau dieses Schild: im Log vom 2026-09-02 kam beim
+    /// Blaettern ueber das ganze Buch nichts als "Nr. 14", "Nr. 65", "Nr. 80".
+    /// Die 24 Plaetze der aktiven Kommandos sind Ablagefelder ohne jeden Text.
+    /// Beides loest <see cref="AozNotebookService"/> ueber die benannten Felder
+    /// des Fensters auf, nicht ueber geratene Knoten-Ids.
+    /// </para>
+    /// </summary>
+    private unsafe bool TryReadAozNotebookFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible(AozNotebookService.AddonName)) return false;
+
+        if (_aozNotebook.TryDescribeSpellTile(node, out var tile, out _)) { text = tile; return true; }
+        if (_aozNotebook.TryDescribeActiveSlot(node, out var slot))       { text = slot; return true; }
+        return false; // Reiter, Knoepfe und Suchfeld behalten ihre normale Lesung
+    }
+
+    /// <summary>
+    /// Reicht Werte und Beschreibung eines Blaumagie-Zaubers nach, sobald der
+    /// Fokus kurz auf derselben Kachel stehen bleibt. Name und Nummer sind da
+    /// schon gesprochen (siehe <see cref="TryReadAozNotebookFocusRow"/>) - genau
+    /// die Aufteilung, die das Skill-Fenster benutzt, damit schnelles Blaettern
+    /// durch 124 Zauber nicht in Beschreibungen ertrinkt.
+    /// </summary>
+    private unsafe void HandleAozNotebookDwell(AtkResNode* node)
+    {
+        if (!IsAddonVisible(AozNotebookService.AddonName) ||
+            !_aozNotebook.TryDescribeSpellTile(node, out _, out var spell) ||
+            spell is not { } current)
+        {
+            _aozDwellSpell = null;
+            return;
+        }
+
+        if (_aozDwellSpell?.AozRowId != current.AozRowId)
+        {
+            // Der Fokus hat die Kachel gerade erreicht - ihr Name laeuft in
+            // diesem Moment ueber die Sprachausgabe. Uhr starten, noch nichts
+            // nachreichen.
+            _aozDwellSpell  = current;
+            _aozDwellTick   = System.Diagnostics.Stopwatch.GetTimestamp();
+            _aozDwellSpoken = false;
+            return;
+        }
+
+        if (_aozDwellSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _aozDwellTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _aozDwellSpoken = true; // einmal pro Verweilen, auch wenn nichts zusammenkommt
+        var details = _aozNotebook.DescribeSpellDetails(current);
+        if (!string.IsNullOrEmpty(details)) _tolk.Speak(details);
+    }
+
     private unsafe bool TryReadMountNoteBookFocusRow(AtkResNode* node, out string text)
     {
         text = string.Empty;
@@ -6608,6 +6744,207 @@ public sealed class UIReaderService : IDisposable
     /// - on open and on every page turn. Dedup via <see cref="_lastHowToText"/>,
     /// reset when the window closes so reopening reads again.
     /// </summary>
+    // -- EventTutorial (Tutorial-Fenster mit Bild und Blaetterknoepfen) --------
+    //
+    // Drittes Tutorial-Fenster neben ContentsTutorial und HowTo, und es war
+    // KOMPLETT unbedienbar (User 2026-09-02: "da ist ein menü was ich nicht
+    // bedienen kann"). Das Log vom selben Tag, 20:20:04 bis 20:20:08, zeigt
+    // warum: der Fokus wandert zwischen zwei Knoepfen hin und her, und BEIDE
+    // sind stumm ("[Focus] STUMM addon='EventTutorial' id=2" bzw. "id=3", Text
+    // leer). Es sind reine Bild-Knoepfe ohne Textknoten. Der Inhalt des Fensters
+    // - Thema, Erklaerung, Seitenzahl - wurde nie vorgelesen.
+    //
+    // WELCHER KNOPF WELCHER IST, ist am ZUSTAND abgelesen und nicht an der
+    // Position geraten: im Dump auf Seite 1 von 2 traegt Knoten 9 das
+    // Enabled-Bit NICHT (Flags 0x2013), Knoten 10 schon (0x2033). Ein
+    // deaktivierter Blaetterknopf auf der ERSTEN Seite kann nur "Zurueck" sein.
+    // Die Geometrie bestaetigt es unabhaengig (Knoten 9 bei x=448, Knoten 10 bei
+    // x=544), aber sie ist nur die Gegenprobe, nicht die Begruendung.
+    private unsafe void OnEventTutorialUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastEventTutorialText = string.Empty; // naechstes Oeffnen liest wieder
+            return;
+        }
+
+        var topic   = ReadEventTutorialText(addon, EventTutorialTopic);
+        var section = ReadEventTutorialText(addon, EventTutorialSection);
+        var body    = ReadEventTutorialText(addon, EventTutorialBody);
+        // Noch nichts gefuellt: schweigen, der naechste Frame traegt den Inhalt.
+        if (topic.Length == 0 && body.Length == 0) return;
+
+        var page = ReadEventTutorialText(addon, EventTutorialPage);
+
+        var sb = new StringBuilder();
+        if (topic.Length > 0) sb.Append(topic).Append('.');
+        // Die Zwischenzeile fuehrt die Seitenzahl schon mit ("So funktioniert's
+        // (1/2)"), deshalb wird die nackte Zahl daneben nur gesagt, wenn sie
+        // NICHT ohnehin dort steht - sonst hoert der Spieler sie zweimal.
+        if (section.Length > 0)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(section).Append('.');
+        }
+        if (page.Length > 0 && (section.Length == 0 || !section.Contains(page, StringComparison.Ordinal)))
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(AccessibilityStrings.PageLabel(page)).Append('.');
+        }
+        if (body.Length > 0)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(body);
+        }
+
+        var text = sb.ToString().Trim();
+        if (text.Length == 0 || text == _lastEventTutorialText) return;
+
+        _lastEventTutorialText = text;
+        // Sperrfrist fuer die Knopf-Ansagen STARTEN, bevor gesprochen wird:
+        // das Spiel setzt direkt nach einem Seitenwechsel den Fokus um, und die
+        // Fokus-Ansage wuerde den Text sofort abschneiden. Siehe
+        // InEventTutorialTextGuard.
+        _eventTutorialSpokenAt = DateTime.UtcNow;
+        _log.Info($"[EventTutorial] Seite {page}: '{text}'");
+        _tolk.SpeakInterrupt(text);
+        _history.Add(MessageHistoryService.SystemKey, text);
+    }
+
+    /// <summary>
+    /// Ein Textknoten des EventTutorial-Fensters, ueber die OBERSTE Knotenliste
+    /// gesucht.
+    ///
+    /// <para>
+    /// Bewusst nicht <c>GetNodeById</c>: dieses Fenster fuehrt id=3 ZWEIMAL -
+    /// einmal als Fenstertitel "ANFÄNGER-ARENA" innerhalb der Fenster-
+    /// komponente, und einmal auf der obersten Ebene als Thema ("Transparenz").
+    /// Genau die Falle aus dem Errungenschaftsfenster. Die Typpruefung faengt
+    /// zusaetzlich ab, dass eine gleiche Id an einem Nicht-Text haengt.
+    /// </para>
+    /// </summary>
+    private unsafe string ReadEventTutorialText(AtkUnitBase* addon, uint id)
+    {
+        var node = FindTopLevelNode(addon, id);
+        if (node == null || node->Type != NodeType.Text) return string.Empty;
+        return FlattenLines(AtkText.ReadClean((AtkTextNode*)node));
+    }
+
+    /// <summary>
+    /// Macht aus einem mehrzeiligen Knotentext eine vorlesbare Zeile:
+    /// Zeilenumbrueche werden zu Leerzeichen, Mehrfach-Leerzeichen fallen weg.
+    ///
+    /// <para>
+    /// WARUM: der Erklaerungstext des Tutorials ist im Fenster umbrochen, und
+    /// die Umbrueche verschwanden beim Lesen ERSATZLOS - im Log vom 2026-09-02
+    /// steht deshalb "...in aller Heimlichkeit erreichen.Du erhaeltst..." und
+    /// "...noch anhaelt.Waehrend Transparenz...". Ohne Leerzeichen laeuft der
+    /// Satz fuer die Sprachausgabe in den naechsten hinein.
+    /// </para>
+    /// </summary>
+    private static string FlattenLines(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        var sb = new StringBuilder(raw.Length);
+        foreach (var c in raw) sb.Append(c is '\n' or '\r' ? ' ' : c);
+        return string.Join(" ", sb.ToString()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
+    }
+
+    /// <summary>
+    /// Benennt die beiden Blaetterknoepfe des EventTutorial-Fensters, auf denen
+    /// der Fokus sonst stumm steht, und sagt dazu, ob sie gerade ueberhaupt
+    /// etwas tun ("Zurueck" ist auf der ersten Seite deaktiviert).
+    /// </summary>
+    private unsafe bool TryReadEventTutorialFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible("EventTutorial")) return false;
+
+        var ptr = _gameGui.GetAddonByName("EventTutorial");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+
+        var back = FindTopLevelNode(addon, EventTutorialBack);
+        var next = FindTopLevelNode(addon, EventTutorialNext);
+
+        AtkResNode* hit;
+        string label;
+        if (IsFocusInside(node, back))      { hit = back; label = AccessibilityStrings.Back; }
+        else if (IsFocusInside(node, next)) { hit = next; label = AccessibilityStrings.NextPage; }
+        else return false; // Schliessen-Knopf traegt eigenen Text, der reicht
+
+        // Der Text der Seite hat Vorrang. Direkt nach einem Seitenwechsel setzt
+        // das Spiel den Fokus selbst um, und diese Ansage schnitt den gerade
+        // begonnenen Tutorialtext ab (Log 2026-09-02: 12 ms Abstand). Der
+        // Knopfname geht dabei nicht verloren - der Fokus steht weiter auf ihm,
+        // und die naechste eigene Bewegung sagt ihn an.
+        if (InEventTutorialTextGuard)
+        {
+            // Leerer Text bei true: der Knopf IST erkannt, es wird nur bewusst
+            // geschwiegen. Mit false liefe die Fokus-Kette weiter und ein
+            // Ersatzleser (Tooltip, Position) koennte den Text doch noch
+            // abschneiden.
+            _log.Info($"[EventTutorial] Knopf '{label}' unterdrueckt - Text laeuft noch.");
+            text = string.Empty;
+            return true;
+        }
+
+        // Ein deaktivierter Knopf sieht fuer den Fokus aus wie jeder andere -
+        // ohne den Zusatz drueckt der Spieler ins Leere und erfaehrt nie, warum
+        // nichts passiert.
+        var enabled = hit != null &&
+                      ((ushort)hit->NodeFlags & (ushort)NodeFlags.Enabled) != 0;
+        text = enabled ? label : AccessibilityStrings.ControlUnavailable(label);
+        return true;
+    }
+
+    // Knoten des EventTutorial-Fensters, alle auf der obersten Ebene
+    // (Dump 2026-09-02). Die beiden Blaetterknoepfe sind ueber ihren
+    // Enabled-Zustand auf Seite 1 identifiziert, siehe OnEventTutorialUpdate.
+    private const uint EventTutorialTopic   = 3;  // "Transparenz"
+    private const uint EventTutorialSection = 5;  // "So funktioniert's (1/2)"
+    private const uint EventTutorialBody    = 6;  // Erklaerungstext
+    private const uint EventTutorialPage    = 8;  // "1/2"
+    private const uint EventTutorialBack    = 9;  // Zurueck (auf Seite 1 deaktiviert)
+    private const uint EventTutorialNext    = 10; // Weiter
+
+    private string _lastEventTutorialText = string.Empty;
+    private DateTime _eventTutorialSpokenAt = DateTime.MinValue;
+
+    /// <summary>
+    /// Kurze Sperrfrist direkt nach der Tutorial-Ansage, in der die
+    /// Knopf-Ansagen schweigen.
+    ///
+    /// <para>
+    /// WARUM SIE NOETIG IST, gemessen im Log vom 2026-09-02: nach jedem
+    /// Seitenwechsel setzt das SPIEL den Fokus um - der eben gedrueckte Knopf
+    /// ist auf der neuen Seite gesperrt, also wandert der Fokus. Die
+    /// Fokus-Ansage kam dadurch 12 ms nach dem Tutorialtext (20:32:12.032 der
+    /// Text, .044 "Zurück, nicht verfügbar") und schnitt ihn als unterbrechende
+    /// Ansage sofort ab. Der Spieler hoerte nur noch den Schalter - genau seine
+    /// Meldung: "es sollen nicht nur die schalter vorgelesen werden sondern auch
+    /// der text der da steht".
+    /// </para>
+    ///
+    /// <para>
+    /// 700 ms, und das ist keine gegriffene Zahl: der automatische Fokuswechsel
+    /// kam im Log binnen 12 ms, waehrend zwei ECHTE Tastendruecke des Spielers
+    /// mindestens 400 ms auseinander lagen (20:32:07.443 und .961, .733 und
+    /// 10.010). Die Frist trennt beides sicher - der vom Spiel ausgeloeste
+    /// Wechsel faellt hinein, eigenes Weiterblaettern nicht.
+    /// </para>
+    ///
+    /// <para>
+    /// Gleiches Muster wie <see cref="InDialogOpenGuard"/> und
+    /// <c>IsSocialAnnouncementInFlight</c>, die dasselbe Problem an anderen
+    /// Fenstern loesen.
+    /// </para>
+    /// </summary>
+    private bool InEventTutorialTextGuard =>
+        (DateTime.UtcNow - _eventTutorialSpokenAt).TotalMilliseconds < 700;
+
     private unsafe void OnHowToUpdate(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
@@ -9885,6 +10222,36 @@ public sealed class UIReaderService : IDisposable
             node = node->ParentNode;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Sagt beim Oeffnen des Zauberbuchs an, was gerade zu sehen ist: welcher
+    /// Reiter, wie viele Zauber erlernt sind und wie viele der 24 Kommando-
+    /// Plaetze belegt sind. Beide Zahlen stehen fertig im Fenster und werden
+    /// gelesen, nicht nachgerechnet.
+    ///
+    /// <para>
+    /// Der Dedup laeuft ueber den fertigen Satz. Das erledigt zwei Dinge auf
+    /// einmal: die Ansage kommt nur einmal pro Oeffnung, und ein Reiterwechsel
+    /// - der die Zeile veraendert - spricht von selbst.
+    /// </para>
+    /// </summary>
+    private unsafe void OnAozNotebookUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastAozOverview = string.Empty; // naechstes Oeffnen spricht wieder
+            return;
+        }
+
+        var overview = _aozNotebook.DescribeOverview();
+        if (overview.Length == 0 || overview == _lastAozOverview) return;
+
+        _lastAozOverview = overview;
+        _log.Info($"[Aoz] Ueberblick: {overview}");
+        _tolk.SpeakInterrupt(overview);
+        _history.Add(MessageHistoryService.SystemKey, overview);
     }
 
     private unsafe void OnRecipeNoteUpdate(AddonEvent type, AddonArgs args)

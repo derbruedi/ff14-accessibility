@@ -68,16 +68,27 @@ public sealed class OptionsMenu
     // Antwort zurueckkehren muss. Ein Menue, das Threads verwaltet, waere die
     // Schichtentrennung von hinten aufgezaeumt.
     private readonly Action _fetchDungeonPaths;
+    // [Aktualisierung] Das Menue fragt nur, WAS der Dienst zuletzt gefunden hat.
+    // Abfrage und Einspielen liegen wie beim Dungeon-Download beim Plugin: beide
+    // muessen auf den Spiel-Thread zurueckkehren, und das ist nicht Sache eines
+    // Menues.
+    private readonly UpdateService _updates;
+    private readonly Action _checkUpdate;
+    private readonly Action _installUpdate;
 
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
                        HeadingService heading, GameChatFilters chatFilters,
                        AoeWarningService aoeWarning, WarningVoiceService warnVoice,
                        NavigationService nav, LegacyChatHistoryService legacyHistory,
                        MessageHistoryService history,
-                       DungeonRouteService dungeonRoute, Action fetchDungeonPaths)
+                       DungeonRouteService dungeonRoute, Action fetchDungeonPaths,
+                       UpdateService updates, Action checkUpdate, Action installUpdate)
     {
         _dungeonRoute = dungeonRoute;
         _fetchDungeonPaths = fetchDungeonPaths;
+        _updates = updates;
+        _checkUpdate = checkUpdate;
+        _installUpdate = installUpdate;
         _config  = config;
         _save    = save;
         _tolk    = tolk;
@@ -145,6 +156,92 @@ public sealed class OptionsMenu
             level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsChatTabs, Submenu = BuildChatTabs });
 
         level.Entries.Add(ChatSystemRow());
+
+        // [Aktualisierung] Ganz unten, weil es die seltenste Handlung im Menue
+        // ist - und im Hauptmenue, weil sie zu keinem der Abschnitte darueber
+        // gehoert: sie stellt nichts ein, sie erneuert das Plugin.
+        level.Entries.Add(new MenuEntry
+        {
+            Label   = AccessibilityStrings.UpdateTitle,
+            Submenu = BuildUpdate,
+        });
+
+        return level;
+    }
+
+    // ── Aktualisierung ────────────────────────────────────────────
+
+    /// <summary>
+    /// Sucht nach einer neuen Fassung und spielt sie ein.
+    ///
+    /// <para>
+    /// ZWEI SCHRITTE, NICHT EINER. Suchen und Einspielen sind getrennte Zeilen,
+    /// damit niemand versehentlich ein Update anstoesst: das Einspielen laedt das
+    /// Plugin neu, und ein Neuladen, das man nicht bestellt hat, wirkt wie ein
+    /// Absturz. Die Einspiel-Zeile erscheint deshalb erst, wenn eine neuere
+    /// Fassung wirklich gefunden wurde.
+    /// </para>
+    ///
+    /// <para>
+    /// Die Ebene baut sich nach jeder Handlung neu auf (<c>Rebuild</c>), sonst
+    /// stuende nach der Suche weiter die alte Auskunft da - eine Beschriftung,
+    /// die dem gerade Gesagten widerspricht.
+    /// </para>
+    /// </summary>
+    private MenuLevel BuildUpdate()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.UpdateTitle,
+            Rebuild = BuildUpdate,
+        };
+
+        // Zeile ohne Activate: sie wird vorgelesen und tut sonst nichts.
+        level.Entries.Add(new MenuEntry
+        {
+            Label = AccessibilityStrings.UpdateInstalledVersion(_updates.LocalVersion),
+        });
+
+        // Aus dem Dalamud-Repository bezogen: dort gehoeren die Dateien Dalamud.
+        // Die Ebene sagt das und bietet nichts an, statt eine Schaltflaeche
+        // anzubieten, die dann jedes Mal absagt.
+        if (!_updates.CanSelfUpdate)
+        {
+            level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.UpdateNotSelfManaged });
+            return level;
+        }
+
+        level.Entries.Add(new MenuEntry
+        {
+            Label = AccessibilityStrings.UpdateCheckNow,
+            // StayOpen, damit der Spieler die Quittung im Menue hoert und die
+            // Zeilen danach neu gelesen werden. Die Abfrage laeuft nebenher; das
+            // Menue wartet auf nichts.
+            StayOpen = true,
+            Activate = _checkUpdate,
+        });
+
+        var last = _updates.LastCheck;
+        if (last is { Ok: true })
+        {
+            level.Entries.Add(new MenuEntry
+            {
+                Label = last.IsNewer
+                    ? AccessibilityStrings.UpdateAvailable(last.RemoteVersion)
+                    : AccessibilityStrings.UpdateUpToDate(last.LocalVersion),
+            });
+
+            if (last.IsNewer)
+            {
+                level.Entries.Add(new MenuEntry
+                {
+                    Label    = AccessibilityStrings.UpdateInstallNow(last.RemoteVersion),
+                    StayOpen = true,
+                    Activate = _installUpdate,
+                });
+            }
+        }
+
         return level;
     }
 
