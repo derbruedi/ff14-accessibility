@@ -545,6 +545,18 @@ public sealed class Configuration : IPluginConfiguration
     // die Taste ist erwiesen erreichbar, sie hat dort real ausgelöst.
     public string KeyJobGauge = "Strg+Umschalt+F10";
 
+    // GEGNERFARBEN (User-Wunsch 2026-09-01): jeder Gegner, der mit der Gruppe im
+    // Kampf steht, bekommt eine Farbe als Rufnamen, die vor seinem Namen
+    // mitgesprochen wird - "Rot, Wüstenwolf". Portiert aus dem WoW-Addon Sku
+    // (autoSetSkuRaidTargetsToInCombatCreatures), Farben und Reihenfolge
+    // unveraendert uebernommen. Ohne den Rufnamen sind drei gleichnamige Gegner
+    // drei gleiche Ansagen; ein sehender Spieler haelt sie ueber ihren Standort
+    // auseinander, ein blinder hat dafuer nichts.
+    // STANDARD AN, anders als beim Heilmonitor: das hier textet niemanden zu,
+    // es haengt nur ein Wort an eine Ansage, die ohnehin kommt, und es nuetzt
+    // jeder Rolle. Siehe EnemyMarkerService.
+    public bool EnemyMarkersEnabled = true;
+
     // Fortschritt / Beute
     // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState
     // (GetCurrentClassJobExp, jeden Frame gelesen - dieselbe Quelle wie die

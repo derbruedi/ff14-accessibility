@@ -233,6 +233,30 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   Mausklick** an — im Tastenbelegungs-Dump hat sie keine einzige Belegung.
   Der Mod sagt mit einem Ton an, sobald sie da ist, und legt sie auf
   Umschalt+F10 und Umschalt+F11; Strg+Umschalt+F8 sagt sie noch einmal an.
+- **Gegnerfarben**: Jeder Gegner, der mit der Gruppe im Kampf steht, bekommt
+  eine Farbe als Rufnamen — Weiß, Rot, Blau, Grün, Lila, Gelb, Orange, Grau —
+  und die wird **vor seinem Namen mitgesprochen**: „Rot, Wüstenwolf". Drei
+  gleichnamige Gegner sind sonst drei gleiche Ansagen; ein sehender Spieler
+  hält sie über ihren Standort auseinander, ein blinder hat dafür nichts. Die
+  Farbe bleibt demselben Gegner den ganzen Kampf über erhalten und wird nach
+  seinem Tod **nicht neu vergeben**, solange noch eine unbenutzte da ist —
+  damit kein zweiter „Rot" auftaucht, während man noch den ersten sucht. Sind
+  in einem langen Kampf alle acht durch, kommt die am längsten zurückliegende
+  wieder in Umlauf: ein nachrückender Gegner soll lieber eine schon einmal
+  gehörte Farbe tragen als gar keine. **Setzt jemand in der Gruppe ein echtes
+  Zeichen** — „Angreifen 1", „Binden 2", „Kreis" —, dann gewinnt das: gesprochen
+  wird der Name des Zeichens statt der Farbe, und die Farbe wird wieder frei.
+  Das Zeichen ist der Name, den die ganze Gruppe benutzt; eine eigene Farbe
+  daneben wäre eine zweite, private Wahrheit. Die Namen kommen aus den Daten
+  des Spiels, sind also dieselben Wörter, die am Bildschirm stehen.
+  `/acc gegner` liest das ganze Feld vor:
+  wie viele es sind, welche Farbe wer ist, mit Leben — und wer davon auf
+  **dir** ist statt auf dem Tank. Nach dem Kampf sind alle Farben wieder frei.
+  Es wird **kein Zeichen im Spiel gesetzt**: gelesen werden sie, gesetzt nicht.
+  Die Zielzeichen gehören der Gruppenleitung, die Farbe wird nur gesprochen.
+  Das Verfahren stammt aus dem WoW-Addon Sku, die Farben und ihre Reihenfolge
+  sind von dort übernommen — dort wie hier gilt: ein echtes Zeichen wird beim
+  Namen genannt, eine eigene Vergabe bei der Farbe.
 - **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
   einsatzbereit ist (`/acc cd`).
 - HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
@@ -569,6 +593,7 @@ Viele Funktionen gibt es auch als Befehl:
 - `/acc fishhere` — aktuellen Standort als Auswurfstelle merken
 - `/acc gather` — Sammelpunkte im Gebiet ansagen
 - `/acc gathergo` — zum nächsten Sammelpunkt laufen
+- `/acc gegner` — alle Gegner im Kampf: Anzahl, Farbe, Name, Leben, wer auf dir ist
 - `/acc trails` — aufgezeichnete Spuren im Gebiet auflisten
 - `/acc cd` (auch `/acc cooldowns`) — Ansage „Fähigkeit bereit" an/aus
 - `/acc soundtest` — die Töne des Plugins zur Probe abspielen

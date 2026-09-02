@@ -1198,6 +1198,7 @@ public sealed class OptionsMenu
                                                   v => { _config.AnnounceHeading = v; _heading.ResetBaseline(); }),
             Toggle(AccessibilityStrings.OptTargetChanges, () => _config.AnnounceTargetChanges, v => _config.AnnounceTargetChanges = v),
             Toggle(AccessibilityStrings.OptTargetHp,      () => _config.AnnounceTargetHp,      v => _config.AnnounceTargetHp = v),
+            Toggle(AccessibilityStrings.OptEnemyMarkers,  () => _config.EnemyMarkersEnabled,  v => _config.EnemyMarkersEnabled = v),
             Toggle(AccessibilityStrings.OptEnemyCast,     () => _config.AnnounceEnemyCast,     v => _config.AnnounceEnemyCast = v),
             // Feine HP-Stufen im Freibrief: gehoert hier hin, weil es auf einem
             // Toetungs-Auftrag ein paar Ansagen mehr sind und der Spieler das

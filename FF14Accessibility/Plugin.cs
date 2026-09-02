@@ -89,6 +89,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ObjectNameService  _objectNames;
     private readonly ObstacleService    _obstacles;
     private readonly ObjectMemoryService _objectMemory;
+    private readonly EnemyMarkerService _enemyMarkers;
     private readonly NavigationService  _navigation;
     private readonly AutoWalkService    _autoWalk;
     private readonly MeshBridgeService  _bridges;
@@ -355,7 +356,10 @@ public sealed class Plugin : IDalamudPlugin
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
         _objectMemory = new ObjectMemoryService(ObjectTable, ClientState, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _config, DataManager, GameConfig, Log);
+        // Farb-Rufnamen fuer die Gegner im Kampf. VOR der Navigation, weil deren
+        // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
+        _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -728,6 +732,17 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "trails":
                 _trails.AnnounceTrails();
+                break;
+            // Das ganze Kampffeld auf einmal: wie viele Gegner, welche Farbe ist
+            // wer, und wer davon auf einem selbst. Als BEFEHL und nicht als
+            // Taste, weil im Plugin keine freie Taste mehr ist - Strg+F*,
+            // Umschalt+F* und Strg+Umschalt+F* sind zu zwoelft belegt, und von
+            // den Strg+Numpad-Kombis kommen bei diesem Spieler nur 0, 3 und 5 an
+            // (docs/game-api.md, Korrektur 2026-08-19), die ebenfalls vergeben
+            // sind. Eine Doppelbelegung waere schlimmer als ein Befehl.
+            case "gegner":
+            case "enemies":
+                _tolk.SpeakInterrupt(_enemyMarkers.DescribeField());
                 break;
 #if DEBUG
             // Objekt-Sonde per Befehl: auf Strg+F5 kommt sie nur ans Ruder, wenn
@@ -1865,6 +1880,9 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
+        // Vergibt die Farb-Rufnamen der Gegner. VOR allem, was Ziele ansagt: die
+        // Zielansage fragt gleich danach, welche Farbe der Gegner traegt.
+        _enemyMarkers.Update();
         _cooldown.Update();
         // Job-eigene Ressourcenleiste: meldet nur, wenn etwas WIEDER verfuegbar
         // wird - im Kampf wie ausserhalb.
