@@ -40,6 +40,16 @@
     </Content>
   </ItemGroup>
 
+  <!-- Zahlwoerter des Gruppen-Heilmonitors: 8 Nummern in je 15 Tonhoehen, dazu
+       "dead" und "full". Originalaufnahmen aus dem WoW-Addon Sku (GPL-3), siehe
+       THIRD-PARTY-NOTICES.md. Der relative Pfad bleibt im Output erhalten, das
+       Plugin sucht sie neben seiner DLL unter assets\partymonitor. -->
+  <ItemGroup>
+    <Content Include="assets\partymonitor\*.mp3">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- Lizenzpflicht: das ausgelieferte ZIP enthaelt Tolk (LGPL-3.0),
        nvdaControllerClient (LGPL-2.1) und NAudio (MIT). MIT verlangt, dass der
        Copyright-Vermerk jeder Kopie beiliegt, LGPL einen Lizenzhinweis samt
@@ -128,6 +138,17 @@
           Condition="Exists('$(XIVLauncherRoot)') and '@(DevPluginFiles)' != ''">
       <Output TaskParameter="CopiedFiles" ItemName="DeployCopiedFiles" />
     </Copy>
+
+    <!-- Klangdateien des Heilmonitors mitnehmen, mit Unterordner. Ohne sie
+         bleibt der Monitor stumm und loggt einen Fehler. -->
+    <ItemGroup Condition="Exists('$(XIVLauncherRoot)')">
+      <DevPluginAssets Include="$(ResolvedOutDir)assets\partymonitor\*.mp3" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(DevPluginAssets)"
+          DestinationFolder="$(DevPluginTargetDir)\assets\partymonitor"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(XIVLauncherRoot)') and '@(DevPluginAssets)' != ''" />
 
     <Copy SourceFiles="$(ResolvedOutDir)Tolk.dll"
           DestinationFiles="$(DevPluginTargetDir)\Tolk.dll"
