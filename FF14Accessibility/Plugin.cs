@@ -168,7 +168,7 @@ public sealed class Plugin : IDalamudPlugin
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
     private const string PluginVersion    = "5.96";
-    private const string PluginVersionTag = "Der Auto-Lauf fliegt: Reittier rufen, hinfliegen, landen";
+    private const string PluginVersionTag = "Jagdtagebuch der Gesellschaft, Areale absuchen, Auto-Lauf fliegt";
 
     public Plugin()
     {
