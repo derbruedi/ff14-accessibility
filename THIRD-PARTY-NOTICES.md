@@ -25,6 +25,28 @@ Tolk is the bridge to the screen reader. It is used unmodified and is loaded
 dynamically at runtime, so it can be replaced with a different build of the
 library by overwriting `Tolk.dll` in the plugin folder.
 
+### Sku - spoken party numbers (heal monitor)
+
+- Files: `assets/partymonitor/*.mp3` (122 files: the numbers 1-8 at 15 pitch
+  levels each, plus `dead.mp3` and `full.mp3`)
+- Origin: the World of Warcraft addon **Sku**, an accessibility addon for blind
+  players. Taken from `SkuCore/assets/audio/aq/jus/pitch/`, volume level 100.
+- Licence: **GNU General Public License, version 3 (GPL-3.0)** - Sku ships this
+  licence in its `LICENSE.txt`. GPL-3.0 material may be combined into an
+  AGPL-3.0 work, so these files travel under the plugin's own licence.
+- Source: <https://github.com/Sku75/Sku-WoW-Addon-TBC>
+- Project page: <https://sku75.github.io/Sku-WoW-Addon-TBC/>
+
+Renamed only, never re-encoded: Sku's `jus_<number>_100_<pitch>.mp3` became
+`<number>_<pitch>.mp3`, and `jus_dead_100_0` / `jus_full_100_0` became
+`dead.mp3` / `full.mp3`. The audio itself is byte-for-byte Sku's.
+
+The heal monitor uses them because Sku's pitch ladder IS the feature it ports:
+15 steps five percent apart, the same word at the same length, only the pitch
+telling the player how the group member is doing. Re-synthesising the numbers
+and pitching them here was tried first and rejected - the phase vocoder smeared
+the consonants until the numbers were hard to tell apart.
+
 ### NVDA Controller Client
 
 - Files: `nvdaControllerClient64.dll`

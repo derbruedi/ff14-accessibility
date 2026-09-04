@@ -29,6 +29,9 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] private IGamepadState           GamepadState    { get; init; } = null!;
     [PluginService] private ITargetManager          TargetManager   { get; init; } = null!;
     [PluginService] private IDataManager            DataManager     { get; init; } = null!;
+    // Gruppenliste fuer den Heilmonitor: Length + Indexer liefern bis zu 8
+    // Mitglieder mit CurrentHP/MaxHP/ClassJob (Dalamud.Plugin.Services.IPartyList).
+    [PluginService] private IPartyList              PartyList       { get; init; } = null!;
     // Zwei Nutzer, ein Dienst: [Chat-Puffer] LogTabFilterN sagt, welchen Filtersatz
     // ein Chat-Register benutzt; NavigationService liest denselben Dienst fuer den
     // Bewegungsmodus, der entscheidet, ob beim manuellen Laufen die Figur oder die
@@ -148,6 +151,7 @@ public sealed class Plugin : IDalamudPlugin
     // [Warnstimme] Zweiter Sprachkanal fuer die vier Kampfwarnungen.
     private readonly WarningVoiceService _warnVoice;
     private readonly VitalsService      _vitals;
+    private readonly PartyMonitorService _partyMonitor;
     private readonly HeadingService     _heading;
     private readonly EmoteService       _emote;
     private readonly KeybindService     _keybinds;
@@ -300,6 +304,23 @@ public sealed class Plugin : IDalamudPlugin
             if (_config.KeyDutyAction2    == "Strg+Numpad9") _config.KeyDutyAction2    = "Umschalt+F11";
             if (_config.KeyDutyActionList == "Strg+Numpad1") _config.KeyDutyActionList = "Strg+Umschalt+F8";
             _config.Version = 12;
+            PluginInterface.SavePluginConfig(_config);
+        }
+        if (_config.Version < 13)
+        {
+            // Heilmonitor: der Cluster Strg+Umschalt+F* ist dem Monitor zweimal
+            // unter den Fuessen weggewachsen. Zuerst lag er auf F7/F8, die das
+            // Projekt dann selbst an Aufgabenliste und Sonderaktionen vergeben
+            // hat; danach auf F10/F11, und F10 ging in V5.95 an die Job-Anzeige.
+            // Eine Doppelbelegung faellt blind nicht auf - die Taste tut dann
+            // einfach nichts oder zwei Dinge zugleich. Deshalb wandern beide auf
+            // F11/F12, die letzten freien Plaetze des Clusters. Nur die alten
+            // Vorgaben werden umgezogen, eine eigene Belegung bleibt stehen.
+            if (_config.KeyPartyMonitor == "Strg+Umschalt+F7" || _config.KeyPartyMonitor == "Strg+Umschalt+F10")
+                _config.KeyPartyMonitor = "Strg+Umschalt+F11";
+            if (_config.KeyPartyRoster  == "Strg+Umschalt+F8" || _config.KeyPartyRoster  == "Strg+Umschalt+F11")
+                _config.KeyPartyRoster  = "Strg+Umschalt+F12";
+            _config.Version = 13;
             PluginInterface.SavePluginConfig(_config);
         }
         // Language for all mod announcements (Auto = follow Windows). Must be set
@@ -519,6 +540,16 @@ public sealed class Plugin : IDalamudPlugin
         _jobGauge   = new JobGaugeService(JobGauges, ObjectTable, DataManager, _warnVoice, _tolk, _cue, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
+        // Die Zahlwoerter des Heilmonitors liegen als fertige Klangdateien neben
+        // der Plugin-DLL (assets\partymonitor), uebernommen aus Sku.
+        _partyMonitor = new PartyMonitorService(
+            PartyList, ObjectTable, DataManager, _config, Log,
+            System.IO.Path.Combine(
+                PluginInterface.AssemblyLocation.Directory?.FullName ?? string.Empty,
+                "assets", "partymonitor"));
+        // Erst jetzt: die Zielansage haengt die Gruppennummer an, und der Monitor
+        // wird nach der Navigation gebaut (siehe NavigationService.PartyMonitor).
+        _navigation.PartyMonitor = _partyMonitor;
         _heading    = new HeadingService(ObjectTable, _tolk, _config, Log);
         _emote      = new EmoteService(DataManager, ClientState, _tolk, Log);
         _dalamudPlugins = new DalamudPluginsService(PluginInterface, _tolk, Log);
@@ -1068,6 +1099,8 @@ public sealed class Plugin : IDalamudPlugin
             ("Sonderaktion 1", _config.KeyDutyAction1),
             ("Sonderaktion 2", _config.KeyDutyAction2),
             ("Sonderaktionen ansagen", _config.KeyDutyActionList),
+            ("Heilmonitor an/aus", _config.KeyPartyMonitor),
+            ("Gruppe mit Nummern", _config.KeyPartyRoster),
             ("UI-Dump",        _config.KeyDumpUI),
             ("Aktives Fenster", _config.KeyWhereAmI),
             ("Aktionsleiste",  _config.KeyReadHotbar),
@@ -1598,6 +1631,49 @@ public sealed class Plugin : IDalamudPlugin
             : AccessibilityStrings.AoeWarningOff);
     }
 
+    /// <summary>
+    /// Switches the party heal monitor on or off. When it is switched on for the
+    /// very first time the spoken numbers still have to be rendered, which takes
+    /// a moment - say so, because otherwise the first seconds of silence look
+    /// exactly like a broken feature.
+    /// </summary>
+    private void TogglePartyMonitor()
+    {
+        _config.PartyMonitorEnabled = !_config.PartyMonitorEnabled;
+        PluginInterface.SavePluginConfig(_config);
+
+        if (!_config.PartyMonitorEnabled)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.PartyMonitorOff);
+            return;
+        }
+
+        _tolk.SpeakInterrupt(_partyMonitor.IsVoiceReady
+            ? AccessibilityStrings.PartyMonitorOn
+            : AccessibilityStrings.PartyMonitorPreparing);
+    }
+
+    /// <summary>
+    /// Reads the party as "1 name, 2 name, ...". The monitor calls people by
+    /// their party position, and this is how a player checks which position is
+    /// whom - and that the number really matches the F-key that targets them.
+    /// </summary>
+    private void AnnouncePartyRoster()
+    {
+        var roster = _partyMonitor.Roster();
+        if (roster.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.PartyMonitorNoParty);
+            return;
+        }
+
+        var parts = new List<string>(roster.Count + 1) { AccessibilityStrings.PartyMonitorRosterIntro };
+        foreach (var (position, name) in roster)
+            parts.Add($"{position} {name}");
+
+        _tolk.SpeakInterrupt(string.Join(", ", parts));
+    }
+
     private void ToggleSkillReady()
     {
         _config.AnnounceSkillReady = !_config.AnnounceSkillReady;
@@ -2067,6 +2143,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadBoard))     _tripleTriad.ReadBoard();
         if (IsJustPressed(_config.KeyReadHand))      _tripleTriad.ReadHand();
         if (IsJustPressed(_config.KeyRecordTrail))   _trails.ToggleRecording();
+        if (IsJustPressed(_config.KeyPartyMonitor))  TogglePartyMonitor();
+        if (IsJustPressed(_config.KeyPartyRoster))   AnnouncePartyRoster();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
         // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
         // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
@@ -2095,6 +2173,10 @@ public sealed class Plugin : IDalamudPlugin
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.
         _vitals.Update();
+        // Gruppen-Heilmonitor: spricht die Gruppenposition, der Lebensstand
+        // steckt in der Tonhoehe. Braucht die Frame-Zeit fuer seine
+        // Warteschlange und die Dauerueberwachung.
+        _partyMonitor.Update(framework.UpdateDelta.TotalSeconds);
         // Speaks the compass direction the player turns to face (settled turns,
         // sector changes only). Toggled by KeyToggleHeading.
         _heading.Update();
@@ -2780,6 +2862,14 @@ public sealed class Plugin : IDalamudPlugin
         VitalsTestStep(delay: tick + 180, AccessibilityStrings.SoundTestHpCritical, health: true,  direction: -1, percent: 15);
         VitalsTestStep(delay: tick + 270, AccessibilityStrings.SoundTestMpGain,     health: false, direction: +1, percent: 80);
         VitalsTestStep(delay: tick + 360, AccessibilityStrings.SoundTestMpSpend,    health: false, direction: -1, percent: 40);
+
+        // Heal monitor: the same number three times, so the pitch - and only the
+        // pitch - carries the health. That contrast is the whole feature. Also
+        // relative to tick, for the same reason as the block above.
+        Framework.RunOnTick(() => _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestPartyMonitor), delayTicks: tick + 480);
+        Framework.RunOnTick(() => _partyMonitor.PlayTestCall(3, 100), delayTicks: tick + 630);
+        Framework.RunOnTick(() => _partyMonitor.PlayTestCall(3, 50),  delayTicks: tick + 700);
+        Framework.RunOnTick(() => _partyMonitor.PlayTestCall(3, 5),   delayTicks: tick + 770);
     }
 
     /// <summary>One HP/MP audition step: speak the label, then play the matching
@@ -2829,6 +2919,7 @@ public sealed class Plugin : IDalamudPlugin
         _warnVoice.Dispose();
         _cue.Dispose();
         _vitals.Dispose();
+        _partyMonitor.Dispose();
         _tolk.Dispose();
     }
 }

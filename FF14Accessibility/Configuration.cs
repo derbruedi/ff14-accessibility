@@ -160,6 +160,17 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyToggleBeacon   = "Strg+Umschalt+F9";  // Peil-Ton an/aus
     public string KeyDeepFloor      = "Strg+F";           // [Tiefes Gewoelbe] welches Gewoelbe und welche Ebene. Die eine Zahl, in der der ganze Lauf gemessen wird, und die das Spiel nur beilaeufig nennt.
 
+    // Gruppen-Heilmonitor. Strg+Umschalt+F11/F12 sind die letzten freien Plaetze
+    // dieses Clusters: F1/F2 (Koordinaten), F3 (AoE-Warnton), F4/F5 (Triple
+    // Triad), F6 (Spuren), F7 (Aufgabenliste), F8 (Sonderaktionen), F9 (Peil-Ton)
+    // und F10 (Job-Anzeige, seit V5.95) sind belegt. Strg+F* ist laut
+    // Keybind-Dump spielfrei, Strg+Umschalt+F* erst recht.
+    // Beide Tasten eilen nicht - der Monitor wird vor dem Lauf eingeschaltet,
+    // die Nummernansage ist zum Nachschlagen - also ist der langsamere
+    // Dreifachgriff hier richtig.
+    public string KeyPartyMonitor   = "Strg+Umschalt+F11"; // Heilmonitor an/aus
+    public string KeyPartyRoster    = "Strg+Umschalt+F12"; // Gruppe mit Nummern vorlesen (welche Nummer ist wer)
+
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
     {
@@ -561,6 +572,58 @@ public sealed class Configuration : IPluginConfiguration
     // Strg+Umschalt+F10 wurde in V5.94 vom ausgebauten Rundumblick frei - und
     // die Taste ist erwiesen erreichbar, sie hat dort real ausgelöst.
     public string KeyJobGauge = "Strg+Umschalt+F10";
+
+    // GRUPPEN-HEILMONITOR (User-Wunsch 2026-08-21): Portierung des "Aq"-Moduls
+    // aus dem WoW-Addon Sku, das blinde Heiler seit Jahren benutzen. Der Monitor
+    // spricht die GRUPPENPOSITION (1-8) und legt den Lebensstand in die TONHOEHE
+    // dieses Zahlworts: volles Leben klingt tief und ruhig, fast tot hoch und
+    // panisch. Die Nummer ist zugleich die Zieltaste (F1 = selbst, F2-F8 =
+    // Gruppe, Keybind-Dump in docs/game-api.md) - "fuenf" heisst also F5.
+    // STANDARD AUS: reines Heiler-Werkzeug, das andere Rollen nur zutexten wuerde.
+    public bool PartyMonitorEnabled = false;
+    public float PartyMonitorVolume = 0.7f;     // 0 = stumm, 1 = volle Lautstärke
+
+    // Abstand zwischen zwei Ansagen, in Prozent der Wortlaenge. 100 = eine Ansage
+    // nach der anderen. Kleiner = die Woerter ueberlappen und die Gruppe ist
+    // schneller durch (so macht es Sku); groesser = mehr Luft dazwischen.
+    public int PartyMonitorSlotPercent = 100;
+
+    // Die Zahlwoerter sind die Originalaufnahmen aus Sku, englisch gesprochen,
+    // in 15 fertigen Tonhoehen. Nichts wird erzeugt oder nachgerechnet, deshalb
+    // gibt es hier auch nichts an Stimme oder Tempo einzustellen.
+    // Herkunft und Lizenz: THIRD-PARTY-NOTICES.md
+
+    // Sku-Zusatzansagen an den Extremen: bei 0 Prozent "tot", bei 100 "voll".
+    // "voll" standardmaessig aus, sonst meldet sich jeder Vollgeheilte.
+    public bool PartyMonitorSpeakDeadAtZero = true;
+    public bool PartyMonitorSpeakFullAtHundred = false;
+
+    // Wenn wahr, schweigt der Monitor bei genau 0 und genau 100 Prozent ganz.
+    public bool PartyMonitorSilentAtFullAndZero = false;
+
+    // Dauerueberwachung: wiederholt regelmaessig jeden, der unter seiner
+    // Rollenschwelle liegt. Ohne das verstummt ein stabil Schwerverletzter -
+    // fuer einen blinden Heiler die gefaehrlichste Art von Stille.
+    public bool PartyMonitorContinuousEnabled = true;
+    public float PartyMonitorContinuousInterval = 3.0f;   // Sekunden
+
+    // Alle folgenden Felder sind nach ROLLE indiziert:
+    // 0 = Tank, 1 = Heiler, 2 = Schaden, 3 = unbekannt/sonstige.
+    // Die Rolle kommt aus dem Spiel selbst (ClassJob.Role).
+
+    // Ab welchem Lebensprozentsatz die Dauerueberwachung jemanden wiederholt.
+    public int[] PartyMonitorContinuousStartAt = { 90, 80, 70, 70 };
+
+    // Ereignis-Filter, beide muessen zugleich erfuellt sein (so macht es Sku):
+    // Mindestaenderung in Prozentpunkten UND Mindestaenderung in Stufen.
+    // Zusammen halten sie Regenerations-Ticks aus der Ansage heraus.
+    public int[] PartyMonitorMinPercentChange = { 5, 10, 20, 20 };
+    public int[] PartyMonitorMinStepChange    = { 0, 1, 2, 2 };
+
+    // Welche Rollen sich in der Warteschlange vordraengeln duerfen. Standard nur
+    // der Tank: wenn mehrere zugleich bluten, hoert man zuerst den, dessen Tod
+    // den Kampf beendet.
+    public bool[] PartyMonitorRolePriority = { true, false, false, false };
 
     // Fortschritt / Beute
     // XP-Gewinn live ansagen. Der Betrag kommt sauber aus PlayerState

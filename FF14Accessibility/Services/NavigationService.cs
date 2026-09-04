@@ -309,7 +309,8 @@ public sealed class NavigationService
                 var distance = Vector3.Distance(player.Position, target.Position);
                 var text = $"{AccessibilityStrings.TargetPrefix}{DescribeObject(target)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
-                           $"{DescribeTargetHp(target)}{DescribeTamed(target)}.";
+                           $"{DescribeTargetHp(target)}{DescribeTamed(target)}" +
+                           $"{DescribePartyPosition(target)}.";
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
                 _tolk.SpeakInterrupt(text);
             }
@@ -821,6 +822,15 @@ public sealed class NavigationService
     /// Gehhilfe; das ist die stillere und damit die sichere Richtung.
     /// </summary>
     public AutoWalkService? AutoWalk { get; set; }
+
+    /// <summary>
+    /// Der Heilmonitor, nur fuer die Gruppennummer an der Zielansage gebraucht
+    /// (siehe <see cref="DescribePartyPosition"/>). Property und nicht
+    /// Konstruktor-Argument aus demselben Grund wie bei <see cref="AutoWalk"/>:
+    /// Plugin.cs baut die Navigation frueher als den Monitor. Bleibt sie null,
+    /// entfaellt nur die Nummer.
+    /// </summary>
+    public PartyMonitorService? PartyMonitor { get; set; }
 
     /// <summary>[Tiefes Gewoelbe] Ob der Gewoelbe-Satz im vorigen Frame galt, damit das Betreten oder
     /// Verlassen eines Gewoelbes den Browser zuruecksetzen kann.</summary>
@@ -3093,6 +3103,31 @@ public sealed class NavigationService
     /// two props called "Zielort für Narben im Wald" are one group, while the
     /// same "Zielort" serving another quest is not.
     /// </remarks>
+    /// <summary>
+    /// Haengt die Gruppennummer an, wenn das Ziel ein Gruppenmitglied ist und der
+    /// Heilmonitor laeuft: ", Gruppe 3".
+    ///
+    /// <para>
+    /// Das ist zugleich die einzige GEGENPROBE, die der Spieler selbst machen
+    /// kann. Der Monitor ruft Nummern, die zugleich die Zieltasten sind - stimmen
+    /// sie nicht, ruft er zur falschen Person. Nachsehen kann man das nicht, die
+    /// Gruppenliste steht auf dem Bildschirm. Also: F3 druecken und hoeren, ob
+    /// "Gruppe 3" kommt. Genau dieser Abgleich hat 2026-09-01 gefehlt, als die
+    /// Nummern nicht zu den F-Tasten passten.
+    /// </para>
+    ///
+    /// <para>
+    /// Nur bei eingeschaltetem Monitor, damit die Ansage nicht jeden, der ohne
+    /// ihn spielt, mit einer Zahl behelligt, die ihm nichts sagt.
+    /// </para>
+    /// </summary>
+    private string DescribePartyPosition(IGameObject obj)
+    {
+        if (PartyMonitor == null) return string.Empty;
+        var position = PartyMonitor.PositionOf(obj.EntityId);
+        return position > 0 ? AccessibilityStrings.PartyPositionSuffix(position) : string.Empty;
+    }
+
     private string DescribeObject(IGameObject obj)
     {
         if (obj.ObjectKind == ObjectKind.GatheringPoint)
