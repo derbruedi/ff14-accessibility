@@ -1808,6 +1808,35 @@ public static partial class AccessibilityStrings
     public static string RestedNotAvailable =>
         IsGerman ? "Erholungsbonus nicht verfügbar." : "Rested bonus not available.";
 
+    // ── Begleit-Chocobo (Rang statt Stufe) ───────────────────────────
+    // Das Spiel nennt den Fortschritt des Chocobos "Rang", nicht "Stufe" - die
+    // Ansage uebernimmt dieses Wort, damit sie sich nicht mit der eigenen
+    // Stufen-Ansage auf Strg+L vermischt.
+    public static string ChocoboRankNone =>
+        IsGerman ? "Kein Begleit-Chocobo." : "No companion chocobo.";
+    public static string ChocoboRankNotAvailable =>
+        IsGerman ? "Chocobo-Rang nicht verfügbar." : "Chocobo rank not available.";
+    public static string ChocoboRankMax(int rank) =>
+        IsGerman
+            ? $"Chocobo Rang {rank}, Höchstrang erreicht."
+            : $"Chocobo rank {rank}, maximum rank reached.";
+    public static string ChocoboRankExpLeft(int rank, int left) =>
+        IsGerman
+            ? $"Chocobo Rang {rank}. Noch {left} Erfahrungspunkte bis Rang {rank + 1}."
+            : $"Chocobo rank {rank}. {left} experience points to rank {rank + 1}.";
+    // Ohne Grenze bleibt nur der gesammelte Stand - siehe AnnounceChocoboRank,
+    // warum die Grenze fehlen kann.
+    public static string ChocoboRankExpOnly(int rank, int current) =>
+        IsGerman
+            ? $"Chocobo Rang {rank}, {current} Erfahrungspunkte gesammelt."
+            : $"Chocobo rank {rank}, {current} experience points earned.";
+    // Sterne stehen im Chocobo-Fenster neben dem Rang; als eigener Satzteil
+    // angehaengt, damit sie bei null Sternen einfach entfallen.
+    public static string ChocoboStars(int stars) =>
+        IsGerman
+            ? (stars == 1 ? " 1 Stern." : $" {stars} Sterne.")
+            : (stars == 1 ? " 1 star." : $" {stars} stars.");
+
     // ── Ausruestungsset-Markierung ───────────────────────────────────
     // Das Symbol, das dem sehenden Spieler sagt "steckt in einem gespeicherten
     // Set" - also NICHT verkaufen. Wortwahl wie im Spiel (Addon 756/11993).

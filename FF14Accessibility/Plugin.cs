@@ -1075,6 +1075,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Gil",            _config.KeyReadGil),
             ("Stufe",          _config.KeyLevelExp),
             ("Erholungsbonus", _config.KeyRestedStatus),
+            ("Chocobo-Rang",   _config.KeyChocoboRank),
             ("Emote weiter",   _config.KeyEmoteNext),
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
@@ -1992,6 +1993,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadGil))       _inventoryReader.AnnounceGil();
         if (IsJustPressed(_config.KeyLevelExp))      _combat.AnnounceLevelExp();
         if (IsJustPressed(_config.KeyRestedStatus))  _combat.AnnounceRestedStatus();
+        if (IsJustPressed(_config.KeyChocoboRank))   _combat.AnnounceChocoboRank();
         if (IsJustPressed(_config.KeyReadTasks))     AnnounceActiveTasks();
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();

@@ -55,6 +55,11 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyReadGil       = "Umschalt+F3";     // Nur den Gil-Stand ansagen (Umschalt+F1..F12 laut Keybind-Dump frei)
     public string KeyLevelExp      = "Strg+L";          // Stufe + fehlende EXP ansagen (L=Level; bare L ist im Spiel Linkshell)
     public string KeyRestedStatus  = "Umschalt+L";      // Ruhebereich + Erholungsbonus ansagen (neben der Stufe auf L; Umschalt+L steht nicht in der Belegt-Liste des Keybind-Dumps)
+    // Rang des Begleit-Chocobos - die dritte Belegung der L-Familie (Strg+L eigene
+    // Stufe, Umschalt+L Erholungsbonus). NICHT Alt+L: das Spiel belegt Alt
+    // ausschliesslich mit Buchstaben fuer die Chatmodi (Alt+R/S/P/L/H/Y/F/A/N/M/T/C,
+    // siehe KeyChatTabPrev weiter unten), Alt+L schaltet also den Chat um.
+    public string KeyChocoboRank   = "Strg+Umschalt+L"; // Rang, Sterne und fehlende EXP des Begleit-Chocobos ansagen
     public string KeyEmoteNext     = "Umschalt+F5";     // Emote-Browser: nächstes Emote ansagen
     public string KeyEmotePrev     = "Umschalt+F4";     // Emote-Browser: vorheriges Emote ansagen
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
@@ -189,6 +194,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyReadGil       = defaults.KeyReadGil;
         KeyLevelExp      = defaults.KeyLevelExp;
         KeyRestedStatus  = defaults.KeyRestedStatus;
+        KeyChocoboRank   = defaults.KeyChocoboRank;
         KeyEmoteNext     = defaults.KeyEmoteNext;
         KeyEmotePrev     = defaults.KeyEmotePrev;
         KeyEmoteDo       = defaults.KeyEmoteDo;

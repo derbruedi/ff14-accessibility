@@ -729,6 +729,179 @@ public sealed class CombatService
         _tolk.SpeakInterrupt(text.TrimStart());
     }
 
+    /// <summary>
+    /// On key press: the rank of the companion chocobo, its stars, and the
+    /// experience left to the next rank - the chocobo's counterpart to
+    /// <see cref="AnnounceLevelExp"/>.
+    ///
+    /// <para>
+    /// WHERE THE NUMBERS COME FROM. Rank, stars and the current XP live in
+    /// UIState.Buddy.CompanionInfo (Rank, Stars, CurrentXP), which is saved
+    /// character data and therefore readable whether or not the chocobo is
+    /// summoned or its window open. The THRESHOLD to the next rank is not in that
+    /// struct; it comes from the BuddyRank sheet, row = rank.
+    /// </para>
+    ///
+    /// <para>
+    /// THAT MAPPING IS MEASURED, NOT ASSUMED. The sheet has 21 rows for 20 ranks
+    /// and says nothing about which row belongs to which rank, so it was checked
+    /// against the pair the game paints on the bar
+    /// (BuddyNumberArray/BuddyStringArray): at rank 3 the bar read "57749/82000",
+    /// CompanionInfo.CurrentXP was 57749, and sheet row 3 is 82000 (2026-09-04).
+    /// So CurrentXP is the progress WITHIN the rank - not a running total - and
+    /// row n is the threshold while standing at rank n. Row 20 carries 0, which is
+    /// the rank cap having nothing left to earn.
+    /// </para>
+    ///
+    /// <para>
+    /// The number array is NOT a source for the current XP, only for the
+    /// threshold. It is a painted value: written when the chocobo window is built
+    /// and then standing still. Measured the same day - all zeroes until the
+    /// window had ever been opened, and afterwards stuck at 57749 while
+    /// CompanionInfo had already moved on to 64583; it only caught up on
+    /// reopening. Its MaxExp cannot go stale that way, because it is fixed for the
+    /// rank and the rank is checked, so it is used as a cross-check against the
+    /// sheet: on a mismatch the painted number wins - it is what the player sees -
+    /// and the disagreement is logged as a warning instead of passed over.
+    /// </para>
+    /// </summary>
+    public unsafe void AnnounceChocoboRank()
+    {
+        if (_objectTable.LocalPlayer == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
+            return;
+        }
+
+        var ui = UIState.Instance();
+        if (ui == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.ChocoboRankNotAvailable);
+            _log.Warning("[Chocobo] UIState nicht verfuegbar.");
+            return;
+        }
+
+        var companion = ui->Buddy.CompanionInfo;
+        int rank      = companion.Rank;
+        int stars     = companion.Stars;
+        var name      = companion.NameString;
+
+        if (rank <= 0)
+        {
+            // Rank 0 with no name is the state of a character that never did the
+            // chocobo quest. A name WITHOUT a rank is not a state we have seen, so
+            // it is not silently called "no chocobo" - it says the rank is missing
+            // and the log carries the reading.
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.ChocoboRankNone);
+                _log.Info("[Chocobo] Kein Begleit-Chocobo (Rang 0, kein Name).");
+            }
+            else
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.ChocoboRankNotAvailable);
+                _log.Warning($"[Chocobo] Name '{name}' vorhanden, aber Rang 0 - xp={companion.CurrentXP}");
+            }
+            return;
+        }
+
+        // The threshold: sheet first, because it is there at every key press.
+        var sheetRow  = _data.GetExcelSheet<Lumina.Excel.Sheets.BuddyRank>()?.GetRowOrDefault((uint)rank);
+        int needed    = sheetRow == null ? -1 : (int)sheetRow.Value.ExpRequired;
+
+        // The bar the game painted the last time the chocobo window was open. Its
+        // rank field must match, otherwise it still holds an older rank's numbers.
+        //
+        // ONLY THE THRESHOLD IS TAKEN FROM HERE, NEVER THE CURRENT XP. The array
+        // is a painted value, not a reading: it is written when the window is
+        // built and then stands still while the chocobo keeps earning. Measured
+        // 2026-09-04: CompanionInfo said 64583 while the array still said 57749,
+        // and it only caught up when the window was reopened. The threshold is the
+        // one number in there that cannot go stale - it is fixed for the rank, and
+        // the rank is checked.
+        var num       = FFXIVClientStructs.FFXIV.Client.UI.Arrays.BuddyNumberArray.Instance();
+        int arrayRank = num == null ? -1 : num->BuddyRank;
+        int arrayCur  = num == null ? 0  : num->CurrentExp;
+        int arrayMax  = num == null ? 0  : num->MaxExp;
+        var fresh     = num != null && arrayRank == rank && arrayMax > 0;
+
+        if (fresh && needed > 0 && arrayMax != needed)
+        {
+            // Sheet and painted bar disagree - one of the two moved in a patch.
+            // The bar wins (it is what the player sees), but this must not pass
+            // unnoticed, or the sheet path would keep quoting a wrong number for
+            // everyone whose window stays closed.
+            _log.Warning($"[Chocobo] Schwelle uneinig: Sheet Zeile {rank} = {needed}, " +
+                         $"Balken = {arrayMax}. Balken hat Vorrang.");
+        }
+
+        if (fresh)
+            needed = arrayMax;
+
+        var starText = stars > 0 ? AccessibilityStrings.ChocoboStars(stars) : string.Empty;
+        int current  = (int)companion.CurrentXP;
+
+        string text;
+        if (needed == 0)
+        {
+            // The sheet's last row carries 0: at the rank cap there is nothing
+            // left to earn, so naming a remainder would be nonsense.
+            text = AccessibilityStrings.ChocoboRankMax(rank) + starText;
+        }
+        else if (needed > 0)
+        {
+            var left = needed > current ? needed - current : 0;
+            text = AccessibilityStrings.ChocoboRankExpLeft(rank, left) + starText;
+        }
+        else
+        {
+            // No row for this rank at all - the sheet is shorter than the client's
+            // rank. Then the collected XP is the only honest thing left to say.
+            _log.Warning($"[Chocobo] Keine Sheet-Zeile fuer Rang {rank}.");
+            text = AccessibilityStrings.ChocoboRankExpOnly(rank, (int)companion.CurrentXP) + starText;
+        }
+
+        _tolk.SpeakInterrupt(text);
+        LogChocoboReading(rank, stars, companion.CurrentXP, name, arrayRank, arrayCur, arrayMax, fresh);
+    }
+
+    /// <summary>
+    /// Writes one line holding everything the client says about the chocobo's
+    /// experience.
+    ///
+    /// <para>
+    /// It is what settled the sheet mapping in the first place (see
+    /// <see cref="AnnounceChocoboRank"/>), and it stays because that mapping is the
+    /// one thing about this announcement that a patch could silently invalidate:
+    /// printing the painted text, the raw array and both candidate sheet rows side
+    /// by side means a single press with the chocobo window open re-checks it.
+    /// </para>
+    /// </summary>
+    private unsafe void LogChocoboReading(int rank, int stars, uint xp, string name,
+                                          int arrayRank, int arrayCur, int arrayMax, bool fresh)
+    {
+        // The text the game itself puts under the bar - the strongest evidence,
+        // because it is not a number we interpreted but the one the player reads.
+        var strArr  = FFXIVClientStructs.FFXIV.Client.UI.Arrays.BuddyStringArray.Instance();
+        var expText = strArr == null || !strArr->Exp.HasValue ? "<leer>" : strArr->Exp.ToString();
+
+        // Raw array, in case a field sits somewhere other than where we read it.
+        var raw = "<null>";
+        var numArr = FFXIVClientStructs.FFXIV.Client.UI.Arrays.BuddyNumberArray.Instance();
+        if (numArr != null)
+            raw = string.Join(",", numArr->Data.ToArray());
+
+        // The two candidate readings of the sheet, for the rank we are standing in.
+        var sheet   = _data.GetExcelSheet<Lumina.Excel.Sheets.BuddyRank>();
+        var atRank  = sheet?.GetRowOrDefault((uint)rank)?.ExpRequired;
+        var toRank  = rank >= 1 ? sheet?.GetRowOrDefault((uint)(rank - 1))?.ExpRequired : null;
+
+        _log.Info($"[Chocobo] Rang={rank} Sterne={stars} xp={xp} name='{name}' " +
+                  $"array(rang={arrayRank} {arrayCur}/{arrayMax}) frisch={fresh} " +
+                  $"balkentext='{expText}' rohdaten=[{raw}] " +
+                  $"sheet(zeile{rank}={atRank?.ToString() ?? "-"} zeile{rank - 1}={toRank?.ToString() ?? "-"})");
+    }
+
     // Auf Tastendruck: aktueller HP/MP-Status (eigen + Ziel)
     public void AnnounceStatus()
     {

@@ -1407,6 +1407,55 @@ hier um den Faktor neun.
   Komponenten mit nicht-leerem id=3-Text („Mit Miounne sprechen").
   Labels stehen in Node-Reihenfolge NACH ihrem Inhalt (Z-Order).
 
+### Begleit-Chocobo: Rang und Erfahrung (Metadaten-Dump 2026-09-04)
+Quelle: `FFXIVClientStructs.dll` im Dalamud-dev-Ordner, Typ-/Feldnamen direkt
+aus den Assembly-Metadaten gelesen (kein Raten an Offsets).
+
+- `UIState.Buddy` (Offset 7920) ist vom Typ
+  `FFXIVClientStructs.FFXIV.Client.Game.UI.Buddy`; darin
+  `CompanionInfo` (Offset 9072, Typ `CompanionInfo`, 80 Byte).
+- `CompanionInfo`-Felder: `Companion` (Zeiger, 0), `TimeLeft` (8),
+  `CurrentXP` (52), `Rank` (56), `Stars` (57), `SkillPoints` (58),
+  `_levels` (59, dahinter die Eigenschaft `Levels`), `ActiveCommand` (62),
+  `FavoriteFeed` (63), `CurrentColorStainId` (64), `Mounted` (65);
+  Name über die Eigenschaft `NameString`.
+  Das ist gespeicherte Charakterdaten — lesbar, ohne dass der Chocobo
+  beschworen oder sein Fenster offen ist.
+- Die SCHWELLE zum nächsten Rang steht dort NICHT. Sie kommt aus dem Sheet
+  `BuddyRank` (Lumina, einziges Feld `ExpRequired`), 21 Zeilen 0–20:
+  100, 4000, 38000, 82000, 158000, 294000, 490000, 700000, 940000,
+  1200000, 1458000, 1714000, 1967000, 2217000, 2463000, 2705000, 2942000,
+  3174000, 3400000, 3620000, 0 (offline aus dem sqpack, 2026-09-04).
+  **Zeile n = Schwelle, während man auf Rang n steht.** Die letzte Zeile
+  trägt 0, weil auf dem Höchstrang nichts mehr zu holen ist.
+- WIE DIE ZUORDNUNG BEWIESEN WURDE (nicht abgeleitet, gemessen 2026-09-04):
+  Das Sheet allein sagt nicht, ob Zeile n „bei Rang n" oder „bis Rang n"
+  meint — 21 Zeilen für 20 Ränge lassen beides zu. Gegengelesen wurde am
+  Balken, den das Spiel selbst malt: bei Rang 3 stand dort `57749/82000`,
+  `CompanionInfo.CurrentXP` war 57749 und Sheet-Zeile 3 ist 82000. Damit
+  ist zugleich klar, dass `CurrentXP` der Fortschritt INNERHALB des Rangs
+  ist und keine Gesamtsumme über alle Ränge.
+- Der gemalte Balken steht im Nummern-Array
+  `FFXIVClientStructs.FFXIV.Client.UI.Arrays.BuddyNumberArray` mit
+  `CurrentExp` (0), `MaxExp` (4), `CurrentHP` (8), `MaxHP` (12),
+  `RemaningSummonTime` (16), `MaxSummonTime` (20),
+  `AvailableCombatPoints` (24), `BuddyRank` (32);
+  dazu `BuddyStringArray` mit denselben Werten als fertiger Text
+  (`Exp` = „57749/82000").
+- FALLE — das Nummern-Array ist ein GEMALTER WERT, keine Messung. Zwei
+  Ausprägungen desselben Problems, beide am 2026-09-04 gemessen:
+  1. Es bleibt komplett 0, solange das Chocobo-Fenster in dieser Sitzung nie
+     gebaut wurde (Rang 3 in `CompanionInfo`, Array `[0,0,0,...]`).
+  2. Danach steht `CurrentExp` STILL. Um 08:42 stand dort noch 57749,
+     während `CompanionInfo.CurrentXP` schon 64583 war; erst das erneute
+     Öffnen des Fensters zog es nach.
+  Der aktuelle Stand darf deshalb NUR aus `CompanionInfo.CurrentXP` kommen —
+  der ist live. Aus dem Array wird ausschließlich `MaxExp` als Gegenprobe
+  zum Sheet gelesen: das kann nicht veralten, weil es für den Rang fest ist
+  und der Rang geprüft wird. Weicht es vom Sheet ab, hat der gemalte Wert
+  Vorrang (er ist, was der Spieler sieht) und die Abweichung steht als
+  Warnung im Log. So gebaut in `CombatService.AnnounceChocoboRank`.
+
 ### Kampf: Gegner-HP, Cast, Hotbar (ilspycmd-verifiziert 2026-07-11)
 - Gegner-/Ziel-Daten über Dalamud `IBattleChara` (erbt `ICharacter`):
   `CurrentHp`/`MaxHp`/`CurrentMp`/`MaxMp` (uint, aus ICharacter);

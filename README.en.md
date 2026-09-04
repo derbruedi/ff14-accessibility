@@ -440,6 +440,8 @@ navigation keys above the arrow block.
 - **Ctrl+End** — gathering points (GP) for gatherers
 - **Ctrl+L** — level and missing experience
 - **Shift+L** — rested area and rested bonus
+- **Ctrl+Shift+L** — companion chocobo: rank, stars and the experience
+  left to the next rank
 - **Ctrl+F** — deep dungeon: which dungeon, which floor
 - **Ctrl+Shift+F7** — read the task list of whatever is running (levequest,
   duty, FATE): exactly the lines shown at the edge of the screen, with

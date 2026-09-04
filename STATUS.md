@@ -3,7 +3,90 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-02): AREAL ABSUCHEN — DER LEBENSRAUM IST KEIN PUNKT
+## RELEASE v5.96 (2026-09-04) — OHNE CHOCOBO
+
+Veröffentlicht auf Wunsch des Users, BEVOR der Chocobo fertig ist: Jagdtagebuch
+der Gesellschaft, Areal-Suche, Auto-Lauf fliegt, Selbst-Update über das Menü,
+Zauberbuch der Blaumagie, Tutorial-Fenster EventTutorial.
+
+Der Chocobo-Stand lag dafür im `git stash` und ist danach zurückgeholt worden.
+Gegengeprüft, nicht angenommen: in der Release-DLL kommt "Chocobo Rang" 0-mal
+vor, "Jagdziele der Gesellschaft" und "Suchpunkt" je 2-mal. Der Beweis, dass
+Spieler wirklich v5.96 ziehen, kommt aus dem HERUNTERGELADENEN
+`releases/latest/download/latest.zip`: Manifest trägt 5.96.0.0.
+
+Der Installer war unverändert (keine .cs-Datei neuer als das v5.95-Release), also
+exe + installer.json von v5.95 übernommen — SHA256 vorher gegen die installer.json
+geprüft, sonst bietet der Installer sich endlos selbst zum Update an.
+
+>>> NACH DEM RELEASE BESTÄTIGT: die Kategorie „Jagdziele der Gesellschaft" läuft
+    im Spiel — User am 2026-09-04: "das mit der gesellschaft kannste machen das
+    funktioniert". Knapp, ohne Zahlen; die vorausberechneten Rang-1-Listen sind
+    nicht gegengezählt worden.
+
+>>> WEITER OFFEN: die AREAL-SUCHE (Suchpunkte statt Kartenbeschriftung) ist noch
+    nicht bestätigt — Prüfpunkte weiter unten.
+
+## STAND JETZT (2026-09-04): CHOCOBO-RANG — SCHWELLE AUS DEM SHEET, BEWIESEN
+
+>>> ANLASS: erster Test der neuen Taste Strg+Umschalt+L. Der User: "er sagt das
+    level aber er sagt an wieviel exp der chocobo bis jetzt gesammelt hat nicht
+    wieviel er noch braucht."
+
+>>> DIE URSACHE STAND IM LOG, NICHT IN EINER VERMUTUNG:
+    `[Chocobo] Rang=3 ... xp=57749 array(rang=0 0/0)` — das Nummern-Array, aus
+    dem die Schwelle kommen sollte, war KOMPLETT LEER. Es ist reiner
+    Bildschirmzustand; das Spiel füllt es erst, wenn das Chocobo-Fenster einmal
+    gebaut wurde. Die Rückfall-Ansage („x Erfahrungspunkte gesammelt") lief also
+    richtig — ihr fehlte nur die Quelle.
+
+>>> DIE OFFENE FRAGE WAR DIE SHEET-ZUORDNUNG. `BuddyRank` hat 21 Zeilen für
+    20 Ränge und sagt nicht, ob Zeile n „bei Rang n" oder „bis Rang n" meint.
+    Beide Lesarten waren mit dem einen bekannten Wert vereinbar (57.749 auf
+    Rang 3 → entweder 82.000 oder 124.100 als Ziel). Geraten wurde nicht:
+    die Logzeile wurde erweitert (Balkentext + Roh-Array + BEIDE Sheet-Zeilen),
+    der User hat das Fenster einmal geöffnet, und damit stand es fest:
+
+        array(rang=3 57749/82000)  balkentext='57749/82000'  sheet(zeile3=82000)
+
+    Also: Zeile n = Schwelle BEI Rang n, und `CompanionInfo.CurrentXP` ist der
+    Fortschritt INNERHALB des Rangs, keine Gesamtsumme. Beides in
+    docs/game-api.md festgehalten.
+
+>>> WAS JETZT PASSIERT: `AnnounceChocoboRank` nimmt das SHEET als Grundlage —
+    das ist bei jedem Tastendruck da, auch ohne je geöffnetes Fenster. Das
+    Nummern-Array bleibt als Gegenprobe: ist es frisch (sein `BuddyRank` passt
+    zum Rang), hat sein `MaxExp` Vorrang, weil es das ist, was der Spieler
+    sieht. Weicht es vom Sheet ab, steht das als WARNUNG im Log statt still
+    übergangen zu werden — sonst würde nach einem Patch für alle mit
+    geschlossenem Fenster eine falsche Zahl gesprochen. Letzte Sheet-Zeile ist
+    0: Höchstrang, dann wird kein Rest genannt.
+
+>>> NACHTRAG NACH DEM ZWEITEN TEST (08:42): DIE ZAHL STAND STILL. User: "er
+    aktualisiert das nicht nur wenn ich das fenster noch mal auf mache." Das Log
+    zeigt den Fehler unmittelbar:
+
+        08:42:52  xp=64583  array(rang=3 57749/82000)   <- Ansage nahm 57749
+        08:43:05  xp=64583  array(rang=3 64583/82000)   <- nach erneutem Öffnen
+
+    `CompanionInfo.CurrentXP` war die ganze Zeit richtig. Der Fehler war meiner:
+    ich habe beim frischen Array auch den AKTUELLEN Stand von dort genommen —
+    also einen gemalten Bildschirmwert statt der echten Zahl. Genau der Fall,
+    den die Projektregel „Referenzen zwischenspeichern, nie Werte" beschreibt;
+    das Array ist ein fremder Zwischenspeicher.
+
+>>> JETZT: der aktuelle Stand kommt IMMER aus `CompanionInfo.CurrentXP`. Aus dem
+    Array wird nur noch `MaxExp` gelesen, und das kann nicht veralten, weil es
+    für den Rang fest ist und der Rang geprüft wird.
+
+>>> IM SPIEL ZU PRÜFEN:
+    1. Erfahrung sammeln, ohne das Chocobo-Fenster anzufassen: sinkt die
+       angesagte Restzahl mit?
+    2. Nach einem Neustart, OHNE das Fenster zu öffnen: kommt sofort eine
+       Restzahl statt „gesammelt"?
+    3. Kommt nach einem Rangaufstieg die Schwelle der neuen Stufe?
+
+## VORHER (2026-09-02): AREAL ABSUCHEN — DER LEBENSRAUM IST KEIN PUNKT
 
 >>> ANLASS: erster Test der neuen Kategorie (unten). Der User: "an sich
     funktioniert es aber anscheinend stimmen die wege nicht, ich fliege in die

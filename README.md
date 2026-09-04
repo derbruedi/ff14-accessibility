@@ -453,6 +453,8 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
 - **Strg+L** — Stufe und fehlende Erfahrung
 - **Umschalt+L** — Ruhebereich und Erholungsbonus
+- **Strg+Umschalt+L** — Begleit-Chocobo: Rang, Sterne und fehlende
+  Erfahrung bis zum nächsten Rang
 - **Strg+F** — Tiefes Gewölbe: welches Gewölbe, welche Ebene
 - **Strg+Umschalt+F7** — Aufgabenliste des laufenden Inhalts vorlesen
   (Freibrief, Dungeon, FATE): genau die Zeilen, die am Bildschirmrand
