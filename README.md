@@ -473,6 +473,13 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
   Verbündete, Spieler, Objekte, Inhalte, Alle Inhalte, Quest-Ziele,
   Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
   Tiefen Gewölbe stattdessen nur Gegner, Verbündete, Truhen, Leuchten, Räume)
+  - **FATEs sind auch die Event-Ziele** von Kollaborations-Events wie dem
+    Yo-kai-Watch-Event — diese Events laufen technisch über normale FATEs in
+    bestimmten Gebieten, es gibt keine eigene Anzeige dafür. Die Yo-kai-Uhr
+    selbst ist nur ein Ausrüstungsteil ohne eigenes Radar. Wer die Yo-kai
+    (oder ein anderes Event) sucht: Strg+Bild-ab bis „FATEs" ansagt,
+    Bild-ab/-auf durchblättern, Numpad3 läuft automatisch hin, Strg+Numpad3
+    gibt stattdessen die Gehhilfe.
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung

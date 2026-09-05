@@ -177,8 +177,8 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.98";
-    private const string PluginVersionTag = "Testzweig: vier offene PRs (Ausruestungs-Vergleich, Item-Plaetze, Belegen-Menue, Tastennamen-Sprache)";
+    private const string PluginVersion    = "5.99";
+    private const string PluginVersionTag = "Yo-kai-Event: FATEs-Kategorie deckt Event-Ziele ab";
 
     public Plugin()
     {

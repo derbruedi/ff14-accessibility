@@ -3,7 +3,58 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-05): TESTZWEIG V5.98 — VIER OFFENE PRs AUF test/prs
+## STAND JETZT (2026-09-05): V5.99 — YO-KAI-EVENT: KEINE NEUE KATEGORIE NÖTIG
+
+>>> AUFTRAG: User spielt während des laufenden Yo-kai-Watch-Kollaborations-
+    Events und wollte eine neue Objekt-Browser-Kategorie "Events", die die
+    Yo-kai-Ziele listet (Sehende sehen sie über die Yo-kai-Uhr auf der Karte),
+    damit Numpad3/Gehhilfe dorthin führen.
+
+>>> ANALYSE (ergebnisoffen, vor jeder Code-Änderung):
+    - Recherche (Lodestone, Wiki, Reddit) zeigt: das Yo-kai-Watch-Event
+      läuft komplett über GEWÖHNLICHE FATEs in festgelegten Zonen (Silber/
+      Gold-Wertung bringt Medaillen, siehe Event-Guide). Die "Yo-kai-Uhr" ist
+      nur ein ausrüstbarer Gegenstand ohne eigenes Radar/Addon — es gibt kein
+      UI-Fenster zum Scannen. Keine eigenen Yo-kai-Objekte in der ObjectTable,
+      keine Sonder-BaseIds.
+    - `grep_content` auf `FateService.cs`/`NavigationService.cs`/
+      `AccessibilityStrings.cs` zeigt: die Objekt-Browser-Kategorie "FATEs"
+      EXISTIERT BEREITS seit V5.63 (`38960a9`, "Neue Objekt-Browser-Kategorie
+      'FATEs': aktive Welt-FATEs der Zone finden und per Numpad3 hinlaufen").
+      Sie liest `FateManager.Instance()->Fates` (Name, Level, Progress 0-100%,
+      Position, Preparing/Running), speist die Position als in-Zone
+      `QuestDestination` ein — Numpad3-Auto-Lauf UND Strg+Numpad3-Gehhilfe
+      laufen dadurch schon unverändert über den bestehenden Quest-Pfad.
+    - Per Strg+Bild-ab/-auf erreichbar, DE+EN-Strings vorhanden
+      (`CategoryFateCount`, `FateEntry`, `NoFatesInZone`), in README.md/
+      README.en.md bereits dokumentiert (Zeile ~73/474 bzw. ~72/417).
+      Kategorie ist standardmäßig sichtbar (`ObjectCategoryHidden` ist per
+      Default leer) — kann aber vom User im Sortier-Menü (Strg+F9 o.ä.)
+      versehentlich ausgeblendet oder weit nach hinten verschoben worden
+      sein, was erklären würde, warum sie ihm nicht auffiel.
+    - `FateContext`-Layout (ilspycmd-verifiziert, `docs/game-api.md` Zeile
+      1148-1158) hat KEIN Restzeit-Feld — nur `Progress` (0-100 %). Die
+      Ansage nennt bereits das Maximum an verifizierten Daten; eine Restzeit
+      wurde NICHT erfunden.
+
+>>> ENTSCHEIDUNG: keine neue "Events"-Kategorie gebaut — das wäre eine
+    Duplizierung der bestehenden, bereits funktionierenden "FATEs"-Kategorie
+    gewesen (identische Datenquelle, identischer Navigationspfad). Stattdessen:
+    - `README.md`/`README.en.md`: Hinweis direkt bei der Kategorie-Liste
+      ergänzt, dass FATEs auch die Event-Ziele von Kollaborations-Events wie
+      Yo-kai Watch sind, und wie man sie per Strg+Bild-ab/Numpad3 erreicht.
+    - Versions-Sync 5.98 → 5.99 (`.csproj`, `repo.json`, `Plugin.cs`).
+    - Kein Service-/Navigations-Code geändert — Etappen-Feature (V5.97) und
+      die vier PR-Features (V5.98) bleiben unangetastet.
+
+>>> FALLS DAS NICHT REICHT: sollte der User die FATEs-Kategorie im Spiel
+    testen und dabei feststellen, dass sein Yo-kai tatsächlich NICHT über ein
+    FATE läuft (z.B. weil eine künftige Event-Variante anders funktioniert),
+    braucht es einen In-Game-Dump: Yo-kai-Uhr-Fenster öffnen, falls es doch
+    ein Addon gibt, dessen Namen mit Strg+F5 (Dump-Taste) sichern, damit sich
+    der Adressraum bestimmen lässt.
+
+## STAND DAVOR (2026-09-05): TESTZWEIG V5.98 — VIER OFFENE PRs AUF test/prs
 
 >>> AUFTRAG: nach dem Farb-Stand (Heilmonitor PR #10, Gegnerfarben PR #12, beide
     schon in v5.96/adc386a) und der Etappen-Arbeit (V5.97, 7e815be) sollten alle

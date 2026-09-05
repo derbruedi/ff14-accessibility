@@ -417,6 +417,13 @@ navigation keys above the arrow block.
   levequests, FATEs, gathering points, fishing spots, aetherytes,
   waypoints; inside a deep dungeon: only enemies, allies, treasure, cairns,
   rooms instead)
+  - **FATEs are also the event targets** of collaboration events such as
+    the Yo-kai Watch event — those events run on plain FATEs in specific
+    zones under the hood, there is no separate display for them. The
+    Yo-kai Watch item itself is just gear, not a radar. Looking for the
+    Yo-kai (or any other event): Ctrl+Page Down until it announces "FATEs",
+    Page Down/Up to cycle, Numpad3 auto-walks there, Ctrl+Numpad3 gives the
+    walking guide instead.
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance
