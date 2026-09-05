@@ -45,8 +45,8 @@ public sealed class GatheringService
     private readonly IPluginLog    _log;
 
     // ClassJob row ids (Lumina ClassJob sheet): the two gathering classes.
-    private const uint JobMiner    = 16;
-    private const uint JobBotanist = 17;
+    public const uint JobMiner    = 16;
+    public const uint JobBotanist = 17;
 
     // GatheringType row ids: Miner does 0 (Mining) + 1 (Quarrying), Botanist does
     // 2 (Logging) + 3 (Harvesting). Verified by name in the probe log 2026-07-27
@@ -56,6 +56,19 @@ public sealed class GatheringService
 
     // The LGB files under a territory's level folder that can hold gathering nodes.
     private static readonly string[] LgbNames = { "planevent.lgb", "bg.lgb", "planmap.lgb", "planlive.lgb" };
+
+    /// <summary>How many map transitions away a zone may be and still show up
+    /// in <see cref="GetSpotsAcrossZones"/>. Parsing every LGB in the game on
+    /// every keypress is not affordable (see class docs); this bounds the scan
+    /// to the current zone and its near neighbourhood - the "other areas can
+    /// already lead me there" case the user asked for, without a world-wide
+    /// pre-scan. Mirrors the reachability idea in DutyEntranceService, just
+    /// depth-limited because a hop distance costs a full LGB parse here.</summary>
+    private const int MaxZoneHops = 2;
+
+    // Territory -> its gathering spots, read once (LGB layout never changes at
+    // runtime). Mirrors AreaRangeService._byTerritory.
+    private readonly Dictionary<uint, List<GatherSpotInfo>> _byTerritory = [];
 
     public GatheringService(
         IObjectTable objectTable,
@@ -81,16 +94,96 @@ public sealed class GatheringService
     /// </summary>
     public List<GatherSpotInfo> GetSpotsInCurrentZone()
     {
-        var result = new List<GatherSpotInfo>();
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return new List<GatherSpotInfo>();
+
+        var territory = (uint)_clientState.TerritoryType;
+        var allowedTypes = AllowedGatheringTypes(player.ClassJob.RowId);
+        var spots = GetAllSpotsInZone(territory)
+            .Where(s => allowedTypes == null || allowedTypes.Contains(s.GatheringTypeId))
+            .ToList();
+
+        var playerPos = player.Position;
+        return spots
+            .OrderBy(s => PlacesService.Distance2D(playerPos, s.Position))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Every gathering spot of ANY zone reachable from the player's current map
+    /// within <see cref="MaxZoneHops"/> transitions, filtered to the active
+    /// job's types, current zone first (then nearest by walk/hop distance).
+    /// This is the cross-zone counterpart of <see cref="GetSpotsInCurrentZone"/>
+    /// - "other areas can already lead me there", same idea as quest goals and
+    /// hunting targets (user request, V6.00). Empty when the player is not on a
+    /// gathering class, or none are in range.
+    /// </summary>
+    public List<(GatherSpotInfo Spot, uint TerritoryId, uint MapId, bool InCurrentZone)> GetSpotsAcrossZones()
+    {
+        var result = new List<(GatherSpotInfo Spot, uint TerritoryId, uint MapId, bool InCurrentZone)>();
         var player = _objectTable.LocalPlayer;
         if (player == null) return result;
 
-        var territory = (ushort)_clientState.TerritoryType;
-        if (!_data.GetExcelSheet<TerritoryType>().TryGetRow(territory, out var tt)) return result;
+        var allowedTypes = AllowedGatheringTypes(player.ClassJob.RowId);
+        if (allowedTypes == null) return result;   // not a gathering class - hide, not "show everything"
+
+        var currentTerritory = (uint)_clientState.TerritoryType;
+        var currentMap       = _clientState.MapId;
+        var playerPos         = player.Position;
+
+        // Every map within reach, plus the current one at distance 0 (GetHopDistances
+        // already includes it, kept explicit so a MapId==0 edge case still works).
+        var hopsByMap = _places.GetHopDistances();
+        var territories = new List<(uint TerritoryId, uint MapId, int Hops)> { (currentTerritory, currentMap, 0) };
+        foreach (var (mapId, hops) in hopsByMap)
+        {
+            if (mapId == currentMap || hops > MaxZoneHops) continue;
+            var territoryId = _places.GetTerritoryOfMap(mapId);
+            if (territoryId == 0 || territoryId == currentTerritory) continue;
+            territories.Add((territoryId, mapId, hops));
+        }
+
+        foreach (var (territoryId, mapId, hops) in territories)
+        {
+            var inCurrentZone = territoryId == currentTerritory;
+            foreach (var spot in GetAllSpotsInZone(territoryId))
+            {
+                if (!allowedTypes.Contains(spot.GatheringTypeId)) continue;
+                result.Add((spot, territoryId, mapId, inCurrentZone));
+            }
+        }
+
+        // In-zone first (real distance), then by zone hop distance, then by
+        // the spot's own distance to the transition-adjacent zone centre - the
+        // same priority order the quest/hunt destinations already use.
+        var hopsOf = territories.ToDictionary(t => t.TerritoryId, t => t.Hops);
+        return result
+            .OrderByDescending(x => x.InCurrentZone)
+            .ThenBy(x => hopsOf.GetValueOrDefault(x.TerritoryId, MaxZoneHops + 1))
+            .ThenBy(x => x.InCurrentZone
+                ? PlacesService.Distance2D(playerPos, x.Spot.Position)
+                : 0f)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Every gathering spot of one zone, EVERY type, read once from its LGB
+    /// layout files and cached (layout never changes at runtime - mirrors
+    /// AreaRangeService._byTerritory). The job filter is applied by the
+    /// caller, not here, so the same cache serves every class and survives a
+    /// class change without re-parsing.
+    /// </summary>
+    private List<GatherSpotInfo> GetAllSpotsInZone(uint territoryId)
+    {
+        if (_byTerritory.TryGetValue(territoryId, out var cached)) return cached;
+
+        var result = new List<GatherSpotInfo>();
+        _byTerritory[territoryId] = result;
+
+        if (!_data.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var tt)) return result;
         var bg = tt.Bg.ExtractText();
         if (string.IsNullOrWhiteSpace(bg)) return result;
 
-        var allowedTypes = AllowedGatheringTypes(player.ClassJob.RowId);
         var gpSheet = _data.GetExcelSheet<GatheringPoint>();
 
         // Collect every gathering placement from the territory's LGB files, keyed
@@ -127,7 +220,6 @@ public sealed class GatheringService
                     if (baseRef is not { } gpBase) continue;
 
                     var typeId = gpBase.GatheringType.RowId;
-                    if (allowedTypes != null && !allowedTypes.Contains(typeId)) continue;
 
                     var t = obj.Transform.Translation;
                     var pos = new Vector3(t.X, t.Y, t.Z);
@@ -151,15 +243,12 @@ public sealed class GatheringService
         }
 
 #if DEBUG
-        _log.Info($"[Gather] Zone {territory} Bg='{bg}': {byPoint.Count} Sammelstellen (Job-Filter {(AllowedGatheringTypes(player.ClassJob.RowId) == null ? "aus" : "an")})");
+        _log.Info($"[Gather] Zone {territoryId} Bg='{bg}': {byPoint.Count} Sammelstellen (alle Typen, ungefiltert).");
         foreach (var s in result)
             _log.Info($"[Gather]   GP={s.GatheringPointId} Typ={s.GatheringTypeId}('{s.TypeName}') Stufe={s.Level} Welt=({s.Position.X:F1}|{s.Position.Z:F1})");
 #endif
 
-        var playerPos = player.Position;
-        return result
-            .OrderBy(s => PlacesService.Distance2D(playerPos, s.Position))
-            .ToList();
+        return result;
     }
 
     /// <summary>
@@ -225,7 +314,7 @@ public sealed class GatheringService
     /// <summary>Drops the parenthetical action ("Minenarbeiter (Herausbrechen)"
     /// -> "Minenarbeiter") for a shorter spoken label; the action verb is noise
     /// once the player is on the matching class.</summary>
-    private static string ShortTypeName(string typeName)
+    public static string ShortTypeName(string typeName)
     {
         var paren = typeName.IndexOf('(');
         return paren > 0 ? typeName[..paren].Trim() : typeName;

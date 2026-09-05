@@ -177,8 +177,11 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    private const string PluginVersion    = "5.99";
-    private const string PluginVersionTag = "Yo-kai-Event: FATEs-Kategorie deckt Event-Ziele ab";
+    // 6.00: Sammelpunkte sind jetzt eine klassenbezogene, kartenuebergreifende
+    // Kategorie (nur Minenarbeiter/Botaniker) - siehe GatheringService und
+    // NavigationService.CycleGatheringDestination.
+    private const string PluginVersion    = "6.00";
+    private const string PluginVersionTag = "Sammelpunkte: klassenbezogen und kartenuebergreifend";
 
     public Plugin()
     {
@@ -418,7 +421,7 @@ public sealed class Plugin : IDalamudPlugin
         // Farb-Rufnamen fuer die Gegner im Kampf. VOR der Navigation, weil deren
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _fates, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);

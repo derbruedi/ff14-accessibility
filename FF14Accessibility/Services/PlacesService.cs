@@ -391,6 +391,15 @@ public sealed class PlacesService
             : string.Empty;
     }
 
+    /// <summary>The territory a map belongs to, 0 when unknown - the bridge
+    /// between the LGB layout's TerritoryType keys and the hop-routing graph
+    /// (<see cref="GetHopDistances"/>, <see cref="FindFirstHopToMap"/>), which
+    /// works on Map ids. Plain sheet lookup, no cache needed.</summary>
+    public uint GetTerritoryOfMap(uint mapId)
+        => mapId != 0 && _data.GetExcelSheet<Map>().TryGetRow(mapId, out var map)
+            ? map.TerritoryType.RowId
+            : 0;
+
     /// <summary>
     /// Wie viele Zonenwechsel von der aktuellen Karte bis zu jeder erreichbaren
     /// Karte - EIN Breitensuchlauf ueber denselben Uebergangsgraphen, den

@@ -968,6 +968,18 @@ public static partial class AccessibilityStrings
     public static string NoFishingSpots =>
         IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
 
+    /// <summary>Header for the Sammelpunkte category (V6.00): total reachable
+    /// spots (current zone + neighbourhood) and how many are in THIS zone -
+    /// same two-number shape as CategoryHuntingCount.</summary>
+    public static string CategoryGatheringSpotCount(int total, int here) =>
+        here > 0
+            ? (IsGerman
+                ? $"Sammelpunkte: {total} erreichbar, {here} in diesem Gebiet."
+                : $"Gathering spots: {total} reachable, {here} in this area.")
+            : (IsGerman
+                ? $"Sammelpunkte: {total} erreichbar, keiner in diesem Gebiet."
+                : $"Gathering spots: {total} reachable, none in this area.");
+
     /// <summary>Spoken the moment the game reports the player can cast from where
     /// they stand and face - the orientation cue a blind fisher rotates until
     /// they hear (FishingEventHandler.CanFish flips true in the ready stance).</summary>

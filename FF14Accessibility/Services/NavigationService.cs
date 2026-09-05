@@ -113,6 +113,7 @@ public sealed class NavigationService
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService _places;
     private readonly FishingService _fishing;
+    private readonly GatheringService _gathering;
     private readonly FateService _fates;
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
@@ -149,6 +150,7 @@ public sealed class NavigationService
         QuestMarkerService questMarkers,
         PlacesService places,
         FishingService fishing,
+        GatheringService gathering,
         FateService fates,
         RouteService routes,
         ShopNpcService shops,
@@ -177,6 +179,7 @@ public sealed class NavigationService
         _questMarkers = questMarkers;
         _places = places;
         _fishing = fishing;
+        _gathering = gathering;
         _fates = fates;
         _routes = routes;
         _shops = shops;
@@ -635,7 +638,11 @@ public sealed class NavigationService
         (NavCategory.QuestNpcs,       new[] { ObjectKind.EventNpc }),
         (NavCategory.QuestObjects,    new[] { ObjectKind.EventObj, ObjectKind.Treasure }),
         (NavCategory.QuestEnemies,    new[] { ObjectKind.BattleNpc }),
-        (NavCategory.GatheringNodes,  new[] { ObjectKind.GatheringPoint }),
+        // Sammelpunkte: keine Objekttabellen-Kategorie mehr (V6.00). Quelle ist
+        // GatheringService (Zonen-Layout statt geladener Objekte), gefiltert auf
+        // die AKTIVE Sammlerklasse und kartenuebergreifend - siehe
+        // IsGatheringSpotCategory / CycleGatheringDestination.
+        (NavCategory.GatheringNodes,  null),
         // FATEs kommen aus dem FateManager (FateService), nicht aus der ObjectTable:
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
         // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
@@ -875,6 +882,7 @@ public sealed class NavigationService
     private bool IsBlueMagicCategory       => Categories[_categoryIndex].Cat == NavCategory.BlueMagic;
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
     private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
+    private bool IsGatheringSpotCategory   => Categories[_categoryIndex].Cat == NavCategory.GatheringNodes;
 
     /// <summary>
     /// The quest objective selected via the browser, or null when the browser
@@ -1165,6 +1173,14 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsGatheringSpotCategory)
+        {
+            var spots = _gathering.GetSpotsAcrossZones();
+            var here = spots.Count(s => s.InCurrentZone);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryGatheringSpotCount(spots.Count, here));
+            return;
+        }
+
         if (IsFateCategory)
         {
             var fates = _fates.GetActiveFates();
@@ -1292,6 +1308,12 @@ public sealed class NavigationService
         if (IsFishingCategory)
         {
             CycleFishingDestination(direction, player);
+            return;
+        }
+
+        if (IsGatheringSpotCategory)
+        {
+            CycleGatheringDestination(direction, player);
             return;
         }
 
@@ -2054,6 +2076,73 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Sammelpunkte: Minenarbeiter/Gaertner-Knoten, kartenuebergreifend ──
+    //
+    // Spots come from GatheringService (zone LAYOUT, not the object table), so
+    // the category answers even for nodes the game has not spawned yet - the
+    // same "what is THERE, not just what is loaded" idea as the hunting log and
+    // world duties. In-zone entries are a full 3D position like a FATE; entries
+    // in another zone are modelled exactly like a cross-zone quest goal
+    // (TerritoryTypeId/MapId set, InCurrentZone=false), so Numpad3 and the walk
+    // guide route to the map transition first without any change to Plugin.cs -
+    // same downstream path FATEs and quest goals already use.
+    private void CycleGatheringDestination(int direction, IGameObject player)
+    {
+        var spots = _gathering.GetSpotsAcrossZones();
+        if (spots.Count == 0)
+        {
+            SelectedQuestDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoGatheringSpotsJob);
+            return;
+        }
+
+        var count = spots.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var (spot, territoryId, mapId, inCurrentZone) = spots[_cycleIndex];
+
+        SelectedQuestDestination = new QuestDestination(
+            QuestName: GatheringService.ShortTypeName(spot.TypeName),
+            Detail: string.Empty,
+            Position: spot.Position,
+            Radius: 0f,
+            TerritoryTypeId: (ushort)territoryId,
+            MapId: mapId,
+            InCurrentZone: inCurrentZone,
+            // Kein Freibrief/keine Quest - wie bei FATEs bleibt der Kind-Vorsatz
+            // stumm, die Ansage unten sagt selbst, was es ist.
+            Kind: QuestKind.Unknown,
+            Level: spot.Level);
+
+        string text;
+        var typeName = GatheringService.ShortTypeName(spot.TypeName);
+        var level = AccessibilityStrings.LevelPrefix(spot.Level);
+        if (inCurrentZone)
+        {
+            text = $"{typeName}, {level}" +
+                   $"{FormatDistance(Distance2D(player.Position, spot.Position))}, " +
+                   $"{CalculateDirection(player, spot.Position)}.";
+        }
+        else
+        {
+            var zone = _places.GetMapName(mapId);
+            var hop  = _places.FindFirstHopToMap(mapId, out var hops);
+            text = $"{typeName}, {level}" +
+                   (string.IsNullOrEmpty(zone) ? AccessibilityStrings.InAnotherArea : AccessibilityStrings.InArea(zone));
+            if (hop != null)
+            {
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
+            }
+        }
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Gather] Auswahl: {text} pos=({spot.Position.X:F1}|{spot.Position.Z:F1}) Zone={territoryId}");
+        _tolk.SpeakInterrupt(text);
+    }
+
     // ── Jagdziele: was der aktuelle Rang noch verlangt ──
     //
     // Targets come from the hunting log (HuntingLogService), not the object
@@ -2588,6 +2677,15 @@ public sealed class NavigationService
         if (Categories[index].Cat == NavCategory.DungeonRoute)
             return _dungeonRoute.GetStepsForCurrentZone().Count > 0;
 
+        // Sammelpunkte (V6.00): NUR sichtbar, solange Minenarbeiter/Botaniker
+        // aktiv ist - Angler ist hier bewusst aussen vor (siehe GatheringService,
+        // Angelplaetze bleiben ihre eigene, zonenlokale Kategorie). Verschaerfung
+        // gegenueber der alten Objekttabellen-Regel unten (die auch bei Kaempfern
+        // zeigte, sofern ein Knoten geladen war): der User wollte die Kategorie
+        // fuer Nicht-Sammler ganz weg, nicht nur leer.
+        if (Categories[index].Cat == NavCategory.GatheringNodes)
+            return IsGatheringSpotClass() && _gathering.GetSpotsAcrossZones().Count > 0;
+
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
         return IsGatheringClass() || GetObjectsOfKinds(kinds).Count > 0;
@@ -2628,6 +2726,19 @@ public sealed class NavigationService
         }
 
         return isGatherer;
+    }
+
+    /// <summary>
+    /// True only for Miner/Botanist - the two classes GatheringService actually
+    /// has node data for (mining/quarrying/logging/harvesting). Deliberately
+    /// narrower than <see cref="IsGatheringClass"/> (which also covers Fisher):
+    /// the Sammelpunkte category is class-specific per the user's V6.00
+    /// request, and Fisher's spots are its own, separate FishingSpots category.
+    /// </summary>
+    private bool IsGatheringSpotClass()
+    {
+        var job = _objectTable.LocalPlayer?.ClassJob.RowId;
+        return job is GatheringService.JobMiner or GatheringService.JobBotanist;
     }
 
     /// <summary>

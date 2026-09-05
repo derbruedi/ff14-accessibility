@@ -480,6 +480,18 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
     (oder ein anderes Event) sucht: Strg+Bild-ab bis „FATEs" ansagt,
     Bild-ab/-auf durchblättern, Numpad3 läuft automatisch hin, Strg+Numpad3
     gibt stattdessen die Gehhilfe.
+  - **Sammelpunkte sind klassenbezogen und kartenübergreifend** (seit V6.00):
+    die Kategorie zeigt nur Erz-/Gestein-Vorkommen für Minenarbeiter bzw.
+    Holz-/Pflanzen-Vorkommen für Botaniker, jeweils passend zur AKTUELLEN
+    Klasse — auf jeder anderen Klasse (auch Fischer) fehlt die Kategorie ganz
+    im Durchblättern. Gelistet werden Punkte im aktuellen Gebiet UND in
+    Nachbargebieten (bis zu zwei Kartenwechsel entfernt); bei einem Punkt in
+    einer anderen Zone nennt die Ansage deren Namen und den Übergang, über
+    den man dort hinkommt. Numpad3 läuft in der eigenen Zone direkt zum
+    Punkt, in einer anderen Zone erst zum Übergang — nach dem Zonenwechsel
+    zeigt erneutes Bild-ab/-auf den eigentlichen Punkt. Strg+Numpad3
+    (Gehhilfe) funktioniert genauso für beide Fälle. Angelplätze sind davon
+    unabhängig und bleiben ihre eigene, zonenlokale Kategorie.
 - **Strg+Bild-auf** — Objekt-Kategorie zurück
 
 ### Laufen und Führung

@@ -424,6 +424,18 @@ navigation keys above the arrow block.
     Yo-kai (or any other event): Ctrl+Page Down until it announces "FATEs",
     Page Down/Up to cycle, Numpad3 auto-walks there, Ctrl+Numpad3 gives the
     walking guide instead.
+  - **Gathering points are class-specific and cross-zone** (since V6.00):
+    the category only lists ore/stone nodes for Miner, or wood/plant nodes
+    for Botanist, matching whichever class is ACTIVE right now — on any
+    other class (including Fisher) the category is missing entirely from
+    the cycle. It lists nodes in the current zone AND in neighbouring zones
+    (up to two map transitions away); for a node in another zone the
+    announcement names that zone and the transition to reach it. Numpad3
+    walks straight to the node inside the current zone, or to the
+    transition first when it's in another zone - cycling again after the
+    zone change then shows the actual node. Ctrl+Numpad3 (walk guide) works
+    the same way for both cases. Fishing spots are unaffected and remain
+    their own, zone-local category.
 - **Ctrl+Page Up** — previous object category
 
 ### Walking and guidance

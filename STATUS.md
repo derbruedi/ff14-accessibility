@@ -3,7 +3,99 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-05): V5.99 — YO-KAI-EVENT: KEINE NEUE KATEGORIE NÖTIG
+## STAND JETZT (2026-09-05): V6.00 — SAMMELPUNKTE: KLASSENBEZOGEN + KARTENUEBERGREIFEND
+
+>>> AUFTRAG: die bestehende Sammelpunkte-Kategorie soll (1) nur Sammelpunkte
+    der AKTUELLEN Sammlerklasse zeigen (Minenarbeiter -> Erzadern, Botaniker ->
+    Holz/Pflanzen; Nicht-Sammler: Kategorie ganz weg) und (2) kartenuebergreifend
+    funktionieren wie andere Ziele (erst zur Zone, dann zum Punkt).
+
+>>> ANALYSE (vor jeder Aenderung):
+    - Die bisherige Kategorie "Sammelpunkte" (`NavCategory.GatheringNodes`) war
+      eine reine Objekttabellen-Kategorie (`ObjectKind.GatheringPoint`): sie
+      zeigte nur Knoten, die das Spiel GERADE geladen hatte, blieb aber auch
+      fuer Kaempferklassen sichtbar, sobald zufaellig einer in Reichweite war
+      (`IsCategoryAvailable`, alte Regel `IsGatheringClass() ||
+      GetObjectsOfKinds(kinds).Count > 0`) — genau das vom User referenzierte
+      Muster fuer klassenabhaengige Sichtbarkeit, nur nicht scharf genug.
+    - `GatheringService.cs` gab es bereits (nur per `/acc gather`
+      erreichbar, nicht im Objekt-Browser verdrahtet): liest die LGB-
+      Layoutdatei der AKTUELLEN Zone, kennt so jeden Sammelpunkt der Zone
+      (auch ungeladene), gefiltert nach GatheringType (Miner: 0/1, Botanist:
+      2/3). `GatheringPoint`/`GatheringPointBase`-Sheets fuehren KEINE
+      TerritoryType-Spalte — die Zonen-Zuordnung kommt ausschliesslich aus
+      der LGB-Datei jeder Zone einzeln, anders als z.B. bei Weltinhalten
+      (Level-Sheet mit Territory-Spalte).
+    - Kartenuebergreifendes Routing existiert schon fuer Quest-/Freibrief-/
+      FATE-/Jagdziele: eine `QuestDestination` (Position, TerritoryTypeId,
+      MapId, InCurrentZone) fliesst in `NavigationService.SelectedQuestDestination`
+      — der EINZIGE Zustand, den Numpad3-Auto-Lauf und Strg+Numpad3-Gehhilfe
+      lesen (`Plugin.cs TryResolveMarkerDestination`). Ist die Zielzone nicht
+      die aktuelle, laufen beide zum ERSTEN Kartenuebergang der Route
+      (`PlacesService.FindFirstHopToMap`, Breitensuche ueber den Kartengraphen)
+      statt zum Ziel selbst; nach dem Zonenwechsel zeigt erneutes Bild-Hoch/
+      -Runter das eigentliche Ziel in der neuen Zone. FATEs nutzen exakt
+      diesen Mechanismus fuer ein artfremdes Ziel — der Bauplan fuer
+      Sammelpunkte.
+    - Ein Scan ALLER Freiluft-Zonen (LGB-Parsing) bei jedem Kategorie-Wechsel
+      ist nicht vertretbar (kein einmaliger Sheet-Scan wie bei Weltinhalten
+      moeglich). Loesung: Kartengraph-Suchradius wie `DutyEntranceService`/
+      `PlacesService.GetHopDistances()` ihn fuer Reichweitensortierung nutzen
+      — nur Zonen bis 2 Kartenwechsel von der aktuellen werden mit LGB-Daten
+      befuellt, Ergebnis pro Zone gecached (Layoutdateien aendern sich zur
+      Laufzeit nie, wie bei `AreaRangeService._byTerritory`).
+
+>>> UMGESETZT:
+    - `PlacesService.cs`: `GetMapOfTerritory(territoryId)` (gecachte
+      Umkehrtabelle Territory->Map, gebaut aus dem Map-Sheet) und
+      `GetTerritoryOfMap(mapId)` (Vorwaertsrichtung, einfacher Sheet-Lookup) —
+      die Bruecke zwischen dem LGB-Territory-Raum und dem
+      Karten-Uebergangsgraphen (`GetHopDistances`/`FindFirstHopToMap`).
+    - `GatheringService.cs`: `GetAllSpotsInZone(territoryId)` ersetzt die
+      alte, jobgefilterte Einzelzonen-Methode — liest jetzt ALLE Typen einer
+      beliebigen Zone (gecached in `_byTerritory`), Jobfilter wandert zum
+      Aufrufer (ueberlebt Klassenwechsel ohne Neu-Parsing). Neu:
+      `GetSpotsAcrossZones()` — BFS via `PlacesService.GetHopDistances()`
+      bis Tiefe 2, sammelt Sammelpunkte der aktuellen + erreichbaren Zonen,
+      sortiert aktuelle Zone zuerst (nach Entfernung), dann nach Hop-Distanz.
+      Gibt fuer Nicht-Sammler (Miner/Botanist) eine LEERE Liste zurueck —
+      bewusst schaerfer als die alte "zeige alles"-Regel bei fehlendem
+      Klassenfilter, weil der User die Kategorie fuer Nicht-Sammler ganz weg
+      wollte. Angler bleibt aussen vor (siehe "Offen" unten).
+    - `NavigationService.cs`: `NavCategory.GatheringNodes` ist keine
+      Objekttabellen-Kategorie mehr (`Kinds: null`, wie FATEs/Angelplaetze).
+      Neue `CycleGatheringDestination` baut aus jedem Treffer eine
+      `QuestDestination` (in-Zone: volle 3D-Position wie ein FATE; andere
+      Zone: `TerritoryTypeId`/`MapId` gesetzt, `InCurrentZone=false`) und
+      setzt `SelectedQuestDestination` — dadurch funktionieren Numpad3 UND
+      die Gehhilfe fuer BEIDE Faelle, ohne `Plugin.cs` anzufassen (derselbe
+      Pfad, den FATEs/Quest-/Jagdziele schon nutzen). `IsCategoryAvailable`
+      fuer Sammelpunkte: neue Regel `IsGatheringSpotClass() &&
+      GetSpotsAcrossZones().Count > 0` — NUR Miner/Botanist (nicht Fisher,
+      nicht Kaempfer), Kategorie fehlt fuer alle anderen komplett im
+      Durchblaettern statt nur leer zu antworten.
+    - `AccessibilityStrings.cs`: neue Kopfansage `CategoryGatheringSpotCount`
+      (Gesamtzahl erreichbar + Anzahl in dieser Zone, DE+EN, gleiche Form wie
+      `CategoryHuntingCount`). Eintrags-Ansage nutzt bestehende Bausteine
+      (`LevelPrefix`, `InArea`/`InAnotherArea`, `RouteViaHop`,
+      `NumpadWalksToTransition`, `Counter`) — keine neuen Satzmuster erfunden.
+    - Versions-Sync 5.99 → 6.00 (`.csproj`, `repo.json`, `Plugin.cs`).
+
+>>> OFFEN:
+    - **Angelplaetze bleiben zonenlokal.** `FishingService.cs` liest weiterhin
+      nur die aktuelle Zone (eigene, unveraenderte Kategorie "Angelplaetze").
+      Das FishingSpot-Sheet haette vermutlich aehnliche Cross-Zone-Moeglichkeiten
+      wie GatheringPoint, wurde in diesem Schritt aber bewusst nicht angefasst
+      (User-Vorgabe: "wenn zu komplex, erst mal nur aktuelle Zone"). Falls
+      gewuenscht: gleiches Muster (BFS + Zonen-Cache) auf FishingService
+      uebertragen.
+    - Suchradius 2 Kartenwechsel ist ein Kompromiss (LGB-Parsing-Kosten pro
+      Zone); bei Bedarf spaeter konfigurierbar machen.
+    - Getestet nur per Build/Log-Analyse, NICHT im laufenden Spiel — der User
+      muss die Kategorie in-game mit Miner/Botanist/einer Kaempferklasse und
+      an einem echten Zonenuebergang pruefen (siehe README/Testschritte).
+
+## STAND DAVOR (2026-09-05): V5.99 — YO-KAI-EVENT: KEINE NEUE KATEGORIE NÖTIG
 
 >>> AUFTRAG: User spielt während des laufenden Yo-kai-Watch-Kollaborations-
     Events und wollte eine neue Objekt-Browser-Kategorie "Events", die die
