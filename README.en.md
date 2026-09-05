@@ -251,6 +251,13 @@ cues — including braille display output and automatic walking.
   paints that hint as a symbol onto the icon — a text reader never gets it.
 - Read all equipped gear at once; equip recommended gear using the game's
   own optimizer.
+- **Comparison against what you wear**: the game puts a second column
+  next to the tooltip and paints the differences green and red — none of
+  which reaches a screen reader. One key turns that into a table: the
+  verdict first ("Better in 3 of 5"), then one value per row with both
+  sides and the difference, plus materia, empty sockets and who may wear
+  the piece. The numbers come out of the game's own window; nothing is
+  recalculated.
 - Inventory and gil on demand.
 
 ### Hotbars
@@ -463,6 +470,11 @@ navigation keys above the arrow block.
 ### Gear
 
 - **Ctrl+F6** — read equipped gear (with item level and stats)
+- **Ctrl+Shift+F12** — open the gear comparison as a table while the
+  cursor sits on a piece of gear: the title says whether it is better,
+  and below it every value is one row carrying both sides ("Defence: 19,
+  equipped 7, plus 12"). Numpad 8 and 2 browse, Numpad 0 repeats a row,
+  Numpad 4 or Delete closes.
 - **Ctrl+F7** — equip recommended gear (the game's own optimizer)
 - **Ctrl+F8** — random appearance (character creation only)
 

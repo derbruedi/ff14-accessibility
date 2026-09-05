@@ -263,6 +263,13 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
   bekommt ihn nie zu sehen.
 - Angelegte Ausrüstung komplett vorlesen; empfohlene Ausrüstung mit dem
   Spiel-eigenen Optimierer anlegen.
+- **Vergleich mit dem angelegten Teil**: das Spiel stellt neben den
+  Tooltip eine zweite Spalte und malt die Unterschiede grün und rot —
+  beides ist für einen Bildschirmleser nicht da. Auf Tastendruck wird
+  daraus eine Tabelle: zuerst das Urteil („Besser in 3 von 5"), dann ein
+  Wert je Zeile mit beiden Seiten und dem Unterschied, dazu Materia,
+  freie Plätze und wer das Teil tragen kann. Die Zahlen kommen aus dem
+  Fenster des Spiels und werden nicht nachgerechnet.
 - Inventar und Gil auf Tastendruck.
 
 ### Aktionsleisten (Hotbars)
@@ -478,6 +485,12 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 ### Ausrüstung
 
 - **Strg+F6** — angelegte Ausrüstung vorlesen (mit Stufe und Werten)
+- **Strg+Umschalt+F12** — Ausrüstungs-Vergleich als Tabelle öffnen,
+  solange der Zeiger auf einem Ausrüstungsteil steht: die Überschrift
+  sagt, ob es besser ist, darunter steht ein Wert je Zeile mit beiden
+  Seiten („Verteidigung: 19, angelegt 7, plus 12"). Nummernblock 8 und 2
+  blättern, Nummernblock 0 wiederholt eine Zeile, Nummernblock 4 oder
+  Entf schließt.
 - **Strg+F7** — empfohlene Ausrüstung anlegen (Spiel-eigener Optimierer)
 - **Strg+F8** — zufälliges Aussehen (nur in der Charaktererstellung)
 

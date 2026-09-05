@@ -64,6 +64,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly LootRollService    _lootRolls;
     private readonly EquipmentService   _equipment;
     private readonly GearInfoService    _gearInfo;
+    // [Ausruestungs-Vergleich] Sagt das Vergleichsfenster des Spiels an.
+    private readonly ItemCompareService _itemCompare;
     private readonly QuestMarkerService _questMarkers;
     private readonly PlacesService      _places;
     private readonly FishingService     _fishing;
@@ -313,6 +315,10 @@ public sealed class Plugin : IDalamudPlugin
         _cue          = new CueService(_config, Log);
         _beacon       = new BeaconService(_config, _tolk, _cue, Log);
         _gearInfo     = new GearInfoService(DataManager, Log);
+        // [Ausruestungs-Vergleich] Braucht nur das Fenster und die Sprachausgabe;
+        // _gearInfo liefert die vollen Klassennamen, weil das Fenster selbst nur
+        // die Abkuerzungsliste fuehrt ("ARC BRD").
+        _itemCompare  = new ItemCompareService(GameGui, _tolk, _gearInfo, Log);
         // Wohin man aus einer Gefahrenflaeche heraus laufen muss. Vor der
         // Navigation angelegt, weil die den Peil-Ton fuehrt und die Flucht
         // darauf Vorrang hat; der Kampf fuettert sie mit den Flaechen.
@@ -1081,6 +1087,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Bestiarium",     _config.KeyBestiary),
             ("Benachrichtigung", _config.KeyNotification),
             ("Ausrüstung",     _config.KeyReadEquipment),
+            ("Ausrüstung vergleichen", _config.KeyItemCompare),
             ("Beste Ausrüstung", _config.KeyEquipBest),
             ("Zufälliges Aussehen", _config.KeyRandomLook),
             ("Skill-Menü",     _config.KeySkillMenu),
@@ -2002,6 +2009,24 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyPluginsConfig)) _dalamudPlugins.OpenConfigOfSelected();
         if (IsJustPressed(_config.KeyNotification))  _uiReader.ActivateNotification();
         if (IsJustPressed(_config.KeyReadEquipment)) _equipment.ReadEquipment();
+        // [Ausruestungs-Vergleich] Eigene Taste statt ReadCurrentFocus: der
+        // Gegenstands-Tooltip dort soll unveraendert weiterlesen.
+        //
+        // Oeffnet die Tabelle im GEMEINSAMEN Menue-Rahmen (SpokenMenu): Urteil als
+        // Titel, ein Wert je Zeile, Nummernblock 8 und 2 blaettern, 4 zurueck, 6
+        // wiederholt. Kein eigener Tastenleser dafuer - die zwei Spalten des
+        // Spielfensters stecken in der Zeile, nicht in einem zweiten Cursor,
+        // gerade damit 4 und 6 hier dasselbe bedeuten wie in jedem anderen Menue.
+        //
+        // Geschlossen wird wie ueberall mit Nummernblock 4 oder Entf, nicht mit
+        // dieser Taste: bei offenem Menue bricht die Tastenauswertung weiter oben
+        // schon ab (_menu.HandleKeys), diese Zeile wird dann gar nicht erreicht.
+        if (IsJustPressed(_config.KeyItemCompare))
+        {
+            var table = _itemCompare.BuildTable();
+            if (table == null) _tolk.SpeakInterrupt(AccessibilityStrings.CompareUnavailable);
+            else               _menu.Open(table);
+        }
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();

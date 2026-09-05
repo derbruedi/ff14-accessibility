@@ -1748,6 +1748,121 @@ Wird von der GENERISCHEN Listen-Navigation erfasst (nicht unterdrueckt, hat eine
   `ReadComponentTextById` id 4/7/10) → „Name, X Staatstaler, Besitz Y"; eingehaengt im
   `name switch` von `TrackListIndices`. Stabiler Text ⇒ `idx|text`-Dedup killt das Doppel.
 
+## Ausruestungs-Vergleich `ItemDetailCompare` (Struct + Live-Log, 2026-08-30)
+
+Das Fenster, das beim Zeigen auf ein Ausruestungsteil NEBEN dem Tooltip aufgeht und
+den Unterschied zum angelegten Teil zeigt. Fuer einen Sehenden steht die Antwort dort
+FARBIG (gruen hoch, rot runter); im Text steht sie ebenfalls, aber nur in den
+AtkValues, nicht in den Textknoten.
+
+- Addon-Name: `ItemDetailCompare` (aus dem `AddonAttribute` auf
+  `FFXIVClientStructs.FFXIV.Client.UI.AddonItemDetailCompare`). Der normale Tooltip
+  daneben heisst `ItemDetail`.
+- **Der Inhalt ist STRUKTURIERT** — kein Textknoten-Abklappern noetig.
+  `AddonItemDetailCompare.AtkValuesArray` liegt ueber `AtkValues`. `AtkValue` ist
+  16 Bytes, ein Byte-Offset im Struct geteilt durch 16 ist also der Index.
+- **349 Werte**, in-game bestaetigt (neun Hover, Log 2026-08-30, `count=349` jedes Mal):
+  vier `ComparedItem`-Bloecke zu je 86 Werten, dann fuenf Einzelwerte.
+  - `0` SelectedItem · `86` SelectedItemOtherQuality (die HQ-Fassung) ·
+    `172` EquippedItem · `258` LeftRing
+  - `344` SlotName · `345` QualityToggleHelpText · `346` ShowRingSlotToggle ·
+    `347` RingSlotState · `348` CtrlHeld
+- Indizes INNERHALB eines Blocks (Auswahl): `22` ItemName, `24` EquipSlot,
+  `26` ItemLevel, `27` EquippableBy, `28` EquipLevel, `30..32` PrimaryStatNames,
+  `33..35` PrimaryStatValues, **`36..38` PrimaryStatDeltas**, `40..47` BonusStats,
+  `48..55` GreenBonusItems, `57..61` MateriaNames, `62..66` MateriaValues,
+  `67` RequirementsHeader, `72` ConditionPercentageString,
+  `74` SpiritbondOrCollectabilityValueString, `83` SellPrice.
+- NACHGEPRUEFT 2026-09-04: die Feld-Offsets von `AtkValuesArray.ComparedItem`
+  wurden per Reflection aus der `FFXIVClientStructs.dll` in DALAMUD_HOME gezogen
+  (Byte-Offset geteilt durch 16 = Index oben). Jeder Index dieser Liste stimmt,
+  die Bloecke liegen wie notiert bei 0/86/172/258 und die Einzelwerte bei
+  344..348. `ComparedItem` ist dabei in `AtkValuesArray` verschachtelt, nicht im
+  Addon selbst - wer es direkt unter `AddonItemDetailCompare` sucht, findet es
+  nicht.
+- **JEDER Block traegt seine EIGENEN Werte, nicht nur der ausgewaehlte.** Das ist
+  die Voraussetzung fuer die zweispaltige Tabelle: `PrimaryStatValues` (33..35)
+  und `BonusStats` (40..47) stehen auch im Block `EquippedItem`, die rechte
+  Spalte wird also GELESEN und nicht anderswo nachgeschlagen.
+### Materia: der Zaehler stimmt, die Namen sind noch ungemessen (2026-09-04)
+
+- **`BlueMateriaSlotCount` (rel. Index `10`) ist schlicht die ZAHL DER PLAETZE**,
+  trotz des "Blue" im Namen von FFXIVClientStructs. Gegen die spieleigene
+  `Item.MateriaSlotCount` geprueft, acht Hover aus dem Live-Log, alle vier
+  Bloecke, kein einziger Abweicher: Goatskin Leg Guards 2, Ash Cavalry Bow 2,
+  Wrapped Elm Longbow 2, Foestriker's Boots 0, beide Ringe 0, Hempen Kecks 0,
+  Brand-new Skirt 0. Das Sheet wurde NUR zur Klaerung der Bedeutung gelesen -
+  angesagt wird die Zahl aus dem Fenster.
+- **`MateriaNames` (`57..61`) und `MateriaValues` (`62..66`) waren in KEINEM der
+  acht Hover belegt**, waehrend `BlueMateriaSlotCount` gleichzeitig 2 meldete:
+  Plaetze vorhanden, nichts eingesetzt. Die FORM der Zeichenketten ist damit
+  weiterhin ungemessen; `ItemCompareService` reicht sie woertlich durch, zerlegt
+  nichts und rechnet keinen Unterschied aus.
+- FALLE, die daraus entstand: der erste Entwurf uebersprang einen Platz, der auf
+  BEIDEN Seiten leer war - ein Teil mit zwei freien Plaetzen erzeugte also gar
+  keine Zeile, und "nichts eingesetzt" war von "der Leser ist kaputt" nicht zu
+  unterscheiden. Genau so wurde es auch gemeldet. Die Zeile nennt jetzt immer die
+  Zahl der Plaetze, sobald eine Seite ueberhaupt welche hat.
+
+### Was daran gemessen ist (und nicht aus dem Struct geraten)
+
+- **Die Unterschiede sind VORZEICHENBEHAFTETE Zeichenketten in Klammern**:
+  `"(+25)"`, `"(-12)"`, `"(-1)"`. Die Richtung steht im Text.
+  `MainStatDeltaColorTimelineId` — die Farbe — wird deshalb NICHT gebraucht und
+  bewusst nicht gelesen.
+- **Ein Unterschied von NULL FEHLT GANZ**, statt als `"(0)"` dazustehen (gemessen an
+  einem Teil, das mit dem getragenen identisch war: Werte 37 gegen 37, Delta-Felder
+  leer). Ein fehlendes Delta heisst also „gleich", NICHT „unbekannt" — wer hier
+  schweigt, macht „gleich gut" von „keine Daten" ununterscheidbar.
+- **Deltas gibt es NUR am ausgewaehlten Teil.** `EquippedItem` und `LeftRing` tragen
+  nie welche.
+- **Die Form ist nicht fest.** Ruestung belegt zwei Wert-Plaetze (Magieabwehr,
+  Verteidigung), Waffen drei (Delay, Auto-attack, Physical Damage) — und dort haengt
+  das Delta NUR an Physical Damage. Also die drei Plaetze durchgehen und leere
+  ueberspringen, nichts ueber die Form annehmen.
+- **Ringe sind der einzige Doppel-Vergleich**: `LeftRing` traegt den Ring der ANDEREN
+  Hand, `SlotName` sagt welcher gemeint ist („Slot: Right Ring"), und
+  `ShowRingSlotToggle` springt von 0 auf 1.
+- **Alle Zeichenketten kommen FERTIG und in Spielsprache** („Item Level 27",
+  „Slot: Body", „Gathering +32", „Lv. 27"). Sie werden woertlich weitergereicht.
+- FALLE: `EquippableBy` liefert bei Waffen die ABKUERZUNGSLISTE („ARC BRD"), die ein
+  Screenreader buchstabiert. Dafuer gibt es `GearInfoService.DescribeOwnClasses`.
+- **Fuer die BONI (Staerke, Geschick, Kritische Trefferwertung …) gibt es KEINEN
+  Unterschied im Fenster.** Jeder Block fuehrt nur seine EIGENE Liste als fertige
+  Zeichenketten in `BonusStats[0..7]`, Form `"<Name> +<N>"`, Name auch mehrwortig
+  („Direct Hit Rate +1"), bis zu 5 belegt (`BonusStatCount` 0..5). Ein Sehender
+  vergleicht die zwei Listen mit dem Auge.
+- Der naheliegende Kandidat dafuer ist WIDERLEGT: `GreenBonusItems[0..7]` ist in
+  ALLEN 34 gemessenen Bloecken leer und `GreenBonusItemCount` ueberall 0 - das
+  Feld markiert also keine Verbesserungen. Wer den Bonus-Unterschied ansagen will,
+  muss ihn aus den zwei Listen selbst bilden (siehe `ItemCompareService`); das ist
+  Arithmetik auf Zahlen, die das Spiel gedruckt hat, keine nachgebaute Spielformel.
+- `PostSetup` feuert pro GEGENSTAND (das Fenster wird neu gebaut), `PostRefresh`
+  beim Umschalten auf die HQ-Werte mit **Strg** (Log 2026-08-30 19:48:54). Eine
+  fruehere Notiz hier sagte, `PostRefresh` feuere nie - das war falsch und stammte
+  aus einer Messreihe, in der nur gehovert und nie Strg gedrueckt wurde.
+- NICHT geprueft: ob das Fenster bei NICHT anlegbaren Gegenstaenden ueberhaupt
+  aufgeht. Der Leser findet dann kein Addon und schweigt.
+
+### Falle: `ItemDetailCompare` gehoert in `HudNoiseAddons` — BESTAETIGT
+
+`HudNoiseAddons` ist ein `HashSet<string>` und wird mit `Contains(name)` geprueft,
+also EXAKT; `"ItemDetail"` allein deckt `"ItemDetailCompare"` NICHT mit ab.
+
+IN-GAME BESTAETIGT (Log 2026-08-30 19:48:54, Meldung des Users „hitting control on a
+comparison screen keeps repeating the item name"): jeder Druck auf Strg loest ein
+`PostRefresh` aus, und der generische Scanner sprach die geaenderten Text-Knoten
+einzeln mit `SpeakInterrupt`:
+
+```
+'Sells for 18 gil' / 'Shop Selling Price (NQ): 1,282' / '(+14)' /
+'Fingerless Goatskin Gloves'
+```
+
+Jede Ansage schnitt die vorherige ab, hoerbar blieb nur die letzte — der
+Gegenstandsname, bei jedem Tastendruck erneut. Seitdem gesperrt, gleiche Loesung wie
+V5.14 fuer `ItemDetail`: Fenster stumm, Inhalt gesammelt auf Tastendruck.
+
 ## Fischen (ilspycmd-verifiziert 2026-07-25, FFXIVClientStructs.dll + Lumina.Excel.dll)
 
 Ziel: Angeln barrierefrei. Erster Schritt „wo kann ich angeln" — Laufzeit-Sonde

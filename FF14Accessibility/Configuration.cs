@@ -60,6 +60,15 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
     public string KeyBestiary      = "Strg+F4";         // Bestiarium (Jagdtagebuch) komplett vorlesen (Strg+F4 laut Keybind-Dump frei)
     public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
+    // Ausrüstungs-Vergleich als Tabelle oeffnen (siehe ItemCompareService).
+    //
+    // Strg+Umschalt+F12 ist in BEIDE Richtungen frei: das Spiel belegt ueberhaupt keine F-Taste
+    // (Live-Keybind-Dump 2026-08-30, 679 Eintraege, 167 davon mit Taste - keine
+    // einzige eine F-Taste), und im Plugin ist von Strg+Umschalt+F* nur F1 bis F9
+    // vergeben. NICHT auf die bequemere Alt+F-Reihe gelegt, obwohl das Spiel Alt
+    // ausschliesslich mit BUCHSTABEN belegt und die Reihe damit ebenfalls frei
+    // waere: dort liegt Alt+F4, und ein Fehlgriff schliesst das Spiel.
+    public string KeyItemCompare   = "Strg+Umschalt+F12";
     public string KeyEquipBest     = "Strg+F7";         // Empfohlene Ausrüstung anlegen - Spiel-eigener Optimierer (Strg+F7 laut Keybind-Dump frei)
     public string KeyRandomLook    = "Strg+F8";         // Charaktererschaffung: "Zufälliges Aussehen"-Knopf drücken (Strg+F8 laut Keybind-Dump frei)
     // Skill-Menü (V5.61): modaler Nummernblock-Assistent zum Umbelegen der
@@ -194,6 +203,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyEmoteDo       = defaults.KeyEmoteDo;
         KeyBestiary      = defaults.KeyBestiary;
         KeyReadEquipment = defaults.KeyReadEquipment;
+        KeyItemCompare   = defaults.KeyItemCompare;
         KeyEquipBest     = defaults.KeyEquipBest;
         KeySkillMenu     = defaults.KeySkillMenu;
         KeyChatCatPrev   = defaults.KeyChatCatPrev;

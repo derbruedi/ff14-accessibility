@@ -2007,6 +2007,7 @@ public static partial class AccessibilityStrings
           "Entfernen, HP des anvisierten Ziels ansagen. " +
           "Strg+F9, gewählte Aktionsleiste vorlesen. " +
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
+          "Strg+Umschalt+F12, Ausrüstungs-Vergleich als Tabelle öffnen: erst das Urteil, dann ein Wert je Zeile mit beiden Seiten. Nummernblock 8 und 2 blättern, Nummernblock 4 zurück. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
           "Strg+Nummernblock 0, Skill-Menü öffnen: Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück. " +
@@ -2044,6 +2045,7 @@ public static partial class AccessibilityStrings
           "Delete, announce the current target's HP. " +
           "Ctrl+F9, read the selected hotbar. " +
           "Ctrl+F6, read worn equipment. " +
+          "Ctrl+Shift+F12, open the gear comparison as a table: the verdict first, then one value per row with both sides. Numpad 8 and 2 move, Numpad 4 goes back. " +
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
           "Ctrl+Numpad 0, open the skill menu: Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back. " +
