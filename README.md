@@ -268,8 +268,9 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 ### Aktionsleisten (Hotbars)
 
 - Aktionsleiste vorlesen: welche Taste löst welche Fähigkeit aus.
-- **Zuweisungs-Menü**: alle gelernten Fähigkeiten des aktuellen Jobs per
-  Tastatur durchblättern und auf eine beliebige der 10 Leisten legen —
+- **Zuweisungs-Menü**: erst die Taste wählen — jede sagt an, was gerade
+  auf ihr liegt — und danach, was darauf soll: alle gelernten
+  Fähigkeiten des aktuellen Jobs. Geht auf jeder der 10 Leisten,
   komplett ohne Maus. Ansagen nennen die tatsächlich gebundene Taste
   (z. B. „Leiste 2, Taste Strg+3").
 - Im selben Menü lassen sich auch **Gegenstände** ablegen: Tränke,
@@ -486,15 +487,22 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Strg+F9** — erste Aktionsleiste vorlesen (was liegt auf Taste 1 bis 0)
 - **Strg+Nummernblock 0** — Zuweisungs-Menü öffnen bzw. schließen
 
-Im geöffneten Zuweisungs-Menü steuert der Nummernblock; die Tasten werden
-so lange vom Spiel ferngehalten, damit die Figur nicht losläuft:
+Das Menü fragt zuerst nach der **Taste** und danach nach dem **Inhalt**. Im
+geöffneten Menü steuert der Nummernblock; die Tasten werden so lange vom
+Spiel ferngehalten, damit die Figur nicht losläuft:
 
-- **Nummernblock 8 / 2** — in der Liste blättern
-- **Nummernblock 4 / 6** — zwischen **Fähigkeiten** und **Gegenständen**
-  wechseln (Tränke, Elixiere, Essen aus der Tasche)
-- **Nummernblock 0** — auswählen; danach die Zieltaste wählen und erneut
+- **Nummernblock 8 / 2** — in der Liste blättern; im ersten Schritt sagt
+  jede Taste an, was gerade auf ihr liegt
+- **Nummernblock 0** — Taste wählen; danach den Eintrag wählen und erneut
   Nummernblock 0 zum Ablegen
+- **Nummernblock 4 / 6** — im zweiten Schritt zwischen **Fähigkeiten**,
+  **Gegenständen** (Tränke, Elixiere, Essen aus der Tasche),
+  **Quest-Gegenständen**, **allgemeinen Aktionen** und **Reittieren**
+  wechseln
 - **Nummernblock Komma** — einen Schritt zurück bzw. Menü schließen
+
+Nach dem Ablegen bleibt das Menü offen und springt zurück zur Tastenauswahl,
+damit eine ganze Leiste in einem Durchgang belegt werden kann.
 
 ### Chat nachlesen
 

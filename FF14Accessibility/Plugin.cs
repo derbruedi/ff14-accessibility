@@ -1245,16 +1245,19 @@ public sealed class Plugin : IDalamudPlugin
             && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU]    == alt;
     }
 
-    // Numpad keys that drive the modal skill menu. All are game-bound
+    // Numpad keys that drive the modal assignment menu. All are game-bound
     // (8/2=move, 0=OK, comma=cancel), so they are swallowed while the menu is
     // open. VKs: NUMPAD8=0x68, NUMPAD2=0x62, NUMPAD0=0x60, DECIMAL=0x6E.
-    // NUMPAD4=0x64 / NUMPAD6=0x66 switch between the skill and item list; they
-    // are game-bound too (turn left/right), so they join the swallow list.
+    // NUMPAD4=0x64 / NUMPAD6=0x66 step through the source lists once a key has
+    // been picked; they are game-bound too (turn left/right), so they join the
+    // swallow list - the menu ignores them in the key step, but the game must
+    // not see them there either.
     private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E, 0x64, 0x66 };
 
     /// <summary>
-    /// While the modal skill menu is open, the numpad drives it and the game
-    /// must not see those keys (they are movement / OK / cancel). Acts on the
+    /// While the modal assignment menu is open (key first, then what goes on
+    /// it), the numpad drives it and the game must not see those keys (they are
+    /// movement / OK / cancel). Acts on the
     /// fresh "just pressed" edge (computed by UpdateKeyEdges before this runs),
     /// then forces every menu key up in KeyState so a held key never leaks
     /// movement or a confirm to the game between edges. No-op while closed, so

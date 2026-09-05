@@ -256,8 +256,9 @@ cues — including braille display output and automatic walking.
 ### Hotbars
 
 - Read a hotbar: which key triggers which action.
-- **Assignment menu**: cycle through all learned actions of your current
-  job and place them on any of the 10 hotbars — entirely without a mouse.
+- **Assignment menu**: pick a key first — each one announcing what sits on
+  it right now — then pick what goes on it from all learned actions of your
+  current job. Works on any of the 10 hotbars, entirely without a mouse.
   Announcements use the actually bound key (e.g. "bar 2, key Ctrl+3").
 - The same menu also places **items**: potions, elixirs and food from your
   bag, with the stack size in the announcement ("Potion, 12").
@@ -471,15 +472,21 @@ navigation keys above the arrow block.
 - **Ctrl+F9** — read the first hotbar (what sits on keys 1 to 0)
 - **Ctrl+Numpad 0** — open or close the assignment menu
 
-While the assignment menu is open the numpad drives it, and those keys are
-kept away from the game so your character does not run off:
+The menu asks for the **key** first and for its **content** second. While it
+is open the numpad drives it, and those keys are kept away from the game so
+your character does not run off:
 
-- **Numpad 8 / 2** — browse the list
-- **Numpad 4 / 6** — switch between **actions** and **items** (potions,
-  elixirs, food from your bag)
-- **Numpad 0** — select; then choose the target key and press Numpad 0
-  again to place it
+- **Numpad 8 / 2** — browse the list; in the first step every key says what
+  sits on it right now
+- **Numpad 0** — pick the key; then pick the entry and press Numpad 0 again
+  to place it
+- **Numpad 4 / 6** — in the second step, switch between **actions**,
+  **items** (potions, elixirs, food from your bag), **quest items**,
+  **general actions** and **mounts**
 - **Numpad decimal** — one step back, or close the menu
+
+After a placement the menu stays open and returns to the key list, so a whole
+bar can be filled in one go.
 
 ### Reading back chat
 
