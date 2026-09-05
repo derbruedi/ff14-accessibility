@@ -2009,7 +2009,7 @@ public static partial class AccessibilityStrings
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
-          "Strg+Nummernblock 0, Skill-Menü öffnen: Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock Komma zurück. " +
+          "Strg+Nummernblock 0, Belegen-Menü öffnen: erst die Taste wählen, dann was darauf soll. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock 4 und 6 wechseln die Liste, Nummernblock Komma zurück. " +
           "Strg+Umschalt+F6, Spur aufzeichnen an oder aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. " +
           "Strg+Umschalt+F7, Aufgabenliste des laufenden Inhalts vorlesen: Freibrief, Dungeon oder FATE. " +
           "Befehle: " +
@@ -2046,7 +2046,7 @@ public static partial class AccessibilityStrings
           "Ctrl+F6, read worn equipment. " +
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
-          "Ctrl+Numpad 0, open the skill menu: Numpad 8 and 2 to browse, Numpad 0 selects, Numpad decimal to go back. " +
+          "Ctrl+Numpad 0, open the assignment menu: pick the key first, then what goes on it. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad 4 and 6 switch the list, Numpad decimal to go back. " +
           "Ctrl+Shift+F6, record a trail on or off: walk a stretch the navmesh does not know once yourself. " +
           "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
           "Commands: " +
@@ -2781,20 +2781,47 @@ public static partial class AccessibilityStrings
         IsGerman
             ? "Keine benutzbaren Gegenstände in der Tasche."
             : "No usable items in your bag.";
-    /// <summary>Spoken after a skill is chosen: now pick the target key.</summary>
-    public static string SkillMenuPickTarget(string skillName, int count) =>
-        IsGerman
-            ? $"{skillName} gewählt. Ziel-Taste wählen, {count} verfügbar. Nummernblock 8 und 2 blättern, Nummernblock 0 belegt, Nummernblock Komma zurück."
-            : $"{skillName} selected. Choose a target key, {count} available. Numpad 8 and 2 to browse, Numpad 0 assigns, Numpad decimal to go back.";
-    /// <summary>One browsed target key: its label, what is on it now, position in list.</summary>
+    /// <summary>One browsed target key: its label, what is on it now, position
+    /// in list. No "currently" filler word: this fires on every single press of
+    /// Numpad 8/2 while looking for a free key, and the word carries nothing the
+    /// position in the sentence does not already say (user 2026-09-05).</summary>
     public static string SkillMenuTargetEntry(string slotLabel, string current, int index, int count) =>
         IsGerman
-            ? $"{slotLabel}, aktuell {current}, {index} von {count}"
-            : $"{slotLabel}, currently {current}, {index} of {count}";
+            ? $"{slotLabel}, {current}, {index} von {count}"
+            : $"{slotLabel}, {current}, {index} of {count}";
     public static string SkillMenuClosed =>
-        IsGerman ? "Skill-Menü geschlossen." : "Skill menu closed.";
+        IsGerman ? "Zuweisungs-Menü geschlossen." : "Assignment menu closed.";
     public static string SkillMenuNoTargets =>
         IsGerman ? "Keine belegbaren Tasten gefunden." : "No assignable keys found.";
+
+    /// <summary>Spoken when the assignment menu opens on the KEY list - the menu
+    /// asks which key to fill first and what goes on it second (user choice
+    /// 2026-09-05, the reverse of the original order).</summary>
+    public static string SkillMenuSlotsOpened(int count) =>
+        IsGerman
+            ? $"Tastenbelegung, {count} Tasten. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt die Taste, Nummernblock Komma schließt."
+            : $"Key assignment, {count} keys. Numpad 8 and 2 to browse, Numpad 0 picks the key, Numpad decimal closes.";
+
+    /// <summary>Spoken after a key is chosen: which key is being filled and what
+    /// is on it now, right before the list of things that can go on it. No
+    /// "currently" filler, same reasoning as <see cref="SkillMenuTargetEntry"/>
+    /// (user 2026-09-05).</summary>
+    public static string SkillMenuPickEntry(string slotLabel, string current) =>
+        IsGerman
+            ? $"{slotLabel} gewählt, {current}. Was soll darauf?"
+            : $"{slotLabel} selected, {current}. What goes on it?";
+
+    /// <summary>Spoken when the menu returns to the key list - after a placement
+    /// (the menu no longer closes) or when stepping back out of the lists.</summary>
+    public static string SkillMenuBackAtSlots(int count) =>
+        IsGerman
+            ? $"Zurück zur Tastenauswahl, {count} Tasten."
+            : $"Back to key selection, {count} keys.";
+
+    /// <summary>Spoken when the chosen key cannot be filled because not one of
+    /// the sources has an entry to offer.</summary>
+    public static string SkillMenuNothingToAssign =>
+        IsGerman ? "Nichts zum Belegen verfügbar." : "Nothing available to assign.";
 
     // ── CooldownService: Fähigkeit wieder bereit ──
     public static string SkillReady(string name) =>
