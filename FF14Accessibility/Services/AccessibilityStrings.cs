@@ -2544,6 +2544,32 @@ public static partial class AccessibilityStrings
         IsGerman ? $"Aktionsleiste {bar} ist leer." : $"Hotbar {bar} is empty.";
     public static string HotbarPrefix(int bar) =>
         IsGerman ? $"Aktionsleiste {bar}. " : $"Hotbar {bar}. ";
+    /// <summary>Spoken name of a keyboard modifier, including the joining plus.
+    /// The game's keybind table carries only modifier FLAGS (KeyModifierFlag),
+    /// never a display name, so KeybindService builds the label itself - and it
+    /// has to follow "/acc lang" like everything else that is spoken. Before
+    /// 2026-09-05 these were hardcoded German and leaked "Strg" into English
+    /// announcements (user report).</summary>
+    public static string ModifierCtrl => IsGerman ? "Strg+" : "Ctrl+";
+    public static string ModifierShift => IsGerman ? "Umschalt+" : "Shift+";
+    public static string ModifierAlt => IsGerman ? "Alt+" : "Alt+";
+
+    /// <summary>
+    /// A configured hotkey ("Strg+F12") as it should be SPOKEN ("Ctrl+F12").
+    /// <para>
+    /// The config format is fixed German: <see cref="KeyNames.NameToVk"/> looks
+    /// the string up verbatim and the version migrations in Plugin.cs compare
+    /// against the exact spelling, so it cannot be translated at the source -
+    /// only here, at the point where it is read out. Only the modifier words are
+    /// swapped; a German KEY name in a rebound hotkey ("BildAb") still comes out
+    /// as stored, because those are the parser's own tokens.
+    /// </para>
+    /// </summary>
+    public static string SpokenKeyLabel(string configKey) =>
+        IsGerman || string.IsNullOrEmpty(configKey)
+            ? configKey
+            : configKey.Replace("Strg+", "Ctrl+").Replace("Umschalt+", "Shift+");
+
     /// <summary>Slot label: main bar is "key X", other bars name bar+slot/key.</summary>
     public static string SlotMainKey(string key) =>
         IsGerman ? $"Taste {key}" : $"key {key}";
@@ -3140,7 +3166,9 @@ public static partial class AccessibilityStrings
     /// <summary>Notification popup hint; <paramref name="key"/> is the configured
     /// accept hotkey so it stays correct after a rebind.</summary>
     public static string NotificationAccept(string key) =>
-        IsGerman ? $"Benachrichtigung. Mit {key} annehmen." : $"Notification. Press {key} to accept.";
+        IsGerman
+            ? $"Benachrichtigung. Mit {SpokenKeyLabel(key)} annehmen."
+            : $"Notification. Press {SpokenKeyLabel(key)} to accept.";
     public static string SecondsToJoin(int seconds) =>
         IsGerman ? $"Noch {seconds} Sekunden zum Beitreten." : $"{seconds} seconds left to join.";
 

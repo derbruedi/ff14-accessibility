@@ -160,7 +160,7 @@ public sealed class KeybindService
     }
 
     /// <summary>
-    /// The key currently bound to a game action ("Strg+3"), looked up by
+    /// The key currently bound to a game action ("Ctrl+3"), looked up by
     /// InputId name (e.g. "HOTBAR_2_3") in the LIVE keybind table - same
     /// source as DumpKeybinds (Index == InputId, game-api.md "Keybind-
     /// System"). Null when the action is unbound or the table is not ready.
@@ -175,25 +175,42 @@ public sealed class KeybindService
 
         foreach (var setting in uiInput->InputData.GetKeybindSpan()[index].KeySettings)
         {
-            var formatted = FormatKeySetting(setting);
+            // localized: this label is SPOKEN, so the modifier names follow
+            // "/acc lang". The dump above keeps the German form on purpose.
+            var formatted = FormatKeySetting(setting, localized: true);
             if (formatted.Length > 0) return PrettifyKeyName(formatted);
         }
         return null;
     }
 
-    /// <summary>"Strg+KEY_3" -> "Strg+3": the SeVirtualKey enum prefixes
+    /// <summary>"Ctrl+KEY_3" -> "Ctrl+3": the SeVirtualKey enum prefixes
     /// number/letter keys with "KEY_", which is noise for TTS.</summary>
     private static string PrettifyKeyName(string key) => key.Replace("KEY_", "");
 
-    /// <summary>Formats one key setting as e.g. "Strg+Umschalt+F1"; empty string if unbound.</summary>
-    private static string FormatKeySetting(KeySetting setting)
+    /// <summary>
+    /// Formats one key setting as e.g. "Ctrl+Shift+F1"; empty string if unbound.
+    /// <para>
+    /// The key NAME comes from the game (SeVirtualKey enum), but the modifier
+    /// words do not: the keybind table stores modifiers as flags only, so they
+    /// have to be spelled out here. <paramref name="localized"/> decides in
+    /// which language. True for anything SPOKEN, so a player on "/acc lang en"
+    /// hears "Ctrl+3" rather than the German "Strg+3" (user report 2026-09-05).
+    /// False - the default - keeps the fixed German wording for the desktop
+    /// keybind dump, whose surrounding text is German throughout; mixing one
+    /// English word into it would only make that file harder to read.
+    /// </para>
+    /// </summary>
+    private static string FormatKeySetting(KeySetting setting, bool localized = false)
     {
         if ((byte)setting.Key == 0) return string.Empty;
 
         var sb = new StringBuilder();
-        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Ctrl))  sb.Append("Strg+");
-        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Shift)) sb.Append("Umschalt+");
-        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Alt))   sb.Append("Alt+");
+        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Ctrl))
+            sb.Append(localized ? AccessibilityStrings.ModifierCtrl : "Strg+");
+        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Shift))
+            sb.Append(localized ? AccessibilityStrings.ModifierShift : "Umschalt+");
+        if (setting.KeyModifier.HasFlag(KeyModifierFlag.Alt))
+            sb.Append(localized ? AccessibilityStrings.ModifierAlt : "Alt+");
         sb.Append(Enum.GetName(typeof(SeVirtualKey), setting.Key) ?? $"VK{(byte)setting.Key}");
         return sb.ToString();
     }
