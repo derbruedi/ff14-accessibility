@@ -292,6 +292,18 @@ public sealed class UIReaderService : IDisposable
         // verrauscht, sondern faktisch nicht ansagbar.
         // Details gibt es jetzt gesammelt auf Abruf (TryReadItemDetail, Strg+F10).
         "ItemDetail", "Tooltip",
+        // ItemDetailCompare - DASSELBE MUSTER, in-game bestaetigt (Log 2026-08-30
+        // 19:48:54): das Vergleichsfenster feuert bei jedem Druck auf Strg ein
+        // PostRefresh (Strg schaltet auf die HQ-Werte um), und der generische
+        // Scanner sprach dann seine geaenderten Text-Knoten EINZELN:
+        //   'Sells for 18 gil' / 'Shop Selling Price (NQ): 1,282' / '(+14)' /
+        //   'Fingerless Goatskin Gloves'
+        // Jede Ansage schnitt die vorherige ab, hoerbar blieb nur die LETZTE - der
+        // Gegenstandsname, immer wieder, bei jedem Tastendruck (Meldung des Users).
+        // Kein Informationsverlust durch die Sperre: die uebertoenten Zeilen waren
+        // ohnehin unhoerbar, und den Inhalt sagt ItemCompareService gesammelt auf
+        // Strg+Umschalt+F12 an - genau die Loesung, die V5.14 fuer ItemDetail fand.
+        "ItemDetailCompare",
     ];
 
     // Seit V4.60/61 im Log dokumentierte, aber noch nicht gefixte Spam-Quellen
