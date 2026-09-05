@@ -3320,6 +3320,28 @@ public sealed class NavigationService
     private bool _computeAnnounced;
     private DateTime _lastRerouteAt = DateTime.MinValue;
 
+    /// <summary>
+    /// V5.97 Etappen-Strategie: gesetzt, waehrend die aktive Route zu einem
+    /// ZWISCHENZIEL faehrt (nicht zum eigentlichen Gehhilfe-Ziel), weil das
+    /// Netz dort weit vor dem echten Ziel endet. <see cref="_routeDest"/> ist in
+    /// diesem Fall die Etappe, <see cref="_walkDestPosition"/> bleibt das echte
+    /// Ziel unveraendert - beim Erreichen der Etappe (Route erschoepft, siehe
+    /// AdvancePastReachedWaypoints) wird stattdessen NICHT angekommen, sondern
+    /// automatisch die naechste Etappe (oder, ist das Netz jetzt nah genug am
+    /// Ziel, der Rest direkt) angefordert.
+    /// </summary>
+    private bool _stagingActive;
+
+    /// <summary>Verhindert Etappen-Endlosschleifen: eine Etappe, die keinen
+    /// spuerbaren Fortschritt zum echten Ziel gebracht hat (z.B. weil
+    /// NearestPointReachable erneut denselben Randpunkt liefert), fuehrt statt
+    /// einer weiteren Etappe direkt in den Luftlinien-Fallback.</summary>
+    private Vector3? _lastStagePoint;
+
+    /// <summary>Ob "Ziel weit entfernt, führe in Etappen" fuer den laufenden
+    /// Lauf schon gesagt wurde - nur einmal, auch wenn mehrere Etappen folgen.</summary>
+    private bool _stageAnnounced;
+
     // Netzende-Erkennung (siehe Konstanten unten).
     private Vector3 _guideLastPosition;
     private DateTime _guideLastMoveAt;
@@ -3556,6 +3578,9 @@ public sealed class NavigationService
         _lastSpokenLeg = null;
         _routeTask = null;
         _computeAnnounced = false;
+        _stagingActive = false;
+        _lastStagePoint = null;
+        _stageAnnounced = false;
     }
 
     /// <summary>Stops the walk guide without announcement (the auto-walk takes over the beacon).</summary>
@@ -3568,10 +3593,12 @@ public sealed class NavigationService
 
     /// <summary>
     /// Queues a pathfind from <paramref name="from"/> to the current guide
-    /// destination. Falls back to straight-line guidance (with one spoken
-    /// notice on the initial request) when vnavmesh is unavailable.
+    /// destination, or to <paramref name="stageTarget"/> when a V5.97 stage
+    /// (Zwischenziel) is being routed instead of the real destination. Falls
+    /// back to straight-line guidance (with one spoken notice on the initial
+    /// request) when vnavmesh is unavailable.
     /// </summary>
-    private void RequestRoute(Vector3 from, bool isReroute)
+    private void RequestRoute(Vector3 from, bool isReroute, Vector3? stageTarget = null)
     {
         if (_routeTask != null) return; // one pending query at a time
 
@@ -3579,8 +3606,12 @@ public sealed class NavigationService
         // are map markers and object positions, which routinely sit a little off
         // the walkable surface; without this the query insists on the exact
         // point and returns nothing, and the guide drops to straight-line mode
-        // for a destination it could perfectly well have routed to.
-        var task = _routes.RequestPath(from, _walkDestPosition, _walkArrivalRange);
+        // for a destination it could perfectly well have routed to. A stage
+        // target already sits ON the mesh (NearestPointReachable), so it needs
+        // no tolerance.
+        var task = stageTarget is { } stage
+            ? _routes.RequestPath(from, stage, 0f)
+            : _routes.RequestPath(from, _walkDestPosition, _walkArrivalRange);
         if (task == null)
         {
             if (!isReroute)
@@ -3592,9 +3623,15 @@ public sealed class NavigationService
         }
         _routeTask = task;
         _routeTaskIsReroute = isReroute;
+        _pendingStageTarget = stageTarget;
         _routeRequestedAt = DateTime.UtcNow;
         _lastRerouteAt = DateTime.UtcNow;
     }
+
+    /// <summary>Set right before a stage pathfind is queued, consumed by
+    /// <see cref="PollRouteTask"/> once it completes - a stage route's
+    /// <see cref="_routeDest"/> is the stage point, not the real destination.</summary>
+    private Vector3? _pendingStageTarget;
 
     /// <summary>Adopts a finished pathfind: initial routes speak the compass
     /// preview, re-routes stay quiet unless the immediate direction changed.</summary>
@@ -3649,15 +3686,39 @@ public sealed class NavigationService
 
         _route = waypoints;
         _routeCursor = 0;
-        _routeDest = _walkDestPosition;
+        // V5.97: eine Etappen-Route zielt auf das Zwischenziel, nicht auf das
+        // echte Gehhilfe-Ziel - _walkDestPosition bleibt unveraendert, damit
+        // Ankunfts-/Netzende-Pruefungen weiter gegen das ECHTE Ziel urteilen.
+        var stage = _pendingStageTarget;
+        _pendingStageTarget = null;
+        _stagingActive = stage.HasValue;
+        _routeDest = stage ?? _walkDestPosition;
+        var approachTarget = stage ?? _walkDestPosition;
         // The first waypoint is the start position - skip everything already in reach.
         AdvancePastReachedWaypoints(player, announce: false);
         // A fresh route deserves a fresh verdict: judging approach against the
         // old route's best distance would condemn a detour that starts by
         // walking away from the destination.
-        ResetApproachTracking(player.Position, _walkDestPosition);
+        ResetApproachTracking(player.Position, approachTarget);
 
-        if (!_routeTaskIsReroute)
+        if (stage.HasValue)
+        {
+            // Etappen-Ansage statt Routen-Vorschau: die Etappe selbst ist kein
+            // Ort, den der Spieler kennt oder wissen muss ("Weg zu (x|y|z)"
+            // waere sinnlos) - eine einzige Zeile genuegt, der Ton fuehrt den
+            // Rest. NUR EINMAL PRO LAUF (nicht bei jeder weiteren Etappe) -
+            // sonst meldete ein Fernziel mit drei Netzluecken dieselbe Zeile
+            // dreimal, ohne dass sich fuer den Spieler etwas geaendert haette.
+            if (!_routeTaskIsReroute && !_stageAnnounced)
+            {
+                _stageAnnounced = true;
+                _tolk.SpeakInterrupt(AccessibilityStrings.WalkGuideStaging);
+            }
+            _log.Info($"[Nav] Gehhilfe: Etappen-Route zu ({_routeDest.X:F0}|{_routeDest.Y:F0}|{_routeDest.Z:F0}), " +
+                      $"{waypoints.Count} Wegpunkte, echtes Ziel noch " +
+                      $"{Vector3.Distance(_routeDest, _walkDestPosition):F0} m entfernt.");
+        }
+        else if (!_routeTaskIsReroute)
         {
             // A "route" that is nothing but the appended destination is not a
             // route at all (see the mesh-end constants above). Announcing it
@@ -3740,6 +3801,21 @@ public sealed class NavigationService
             AdvancePastReachedWaypoints(player, announce: true);
             CheckReroute(player);
             CheckMeshEnd(player, distance, now);
+        }
+
+        // V5.97 Etappen-Strategie: die Etappe selbst wurde eben durchlaufen
+        // (AdvancePastReachedWaypoints hat _route auf null gesetzt, weil ihr
+        // letzter Wegpunkt erreicht ist) - das echte Ziel ist laut der
+        // Ankunftspruefung oben aber noch weit weg. Statt jetzt auf
+        // Luftlinie zu fallen (die ueber die naechste, noch unbekannte
+        // Netzluecke ohnehin falsch zeigen wuerde), wird sofort die naechste
+        // Etappe angefordert - lautlos, denn "Ziel weit entfernt" wurde schon
+        // bei der ersten Etappe gesagt.
+        if (_route == null && _stagingActive && _routeTask == null)
+        {
+            _stagingActive = false;
+            _log.Info("[Nav] Gehhilfe: Etappe erreicht, fordere naechste Etappe/Rest-Route an.");
+            RequestStagedRoute(player.Position, isReroute: false);
         }
 
         // DER PEILPUNKT IST DAS SEGMENT-ENDE, NICHT DER NAECHSTE ROHE WEGPUNKT.
@@ -4074,10 +4150,13 @@ public sealed class NavigationService
 
     /// <summary>
     /// The mesh ends here: nothing is left but the appended destination, the
-    /// player IS walking, and they are getting no closer. The auto-walk stops at
-    /// this point because it steers the character; the guide does not steer, so
-    /// stopping would only take the guidance away from someone who may well find
-    /// their own way down. It says so once and keeps pointing straight-line.
+    /// player IS walking, and they are getting no closer. Before dropping to
+    /// straight-line guidance, V5.97 tries a STAGE (Zwischenziel): a reachable
+    /// mesh point projected towards the real destination. Only a genuine
+    /// straight-line fallback (no stage point found, or the previous stage made
+    /// no progress) says so and keeps pointing straight-line - stopping would
+    /// only take the guidance away from someone who may well find their own way
+    /// down.
     /// </summary>
     private void CheckMeshEnd(IGameObject player, float distance, DateTime now)
     {
@@ -4088,6 +4167,17 @@ public sealed class NavigationService
         if ((now - _guideLastMoveAt).TotalSeconds > GuideMovingWindowS) return;
         if ((now - _guideLastApproachAt).TotalSeconds <= GuideNoApproachS) return;
 
+        if (distance >= _config.WalkGuideStageMinDistance
+            && RequestStagedRoute(player.Position, isReroute: false))
+        {
+            // A stage was found and queued (PollRouteTask speaks "Ziel weit
+            // entfernt, führe in Etappen" once it resolves) - the mesh-end
+            // notice stays silent, because staging IS the answer to "the mesh
+            // ended here", not a fallback that needs explaining on top of it.
+            _route = null;
+            return;
+        }
+
         _guideMeshEndAnnounced = true;
         _route = null;   // straight-line guidance from here on
         var direction = RouteService.CompassWord(player.Position, _walkDestPosition);
@@ -4095,6 +4185,60 @@ public sealed class NavigationService
                   $"dist={distance:F1} - Netz endet hier, weiter in Luftlinie.");
         _tolk.SpeakInterrupt(AccessibilityStrings.GuideMeshEndsHere(distance, direction));
         _lastGuideTick = now;
+    }
+
+    /// <summary>
+    /// V5.97 Etappen-Strategie: sucht einen erreichbaren Netzpunkt in Richtung
+    /// des echten Ziels und fordert dorthin eine Route an. Tastet von
+    /// <see cref="Configuration.WalkGuideStageMaxProbe"/> Metern entlang der
+    /// Luftlinie abwaerts vor (halbierend), bis <c>NearestPointReachable</c>
+    /// einen Punkt liefert, der spuerbar naeher am echten Ziel liegt als die
+    /// vorherige Etappe - sonst (kein Fortschritt, z.B. am Rand einer
+    /// abgeschlossenen Netz-Insel) wird NICHT erneut gestaged, das ist der
+    /// Signal fuer den Luftlinien-Fallback in <see cref="CheckMeshEnd"/>.
+    /// </summary>
+    private bool RequestStagedRoute(Vector3 from, bool isReroute)
+    {
+        var nav = AutoWalk?.Navmesh;
+        if (nav == null || !nav.IsReady) return false;
+
+        var toDestination = _walkDestPosition - from;
+        var totalDist = toDestination.Length();
+        if (totalDist < 1f) return false;
+        var direction = toDestination / totalDist;
+
+        var probe = MathF.Min(_config.WalkGuideStageMaxProbe, totalDist);
+        Vector3? found = null;
+        // Halbiert, bis eine Mindestschrittweite unterschritten wird - vier bis
+        // fuenf Versuche reichen, um von "ganze Etappe frei" bis "kaum ein Stueck
+        // frei" (Sackgasse) abzudecken, ohne bei jedem Frame zehn IPC-Anfragen zu
+        // stellen.
+        while (probe >= 5f)
+        {
+            var candidate = from + direction * probe;
+            found = nav.NearestPointReachable(candidate, 8f, 15f);
+            if (found.HasValue) break;
+            probe /= 2f;
+        }
+        if (!found.HasValue) return false;
+
+        var stage = found.Value;
+        // Fortschritts-Wache: eine Etappe, die nicht naeher am echten Ziel liegt
+        // als die vorherige, ist keine Etappe - vermeidet ein Pendeln zwischen
+        // zwei Punkten am selben Netzrand.
+        if (_lastStagePoint is { } last
+            && Vector3.Distance(stage, _walkDestPosition) >= Vector3.Distance(last, _walkDestPosition) - 1f)
+        {
+            _log.Info($"[Nav] Gehhilfe: Etappenpunkt ({stage.X:F0}|{stage.Z:F0}) bringt keinen Fortschritt " +
+                      $"gegenueber der vorigen Etappe - Luftlinien-Fallback.");
+            return false;
+        }
+
+        _lastStagePoint = stage;
+        _log.Info($"[Nav] Gehhilfe: Etappenpunkt gefunden bei {probe:F0}/{totalDist:F0} m " +
+                  $"({stage.X:F0}|{stage.Y:F0}|{stage.Z:F0}).");
+        RequestRoute(from, isReroute, stageTarget: stage);
+        return true;
     }
 
     /// <summary>", aufwärts"/", abwärts" when the guide point sits clearly above

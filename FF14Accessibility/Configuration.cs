@@ -469,6 +469,20 @@ public sealed class Configuration : IPluginConfiguration
     public bool WalkGuideRouteMode = true;
     public float RouteCueVolume = 0.4f;         // Wegpunkt-/Ankunftston der Gehhilfe: 0 = stumm
 
+    // Gehhilfe, Etappen-Strategie (V5.97): endet das Wegenetz weit vor einem
+    // Fernziel (RouteIsOnlyAppendedDestination), wird statt sofort auf
+    // Luftlinie umzuschalten zuerst versucht, ein Zwischenziel auf dem
+    // erreichbaren Netz in Zielrichtung zu finden und dorthin zu fuehren -
+    // nach Ankunft dort greift die naechste Etappe. Nur ab dieser Distanz
+    // (Meter) zum Ziel, sonst waere die letzte kurze Luecke schon die Naehe,
+    // die die alte Luftlinien-Fuehrung ohnehin richtig ueberbrueckt.
+    public float WalkGuideStageMinDistance = 30f;
+    // Wie weit eine Etappe hoechstens entlang der Luftlinie zum Ziel vortastet
+    // (Meter) - die Suche startet bei diesem Wert und faellt in Schritten, bis
+    // NearestPointReachable einen Punkt liefert oder die Mindestschrittweite
+    // unterschritten wird.
+    public float WalkGuideStageMaxProbe = 80f;
+
     // Auto-Lauf: wie nah vnavmesh vor dem Ziel anhält (Meter)
     public float AutoWalkPlaceStopRange = 1.0f;      // Orte, Wegpunkte, Questziele: dicht dran
     public float AutoWalkTransitionStopRange = 0.5f; // Zonen-Übergänge: fast drauf, damit der Übergang auslöst

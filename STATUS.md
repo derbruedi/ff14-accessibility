@@ -3,6 +3,70 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
+## STAND JETZT (2026-09-05): GEHHILFE V5.97 — ETAPPEN BEI FERNZIELEN
+
+>>> AUFTRAG: die manuelle Wegpunkt-Navigation (Gehhilfe, Umschalt+Numpad3) war
+    bereits seit V4.63-4.65 vollständig auf vnavmesh-Wegpunkt-Routing umgestellt
+    (Nav.Pathfind statt Luftlinie, Weiterschalten pro Segment, Re-Routing bei
+    Abweichung, Luftlinien-Fallback ohne vnavmesh) und die Routen-Ansage auf
+    Tastendruck (Strg+Numpad5, `RouteService.DescribeRoute`) existierte ebenfalls
+    schon, inklusive F1-Hilfe-Eintrag ("Routen-Vorschau") und STATUS-Historie.
+    NEU in V5.97 ist ausschließlich die ETAPPEN-STRATEGIE für Fernziele.
+
+>>> DAS PROBLEM: `RouteIsOnlyAppendedDestination`/`CheckMeshEnd` erkennen seit
+    V5.81, wenn das begehbare Netz weit vor einem Fernziel endet (getrennte
+    Mesh-Inseln, Sprung-only-Lücken) - vnavmesh hängt die angeforderte
+    Zielkoordinate JEDEM Pfad an, egal ob erreichbar. Bisher fiel die Gehhilfe
+    dort sofort auf reine Luftlinienführung zurück ("Netz endet hier") - über
+    hunderte Meter oft ungenau, weil die Luftlinie durch Wände/Gelände zeigt.
+
+>>> DIE LÖSUNG (`NavigationService.RequestStagedRoute`, V5.97): bevor
+    `CheckMeshEnd` auf Luftlinie umschaltet, wird zuerst versucht, einen
+    ZWISCHENZIEL-Punkt zu finden: `NavmeshIpc.NearestPointReachable` entlang der
+    Luftlinie zum echten Ziel, startend bei `WalkGuideStageMaxProbe` Metern
+    (Default 80 m) und bei Fehlschlag halbierend bis 5 m. Wird ein erreichbarer
+    Punkt gefunden UND liegt er näher am echten Ziel als die letzte Etappe
+    (Fortschritts-Wache gegen Pendeln), führt die Gehhilfe per normaler
+    Wegpunkt-Route dorthin - `_walkDestPosition` (das echte Ziel, für Ankunfts-
+    und Netzende-Prüfung) bleibt dabei unverändert, nur die interne Route zeigt
+    auf die Etappe (`_stagingActive`/`_routeDest`). Ist die Etappe erreicht
+    (letzter Wegpunkt der Etappen-Route passiert), fordert `WalkGuideFrame`
+    automatisch die nächste Etappe an - bis das Netz nah genug am echten Ziel
+    liegt oder keine Etappe mehr gefunden wird (dann regulärer Luftlinien-
+    Fallback wie bisher). Nur ab `WalkGuideStageMinDistance` Metern Restdistanz
+    (Default 30 m) - näher lohnt sich eine Etappe nicht, die Luftlinie stimmt
+    dort ohnehin fast immer.
+
+>>> ANSAGE: "Ziel weit entfernt, führe in Etappen." (DE) /
+    "Destination far away, guiding in stages." (EN) - NUR EINMAL pro Lauf
+    (`_stageAnnounced`), auch wenn mehrere Etappen nacheinander nötig sind.
+    Danach führt der Peil-Ton wie gewohnt, ohne weitere Sonderansagen.
+
+>>> NEUE CONFIG (Configuration.cs): `WalkGuideStageMinDistance` (30f),
+    `WalkGuideStageMaxProbe` (80f) - beide ohne eigene Taste, wie die
+    bestehenden Gehhilfe-Konstanten nur über die Config-Datei änderbar.
+
+>>> WIEDERVERWENDET STATT DUPLIZIERT: `NavigationService` holt sich
+    `NearestPointReachable` über `AutoWalk?.Navmesh` (die bereits public
+    exponierte `NavmeshIpc`-Instanz des Auto-Laufs, `AutoWalkService.Navmesh`) -
+    keine zweite vnavmesh-IPC-Verbindung, dieselbe Konvention wie beim
+    `MeshBridgeService`-Anschluss weiter oben in Plugin.cs.
+
+>>> GEÄNDERTE DATEIEN: `NavigationService.cs` (Etappen-Zustand + `CheckMeshEnd`
+    + `RequestStagedRoute` + `RequestRoute`/`PollRouteTask` um Etappen-Ziel
+    erweitert + `WalkGuideFrame` fordert nach Etappen-Ankunft automatisch die
+    nächste Etappe an), `Configuration.cs` (zwei neue Felder),
+    `AccessibilityStrings.cs` (`WalkGuideStaging`, DE+EN). AutoWalk (Numpad3,
+    `AutoWalkService.cs`) UNVERÄNDERT - beide Modi teilen weiter dieselben
+    Zielquellen (Quest-Marker, Places, Game-Target) über `Plugin.cs`.
+
+>>> NOCH ZU TESTEN (kein vnavmesh-Livetest im Sandbox-Build möglich): ob
+    `NearestPointReachable` bei echten getrennten Netzinseln tatsächlich einen
+    sinnvollen Zwischenpunkt liefert und die Fortschritts-Wache keine
+    berechtigte zweite Etappe fälschlich abweist. Baut auf denselben, bereits
+    live verifizierten IPC-Aufrufen wie `AutoWalkService`/`EscapeRouteService`
+    auf (siehe deren Kommentare zu `NearestPointReachable`).
+
 ## RELEASE v5.96 (2026-09-04) — OHNE CHOCOBO
 
 Veröffentlicht auf Wunsch des Users, BEVOR der Chocobo fertig ist: Jagdtagebuch

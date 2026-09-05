@@ -1194,6 +1194,13 @@ public static partial class AccessibilityStrings
     public static string VerticalUp   => IsGerman ? ", aufwärts" : ", up";
     public static string VerticalDown => IsGerman ? ", abwärts"  : ", down";
 
+    /// <summary>Gesprochen, wenn die Gehhilfe bei einem weit entfernten Ziel auf
+    /// eine Zwischenetappe umschaltet, statt sofort auf Luftlinie zu wechseln
+    /// (V5.97, Etappen-Strategie bei Netzende weit vor dem Ziel).</summary>
+    public static string WalkGuideStaging => IsGerman
+        ? "Ziel weit entfernt, führe in Etappen."
+        : "Destination far away, guiding in stages.";
+
     // ── Routen-Vorschau (RouteService.DescribeRoute) ─────────────────
     public static string RoutePracticallyThere(string name) =>
         IsGerman ? $"Weg zu {name}: praktisch am Ziel." : $"Route to {name}: practically there.";
