@@ -240,7 +240,10 @@ cues — including braille display output and automatic walking.
 
 - Item slots in the bag, character window and armoury chest are announced
   with name, level and wearability ("Bronze gladius, level 5, equippable"
-  / "not equippable, requires level 26"); empty slots say "Empty".
+  / "not equippable, requires level 26"); empty slots say "Empty". The
+  name comes from the game's own detail window rather than from the icon,
+  so items that share an icon are not confused with one another; an HQ
+  piece adds "high quality".
 - Shops: level and wearability are appended to every listed item.
 - **Stats, not just names**: item level, defence and attributes are part of
   the announcement, and which jobs a piece is for is spoken with **your

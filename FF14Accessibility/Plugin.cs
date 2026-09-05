@@ -61,6 +61,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DutyActionService  _dutyActions;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
+    // Sagt, welcher Gegenstand WIRKLICH im Platz unter dem Cursor liegt -
+    // ueber Behaelter und Platznummer statt ueber das Symbol.
+    private readonly ItemSlotService    _itemSlots;
     private readonly LootRollService    _lootRolls;
     private readonly EquipmentService   _equipment;
     private readonly GearInfoService    _gearInfo;
@@ -320,6 +323,9 @@ public sealed class Plugin : IDalamudPlugin
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
         _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
+        // Braucht nur das Item-Sheet: die Antwort kommt aus dem Detail-Agenten
+        // des Spiels, den Fokus-Knoten holt er sich selbst (siehe ItemSlotService).
+        _itemSlots       = new ItemSlotService(DataManager);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
         _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
@@ -446,7 +452,7 @@ public sealed class Plugin : IDalamudPlugin
         // und liefert dem Fokus-Leser an einer Stelle den Satz zur Kategorie bzw.
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
 #if DEBUG
         // Teilt sich den Leser mit dem Fenster-Leser: dort haengen die geladenen
         // Sheet-Tabellen des Zauberbuchs.

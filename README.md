@@ -251,7 +251,10 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 - Item-Slots in Tasche, Charakterfenster und Arsenal werden mit Name,
   Stufe und Tragbarkeit angesagt („Bronzegladius, Stufe 5, tragbar" /
-  „nicht tragbar, ab Stufe 26"); leere Felder sagen „Leer".
+  „nicht tragbar, ab Stufe 26"); leere Felder sagen „Leer". Der Name
+  kommt aus dem Detail-Fenster des Spiels und nicht aus dem Symbol,
+  damit Gegenstände, die sich ein Symbol teilen, nicht verwechselt
+  werden; ein HQ-Teil sagt „Hoch-Qualität" mit.
 - Läden: an jede Ware wird Stufe und Tragbarkeit angehängt.
 - **Werte statt bloßer Namen**: Gegenstandsstufe, Verteidigung und
   Attribute stehen in der Ansage; zu welchen Klassen ein Teil passt, wird
