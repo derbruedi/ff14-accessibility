@@ -15,11 +15,12 @@ namespace FF14Accessibility.Services;
 /// Reads what is bound to the player's action bar so a blind player knows
 /// which number key does what. FFXIV has no single "attack" button: you
 /// target an enemy and press hotbar keys (1-9, 0 = Hotbar 1 slots) to use
-/// actions. Also lets the player REBIND those keys: a skill browser cycles
-/// through the learned actions of the current job and places the chosen one
-/// on a chosen slot via the game's own RaptureHotbarModule.SetAndSaveSlot -
-/// the exact function the drag-and-drop UI uses, so the change persists like
-/// a manual one. Structs ilspycmd-verified, see docs/game-api.md -> "Hotbar".
+/// actions. Also lets the player REBIND those keys: a modal menu browses the
+/// assignable keys first, and confirming one opens the lists of things that
+/// can go on it (skills, items, quest items, general actions, mounts). The
+/// write goes through HotbarSlot.Set + WriteSavedSlot (see PlaceOnSlot), so
+/// the change persists like a manual drag-and-drop one.
+/// Structs ilspycmd-verified, see docs/game-api.md -> "Hotbar".
 /// </summary>
 public sealed class HotbarService
 {
@@ -204,23 +205,36 @@ public sealed class HotbarService
         return result;
     }
 
-    // â”€â”€ Skill assignment menu: a modal, keyboard-only way to put a learned
-    //    action on a hotbar key. Sighted players drag from "Actions & Traits";
-    //    there is no keyboard path in the game, so the plugin walks the player
-    //    through it: browse learned skills, pick one, browse the assignable
-    //    keys, confirm. The assignment uses the game's own
-    //    RaptureHotbarModule.SetAndSaveSlot (the drag-and-drop path), so it
-    //    persists like a manual change. Driven from the numpad while open;
-    //    Plugin.cs swallows those keys so the character does not move.
+    // â”€â”€ Slot assignment menu: a modal, keyboard-only way to put a learned
+    //    action, item, quest item, general action or mount on a hotbar key.
+    //    Sighted players drag from "Actions & Traits"; there is no keyboard
+    //    path in the game, so the plugin walks the player through it in the
+    //    order a drag has: pick the KEY first (each one announcing what sits
+    //    on it now), then pick what goes on it. That is the reverse of the
+    //    original skill-first order (user choice 2026-09-05). After a
+    //    placement the menu returns to the key list instead of closing, so a
+    //    whole bar can be filled in one session. The write itself goes through
+    //    PlaceOnSlot. Driven from the numpad while open; Plugin.cs swallows
+    //    those keys so the character does not move.
 
-    private enum SkillMenuStep { Closed, PickSkill, PickTarget }
+    private enum SkillMenuStep { Closed, PickSlot, PickEntry }
     private SkillMenuStep _menuStep = SkillMenuStep.Closed;
 
-    /// <summary>Which list the menu is browsing. Numpad 4/6 steps through the
-    /// sources (user choice 2026-08-06; quest items, general actions and mounts
-    /// added 2026-08-09); the target-key step works the same for all of them.</summary>
+    /// <summary>Which list the menu is browsing once a key has been picked.
+    /// Numpad 4/6 steps through the sources (user choice 2026-08-06; quest
+    /// items, general actions and mounts added 2026-08-09); the chosen key is
+    /// the same target for all of them.</summary>
     private enum AssignSource { Skills, Items, QuestItems, GeneralActions, Mounts }
     private AssignSource _menuSource = AssignSource.Skills;
+
+    /// <summary>The order Numpad 4/6 steps through, and the order the fallback
+    /// in <see cref="EnterFirstUsableSource"/> tries. Static so stepping does
+    /// not allocate on every keypress.</summary>
+    private static readonly AssignSource[] SourceOrder =
+    {
+        AssignSource.Skills, AssignSource.Items, AssignSource.QuestItems,
+        AssignSource.GeneralActions, AssignSource.Mounts,
+    };
 
     private readonly List<(uint Id, string Name, byte Level)> _skills = new();
     private int _skillIndex = -1;
@@ -247,34 +261,79 @@ public sealed class HotbarService
     private byte _skillsJobId;
     private uint _skillsLevel;
 
-    // Flat list of assignable target keys (bar/slot pairs), rebuilt per skill.
+    // Flat list of assignable target keys (bar/slot pairs), built when the
+    // menu opens - it is the FIRST step now, so it no longer depends on what
+    // is being placed.
     private readonly List<(int Bar, int Slot)> _targets = new();
     private int _targetIndex = -1;
+
+    // The key confirmed in the first step: the target of whatever the second
+    // step picks. Held explicitly rather than read back through _targetIndex so
+    // browsing cannot move the target out from under a pending assignment.
+    private int _chosenBar = -1;
+    private int _chosenSlot = -1;
+
+    /// <summary>Speaks a menu line, interrupting or queueing. A step's header
+    /// interrupts (it replaces whatever was being said), the entry that follows
+    /// it queues - two interrupting calls in a row would cut the header off
+    /// before the player heard it.</summary>
+    private void Say(string text, bool interrupt)
+    {
+        if (interrupt) _tolk.SpeakInterrupt(text);
+        else _tolk.Speak(text);
+    }
 
     /// <summary>True while the modal skill menu is open, so Plugin.cs routes
     /// the numpad keys here and swallows them from the game.</summary>
     public bool IsSkillMenuOpen => _menuStep != SkillMenuStep.Closed;
 
-    /// <summary>Opens the skill menu, or closes it when already open (the same
-    /// key toggles). On open the learned-skill list is (re)built and the first
-    /// skill announced.</summary>
-    public void ToggleSkillMenu()
+    /// <summary>Opens the assignment menu, or closes it when already open (the
+    /// same key toggles). On open the list of assignable KEYS is built and the
+    /// first one announced; what goes on it is the second step.</summary>
+    public unsafe void ToggleSkillMenu()
     {
         if (_menuStep != SkillMenuStep.Closed) { CloseSkillMenu(); return; }
-        _menuSource = AssignSource.Skills;   // always open on the familiar list
-        if (!EnsureSkillList()) return;      // speaks the reason on failure
-        if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
-        _menuStep = SkillMenuStep.PickSkill;
-        _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-        AnnounceSkill();
+
+        if (!_clientState.IsLoggedIn)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NotLoggedIn);
+            return;
+        }
+
+        // The key list itself needs only the keybind table, but reading what
+        // sits on a key and every path out of this menu go through the module -
+        // refuse now rather than after the player has browsed and chosen.
+        if (RaptureHotbarModule.Instance() == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            _log.Warning("[Hotbar] RaptureHotbarModule.Instance() ist null - Menue nicht geoeffnet.");
+            return;
+        }
+
+        BuildTargetList();
+        if (_targets.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuNoTargets);
+            return;
+        }
+
+        _targetIndex = 0;
+        _chosenBar = _chosenSlot = -1;
+        // Reset the source only here, not per key: within one open session the
+        // list the player last used stays selected, so filling several keys
+        // from the bag does not walk back to the skills every time.
+        _menuSource = AssignSource.Skills;
+        _menuStep = SkillMenuStep.PickSlot;
+        _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuSlotsOpened(_targets.Count));
+        AnnounceTarget(interrupt: false);
     }
 
     /// <summary>
-    /// Numpad 4 / 6: steps through the three source lists while browsing -
-    /// skills, carried items, quest items - 6 forwards, 4 backwards. Only
-    /// meaningful in the browse step; during target-key selection the source is
-    /// already decided, so the keys are ignored there (the announcement would
-    /// otherwise contradict what is about to be placed).
+    /// Numpad 4 / 6: steps through the source lists while choosing WHAT goes on
+    /// the already-picked key - skills, carried items, quest items, general
+    /// actions, mounts - 6 forwards, 4 backwards. Ignored while the key itself
+    /// is still being picked: there is no source to switch yet, and announcing
+    /// one would contradict the key the player is standing on.
     /// <para>
     /// A source the player cannot use right now (empty bag, no quest items) is
     /// SKIPPED rather than announced as an error: stepping should always land
@@ -283,19 +342,14 @@ public sealed class HotbarService
     /// </summary>
     public void SkillMenuSwitchSource(int direction)
     {
-        if (_menuStep != SkillMenuStep.PickSkill) return;
+        if (_menuStep != SkillMenuStep.PickEntry) return;
 
-        var order = new[]
-        {
-            AssignSource.Skills, AssignSource.Items, AssignSource.QuestItems,
-            AssignSource.GeneralActions, AssignSource.Mounts,
-        };
-        var at = Array.IndexOf(order, _menuSource);
+        var at = Array.IndexOf(SourceOrder, _menuSource);
 
         // Walk at most one full circle, stopping at the first source with entries.
-        for (var step = 1; step < order.Length; step++)
+        for (var step = 1; step < SourceOrder.Length; step++)
         {
-            var next = order[((at + direction * step) % order.Length + order.Length) % order.Length];
+            var next = SourceOrder[((at + direction * step) % SourceOrder.Length + SourceOrder.Length) % SourceOrder.Length];
             if (!TryEnterSource(next)) continue;
             return;
         }
@@ -306,8 +360,13 @@ public sealed class HotbarService
     /// <summary>Switches to a source if it has anything to offer, and announces
     /// it. False when the list is empty (or cannot be built) - the caller then
     /// tries the next one. Silent on failure by design: a skipped source is not
-    /// an error the player needs to hear about.</summary>
-    private bool TryEnterSource(AssignSource source)
+    /// an error the player needs to hear about.
+    /// <para>
+    /// <paramref name="interrupt"/> is false when the caller has just spoken the
+    /// key being filled: that line must finish before the list header follows.
+    /// The entry inside always queues behind the header for the same reason.
+    /// </para></summary>
+    private bool TryEnterSource(AssignSource source, bool interrupt = true)
     {
         switch (source)
         {
@@ -315,40 +374,40 @@ public sealed class HotbarService
                 if (!BuildSkillList()) return false;
                 _menuSource = AssignSource.Skills;
                 if (_skillIndex < 0 || _skillIndex >= _skills.Count) _skillIndex = 0;
-                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-                AnnounceSkill();
+                Say(AccessibilityStrings.SkillMenuOpened(_skills.Count), interrupt);
+                AnnounceSkill(interrupt: false);
                 return true;
 
             case AssignSource.Items:
                 if (!BuildItemList()) return false;
                 _menuSource = AssignSource.Items;
                 if (_itemIndex < 0 || _itemIndex >= _items.Count) _itemIndex = 0;
-                _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
-                AnnounceItem();
+                Say(AccessibilityStrings.ItemMenuOpened(_items.Count), interrupt);
+                AnnounceItem(interrupt: false);
                 return true;
 
             case AssignSource.QuestItems:
                 if (!BuildQuestItemList()) return false;
                 _menuSource = AssignSource.QuestItems;
                 if (_questItemIndex < 0 || _questItemIndex >= _questItems.Count) _questItemIndex = 0;
-                _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
-                AnnounceQuestItem();
+                Say(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count), interrupt);
+                AnnounceQuestItem(interrupt: false);
                 return true;
 
             case AssignSource.GeneralActions:
                 if (!BuildGeneralActionList()) return false;
                 _menuSource = AssignSource.GeneralActions;
                 if (_generalActionIndex < 0 || _generalActionIndex >= _generalActions.Count) _generalActionIndex = 0;
-                _tolk.SpeakInterrupt(AccessibilityStrings.GeneralActionMenuOpened(_generalActions.Count));
-                AnnounceGeneralAction();
+                Say(AccessibilityStrings.GeneralActionMenuOpened(_generalActions.Count), interrupt);
+                AnnounceGeneralAction(interrupt: false);
                 return true;
 
             case AssignSource.Mounts:
                 if (!BuildMountList()) return false;
                 _menuSource = AssignSource.Mounts;
                 if (_mountIndex < 0 || _mountIndex >= _mounts.Count) _mountIndex = 0;
-                _tolk.SpeakInterrupt(AccessibilityStrings.MountMenuOpened(_mounts.Count));
-                AnnounceMount();
+                Say(AccessibilityStrings.MountMenuOpened(_mounts.Count), interrupt);
+                AnnounceMount(interrupt: false);
                 return true;
         }
         return false;
@@ -470,10 +529,27 @@ public sealed class HotbarService
         return _mounts.Count > 0;
     }
 
+    /// <summary>
+    /// Opens the list of things that can go on the just-chosen key: the source
+    /// last used in this session when it still has entries, otherwise the first
+    /// one that does. Announcements queue - the caller has just said which key
+    /// is being filled and that line must not be cut off. False when no source
+    /// has anything to offer at all, which leaves the player on the key list.
+    /// </summary>
+    private bool EnterFirstUsableSource()
+    {
+        if (TryEnterSource(_menuSource, interrupt: false)) return true;
+        foreach (var source in SourceOrder)
+            if (source != _menuSource && TryEnterSource(source, interrupt: false))
+                return true;
+        return false;
+    }
+
     /// <summary>Closes the menu and says so.</summary>
     public void CloseSkillMenu()
     {
         _menuStep = SkillMenuStep.Closed;
+        _chosenBar = _chosenSlot = -1;
         _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuClosed);
     }
 
@@ -482,124 +558,102 @@ public sealed class HotbarService
     {
         switch (_menuStep)
         {
-            case SkillMenuStep.PickSkill when _menuSource == AssignSource.QuestItems:
-                if (_questItems.Count == 0) return;
-                _questItemIndex = ((_questItemIndex + direction) % _questItems.Count + _questItems.Count) % _questItems.Count;
-                AnnounceQuestItem();
-                break;
-            case SkillMenuStep.PickSkill when _menuSource == AssignSource.GeneralActions:
-                if (_generalActions.Count == 0) return;
-                _generalActionIndex = ((_generalActionIndex + direction) % _generalActions.Count + _generalActions.Count) % _generalActions.Count;
-                AnnounceGeneralAction();
-                break;
-            case SkillMenuStep.PickSkill when _menuSource == AssignSource.Mounts:
-                if (_mounts.Count == 0) return;
-                _mountIndex = ((_mountIndex + direction) % _mounts.Count + _mounts.Count) % _mounts.Count;
-                AnnounceMount();
-                break;
-            case SkillMenuStep.PickSkill when _menuSource == AssignSource.Items:
-                if (_items.Count == 0) return;
-                _itemIndex = ((_itemIndex + direction) % _items.Count + _items.Count) % _items.Count;
-                AnnounceItem();
-                break;
-            case SkillMenuStep.PickSkill:
-                if (_skills.Count == 0) return;
-                _skillIndex = ((_skillIndex + direction) % _skills.Count + _skills.Count) % _skills.Count;
-                AnnounceSkill();
-                break;
-            case SkillMenuStep.PickTarget:
+            case SkillMenuStep.PickSlot:
                 if (_targets.Count == 0) return;
                 _targetIndex = ((_targetIndex + direction) % _targets.Count + _targets.Count) % _targets.Count;
                 AnnounceTarget();
                 break;
+            case SkillMenuStep.PickEntry when _menuSource == AssignSource.QuestItems:
+                if (_questItems.Count == 0) return;
+                _questItemIndex = ((_questItemIndex + direction) % _questItems.Count + _questItems.Count) % _questItems.Count;
+                AnnounceQuestItem();
+                break;
+            case SkillMenuStep.PickEntry when _menuSource == AssignSource.GeneralActions:
+                if (_generalActions.Count == 0) return;
+                _generalActionIndex = ((_generalActionIndex + direction) % _generalActions.Count + _generalActions.Count) % _generalActions.Count;
+                AnnounceGeneralAction();
+                break;
+            case SkillMenuStep.PickEntry when _menuSource == AssignSource.Mounts:
+                if (_mounts.Count == 0) return;
+                _mountIndex = ((_mountIndex + direction) % _mounts.Count + _mounts.Count) % _mounts.Count;
+                AnnounceMount();
+                break;
+            case SkillMenuStep.PickEntry when _menuSource == AssignSource.Items:
+                if (_items.Count == 0) return;
+                _itemIndex = ((_itemIndex + direction) % _items.Count + _items.Count) % _items.Count;
+                AnnounceItem();
+                break;
+            case SkillMenuStep.PickEntry:
+                if (_skills.Count == 0) return;
+                _skillIndex = ((_skillIndex + direction) % _skills.Count + _skills.Count) % _skills.Count;
+                AnnounceSkill();
+                break;
         }
     }
 
-    /// <summary>Numpad 0: confirm the current step. Skill step -> build the
-    /// target list and advance; target step -> assign and close.</summary>
+    /// <summary>Numpad 0: confirm the current step. Key step -> remember the key
+    /// and open the lists of what can go on it; entry step -> place it and
+    /// return to the key list, so the next key can be filled right away (user
+    /// choice 2026-09-05).</summary>
     public void SkillMenuConfirm()
     {
         switch (_menuStep)
         {
-            case SkillMenuStep.PickSkill:
-                var chosen = _menuSource switch
-                {
-                    AssignSource.Items => _itemIndex >= 0 && _itemIndex < _items.Count
-                        ? _items[_itemIndex].Name : null,
-                    AssignSource.QuestItems => _questItemIndex >= 0 && _questItemIndex < _questItems.Count
-                        ? _questItems[_questItemIndex].Name : null,
-                    AssignSource.GeneralActions => _generalActionIndex >= 0 && _generalActionIndex < _generalActions.Count
-                        ? _generalActions[_generalActionIndex].Name : null,
-                    AssignSource.Mounts => _mountIndex >= 0 && _mountIndex < _mounts.Count
-                        ? _mounts[_mountIndex].Name : null,
-                    _ => _skillIndex >= 0 && _skillIndex < _skills.Count
-                        ? _skills[_skillIndex].Name : null,
-                };
-                if (chosen == null) return;
-
-                BuildTargetList();
-                if (_targets.Count == 0)
-                {
-                    _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuNoTargets);
-                    return;
-                }
-                _targetIndex = 0;
-                _menuStep = SkillMenuStep.PickTarget;
-                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuPickTarget(chosen, _targets.Count));
-                AnnounceTarget();
-                break;
-            case SkillMenuStep.PickTarget:
+            case SkillMenuStep.PickSlot:
                 if (_targetIndex < 0 || _targetIndex >= _targets.Count) return;
                 var (bar, slot) = _targets[_targetIndex];
-                _menuStep = SkillMenuStep.Closed;    // leave the menu; assign speaks the result
-                switch (_menuSource)
+
+                // Name the key being filled BEFORE the list header, so the
+                // context is never lost between the two steps.
+                _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuPickEntry(
+                    SlotLabel(bar, slot), CurrentSlotContent(bar, slot)));
+
+                if (!EnterFirstUsableSource())
                 {
-                    case AssignSource.Items:      AssignItemToSlot(_itemIndex, bar, slot); break;
-                    case AssignSource.QuestItems: AssignQuestItemToSlot(_questItemIndex, bar, slot); break;
-                    case AssignSource.GeneralActions:
-                        AssignEntryToSlot(_generalActions, _generalActionIndex, bar, slot,
-                            RaptureHotbarModule.HotbarSlotType.GeneralAction);
-                        break;
-                    case AssignSource.Mounts:
-                        AssignEntryToSlot(_mounts, _mountIndex, bar, slot,
-                            RaptureHotbarModule.HotbarSlotType.Mount);
-                        break;
-                    default:                      AssignSkillToSlot(_skillIndex, bar, slot); break;
+                    _tolk.Speak(AccessibilityStrings.SkillMenuNothingToAssign);
+                    return;                      // stay on the key list
                 }
+
+                _chosenBar = bar;
+                _chosenSlot = slot;
+                _menuStep = SkillMenuStep.PickEntry;
+                break;
+
+            case SkillMenuStep.PickEntry:
+                if (_chosenBar < 0 || _chosenSlot < 0) return;
+                var placed = _menuSource switch
+                {
+                    AssignSource.Items      => AssignItemToSlot(_itemIndex, _chosenBar, _chosenSlot),
+                    AssignSource.QuestItems => AssignQuestItemToSlot(_questItemIndex, _chosenBar, _chosenSlot),
+                    AssignSource.GeneralActions => AssignEntryToSlot(_generalActions, _generalActionIndex,
+                        _chosenBar, _chosenSlot, RaptureHotbarModule.HotbarSlotType.GeneralAction),
+                    AssignSource.Mounts     => AssignEntryToSlot(_mounts, _mountIndex,
+                        _chosenBar, _chosenSlot, RaptureHotbarModule.HotbarSlotType.Mount),
+                    _                       => AssignSkillToSlot(_skillIndex, _chosenBar, _chosenSlot),
+                };
+
+                // Back to the key list either way - the player keeps filling the
+                // bar. On a started placement VerifyAssignment speaks the verdict
+                // two frames later and appends the reminder itself; a placement
+                // that never started has nothing pending, so it is said here.
+                _menuStep = SkillMenuStep.PickSlot;
+                _chosenBar = _chosenSlot = -1;
+                if (!placed)
+                    _tolk.Speak(AccessibilityStrings.SkillMenuBackAtSlots(_targets.Count));
                 break;
         }
     }
 
-    /// <summary>Numpad comma: step back to skill selection, or close from
-    /// there.</summary>
+    /// <summary>Numpad comma: step back from the entry lists to the key list, or
+    /// close the menu from there.</summary>
     public void SkillMenuBack()
     {
-        if (_menuStep == SkillMenuStep.PickTarget)
+        if (_menuStep == SkillMenuStep.PickEntry)
         {
-            _menuStep = SkillMenuStep.PickSkill;
-            switch (_menuSource)
-            {
-                case AssignSource.Items:
-                    _tolk.SpeakInterrupt(AccessibilityStrings.ItemMenuOpened(_items.Count));
-                    AnnounceItem();
-                    break;
-                case AssignSource.QuestItems:
-                    _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemMenuOpened(_questItems.Count));
-                    AnnounceQuestItem();
-                    break;
-                case AssignSource.GeneralActions:
-                    _tolk.SpeakInterrupt(AccessibilityStrings.GeneralActionMenuOpened(_generalActions.Count));
-                    AnnounceGeneralAction();
-                    break;
-                case AssignSource.Mounts:
-                    _tolk.SpeakInterrupt(AccessibilityStrings.MountMenuOpened(_mounts.Count));
-                    AnnounceMount();
-                    break;
-                default:
-                    _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuOpened(_skills.Count));
-                    AnnounceSkill();
-                    break;
-            }
+            _menuStep = SkillMenuStep.PickSlot;
+            _chosenBar = _chosenSlot = -1;
+            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuBackAtSlots(_targets.Count));
+            AnnounceTarget(interrupt: false);
         }
         else
         {
@@ -609,73 +663,82 @@ public sealed class HotbarService
 
     /// <summary>Announces the current skill: name, level, where it already sits
     /// (if anywhere) and its position in the list.</summary>
-    private void AnnounceSkill()
+    private void AnnounceSkill(bool interrupt = true)
     {
         var (id, name, level) = _skills[_skillIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Action, id);
-        _tolk.SpeakInterrupt(AccessibilityStrings.SkillBrowseEntry(name, level, location, _skillIndex + 1, _skills.Count));
+        Say(AccessibilityStrings.SkillBrowseEntry(name, level, location, _skillIndex + 1, _skills.Count), interrupt);
     }
 
     /// <summary>Announces the current item: name, stack size, where it already
     /// sits (if anywhere) and its position in the list. The count matters for
     /// the decision - a potion with one left is a different choice.</summary>
-    private void AnnounceItem()
+    private void AnnounceItem(bool interrupt = true)
     {
         var item = _items[_itemIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Item, item.ItemId);
-        _tolk.SpeakInterrupt(AccessibilityStrings.ItemBrowseEntry(
-            item.Name, item.Quantity, item.IsHq, location, _itemIndex + 1, _items.Count));
+        Say(AccessibilityStrings.ItemBrowseEntry(
+            item.Name, item.Quantity, item.IsHq, location, _itemIndex + 1, _items.Count), interrupt);
     }
 
     /// <summary>Announces the current quest item: name, how many are left, its
     /// cast time and where it already sits. The cast time is spoken because in a
     /// fight it decides whether there is room to use the thing at all - a
     /// sighted player reads it off the tooltip.</summary>
-    private void AnnounceQuestItem()
+    private void AnnounceQuestItem(bool interrupt = true)
     {
         var item = _questItems[_questItemIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.EventItem, item.ItemId);
-        _tolk.SpeakInterrupt(AccessibilityStrings.QuestItemBrowseEntry(
-            item.Name, item.Quantity, item.CastTime, location, _questItemIndex + 1, _questItems.Count));
+        Say(AccessibilityStrings.QuestItemBrowseEntry(
+            item.Name, item.Quantity, item.CastTime, location, _questItemIndex + 1, _questItems.Count), interrupt);
     }
 
     /// <summary>Announces the current general action: name, where it already
     /// sits and its position in the list.</summary>
-    private void AnnounceGeneralAction()
+    private void AnnounceGeneralAction(bool interrupt = true)
     {
         var (id, name) = _generalActions[_generalActionIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.GeneralAction, id);
-        _tolk.SpeakInterrupt(AccessibilityStrings.PlainBrowseEntry(
-            name, location, _generalActionIndex + 1, _generalActions.Count));
+        Say(AccessibilityStrings.PlainBrowseEntry(
+            name, location, _generalActionIndex + 1, _generalActions.Count), interrupt);
     }
 
     /// <summary>Announces the current mount: name, where it already sits and its
     /// position in the list.</summary>
-    private void AnnounceMount()
+    private void AnnounceMount(bool interrupt = true)
     {
         var (id, name) = _mounts[_mountIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Mount, id);
-        _tolk.SpeakInterrupt(AccessibilityStrings.PlainBrowseEntry(
-            name, location, _mountIndex + 1, _mounts.Count));
+        Say(AccessibilityStrings.PlainBrowseEntry(
+            name, location, _mountIndex + 1, _mounts.Count), interrupt);
     }
 
     /// <summary>Announces the current target key: its label, what is on it now,
     /// and its position in the list.</summary>
-    private unsafe void AnnounceTarget()
+    private void AnnounceTarget(bool interrupt = true)
     {
         var (bar, slot) = _targets[_targetIndex];
+        Say(AccessibilityStrings.SkillMenuTargetEntry(
+            SlotLabel(bar, slot), CurrentSlotContent(bar, slot), _targetIndex + 1, _targets.Count), interrupt);
+    }
+
+    /// <summary>Spoken name of whatever sits on a slot right now, or "empty".
+    /// Read live on every announcement - a cached value would tell the player
+    /// what the key held before their last placement.</summary>
+    private unsafe string CurrentSlotContent(int bar, int slot)
+    {
         var module = RaptureHotbarModule.Instance();
         var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
-        var current = s == null || s->CommandType == RaptureHotbarModule.HotbarSlotType.Empty
+        return s == null || s->CommandType == RaptureHotbarModule.HotbarSlotType.Empty
             ? AccessibilityStrings.InputEmpty
             : ResolveName(s->CommandType, s->CommandId, s->PopUpHelp.ToString());
-        _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuTargetEntry(
-            SlotLabel(bar, slot), current, _targetIndex + 1, _targets.Count));
     }
 
     /// <summary>Builds the flat list of assignable target keys: bar 1's twelve
     /// slots always (keys 1-0, 11, 12), plus any slot on bars 2-10 that has a
-    /// key bound - only those can actually fire the skill.</summary>
+    /// key bound - only those can actually fire what is placed there. Depends on
+    /// nothing but the keybind table, which is why it can run when the menu
+    /// opens rather than after something has been chosen.</summary>
     private void BuildTargetList()
     {
         _targets.Clear();
@@ -692,20 +755,25 @@ public sealed class HotbarService
     /// SetAndSaveSlot alone only updates the saved side (the 09:43 assignment
     /// appeared on the bar after relog; log 2026-07-17 11:59). Success is only
     /// announced after a 2-frame read-back confirms the slot really changed.
+    /// <para>
+    /// Returns whether the read-back was scheduled: false means the placement
+    /// never started, so the caller has to speak the menu state itself instead
+    /// of waiting for a verdict that will not come.
+    /// </para>
     /// </summary>
-    private unsafe void AssignSkillToSlot(int skillIndex, int bar, int slot)
+    private unsafe bool AssignSkillToSlot(int skillIndex, int bar, int slot)
     {
         if (skillIndex < 0 || skillIndex >= _skills.Count)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
-            return;
+            return false;
         }
 
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
-            return;
+            return false;
         }
 
         var (id, name, _) = _skills[skillIndex];
@@ -714,10 +782,11 @@ public sealed class HotbarService
                   $"Vorher: {DescribeSlotRaw(module, bar, slot)}, LeisteGeteilt={module->IsHotbarShared((uint)bar)}");
 
         if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.Action, id, name))
-            return;
+            return false;
 
         // Verdict 2 frames later - announce only what the slot then really holds.
         _framework.RunOnTick(() => VerifyAssignment(bar, slot, id, name), delayTicks: 2);
+        return true;
     }
 
     /// <summary>
@@ -787,20 +856,25 @@ public sealed class HotbarService
     /// used is the one the GAME carries for that stack (HQ offset already
     /// applied by Dalamud's GameInventoryItem.ItemId), so nothing is recomputed
     /// here. Success is only announced after the read-back.
+    /// <para>
+    /// Returns whether the read-back was scheduled: false means the placement
+    /// never started, so the caller has to speak the menu state itself instead
+    /// of waiting for a verdict that will not come.
+    /// </para>
     /// </summary>
-    private unsafe void AssignItemToSlot(int itemIndex, int bar, int slot)
+    private unsafe bool AssignItemToSlot(int itemIndex, int bar, int slot)
     {
         if (itemIndex < 0 || itemIndex >= _items.Count)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
-            return;
+            return false;
         }
 
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
-            return;
+            return false;
         }
 
         var item = _items[itemIndex];
@@ -809,11 +883,12 @@ public sealed class HotbarService
                   $"Vorher: {DescribeSlotRaw(module, bar, slot)}");
 
         if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.Item, item.ItemId, item.Name))
-            return;
+            return false;
 
         _framework.RunOnTick(
             () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.Item),
             delayTicks: 2);
+        return true;
     }
 
     /// <summary>
@@ -827,20 +902,25 @@ public sealed class HotbarService
     /// ilspycmd 2026-08-09) - a slot index would break as soon as the container
     /// reorders, so the stable row id is used.
     /// </para>
+    /// <para>
+    /// Returns whether the read-back was scheduled: false means the placement
+    /// never started, so the caller has to speak the menu state itself instead
+    /// of waiting for a verdict that will not come.
+    /// </para>
     /// </summary>
-    private unsafe void AssignQuestItemToSlot(int questItemIndex, int bar, int slot)
+    private unsafe bool AssignQuestItemToSlot(int questItemIndex, int bar, int slot)
     {
         if (questItemIndex < 0 || questItemIndex >= _questItems.Count)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
-            return;
+            return false;
         }
 
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
-            return;
+            return false;
         }
 
         var item = _questItems[questItemIndex];
@@ -849,11 +929,12 @@ public sealed class HotbarService
                   $"Vorher: {DescribeSlotRaw(module, bar, slot)}");
 
         if (!PlaceOnSlot(module, bar, slot, RaptureHotbarModule.HotbarSlotType.EventItem, item.ItemId, item.Name))
-            return;
+            return false;
 
         _framework.RunOnTick(
             () => VerifyAssignment(bar, slot, item.ItemId, item.Name, RaptureHotbarModule.HotbarSlotType.EventItem),
             delayTicks: 2);
+        return true;
     }
 
     /// <summary>
@@ -861,30 +942,36 @@ public sealed class HotbarService
     /// through the same measured path as every other source
     /// (see <see cref="PlaceOnSlot"/>). Only the slot type differs, which is why
     /// these two share one method instead of copying the skill/item ones.
+    /// <para>
+    /// Returns whether the read-back was scheduled: false means the placement
+    /// never started, so the caller has to speak the menu state itself instead
+    /// of waiting for a verdict that will not come.
+    /// </para>
     /// </summary>
-    private unsafe void AssignEntryToSlot(List<(uint Id, string Name)> entries, int index,
+    private unsafe bool AssignEntryToSlot(List<(uint Id, string Name)> entries, int index,
         int bar, int slot, RaptureHotbarModule.HotbarSlotType type)
     {
         if (index < 0 || index >= entries.Count)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.NoSkillSelected);
-            return;
+            return false;
         }
 
         var module = RaptureHotbarModule.Instance();
         if (module == null)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
-            return;
+            return false;
         }
 
         var (id, name) = entries[index];
         _log.Info($"[Hotbar] Belegen: {SlotLabel(bar, slot)} (Leiste {bar + 1} Slot {slot}) <- {type} {id} " +
                   $"'{name}'. Vorher: {DescribeSlotRaw(module, bar, slot)}");
 
-        if (!PlaceOnSlot(module, bar, slot, type, id, name)) return;
+        if (!PlaceOnSlot(module, bar, slot, type, id, name)) return false;
 
         _framework.RunOnTick(() => VerifyAssignment(bar, slot, id, name, type), delayTicks: 2);
+        return true;
     }
 
 #if DEBUG
@@ -1066,9 +1153,16 @@ public sealed class HotbarService
         else
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailedNoChange);
-            _log.Warning($"[Hotbar] SetAndSaveSlot ohne Wirkung (nach 2 Frames): bar={bar} slot={slot} soll action {actionId} " +
+            _log.Warning($"[Hotbar] Set+WriteSavedSlot ohne Wirkung (nach 2 Frames): bar={bar} slot={slot} soll action {actionId} " +
                          $"'{name}', ist {(module == null ? "Modul null" : DescribeSlotRaw(module, bar, slot))}");
         }
+
+        // The menu stays open on the key list after a placement (user choice
+        // 2026-09-05), so the player can fill the next key. Queued behind the
+        // verdict - an interrupting line here would cut off the very result the
+        // player is waiting for.
+        if (_menuStep == SkillMenuStep.PickSlot)
+            _tolk.Speak(AccessibilityStrings.SkillMenuBackAtSlots(_targets.Count));
     }
 
     /// <summary>Raw slot state for the probe log: command type/id plus the
