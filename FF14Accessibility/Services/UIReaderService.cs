@@ -43,6 +43,11 @@ public sealed class UIReaderService : IDisposable
     // Owns the loot roll state; asked for the row text of the NeedGreed list.
     private readonly LootRollService _lootRolls;
 
+    /// <summary>Which item a slot under the cursor REALLY holds - looked up by
+    /// container and slot number instead of by the icon drawn on it. See
+    /// ItemSlotService for why the icon cannot answer that.</summary>
+    private readonly ItemSlotService _itemSlots;
+
     /// <summary>Sagt die FORM einer Wirkflaeche in Worten - das Einzige am
     /// Aktions-Tooltip, das das Spiel ausschliesslich zeichnet.</summary>
     private readonly ActionShapeService _actionShape;
@@ -368,9 +373,10 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots)
     {
         _lootRolls      = lootRolls;
+        _itemSlots      = itemSlots;
         _tooltips       = tooltips;
         _charaMake      = charaMake;
         _addonLifecycle = addonLifecycle;
@@ -2293,6 +2299,25 @@ public sealed class UIReaderService : IDisposable
     // 2026-07-31, mirrors the skill window) - so quickly scanning the bag never
     // drowns in descriptions. Keyed by Item sheet row, not node pointer, so
     // moving between two stacks of the same item does not re-read the text.
+    // The focus reader waits for AgentItemDetail to catch up with the cursor
+    // rather than announcing the slot it just left - see ResolveFocusedItemName.
+    // Counted per node, so a slot the agent never claims cannot stall forever.
+    private nint _itemDeferNode;
+    private int  _itemDeferFrames;
+    private int  _itemDeferBudget = ItemDeferMaxFrames;
+    private bool _itemSlotDeferring;    // set while this frame must not announce yet
+    private uint _lastSpokenSlotItemId; // item the PREVIOUS focus announced
+    private const int ItemDeferMaxFrames = 4;
+    // Waiting for the detail window to OPEN is a different order of magnitude from
+    // waiting for it to catch up. Measured 2026-09-05 00:19: opening the bag, the
+    // first focused slot still had no agent after four frames and fell back to the
+    // icon - the one miss in 101 focus changes. Half a second covers it, costs
+    // nothing when the agent is already there, and is spent while the window is
+    // announcing "Inventory" and its tab anyway. It can only ever be spent in the
+    // three windows the agent provably serves; everywhere else SlotWait.None means
+    // no wait at all.
+    private const int ItemDeferOpeningFrames = 30;
+
     private uint _itemDwellId;            // item id the dwell clock is timing (0 = none)
     private long _itemDwellTick;          // Stopwatch timestamp the focus reached it
     private bool _itemDwellDescSpoken;    // description already queued for this dwell?
@@ -2423,6 +2448,10 @@ public sealed class UIReaderService : IDisposable
             ProbeFocusContext(node);
 #endif
             _lastFocusedItemName = ResolveFocusedItemName(node);
+            // The item detail agent is live but still a frame behind the cursor.
+            // Leaving _lastFocusedNodePtr untouched makes the next frame resolve
+            // this same node again, by which time the agent is right.
+            if (_itemSlotDeferring) return;
             // Tausch-Zeilen haben KEINEN Icon-Slot unter dem Fokus, aus dem die
             // Item-Id sonst kommt - deshalb blieb _lastFocusedItemId dort 0, und
             // die Beschreibung, die im Inventar laengst kommt, fiel ersatzlos aus
@@ -3551,6 +3580,7 @@ public sealed class UIReaderService : IDisposable
     /// </summary>
     private unsafe string ResolveFocusedItemName(AtkResNode* node)
     {
+        _itemSlotDeferring = false;
         _lastFocusedItemId = 0; // reset first; set below only for a resolved item
 
         // Climb to the nearest ancestor-or-self COMPONENT node (the focus sits
@@ -3581,9 +3611,61 @@ public sealed class UIReaderService : IDisposable
                 if (icon->IconId == 0)
                     return isItemSlot && ((AtkResNode*)cur)->IsVisible() ? AccessibilityStrings.EmptySlot : string.Empty;
 
-                var (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
+                // THE GAME'S OWN ANSWER FIRST, THE PICTURE ONLY AS A FALLBACK.
+                // Reverse-looking an item up by its icon cannot tell two items
+                // apart that share one, and 9198 icons in the sheet do: three
+                // neighbouring bag slots holding Maple, Ash and Yew Branch all
+                // announced "Ash Branch" (user 2026-09-04, confirmed by
+                // [ItemSlotProbe] 16:24). ItemSlotService reads AgentItemDetail
+                // instead - see there for why the slot-array route was measured
+                // and thrown away.
+                //
+                // THE ONE FRAME OF PATIENCE is the whole trick. At this point in
+                // the frame the agent still describes the slot the cursor just
+                // LEFT; one frame later it is right, measured on all 41 focus
+                // changes of the probe run 23:25. So while it is provably stale we
+                // announce NOTHING and come back next frame - about 17 ms, below
+                // what anyone can hear - rather than speak the previous item.
+                // The budget is capped so a slot the agent never claims (quest
+                // rewards, some shop rows) still gets its old icon-based name
+                // instead of falling silent.
+                if ((nint)node != _itemDeferNode)
+                {
+                    _itemDeferNode   = (nint)node;
+                    _itemDeferFrames = 0;
+                    _itemDeferBudget = ItemDeferMaxFrames;
+                }
+                var deferExhausted = _itemDeferFrames >= _itemDeferBudget;
+                var agentItemId    = _itemSlots.TryResolve(comp, icon->IconId, _lastSpokenSlotItemId,
+                                                           deferExhausted, out var agentWait);
+                if (agentItemId == 0 && agentWait != SlotWait.None && !deferExhausted)
+                {
+                    // A window that has not opened its detail yet needs the long
+                    // budget; one that is merely a frame behind needs the short one.
+                    if (agentWait == SlotWait.AgentOpening) _itemDeferBudget = ItemDeferOpeningFrames;
+                    _itemDeferFrames++;
+                    _itemSlotDeferring = true;
+                    return string.Empty;
+                }
+
+                string name;
+                uint   itemId;
+                if (agentItemId != 0)
+                {
+                    itemId = agentItemId;
+                    name   = _inventory.ResolveItemName(itemId);
+                }
+                else
+                {
+                    (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
+                }
                 if (string.IsNullOrEmpty(name)) return string.Empty;
                 _lastFocusedItemId = itemId; // remembered for the description dwell
+                // Survives the deferral frames, unlike _lastFocusedItemId, which is
+                // cleared at the top of every call: a stale agent is recognised by
+                // still naming the item of the PREVIOUS focus, and that comparison
+                // has to hold across the frames spent waiting for it.
+                _lastSpokenSlotItemId = itemId;
 
                 // Category and item level for EVERY item ("Baustein,
                 // Gegenstandsstufe 1") - the tooltip lines a sighted player
@@ -3606,6 +3688,13 @@ public sealed class UIReaderService : IDisposable
                 var qty = ReadIconQuantity(icon);
                 _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}' klassen='{owners}' set={set.Length > 0}");
                 var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
+                // HQ, which a sighted player reads off the symbol drawn on the slot.
+                // Without it the two Honey stacks in the bag were the SAME sentence
+                // apart from the count (user 2026-09-05, log 00:11: "Honey, Ingredient,
+                // item level 4" for both) - and it is the HQ one a recipe wants. The
+                // bulk inventory readout has said it all along (InventoryService), so
+                // this also stops the same item being described two different ways.
+                if (ItemSlotService.IsHighQuality(icon->IconId)) spoken += AccessibilityStrings.HighQuality;
                 if (basics.Length > 0) spoken = $"{spoken}, {basics}";
                 if (gear.Length > 0)   spoken = $"{spoken}, {gear}";
                 return spoken + owners + set;

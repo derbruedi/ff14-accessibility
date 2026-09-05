@@ -593,7 +593,11 @@ public sealed class InventoryService
         return map;
     }
 
-    private string ResolveItemName(uint baseItemId)
+    /// <summary>The display name of an Item sheet row, or a spoken fallback
+    /// ("Gegenstand 1234") when the row has none. Public since the focus reader
+    /// resolves item SLOTS by their real item id (ItemSlotService) instead of by
+    /// their icon - the name then has to come from the id, not from a map.</summary>
+    public string ResolveItemName(uint baseItemId)
     {
         if (_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row))
         {
