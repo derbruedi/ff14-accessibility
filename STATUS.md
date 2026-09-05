@@ -3,7 +3,71 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-05): GEHHILFE V5.97 — ETAPPEN BEI FERNZIELEN
+## STAND JETZT (2026-09-05): TESTZWEIG V5.98 — VIER OFFENE PRs AUF test/prs
+
+>>> AUFTRAG: nach dem Farb-Stand (Heilmonitor PR #10, Gegnerfarben PR #12, beide
+    schon in v5.96/adc386a) und der Etappen-Arbeit (V5.97, 7e815be) sollten alle
+    seither neu eingegangenen, noch offenen PRs zum Testen auf `test/prs`
+    zusammengeführt werden. Geprüft per `gh pr list`: vier PRs (#14, #15, #16,
+    #17), alle vom selben Autor (Berenion), alle auf `main`/v5.96 aufgesetzt,
+    alle "baut sauber gegen v5.96, 0 Warnungen, 0 Fehler" laut PR-Beschreibung.
+
+>>> EINGEBAUT (Merge-Reihenfolge: #17 → #15 → #14 → #16, unkritische zuerst):
+
+    - **PR #17 — Gesprochene Tastennamen folgen `/acc lang`**
+      (`KeybindService.cs`, `AccessibilityStrings.cs`): die Modifikator-Wörter
+      "Strg/Umschalt/Alt" in Tastenansagen (Belegen-Menü, Benachrichtigung)
+      waren fest deutsch verdrahtet, auch nach `/acc lang en`. Jetzt über
+      `ModifierCtrl/Shift/Alt` + `IsGerman`, wie jede andere Ansage.
+
+    - **PR #15 — Item-Plätze: Name kommt aus dem Spiel, nicht aus dem Symbol**
+      (`ItemSlotService.cs` neu, `InventoryService.cs`, `UIReaderService.cs`,
+      `Plugin.cs`): Taschen-/Ausrüstungsplätze nannten bei Symbol-Kollisionen
+      (9198 von 26223 Symbolen im Item-Sheet mehrdeutig, z.B. 27 Holzarten auf
+      einem Symbol) den falschen Gegenstand. Liest jetzt die Item-Id direkt aus
+      `AgentItemDetail`, inkl. "Hoch-Qualität"-Zusatz.
+
+    - **PR #14 — Ausrüstungs-Vergleich als gesprochene Tabelle**
+      (`ItemCompareService.cs` neu, `AccessibilityStrings.ItemCompare.cs` neu,
+      `Configuration.cs`, `Plugin.cs`, `UIReaderService.cs`): das spieleigene
+      Vergleichsfenster beim Anlegen-Hover (Layout+Farbe, für Screenreader
+      unsichtbar) wird auf `Strg+Umschalt+F12` als Tabelle vorgelesen — Urteil
+      zuerst ("Besser in 3 von 5"), dann Zeile pro Wert mit beiden Seiten.
+      Nebenbei behoben: `ItemDetailCompare` fehlte in `HudNoiseAddons` und
+      erzeugte abgeschnittene Doppelt-Ansagen bei jedem Strg-Druck.
+
+    - **PR #16 — Belegen-Menü: erst die Taste, dann was darauf soll**
+      (`HotbarService.cs` großteils umgebaut, `AccessibilityStrings.cs`):
+      die zwei Schritte im Skill-Zuweisungs-Menü (Strg+Numpad0) sind
+      vertauscht — zuerst die Tastenliste (sagt an, was aktuell drauf liegt),
+      dann erst die Auswahl der Fähigkeit/des Gegenstands. Nach dem Ablegen
+      geht es zurück zur Tastenliste statt das Menü zu schließen, damit sich
+      eine ganze Leiste in einem Durchgang füllen lässt.
+
+>>> KONFLIKTE: keine manuellen. Die PR-Texte kündigten Überschneidungen in
+    `Plugin.cs` (#14/#15, benachbarte Felddeklarationen) und in
+    `AccessibilityStrings.cs` (#14/#16, gesprochene Hilfe bzw. Menü-Strings) an
+    - Git hat alle vier Merges (`--no-ff`) per 3-Wege-Merge automatisch und
+    ohne Konfliktmarker aufgelöst, verifiziert per Grep auf `<<<<<<<` nach
+    jedem Merge (kein Treffer) und per Build (0 Fehler).
+
+>>> ETAPPEN-FEATURE (V5.97, 7e815be) UNVERÄNDERT: sitzt in der Historie
+    zwischen dem Farb-Stand und den vier PR-Merges, `NavigationService.cs`
+    trägt weiterhin alle Etappen-Symbole (`RequestStagedRoute`, `_stagingActive`
+    etc.), keiner der vier PRs fasst Navigations-Code an.
+
+>>> VERSION: 5.97 → 5.98 (`FF14Accessibility.csproj`, `repo.json`,
+    `Plugin.cs`-`PluginVersion`). Lokaler Testzweig, NICHT gepusht - Backup-Tag
+    `backup-test-prs-pre-merge-2026-09-05` auf dem alten `test/prs`-Stand
+    (7e815be) gesetzt, bevor die PR-Branches gemergt wurden.
+
+>>> NICHT GETESTET (laut PR-Texte selbst): PR #16 nur für Fähigkeiten/
+    Gegenstände im Spiel gelaufen, Quest-Gegenstände/allgemeine Aktionen/
+    Reittiere ungeprüft. PR #15 Chocobo-Sattelbeutel ungemessen (User hat
+    keinen Chocobo). PR #14 letzte Änderung an der Materia-Zeile nicht erneut
+    im Spiel gegengeprüft.
+
+## STAND DAVOR (2026-09-05): GEHHILFE V5.97 — ETAPPEN BEI FERNZIELEN
 
 >>> AUFTRAG: die manuelle Wegpunkt-Navigation (Gehhilfe, Umschalt+Numpad3) war
     bereits seit V4.63-4.65 vollständig auf vnavmesh-Wegpunkt-Routing umgestellt
