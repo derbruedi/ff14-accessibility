@@ -373,13 +373,16 @@ public static partial class AccessibilityStrings
         { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" };
     public static string[] CompassAdjectives => IsGerman ? CompassAdjDe : CompassAdjEn;
 
-    /// <summary>A spot list line: name, level, distance and compass bearing
-    /// (shared by the fishing- and gathering-spot read-outs).</summary>
-    public static string SpotListLine(string name, int level, float distance, string compass) =>
-        IsGerman
-            ? $"{name}, Stufe {level}, {distance:F0} Meter {compass}"
-            : $"{name}, level {level}, {distance:F0} meters {compass}";
-
+    /// <summary>A spot list line: name, level, optional status (gathering),
+    /// distance and compass bearing (shared by fishing and gathering).</summary>
+    public static string SpotListLine(string name, int level, float distance, string compass, string? status = null) =>
+        status == null
+            ? (IsGerman
+                ? $"{name}, Stufe {level}, {distance:F0} Meter {compass}"
+                : $"{name}, level {level}, {distance:F0} meters {compass}")
+            : (IsGerman
+                ? $"{name}, Stufe {level}, {status}, {distance:F0} Meter {compass}"
+                : $"{name}, level {level}, {status}, {distance:F0} meters {compass}");
     /// <summary>
     /// Relative-to-heading direction word for a signed angle in degrees
     /// (negative = left, 0 = ahead).
@@ -968,17 +971,29 @@ public static partial class AccessibilityStrings
     public static string NoFishingSpots =>
         IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
 
-    /// <summary>Header for the Sammelpunkte category (V6.00): total reachable
-    /// spots (current zone + neighbourhood) and how many are in THIS zone -
-    /// same two-number shape as CategoryHuntingCount.</summary>
-    public static string CategoryGatheringSpotCount(int total, int here) =>
-        here > 0
-            ? (IsGerman
-                ? $"Sammelpunkte: {total} erreichbar, {here} in diesem Gebiet."
-                : $"Gathering spots: {total} reachable, {here} in this area.")
-            : (IsGerman
-                ? $"Sammelpunkte: {total} erreichbar, keiner in diesem Gebiet."
-                : $"Gathering spots: {total} reachable, none in this area.");
+    /// <summary>Header for the Sammelpunkte category: live nodes first, then
+    /// how many are available overall, and how many are in THIS zone.</summary>
+    public static string CategoryGatheringSpotCount(int total, int here, int upNow)
+    {
+        var herePart = here > 0
+            ? (IsGerman ? $"{here} in diesem Gebiet." : $"{here} in this area.")
+            : (IsGerman ? "keiner in diesem Gebiet." : "none in this area.");
+        if (upNow > 0)
+        {
+            return IsGerman
+                ? $"Sammelpunkte: {upNow} gerade da, {total} verfügbar, {herePart}"
+                : $"Gathering spots: {upNow} up now, {total} available, {herePart}";
+        }
+        return IsGerman
+            ? $"Sammelpunkte: {total} verfügbar, {herePart}"
+            : $"Gathering spots: {total} available, {herePart}";
+    }
+
+    /// <summary>Status word after the level: live targetable node vs catalog-only.</summary>
+    public static string GatheringSpotStatus(bool currentlyUp) =>
+        currentlyUp
+            ? (IsGerman ? "gerade da" : "up now")
+            : (IsGerman ? "verfügbar" : "available");
 
     /// <summary>Spoken the moment the game reports the player can cast from where
     /// they stand and face - the orientation cue a blind fisher rotates until

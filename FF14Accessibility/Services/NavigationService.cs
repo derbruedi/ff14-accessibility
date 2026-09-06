@@ -1177,7 +1177,8 @@ public sealed class NavigationService
         {
             var spots = _gathering.GetSpotsAcrossZones();
             var here = spots.Count(s => s.InCurrentZone);
-            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryGatheringSpotCount(spots.Count, here));
+            var upNow = spots.Count(s => s.Spot.CurrentlyUp);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryGatheringSpotCount(spots.Count, here, upNow));
             return;
         }
 
@@ -2113,12 +2114,13 @@ public sealed class NavigationService
             Kind: QuestKind.Unknown,
             Level: spot.Level);
 
-        string text;
         var typeName = GatheringService.ShortTypeName(spot.TypeName);
         var level = AccessibilityStrings.LevelPrefix(spot.Level);
+        var status = AccessibilityStrings.GatheringSpotStatus(spot.CurrentlyUp);
+        string text;
         if (inCurrentZone)
         {
-            text = $"{typeName}, {level}" +
+            text = $"{typeName}, {level}{status}, " +
                    $"{FormatDistance(Distance2D(player.Position, spot.Position))}, " +
                    $"{CalculateDirection(player, spot.Position)}.";
         }
@@ -2126,7 +2128,7 @@ public sealed class NavigationService
         {
             var zone = _places.GetMapName(mapId);
             var hop  = _places.FindFirstHopToMap(mapId, out var hops);
-            text = $"{typeName}, {level}" +
+            text = $"{typeName}, {level}{status}, " +
                    (string.IsNullOrEmpty(zone) ? AccessibilityStrings.InAnotherArea : AccessibilityStrings.InArea(zone));
             if (hop != null)
             {
@@ -2139,7 +2141,7 @@ public sealed class NavigationService
             }
         }
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
-        _log.Info($"[Gather] Auswahl: {text} pos=({spot.Position.X:F1}|{spot.Position.Z:F1}) Zone={territoryId}");
+        _log.Info($"[Gather] Auswahl: {text} pos=({spot.Position.X:F1}|{spot.Position.Z:F1}) Zone={territoryId} live={spot.CurrentlyUp}");
         _tolk.SpeakInterrupt(text);
     }
 

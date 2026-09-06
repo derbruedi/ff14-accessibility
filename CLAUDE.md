@@ -94,7 +94,12 @@ A workaround without all four steps is a bug.
 3. Only use safe mod keys (game-api.md → "Safe Mod Keys")
 
 # Critical Warnings
-[FILL IN DURING DEVELOPMENT — document project-specific traps here]
+
+- **BossMod / BossModWalkInstaller — NIE committen, NIE pushen, NIE in Releases.**
+  Nur lokal beim User. Ordner steht in `.git/info/exclude` (bewusst nicht in
+  `.gitignore`, damit der Name nicht öffentlich mitwandert). Vor jedem Push/Release:
+  prüfen, dass kein BossMod-Pfad und kein BossMod-Binary im Commit/ZIP landet.
+  User (2026-08-26/30): „nie das bossmod mit pushen das ist nur fuer mich“.
 
 # Session & Context Management
 

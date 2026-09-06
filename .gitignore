@@ -29,7 +29,12 @@ age-of-decadence-analyse.txt
 nul
 *.zip
 .aider*
+_probe_recipe/
+_log_search_new.txt
 
 # Private Werkzeuge des Entwicklers - nie ins Repo
 PRIVAT.txt
 BossMod-Rotationen.txt
+
+_local_craft_backup/
+

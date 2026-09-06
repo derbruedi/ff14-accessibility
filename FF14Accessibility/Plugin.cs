@@ -177,11 +177,9 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    // 6.00: Sammelpunkte sind jetzt eine klassenbezogene, kartenuebergreifende
-    // Kategorie (nur Minenarbeiter/Botaniker) - siehe GatheringService und
-    // NavigationService.CycleGatheringDestination.
-    private const string PluginVersion    = "6.00";
-    private const string PluginVersionTag = "Sammelpunkte: klassenbezogen und kartenuebergreifend";
+    // 6.04: Ansage „gerade da“ vor „verfügbar“; Status nach der Stufe.
+    private const string PluginVersion    = "6.04";
+    private const string PluginVersionTag = "Sammelpunkte: Status nach Stufe";
 
     public Plugin()
     {
@@ -1434,7 +1432,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var floor = _autoWalk.ResolveFloorPoint(spot.Position) ?? spot.Position;
         var name  = AccessibilityStrings.GatheringSpotName(spot.Level);
-        Log.Info($"[Gather] Laufe zu GP={spot.GatheringPointId} '{spot.TypeName}' " +
+        Log.Info($"[Gather] Laufe zu Base={spot.GatheringPointBaseId} '{spot.TypeName}' " +
                  $"Welt=({spot.Position.X:F1}|{spot.Position.Z:F1}) Boden Y={floor.Y:F1}");
         _tolk.SpeakInterrupt(AccessibilityStrings.WalkingTo(name));
 

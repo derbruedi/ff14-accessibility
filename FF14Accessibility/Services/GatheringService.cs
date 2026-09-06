@@ -2,38 +2,53 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Plugin.Services;
-using Lumina.Data.Files;
-using Lumina.Data.Parsing.Layer;
 using Lumina.Excel.Sheets;
 
 namespace FF14Accessibility.Services;
 
-/// <summary>One gathering cluster of the current zone (all node placements that
-/// share a GatheringPoint), centred on the average of its placements.</summary>
+/// <summary>One gathering cluster or live node.</summary>
 /// <param name="TypeName">GatheringType name ("Minenarbeiter (Herausbrechen)").</param>
 /// <param name="Level">Required gathering level.</param>
-/// <param name="Position">World position (X/Z from the LGB; Y is the node height).</param>
-public sealed record GatherSpotInfo(string TypeName, int Level, Vector3 Position, uint GatheringPointId, uint GatheringTypeId);
+/// <param name="Position">World position. Live nodes use the ObjectTable
+/// position (real height); catalogue entries use ExportedGatheringPoint X/Z
+/// with Y=0 until navmesh resolves height.</param>
+/// <param name="GatheringPointBaseId">GatheringPointBase sheet RowId (also the
+/// ExportedGatheringPoint key for catalogue rows).</param>
+/// <param name="GatheringTypeId">GatheringType row id (0/1 miner, 2/3 botanist).</param>
+/// <param name="CurrentlyUp">True when this entry is a live, targetable
+/// GatheringPoint in the ObjectTable right now (same "can work this" signal
+/// measured 2026-08-09 via IsTargetable).</param>
+public sealed record GatherSpotInfo(
+    string TypeName,
+    int Level,
+    Vector3 Position,
+    uint GatheringPointBaseId,
+    uint GatheringTypeId,
+    bool CurrentlyUp = false);
 
 /// <summary>
 /// Gathering (Miner ore / Botanist wood) accessibility. A blind gatherer cannot
 /// see where the nodes are, so - like <see cref="FishingService"/> for fishing
-/// holes - the job is answering "where can I gather in this zone?" and walking to
-/// the spot, however far across the map.
+/// holes - the job is answering "where can I gather?" and walking to the spot,
+/// including across map transitions.
 ///
-/// Unlike fishing (clean FishingSpot sheet with a zone column), the zone->node
-/// mapping is NOT in Excel. It lives in the territory's LGB layout file, which
-/// Lumina can parse. Verified end to end (2026-07-27):
-/// - ExportedGatheringPoint / LGB coordinates are RAW WORLD X/Z (matched live
-///   spawned nodes to 5-12 m; pixel/map-coord interpretations were 1000s of m off).
-/// - LGB InstanceObject with AssetType==Gathering carries a GatheringInstanceObject
-///   whose GatheringPointId is the GatheringPoint sheet RowId, giving type + level.
+/// Two layers (user request 2026-09-06):
+/// 1. LIVE nodes in the current zone from the ObjectTable
+///    (<see cref="Dalamud.Game.ClientState.Objects.Enums.ObjectKind.GatheringPoint"/>
+///    with <c>IsTargetable</c>) - re-read on every list build so a fresh spawn
+///    appears the next time the category is opened or stepped. These sort first.
+///    Sighted players with Truth of Mountains/Forests see related icons on the
+///    map; our source is the game objects themselves, not the map UI.
+/// 2. CATALOGUE from <see cref="GatheringPoint"/> + <see cref="ExportedGatheringPoint"/>
+///    sheets for the current zone and neighbours (up to <see cref="MaxZoneHops"/>),
+///    so empty ground still has a destination. Cached per territory; skipped when
+///    a live node already covers that GatheringPointBase.
 ///
-/// So: load the current territory's LGB, take every Gathering placement, resolve
-/// its GatheringPoint -> GatheringPointBase -> GatheringType/Level, filter to the
-/// active gathering job, group placements that share a GatheringPoint into one
-/// spot, and hand the nearest-first list to the existing walk guide.
+/// Job filter: Miner types 0+1, Botanist types 2+3 (GatheringType sheet names
+/// verified 2026-07-27). Non-gatherers get an empty cross-zone list so the
+/// category disappears from browsing entirely.
 /// </summary>
 public sealed class GatheringService
 {
@@ -54,20 +69,14 @@ public sealed class GatheringService
     private static readonly uint[] MinerTypes    = { 0, 1 };
     private static readonly uint[] BotanistTypes = { 2, 3 };
 
-    // The LGB files under a territory's level folder that can hold gathering nodes.
-    private static readonly string[] LgbNames = { "planevent.lgb", "bg.lgb", "planmap.lgb", "planlive.lgb" };
-
     /// <summary>How many map transitions away a zone may be and still show up
-    /// in <see cref="GetSpotsAcrossZones"/>. Parsing every LGB in the game on
-    /// every keypress is not affordable (see class docs); this bounds the scan
-    /// to the current zone and its near neighbourhood - the "other areas can
-    /// already lead me there" case the user asked for, without a world-wide
-    /// pre-scan. Mirrors the reachability idea in DutyEntranceService, just
-    /// depth-limited because a hop distance costs a full LGB parse here.</summary>
+    /// in <see cref="GetSpotsAcrossZones"/>. Sheet reads are cheap; the bound
+    /// keeps the spoken list to the neighbourhood the player can walk to
+    /// without a long Aetheryte hop - same reachability idea as DutyEntranceService.</summary>
     private const int MaxZoneHops = 2;
 
-    // Territory -> its gathering spots, read once (LGB layout never changes at
-    // runtime). Mirrors AreaRangeService._byTerritory.
+    // Territory -> catalogue spots, read once (sheet data never changes at
+    // runtime). Live nodes are NOT cached - they are re-scanned each call.
     private readonly Dictionary<uint, List<GatherSpotInfo>> _byTerritory = [];
 
     public GatheringService(
@@ -87,10 +96,10 @@ public sealed class GatheringService
     }
 
     /// <summary>
-    /// All gathering spots of the CURRENT zone that the active job can work,
-    /// grouped per GatheringPoint and sorted nearest-first from the player. When
-    /// the player is not on a gathering class every type is returned. Empty when
-    /// no player is loaded or the zone has no matching nodes.
+    /// Gathering spots for the current zone: live targetable nodes first
+    /// (fresh ObjectTable scan), then catalogue bases not already covered by a
+    /// live node, both sorted by level then distance. When the player is not on
+    /// a gathering class every type is returned for the catalogue half.
     /// </summary>
     public List<GatherSpotInfo> GetSpotsInCurrentZone()
     {
@@ -99,24 +108,27 @@ public sealed class GatheringService
 
         var territory = (uint)_clientState.TerritoryType;
         var allowedTypes = AllowedGatheringTypes(player.ClassJob.RowId);
-        var spots = GetAllSpotsInZone(territory)
-            .Where(s => allowedTypes == null || allowedTypes.Contains(s.GatheringTypeId))
-            .ToList();
-
         var playerPos = player.Position;
-        return spots
-            .OrderBy(s => PlacesService.Distance2D(playerPos, s.Position))
+
+        var live = GetLiveSpotsInCurrentZone(allowedTypes);
+        var liveBases = new HashSet<uint>(live.Select(s => s.GatheringPointBaseId));
+
+        var catalog = GetAllSpotsInZone(territory)
+            .Where(s => allowedTypes == null || allowedTypes.Contains(s.GatheringTypeId))
+            .Where(s => !liveBases.Contains(s.GatheringPointBaseId));
+
+        return live.Concat(catalog)
+            .OrderByDescending(s => s.CurrentlyUp)
+            .ThenBy(s => s.Level)
+            .ThenBy(s => PlacesService.Distance2D(playerPos, s.Position))
             .ToList();
     }
 
     /// <summary>
-    /// Every gathering spot of ANY zone reachable from the player's current map
-    /// within <see cref="MaxZoneHops"/> transitions, filtered to the active
-    /// job's types, current zone first (then nearest by walk/hop distance).
-    /// This is the cross-zone counterpart of <see cref="GetSpotsInCurrentZone"/>
-    /// - "other areas can already lead me there", same idea as quest goals and
-    /// hunting targets (user request, V6.00). Empty when the player is not on a
-    /// gathering class, or none are in range.
+    /// Reachable gathering spots: live targetable nodes in the current zone
+    /// first (re-scanned every call), then catalogue entries for this zone and
+    /// neighbours within <see cref="MaxZoneHops"/>, level-sorted. Empty when
+    /// the player is not on a gathering class, or none are in range.
     /// </summary>
     public List<(GatherSpotInfo Spot, uint TerritoryId, uint MapId, bool InCurrentZone)> GetSpotsAcrossZones()
     {
@@ -131,8 +143,17 @@ public sealed class GatheringService
         var currentMap       = _clientState.MapId;
         var playerPos         = player.Position;
 
-        // Every map within reach, plus the current one at distance 0 (GetHopDistances
-        // already includes it, kept explicit so a MapId==0 edge case still works).
+        // Live first: ObjectTable scan every time so a new spawn shows up on the
+        // next category step (user 2026-09-06).
+        var live = GetLiveSpotsInCurrentZone(allowedTypes);
+        var liveBases = new HashSet<uint>(live.Select(s => s.GatheringPointBaseId));
+        foreach (var spot in live)
+            result.Add((spot, currentTerritory, currentMap, true));
+
+        // Catalogue neighbourhood. Several Map rows can share one TerritoryType
+        // (log 2026-09-06: Key 809 twice) - keep one entry per territory, the
+        // shortest hop wins, or ToDictionary below throws and CycleCategory
+        // swallows the category.
         var hopsByMap = _places.GetHopDistances();
         var territories = new List<(uint TerritoryId, uint MapId, int Hops)> { (currentTerritory, currentMap, 0) };
         foreach (var (mapId, hops) in hopsByMap)
@@ -140,25 +161,37 @@ public sealed class GatheringService
             if (mapId == currentMap || hops > MaxZoneHops) continue;
             var territoryId = _places.GetTerritoryOfMap(mapId);
             if (territoryId == 0 || territoryId == currentTerritory) continue;
+
+            var existing = territories.FindIndex(t => t.TerritoryId == territoryId);
+            if (existing >= 0)
+            {
+                if (hops < territories[existing].Hops)
+                    territories[existing] = (territoryId, mapId, hops);
+                continue;
+            }
             territories.Add((territoryId, mapId, hops));
         }
 
-        foreach (var (territoryId, mapId, hops) in territories)
+        foreach (var (territoryId, mapId, _) in territories)
         {
             var inCurrentZone = territoryId == currentTerritory;
             foreach (var spot in GetAllSpotsInZone(territoryId))
             {
                 if (!allowedTypes.Contains(spot.GatheringTypeId)) continue;
+                // Live node already covers this base in the current zone - do not
+                // also list the static catalogue centre for the same cluster.
+                if (inCurrentZone && liveBases.Contains(spot.GatheringPointBaseId)) continue;
                 result.Add((spot, territoryId, mapId, inCurrentZone));
             }
         }
 
-        // In-zone first (real distance), then by zone hop distance, then by
-        // the spot's own distance to the transition-adjacent zone centre - the
-        // same priority order the quest/hunt destinations already use.
+        // Currently-up on this map first, then level, then this zone, then hops,
+        // then nearer (user 2026-09-06).
         var hopsOf = territories.ToDictionary(t => t.TerritoryId, t => t.Hops);
         return result
-            .OrderByDescending(x => x.InCurrentZone)
+            .OrderByDescending(x => x.Spot.CurrentlyUp)
+            .ThenBy(x => x.Spot.Level)
+            .ThenByDescending(x => x.InCurrentZone)
             .ThenBy(x => hopsOf.GetValueOrDefault(x.TerritoryId, MaxZoneHops + 1))
             .ThenBy(x => x.InCurrentZone
                 ? PlacesService.Distance2D(playerPos, x.Spot.Position)
@@ -167,11 +200,53 @@ public sealed class GatheringService
     }
 
     /// <summary>
-    /// Every gathering spot of one zone, EVERY type, read once from its LGB
-    /// layout files and cached (layout never changes at runtime - mirrors
-    /// AreaRangeService._byTerritory). The job filter is applied by the
-    /// caller, not here, so the same cache serves every class and survives a
-    /// class change without re-parsing.
+    /// Live GatheringPoint objects in the ObjectTable that the game marks
+    /// targetable (currently workable). Re-read every call - not cached.
+    /// <see cref="GatheringPoint"/> sheet RowId is <c>BaseId</c> on the object
+    /// (same path as NavigationService.GetGatheringInfo).
+    /// </summary>
+    private List<GatherSpotInfo> GetLiveSpotsInCurrentZone(uint[]? allowedTypes)
+    {
+        var result = new List<GatherSpotInfo>();
+        var gpSheet = _data.GetExcelSheet<GatheringPoint>();
+        if (gpSheet == null) return result;
+
+        foreach (var obj in _objectTable)
+        {
+            if (obj == null || obj.ObjectKind != ObjectKind.GatheringPoint) continue;
+            // Measured 2026-08-09: live workable nodes are IsTargetable; empty
+            // placements of the same BaseId are not. That is "grade abbaubar".
+            if (!obj.IsTargetable) continue;
+
+            if (!gpSheet.TryGetRow(obj.BaseId, out var gp)) continue;
+            var baseRef = gp.GatheringPointBase.ValueNullable;
+            if (baseRef is not { } gpBase) continue;
+
+            var typeId = gpBase.GatheringType.RowId;
+            if (allowedTypes != null && !allowedTypes.Contains(typeId)) continue;
+
+            var typeName = gpBase.GatheringType.ValueNullable?.Name.ExtractText() ?? "";
+            result.Add(new GatherSpotInfo(
+                typeName,
+                gpBase.GatheringLevel,
+                obj.Position,
+                gp.GatheringPointBase.RowId,
+                typeId,
+                CurrentlyUp: true));
+        }
+
+#if DEBUG
+        if (result.Count > 0)
+            _log.Info($"[Gather] Live abbaubar in Zone: {result.Count}.");
+#endif
+        return result;
+    }
+
+    /// <summary>
+    /// Every gathering spot of one zone, EVERY type, read once from the
+    /// GatheringPoint + ExportedGatheringPoint sheets and cached. The job
+    /// filter is applied by the caller, not here, so the same cache serves
+    /// every class and survives a class change without re-reading.
     /// </summary>
     private List<GatherSpotInfo> GetAllSpotsInZone(uint territoryId)
     {
@@ -180,81 +255,49 @@ public sealed class GatheringService
         var result = new List<GatherSpotInfo>();
         _byTerritory[territoryId] = result;
 
-        if (!_data.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var tt)) return result;
-        var bg = tt.Bg.ExtractText();
-        if (string.IsNullOrWhiteSpace(bg)) return result;
-
-        var gpSheet = _data.GetExcelSheet<GatheringPoint>();
-
-        // Collect every gathering placement from the territory's LGB files, keyed
-        // by GatheringPoint so placements of the same node fold into one spot.
-        var byPoint = new Dictionary<uint, (List<Vector3> Pts, uint TypeId, string TypeName, int Level)>();
-
-        foreach (var lgbName in LgbNames)
+        var gpSheet  = _data.GetExcelSheet<GatheringPoint>();
+        var expSheet = _data.GetExcelSheet<ExportedGatheringPoint>();
+        if (gpSheet == null || expSheet == null)
         {
-            var path = BuildLgbPath(bg, lgbName);
-            LgbFile? lgb;
-            try { lgb = _data.GetFile<LgbFile>(path); }
-            catch (Exception ex) { _log.Warning(ex, $"[Gather] LGB laden fehlgeschlagen: {path}"); continue; }
-#if DEBUG
-            if (lgb == null) { _log.Info($"[Gather] LGB '{path}': NICHT GEFUNDEN"); continue; }
-            var totalObjs = lgb.Layers.Sum(l => l.InstanceObjects.Length);
-            var gathCount = lgb.Layers.Sum(l => l.InstanceObjects.Count(o => o.AssetType == LayerEntryType.Gathering));
-            var sgCount   = lgb.Layers.Sum(l => l.InstanceObjects.Count(o => o.AssetType == LayerEntryType.SharedGroup));
-            _log.Info($"[Gather] LGB '{path}': {lgb.Layers.Length} Layer, {totalObjs} Objekte, " +
-                      $"Gathering={gathCount}, SharedGroup={sgCount}");
-#else
-            if (lgb == null) continue;
-#endif
-
-            foreach (var layer in lgb.Layers)
-            {
-                foreach (var obj in layer.InstanceObjects)
-                {
-                    if (obj.AssetType != LayerEntryType.Gathering) continue;
-                    if (obj.Object is not LayerCommon.GatheringInstanceObject g) continue;
-
-                    var gpId = g.GatheringPointId;
-                    if (!gpSheet.TryGetRow(gpId, out var gp)) continue;
-                    var baseRef = gp.GatheringPointBase.ValueNullable;
-                    if (baseRef is not { } gpBase) continue;
-
-                    var typeId = gpBase.GatheringType.RowId;
-
-                    var t = obj.Transform.Translation;
-                    var pos = new Vector3(t.X, t.Y, t.Z);
-
-                    if (!byPoint.TryGetValue(gpId, out var entry))
-                    {
-                        var typeName = gpBase.GatheringType.ValueNullable?.Name.ExtractText() ?? "";
-                        entry = (new List<Vector3>(), typeId, typeName, gpBase.GatheringLevel);
-                        byPoint[gpId] = entry;
-                    }
-                    entry.Pts.Add(pos);
-                }
-            }
+            _log.Warning("[Gather] GatheringPoint/ExportedGatheringPoint Sheet fehlt.");
+            return result;
         }
 
-        foreach (var (gpId, e) in byPoint)
+        // One spot per GatheringPointBase in this territory. Several GatheringPoint
+        // rows share a base (timed / ephemeral variants of the same node); the
+        // exported sheet is keyed by that Base RowId and holds one world X/Z.
+        var seenBases = new HashSet<uint>();
+        foreach (var gp in gpSheet)
         {
-            if (e.Pts.Count == 0) continue;
-            var centre = new Vector3(e.Pts.Average(p => p.X), e.Pts.Average(p => p.Y), e.Pts.Average(p => p.Z));
-            result.Add(new GatherSpotInfo(e.TypeName, e.Level, centre, gpId, e.TypeId));
+            if (gp.TerritoryType.RowId != territoryId) continue;
+
+            var baseId = gp.GatheringPointBase.RowId;
+            if (!seenBases.Add(baseId)) continue;
+
+            if (!expSheet.TryGetRow(baseId, out var exp)) continue;
+            var baseRef = gp.GatheringPointBase.ValueNullable;
+            if (baseRef is not { } gpBase) continue;
+
+            var typeId   = gpBase.GatheringType.RowId;
+            var typeName = gpBase.GatheringType.ValueNullable?.Name.ExtractText() ?? "";
+            // ExportedGatheringPoint.X/Y = raw world X/Z (not map pixels). Y height
+            // is absent - same 2D pattern as FishingSpot; navmesh fills it on walk.
+            var pos = new Vector3(exp.X, 0f, exp.Y);
+            result.Add(new GatherSpotInfo(typeName, gpBase.GatheringLevel, pos, baseId, typeId));
         }
 
 #if DEBUG
-        _log.Info($"[Gather] Zone {territoryId} Bg='{bg}': {byPoint.Count} Sammelstellen (alle Typen, ungefiltert).");
+        _log.Info($"[Gather] Zone {territoryId}: {result.Count} Sammelstellen (alle Typen, Sheet).");
         foreach (var s in result)
-            _log.Info($"[Gather]   GP={s.GatheringPointId} Typ={s.GatheringTypeId}('{s.TypeName}') Stufe={s.Level} Welt=({s.Position.X:F1}|{s.Position.Z:F1})");
+            _log.Info($"[Gather]   Base={s.GatheringPointBaseId} Typ={s.GatheringTypeId}('{s.TypeName}') Stufe={s.Level} Welt=({s.Position.X:F1}|{s.Position.Z:F1})");
 #endif
 
         return result;
     }
 
     /// <summary>
-    /// Speaks the gathering spots of the current zone, nearest first, each with
-    /// type, level, distance and compass bearing - so a blind gatherer knows where
-    /// they can gather and which way to head.
+    /// Speaks the gathering spots of the current zone (live first), each with
+    /// type, level, distance and compass bearing.
     /// </summary>
     public void AnnounceSpotsInCurrentZone()
     {
@@ -278,13 +321,16 @@ public sealed class GatheringService
         {
             var dist    = PlacesService.Distance2D(playerPos, s.Position);
             var compass = CompassDirection(playerPos, s.Position);
-            lines.Add(AccessibilityStrings.SpotListLine(ShortTypeName(s.TypeName), s.Level, dist, compass));
+            var status = AccessibilityStrings.GatheringSpotStatus(s.CurrentlyUp);
+            lines.Add(AccessibilityStrings.SpotListLine(
+                ShortTypeName(s.TypeName), s.Level, dist, compass, status));
         }
 
         _tolk.SpeakInterrupt(AccessibilityStrings.GatheringSpotsList(spots.Count, string.Join(". ", lines)));
     }
 
-    /// <summary>The nearest gathering spot the active job can work, or null.</summary>
+    /// <summary>The nearest gathering spot the active job can work, or null.
+    /// Prefers a live targetable node when one exists.</summary>
     public GatherSpotInfo? GetNearestSpot()
     {
         var spots = GetSpotsInCurrentZone();
@@ -299,17 +345,6 @@ public sealed class GatheringService
         JobBotanist => BotanistTypes,
         _           => null,
     };
-
-    /// <summary>
-    /// LGB path for a territory Bg. Bg is e.g. "ffxiv/wil_w1/fld/w1f1/level/w1f1";
-    /// the layout files sit next to it as "bg/&lt;dir&gt;/level/&lt;name&gt;.lgb".
-    /// </summary>
-    private static string BuildLgbPath(string bg, string lgbName)
-    {
-        var slash = bg.LastIndexOf('/');
-        var dir   = slash >= 0 ? bg[..(slash + 1)] : bg;
-        return $"bg/{dir}{lgbName}";
-    }
 
     /// <summary>Drops the parenthetical action ("Minenarbeiter (Herausbrechen)"
     /// -> "Minenarbeiter") for a shorter spoken label; the action verb is noise

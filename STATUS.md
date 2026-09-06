@@ -3,7 +3,141 @@
 ## Ziel
 Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spiel vollständig per Tastatur zu spielen.
 
-## STAND JETZT (2026-09-05): V6.00 — SAMMELPUNKTE: KLASSENBEZOGEN + KARTENUEBERGREIFEND
+## NIE PUSHEN / NIE INS RELEASE
+- **BossMod** und der lokale Ordner **BossModWalkInstaller/** — nur für den
+  User, nie committen, nie pushen, nie in latest.zip. Absicherung:
+  `.git/info/exclude` (nicht `.gitignore`). Vor Push/Release gegenprüfen.
+- Ebenso privat: `BossMod-Rotationen.txt`, `PRIVAT.txt` (siehe `.gitignore`).
+- **Craft-Kategorie (ab 2026-09-06):** Jobbezogene Rezepte (freigeschaltet,
+  Materialien da), Numpad0 craftet. Nur lokal entwickeln — **erstmal nicht
+  committen/pushen**, bis der User ausdrücklich freigibt.
+
+## STAND JETZT (2026-09-06): V6.04 — SAMMELPUNKTE STATUS NACH STUFE
+
+>>> AUFTRAG (User): „gerade da“ vor „verfügbar“; nach der Stufe schreiben;
+    sonst nur „verfügbar“.
+
+>>> UMGESETZT (mit V6.01–V6.03 in derselben Session):
+    - Live abbaubar zuerst, Liste frisch (V6.03)
+    - Sheet statt LGB, ToDictionary-Fix, Sortierung nach Stufe (V6.00–V6.02)
+    - Ansage: Kopf „N gerade da, M verfügbar…“; Zeile „… Stufe X, gerade da|verfügbar…“
+    - Version 6.04.
+
+>>> TEST (User 2026-09-06): OK — funktioniert.
+
+>>> OFFEN / WEITER:
+    - **Craft-Kategorie:** nur lokal (siehe NIE PUSHEN), User testet noch —
+      Code liegt in `_local_craft_backup/`, nicht im Remote.
+    - Offene PRs auf GitHub vorerst liegen lassen (User).
+    - Branch: `test/prs`. Deploy: `devPlugins\FF14Accessibility`.
+
+## STAND LOKAL (nicht gepusht): V6.05/V6.06 — CRAFT-KATEGORIE
+
+>>> Nur auf dem Rechner des Users. Kurz: Rezepte-Kategorie, Numpad0 craftet,
+    Filter Stufe + NQ/HQ-Mats. Weiter testen, dann erst freigeben zum Pushen.
+
+## STAND DAVOR (2026-09-06): V6.03 — LIVE ABBAUBAR ZUERST, LISTE FRISCH
+
+>>> AUFTRAG (User): Gerade abbaubare Stellen auf der aktuellen Map zuerst;
+    Liste aktualisieren wenn neu spawnt (Sehende sehen das auf der Karte
+    mit aktiven Sammler-Skills).
+
+>>> QUELLE (verifiziert, kein Raten):
+    - Live = `ObjectKind.GatheringPoint` in der ObjectTable mit
+      `IsTargetable` (gemessen 2026-08-09: abbaubar vs. leere Platzierung).
+    - Katalog bleibt Sheet (`GatheringPoint` + `ExportedGatheringPoint`).
+    - Die Karten-Icons (Wahrheit der Berge/Waelder) sind UI darauf; wir lesen
+      die Spielobjekte selbst, nicht AgentMap.
+
+>>> UMGESETZT:
+    - `GetLiveSpotsInCurrentZone`: jeder Aufruf scannt die ObjectTable neu
+      (kein Cache) → neuer Spawn erscheint beim naechsten Kategorie-/Schritt.
+    - Sortierung: `CurrentlyUp` zuerst, dann Stufe, dann Zone/Hop/Naehe.
+    - Katalog-Eintrag derselben Base wird ausgelassen, wenn Live schon da.
+    - Ansage: „Gerade da.“ / Kopf „N gerade da.“ Version 6.03.
+    - Zuvor in derselben Session: Sheet statt LGB (V6.00-Fix), ToDictionary-
+      Absturz Territory 809 (V6.01), Sortierung nach Stufe (V6.02).
+
+>>> OFFEN / WEITER (User sagte „spaeter weiter“):
+    - **Ingame-Test V6.03 ausstehend:** Plugin neu laden → „V6.03“;
+      als Miner/Botaniker Kategorie Sammelpunkte: Kopf mit „gerade da“?
+      Bild-Hoch/Runter zuerst live Knoten? Nach Spawn erneut blaettern → neu?
+      Numpad3 zum live Knoten?
+    - Kein Kaempfer-Test noetig (User: nur Sammeln, spaeter Craften).
+    - **Craften:** bewusst spaeter (RecipeNote teilweise vorhanden).
+    - Offene PRs auf GitHub vorerst liegen lassen (User).
+    - Branch: `test/prs`. Deploy: `devPlugins\FF14Accessibility`.
+
+>>> TEST: Als Miner mit Knoten in Reichweite Kategorie oeffnen → Zahl mit
+    „gerade da“; Bild-Hoch zuerst die live Knoten; nach Spawn erneut
+    durchblaettern → neuer Punkt erscheint.
+
+## STAND DAVOR (2026-09-06): V6.02 — SAMMELPUNKTE NACH STUFE SORTIERT
+
+>>> AUFTRAG (User): Minengebiete / Sammelpunkte nach Level sortieren.
+
+>>> UMGESETZT: `GetSpotsInCurrentZone` und `GetSpotsAcrossZones` sortieren
+    nach `GatheringLevel` aufsteigend (niedrig zuerst). Bei gleicher Stufe:
+    aktuelles Gebiet vor Nachbarzonen, dann Hop-Distanz, dann Entfernung.
+    Version 6.02.
+
+>>> TEST: Plugin neu laden („V6.02“). Als Miner Kategorie Sammelpunkte,
+    Bild-Hoch/Runter: Stufen sollen aufsteigend kommen.
+
+## STAND DAVOR (2026-09-06): V6.01 — SAMMELPUNKTE STUMM WEGEN ToDictionary-ABSTURZ
+
+>>> FEHLER (User): Kategorie spricht weiterhin nicht, trotz Sheet-Fix. Deploy-Pfad
+    war korrekt (`devPlugins\FF14Accessibility`, V6.00 geladen 09:12).
+
+>>> URSACHE (dalamud.log 09:13:45.599): `GetSpotsAcrossZones` baut eine Liste
+    aus Map-Hops und ruft `ToDictionary(TerritoryId)`. Mehrere Map-Zeilen
+    koennen dieselbe TerritoryType teilen (Key 809) → ArgumentException.
+    Dalamud faengt den Framework-Update-Absturz; CycleCategory bricht ab;
+    der naechste Tastendruck landet auf Angelplaetze. Sheet-Daten waren da
+    (Zone 152: 10 Stellen inkl. Miner), Ansage kam nie.
+
+>>> FIX: beim Aufbauen der Territory-Liste pro TerritoryId deduplizieren
+    (kuerzester Hop gewinnt). Version 6.01.
+
+>>> TEST (User, nur Sammler): Plugin neu laden → „V6.01“ hoeren. Als
+    Minenarbeiter/Botaniker Kategorie durchblaettern: nach Freibriefe muss
+    „Sammelpunkte: N erreichbar…“ kommen, dann Bild-Hoch/Runter und Numpad3.
+
+## STAND DAVOR (2026-09-06): SAMMELPUNKTE STUMM — QUELLE KORRIGIERT (Sheet statt LGB)
+
+>>> FEHLER: Nach V6.00 blieb die Kategorie "Sammelpunkte" stumm bzw. fehlte im
+    Durchblaettern, obwohl Minenarbeiter/Botaniker aktiv war.
+
+>>> URSACHE (Log `_log_search_new.txt` + Offline-Probe gegen sqpack 2026-09-06):
+    V6.00 las Sammelpunkte aus den Territory-LGB-Dateien
+    (`LayerEntryType.Gathering`). In den geprueften Zonen (u.a. 148/152/153)
+    ist `Gathering=0` in JEDEM LGB (`bg`/`planevent`/`planmap`/`planlive`/
+    `planner`). `GetSpotsAcrossZones()` lieferte deshalb immer 0 Treffer →
+    `IsCategoryAvailable` blendete die Kategorie aus (Stille).
+    Die Behauptung in den alten Kommentaren, `GatheringPoint` haette keine
+    TerritoryType-Spalte, war falsch: die Spalte existiert (Lumina.Excel), und
+    `ExportedGatheringPoint` ist ueber die `GatheringPointBase`-RowId
+    angebunden (Roh-Welt-X/Z). Offline: Territory 152 = 10 Basen (2 Miner /
+    8 Botaniker); alle 50 Territorien mit GatheringPoint haben Exported-Daten.
+
+>>> FIX: `GatheringService.GetAllSpotsInZone` liest jetzt
+    `GatheringPoint` (TerritoryType-Filter) + `ExportedGatheringPoint`
+    (Position, Key = Base-RowId), gruppiert pro Base. LGB-Parsing entfernt.
+    Klassenfilter und kartenuebergreifende Navigation (V6.00) unveraendert.
+
+>>> SCOPE (User 2026-09-06): Nur Sammeln (aktueller Sammlerjob + hinlaufen).
+    Kaempfer-Verhalten ist egal und kein Testziel. Craften bewusst spaeter
+    (RecipeNote-Lesen existiert schon teilweise; kein neuer Auftrag).
+
+>>> TEST (User, nur Sammler — ausstehend): Als Minenarbeiter oder Botaniker
+    Plugin neu laden, dann Kategorie "Sammelpunkte":
+    1. Kopfansage mit Zahl (erreichbar + in diesem Gebiet)
+    2. Bild-Hoch/Runter: Typ, Stufe, Richtung — nur Typen des aktuellen Jobs
+    3. Numpad3: laeuft zum Punkt (in der Zone oder erst zum Uebergang)
+    Kein Kaempfer-Wechsel noetig. Bei OK hier auf "bestaetigt (nur Sammler)"
+    setzen; bei Fehler Log-Zeilen `[Gather]` + gesprochene Ansage melden.
+
+## STAND DAVOR (2026-09-05): V6.00 — SAMMELPUNKTE: KLASSENBEZOGEN + KARTENUEBERGREIFEND
 
 >>> AUFTRAG: die bestehende Sammelpunkte-Kategorie soll (1) nur Sammelpunkte
     der AKTUELLEN Sammlerklasse zeigen (Minenarbeiter -> Erzadern, Botaniker ->
@@ -19,13 +153,11 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
       GetObjectsOfKinds(kinds).Count > 0`) — genau das vom User referenzierte
       Muster fuer klassenabhaengige Sichtbarkeit, nur nicht scharf genug.
     - `GatheringService.cs` gab es bereits (nur per `/acc gather`
-      erreichbar, nicht im Objekt-Browser verdrahtet): liest die LGB-
-      Layoutdatei der AKTUELLEN Zone, kennt so jeden Sammelpunkt der Zone
-      (auch ungeladene), gefiltert nach GatheringType (Miner: 0/1, Botanist:
-      2/3). `GatheringPoint`/`GatheringPointBase`-Sheets fuehren KEINE
-      TerritoryType-Spalte — die Zonen-Zuordnung kommt ausschliesslich aus
-      der LGB-Datei jeder Zone einzeln, anders als z.B. bei Weltinhalten
-      (Level-Sheet mit Territory-Spalte).
+      erreichbar, nicht im Objekt-Browser verdrahtet): damals LGB-basiert.
+      **KORREKTUR 2026-09-06:** `GatheringPoint` HAT TerritoryType; Positionen
+      kommen aus `ExportedGatheringPoint` (Key = GatheringPointBase). LGB hat
+      `Gathering=0` — siehe STAND JETZT oben. Filter GatheringType (Miner 0/1,
+      Botanist 2/3) bleibt.
     - Kartenuebergreifendes Routing existiert schon fuer Quest-/Freibrief-/
       FATE-/Jagdziele: eine `QuestDestination` (Position, TerritoryTypeId,
       MapId, InCurrentZone) fliesst in `NavigationService.SelectedQuestDestination`
