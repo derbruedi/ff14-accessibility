@@ -414,16 +414,14 @@ navigation keys above the arrow block.
 - **Page Up** — previous object
 - **Ctrl+Page Down** — next object category (NPCs, merchants, enemies,
   allies, players, objects, duties, all duties, quest objectives,
-  levequests, FATEs, gathering points, fishing spots, aetherytes,
+  levequests, FATEs, Events, gathering points, fishing spots, aetherytes,
   waypoints; inside a deep dungeon: only enemies, allies, treasure, cairns,
   rooms instead)
-  - **FATEs are also the event targets** of collaboration events such as
-    the Yo-kai Watch event — those events run on plain FATEs in specific
-    zones under the hood, there is no separate display for them. The
-    Yo-kai Watch item itself is just gear, not a radar. Looking for the
-    Yo-kai (or any other event): Ctrl+Page Down until it announces "FATEs",
-    Page Down/Up to cycle, Numpad3 auto-walks there, Ctrl+Numpad3 gives the
-    walking guide instead.
+  - **FATEs** = what is live in YOUR zone right now. Numpad3 walks there. For
+    Yo-kai: complete the FATE with the Watch equipped (silver/gold).
+  - **Events** (since V6.08): zones for timed collab events (currently Yo-kai).
+    Only shown when you own the Yo-kai Watch. Announces “Yo-kai, zone name”;
+    Numpad3 routes via transitions. Then use the FATEs category in that zone.
   - **Gathering points are class-specific and cross-zone** (since V6.00):
     the category only lists ore/stone nodes for Miner, or wood/plant nodes
     for Botanist, matching whichever class is ACTIVE right now — on any

@@ -11,30 +11,244 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **Craft-Kategorie (ab 2026-09-06):** Jobbezogene Rezepte (freigeschaltet,
   Materialien da), Numpad0 craftet. Nur lokal entwickeln — **erstmal nicht
   committen/pushen**, bis der User ausdrücklich freigibt.
+- **AccessibleVendorSell (ab 2026-09-06):** Eigenes Plugin, lokal in
+  `devPlugins\AccessibleVendorSell`. **Nicht** ins Haupt-Release / repo.json,
+  bis der User freigibt.
 
-## STAND JETZT (2026-09-06): V6.04 — SAMMELPUNKTE STATUS NACH STUFE
+## STAND JETZT (2026-09-06): BATTLECRAFT-HÄNDLER IN „HÄNDLER“
+
+>>> AUFTRAG (EN-User): Battlecraft Armorer und ähnliche in Merchants-Liste.
+
+>>> URSACHE (sqpack-Probe EN): diese NPCs haben KEIN direktes GilShop in
+    ENpcData, nur TopicSelect → GilShop (z.B. Gwalter 1001965 „Battlecraft
+    Armorer“, Iron Thunder 1001203). Alter Filter: nur direkte Shop-Sheets →
+    oldDirect=false. ~186 NPCs nur über Topic/Pre/Custom erreichbar.
+
+>>> FIX (6.08.5): ShopNpcService folgt TopicSelect.Shop, PreHandler.Target,
+    CustomTalk.SpecialLinks (Lumina-Sheets ilspycmd 2026-09-06). Weiterhin keine
+    Namens-Heuristik.
+
+>>> TEST: Ul'dah/Limsa Markt → Kategorie Händler: Battlecraft Armorer/Supplier
+    erscheinen; Log `[Shop] Haendler: …`.
+
+## VORHER: ESCAPE NUR SPIEL
+
+>>> AUFTRAG: Escape soll FF14-Menü öffnen; Mod-Menüs nur per Nummernblock schließen.
+
+>>> FIX (6.08.4 / VendorSell 1.7.2):
+    - Escape schließt SpokenMenu NICHT mehr und wird nicht getrackt/geschluckt.
+    - Schließen: Nummernblock-Komma (Entf bei NumLock aus).
+    - EscapeProbe bleibt im Log.
+
+>>> TEST: Escape → System-Menü auch bei offenem Umschalt+F9-Menü.
+    Mod-Menü zu: Nummernblock-Komma.
+
+## VORHER: ESCAPE → SPIEL-MENÜ (teilweise)
+
+>>> FIX (6.08.3): Escape schloss SpokenMenu, blieb aber fürs Spiel sichtbar.
+    User will Escape gar nicht mehr am Mod-Menü.
+
+## VORHER: HOTKEY-KONFLIKTE ENTZERREN
+
+>>> AUFTRAG (User): doppelt belegte Tasten wie Strg+Umschalt+F11 umbelegen.
+
+>>> FIX:
+    - FF14Accessibility: `KeyItemCompare` war doppelt mit PartyRoster auf
+      Strg+Umschalt+F12 → jetzt Strg+Umschalt+Einfg. Version 6.08.2.
+    - VendorSell: Abbruch weg von F11 → Strg+Alt+Numpad3; Reste auf
+      Strg+Umschalt+F* werden erzwungen umgeschrieben. Version 1.7.0.
+    - Nebenbei: Verkaufskategorien-Migration repariert (alles aus → Ausrüstung an).
+
+>>> TEST: ItemCompare Einfg; VendorSell Abbruch Numpad3; Heilmonitor F11 allein?
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.6 — VERKAUFSKATEGORIEN
+
+>>> UMGESETZT: Untermenü Verkaufskategorien. TEST später (mit 1.5 gebunden).
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.5 — GEBUNDEN NICHT VERKAUFEN
+
+>>> FIX: Unique/Untradable raus; Dialog warten + Close(true). TEST: später.
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.4 — KEIN F1–F8
+
+>>> PROBLEM (User): F-Tasten bis F8 sind für die Gruppe belegt.
+
+>>> FIX: Defaults Strg+Alt+F9..F12 + Numpad0 Probe. Version 1.4.0.
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.3 — HOTKEYS OHNE ACCESSIBILITY-KONFLIKT
+
+>>> PROBLEM (User): Plugin verwendet Tasten die schon belegt sind.
+
+>>> URSACHE: Defaults lagen auf Strg+Umschalt+F5/8/9/10/11 — derselbe Cluster
+    wie FF14Accessibility.
+
+>>> FIX: damals Strg+Alt+F5/8/9/10/11 — F5/F8 später wegen Gruppe wieder weg (1.4).
+
+## STAND DAVOR (2026-09-06): BEACONPROBE-LOG-FLUT GESTOPPT
+
+>>> PROBLEM (User): im Dalamud-Log eine Meldung die nicht weggeht.
+
+>>> URSACHE: Debug-`BeaconProbe` loggte identische Zeilen einmal/Sekunde
+    (Heartbeat), auch bei `offen=False laeuft=False` (Peil-Ton aus).
+
+>>> FIX: nur noch bei Zustandswechsel loggen. Version 6.08.1.
+
+>>> NEBENBEI im Log: VendorSell hat 5/8 verkauft, dann viele SelectYesno-Yes
+    und Abbruch — separates Thema, falls der User das meint.
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.2 — EVENT-ITEMS + KÖDER-ID
+
+>>> AUFTRAG (User): Event-Items sollen auch nicht verkauft werden.
+
+>>> QUELLE (offline Lumina/sqpack DE 2026-09-06):
+    - `ItemUICategory` 85 = „Saisonaler Gegenstand“ (Seasonal Miscellany).
+    - `ItemUICategory` 33 = „Angelköder“ (nicht 30 — 30 ist Gärtnerzeug).
+    - Quest-Schlüssel (`EventItem`/KeyItems) ohnehin nicht im Scan.
+
+>>> FIX: Immer skip Cat 85 + Cat 33. Version 1.2.0. Lokal, nicht pushen bis OK.
+
+>>> TEST: Vorschau am Händler — saisonale Event-Items und Köder fehlen in der Liste?
+
+## STAND DAVOR (2026-09-06): VENDOR SELL 1.1 — NUR AUSRÜSTUNG DEFAULT
+
+>>> PROBLEM (User): verkaufte auch Köder / wichtige Weißteile aus der Tasche.
+
+>>> FIX: Default `SellNonEquipment=false` (nur Waffen/Rüstung/Tools mit Equip-Slot).
+    Angelköder immer ausgesperrt (ID damals fälschlich 30; korrigiert in 1.2).
+    Menü: „Auch Nicht-Ausrüstung verkaufen“. Version 1.1.0.
+
+>>> TEST: Vorschau am Händler — Köder/Matten nicht mehr in der Liste?
+
+## STAND DAVOR (2026-09-06): ACCESSIBLE VENDOR SELL — EIGENES PLUGIN (LOKAL)
+
+>>> AUFTRAG (User): Plugin zum automatischen Verkaufen aus Inventar + Arsenal
+    nach Regeln am Händler; Einstellungen barrierefrei; eigenes Plugin (nicht
+    in FF14Accessibility).
+
+>>> QUELLE: ClientStructs `ShopEventHandler` / `AgentInventoryContext.OpenForItemSlot`
+    + Community-Pfad (Kontext „Verkaufen“); dokumentiert in docs/game-api.md
+    Abschnitt „Vendor Sell“. Live-Probe-Hotkey Strg+Umschalt+F5.
+
+>>> UMGESETZT (Projekt `AccessibleVendorSell/`, Version 1.0.0):
+    - Nur Gil-Addon `Shop`
+    - Scan Taschen + Arsenal; Filter Max-Rarity (Default 1), Max-iLvl Ausrüstung
+      (Default 1), HQ aus, Set-Schutz via `IsItemRegisteredToGearset`
+    - Strg+Umschalt+F10 Vorschau, F11 verkaufen, F9 Abbruch, F8 Einstellungen
+      (gesprochenes Menü), F5 Probe
+    - Deploy: `devPlugins\AccessibleVendorSell` (Debug-Build)
+
+>>> TEST (ausstehend):
+    1. Dev-Plugin in Dalamud aktivieren / Spiel neu laden
+    2. Händler öffnen → F10 Vorschau zählt; F11 verkauft; Set-Teile bleiben
+    3. F5 → Log `[VendorSellProbe]` prüfen
+    4. F8 Filter ändern (z. B. Max-iLvl hoch) und erneut testen
+
+>>> OFFEN: Craft lokal; Synthesis-Minispiel; VendorSell nicht pushen bis OK.
+
+## STAND DAVOR (2026-09-06): V6.08 — EVENTS = YO-KAI-ZONEN
+
+>>> AUFTRAG (User): Event-Kategorie für zeitliche Events wie Yo-kai; die
+    bisherigen „Event-Gebiete“ (Sheet-Flag-FATEs) verstanden sie nicht.
+
+>>> UMGESETZT:
+    - Kategorie heißt gesprochen **„Events“**.
+    - Listet Yo-kai-Medaillen-Zonen (ARR + HW + SB), nur wenn Yo-kai-Uhr
+      vorhanden (Item 15222 oder EventItem 2001948).
+    - Ansage: „Yo-kai, Zonenname … FATEs dort mit der Yo-kai-Uhr machen.“
+    - Numpad3 → QuestDestination (Ätheryt-Position / Hop).
+    - WORKAROUND markiert: Zonenliste aus Event-Guide (kein Sheet-Join).
+    - Version 6.08.
+
+>>> TEST (User 2026-09-06): OK — funktioniert.
+
+>>> OFFEN / WEITER:
+    - Craft weiter lokal, nicht pushen bis freigegeben.
+    - Synthesis-Minispiel noch nicht angebunden.
+    - Branch: `test/prs`. Deploy: `devPlugins\FF14Accessibility`.
+
+## STAND DAVOR (2026-09-06): V6.07 — EVENT-GEBIETE (CROSS-ZONE)
+
+>>> AUFTRAG (User): Kategorie für Event-Gebiete über die Welt, damit man
+    dorthin laufen kann (Option 2 — nicht nur Live-FATEs der Zone).
+
+>>> PROBE (offline Lumina + sqpack, 2026-09-06):
+    - Fate-Flags AdventEvent/MoonFaireEvent/SpecialFate: 15 named Zeilen.
+    - Fate.Location → Level.TryGetRow: **0/15** (Hypothese verworfen).
+    - Fate.Location → planevent.lgb EventRange: **15/15** Territory+Pos.
+    - Yo-kai setzt diese Flags NICHT (Medaillen = normale FATEs → Kategorie
+      FATEs bleibt der Weg in der Zone).
+
+>>> UMGESETZT:
+    - `EventAreaService` + `NavCategory.EventAreas` („Event-Gebiete")
+    - Numpad3/Gehhilfe über QuestDestination (wie Sammelpunkte)
+    - Strg+F5: FateEventProbe + EventMarker TerritoryTypeId/MapId/LevelId
+    - docs/game-api.md, README DE/EN. Version 6.07.
+
+>>> TEST (User):
+    - Strg+Bild-ab bis „Event-Gebiete: N …"
+    - Bild-ab: Name, Stufe, Zone/Richtung; Numpad3 läuft / Hop
+    - Optional Strg+F5 in Event- und Nicht-Event-Zone → Log [FateEventProbe]/
+      [MarkerProbe]
+    - Yo-kai: weiter „FATEs" in der Zone (bewusst kein Wiki-Hardcode)
+
+## STAND DAVOR (2026-09-06): V6.06 — REZEPT-FILTER KORRIGIERT (LOKAL)
+
+>>> FEHLER (User + Log): Kategorie „0 herstellbar“, obwohl Notizbuch Rezepte
+    zeigte (Weber Stufe 1, 21 Zeilen inkl. Hanfgarn; danach Synthese gestartet).
+
+>>> URSACHE: Filter nur über `IsRecipeUnlocked` — normale Stufenrezepte fallen
+    raus. Zusätzlich zählte `CountOf` nur NQ (`isHq: false` Default).
+
+>>> FIX: Stufe ≤ `GetCraftTypeLevel`; Secret/Meister weiter `IsRecipeUnlocked`;
+    Materialien NQ+HQ. Version 6.06. Nicht pushen.
+
+>>> TEST (User 2026-09-06): OK — funktioniert.
+
+>>> OFFEN / WEITER:
+    - Craften weiter lokal, **nicht pushen** bis User freigibt.
+    - Synthesis-Minispiel (Tasten) noch nicht angebunden.
+    - Branch: `test/prs`. Deploy: `devPlugins\FF14Accessibility`.
+
+## STAND DAVOR (2026-09-06): V6.05 — CRAFT-KATEGORIE (LOKAL, NICHT PUSHEN)
+
+>>> AUFTRAG (User): Craft-Kategorie jobbezogen; nur freigeschaltet + Materialien
+    da; Numpad0 craftet. **Erstmal nicht pushen.**
+
+>>> QUELLE (ClientStructs ilspycmd 2026-09-06 + Lumina Recipe sheet):
+    - Freischaltung: `RecipeNote.IsRecipeUnlocked`
+    - Katalog: Lumina `Recipe` / `RecipeLevelTable`, CraftType = ClassJob−8
+    - Materialien: `InventoryService.CountOf`
+    - Start: `AgentRecipeNote.OpenRecipeByRecipeId` + Klick
+      `AddonRecipeNote.SynthesizeButton`
+
+>>> UMGESETZT:
+    - `CraftingService` + `NavCategory.CraftRecipes` („Rezepte“)
+    - Kategorie auf Handwerker auch bei 0 herstellbar („Rezepte: 0 herstellbar“)
+    - Bild-Hoch/Runter: Name, Stufe; Numpad0 startet Synthese
+    - Version 6.05. STATUS „NIE PUSHEN“ um Craft erweitert.
+
+>>> TEST (ausstehend):
+    - Handwerker mit Mats: Kategorie „Rezepte: N herstellbar“?
+    - Ohne Mats / als Kaempfer: Kategorie weg?
+    - Numpad0 an Werkbank: Synthesis oeffnet?
+    - Numpad0 ohne Werkbank: Fehlermeldung?
+
+## STAND DAVOR (2026-09-06): V6.04 — ANSAGE STATUS NACH STUFE
 
 >>> AUFTRAG (User): „gerade da“ vor „verfügbar“; nach der Stufe schreiben;
     sonst nur „verfügbar“.
 
->>> UMGESETZT (mit V6.01–V6.03 in derselben Session):
-    - Live abbaubar zuerst, Liste frisch (V6.03)
-    - Sheet statt LGB, ToDictionary-Fix, Sortierung nach Stufe (V6.00–V6.02)
-    - Ansage: Kopf „N gerade da, M verfügbar…“; Zeile „… Stufe X, gerade da|verfügbar…“
+>>> UMGESETZT:
+    - Kategorie-Kopf: „N gerade da, M verfügbar, …“ (statt erreichbar + gerade da am Ende).
+    - Einzelansage: „Typ, Stufe X, gerade da|verfügbar, …“.
     - Version 6.04.
 
 >>> TEST (User 2026-09-06): OK — funktioniert.
 
 >>> OFFEN / WEITER:
-    - **Craft-Kategorie:** nur lokal (siehe NIE PUSHEN), User testet noch —
-      Code liegt in `_local_craft_backup/`, nicht im Remote.
+    - **Craften:** bewusst spaeter (RecipeNote teilweise vorhanden).
     - Offene PRs auf GitHub vorerst liegen lassen (User).
     - Branch: `test/prs`. Deploy: `devPlugins\FF14Accessibility`.
-
-## STAND LOKAL (nicht gepusht): V6.05/V6.06 — CRAFT-KATEGORIE
-
->>> Nur auf dem Rechner des Users. Kurz: Rezepte-Kategorie, Numpad0 craftet,
-    Filter Stufe + NQ/HQ-Mats. Weiter testen, dann erst freigeben zum Pushen.
 
 ## STAND DAVOR (2026-09-06): V6.03 — LIVE ABBAUBAR ZUERST, LISTE FRISCH
 

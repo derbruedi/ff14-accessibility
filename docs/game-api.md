@@ -1157,6 +1157,29 @@ stehen NIE im Quest-Journal (reine Welt-Ereignisse).
 - Genutzt in FateService (Objekt-Browser-Kategorie „FATEs"): listet Running +
   Preparing, Numpad3 läuft zur `Location` (als in-Zone-QuestDestination).
 
+### Event-Gebiete / saisonale FATE-Spawns (offline + Code 2026-09-06)
+Cross-Zone-Katalog — **ab V6.08 nicht mehr die Browser-Kategorie „Events“**.
+Die Kategorie „Events“ listet seit V6.08 Yo-kai-Zonen (siehe unten).
+
+Historisch (V6.07 Probe):
+- Lumina-Sheet `Fate` (ilspycmd Hooks/dev): Flags `AdventEvent`,
+  `MoonFaireEvent`, `SpecialFate` (packed bools @385); Feld `Location`
+  (uint @324) laut Lumina-Kommentar = **EventRange-Instance-ID**, kein
+  TerritoryType und kein Level-RowId.
+- Probe Location→`Level.TryGetRow`: für alle 15 named Event-Flag-Zeilen
+  **0 Treffer** (Hypothese verworfen).
+- Probe Location→`planevent.lgb` `LayerEntryType.EventRange` (49): **15/15
+  Treffer** mit Territory + World-Position (`Transform.Translation`).
+- Yo-kai setzt diese Flags NICHT.
+
+### Events / Yo-kai-Zonen (V6.08)
+- Kategorie-Label: „Events“. Sichtbar nur mit Yo-kai-Uhr (Item 15222 oder
+  EventItem 2001948 KeyItem).
+- WORKAROUND: Territory-Ids der Medaillen-Zonen aus dem offiziellen 2026-
+  Event-Guide (kein Sheet-Join). Position = erster `Aetheryte.IsAetheryte`
+  mit Level-Koordinaten in der Zone.
+- In der Zone: Kategorie „FATEs“ für das live FATE; Uhr ausrüsten.
+
 ### Journal / JournalDetail (F5-Dumps 2026-07-10/11)
 - Journal (Taste J, „ARCHIV"): Quest-Liste = Comp CT=TreeList(12), Zeilen
   sind ListItemRenderer mit id=4 (Stufe „St. 1") + id=3 (Quest-Name);
@@ -2595,3 +2618,83 @@ Ohne diese Pruefung meldet die Freischaltabfrage bei jedem Nicht-Blaumagier alle
 **NICHT ueber `ClassJob.IsLimitedJob`:** das Flag traegt auch der
 Bestienbaendiger (ClassJob 43), es ist also kein Erkennungsmerkmal fuer
 Blaumagie. Gemessen 2026-09-02.
+
+## Vendor Sell (Gil-Shop) — AccessibleVendorSell (ClientStructs + Community-Pfad, 2026-09-06)
+
+Verkauf an einen normalen NPC-Laden (Addon **`Shop`**, Gil). SpecialShop /
+InclusionShop / Marktbrett / Gehilfe sind bewusst **nicht** dieser Pfad.
+
+### Quelle der Structs (FFXIVClientStructs, nicht Live-Log)
+- `ShopEventHandler` — Event-Handler des offenen Gil-Shops.
+  Singleton-Zugang: `ShopEventHandler.AgentProxy.Instance()->Handler` (Kommentar
+  in ClientStructs: von `AgentShop.EventReceiver` referenziert, solange der Shop
+  aktiv ist). Felder u. a.:
+  - `SellInventoryType` / `SellInventorySlot` — Slot, der gerade verkauft wird
+  - `SellPrice`, `SellStackMax`, `SellIsUnique`, `SellIsUntradeable`, …
+  - `StartingSell`, `WaitingForSellConfirm`, `WaitingForTransactionToFinish`
+  - `TransactionType` — 0 n/a, 1 buying, 2 selling
+  - `CurrentMode` — 0 none, 1 normal, 2 buyback
+  - `AgentProxy.AddonId` — Addon-Id des Shop-Fensters
+- `AgentInventoryContext.OpenForItemSlot(InventoryType, int slot, int a4, uint addonId)`
+  — öffnet das Kontextmenü für einen Inventar-/Arsenal-Slot. `a4` ist undokumentiert;
+  Community-Praxis (QuickTransfer): erst beobachteten Wert, sonst Kandidaten
+  `[0,1,2]` (Arsenal bevorzugt `[1,0,2]`), bis `ContextItemCount > 0`.
+- Kontext-Einträge: `EventParams[ContexItemStartIndex + i]` als String
+  (DE „Verkaufen“, EN „Sell“). Auswahl: `ContextMenu`-Addon
+  `FireCallback(0, index, 0, 0, 0)`.
+- Bestätigung: `InputNumeric` (Menge, Prompt enthält „sell“/„verkauf“) und
+  `SelectYesno` bei Unique/Untradeable/Materia. `WaitingForSellConfirm` ist true,
+  solange auf die Bestätigung gewartet wird.
+
+### Gewählter Automations-Pfad (AccessibleVendorSell)
+Gleicher Spiel-Pfad wie ein Rechtsklick → Verkaufen (kein paralleles Sell-Netzwerk):
+1. Addon `Shop` sichtbar + `AgentProxy.Handler != null`
+2. Pro Kandidat: `OpenForItemSlot` mit Shop-`AddonId`
+3. Kontext-Eintrag „Verkaufen“/„Sell“ per `FireCallback` wählen
+4. Während aktiver Sell-Session: `InputNumeric` auf Max setzen und bestätigen;
+   `SelectYesno` mit Ja (`FireCallback` idx 0), analog FF14Accessibility
+5. Delay zwischen Verkäufen; Abbruch bricht die Session ab
+
+### Gate / Live-Probe
+Strg+Alt+Numpad0 im Plugin `AccessibleVendorSell` schreibt `[VendorSellProbe]`
+(Shop sichtbar?, AgentProxy, Handler-Felder, optional Kontext-Dump nach
+OpenForItemSlot auf dem ersten Taschen-Slot). Bis die Probe im Spiel bestätigt
+ist, bleiben Laufzeit-Annahmen als „ClientStructs/Community“ gekennzeichnet —
+Fact Discipline: keine Behauptung über Timing ohne Log.
+
+### Filter-Daten (Lumina Item, wie FF14Accessibility)
+- `PriceLow == 0` → nicht verkaufbar
+- `Rarity` (1 weiß …), `LevelItem.RowId`, `EquipSlotCategory.RowId`
+- Ausrüstungsset: `RaptureGearsetModule.IsItemRegisteredToGearset` (gleiche
+  Begründung wie Inventar-Set-Marke in FF14Accessibility / STATUS 2026-08-14)
+
+### Vendor Sell Filter (AccessibleVendorSell 1.6, 2026-09-06)
+- **Verkaufskategorien** (gesprochenes Untermenü): nur eingeschaltete Gruppen.
+  Default: nur Ausrüstung. Gruppen aus `Item.ItemUICategory` + Equip-Slot
+  (sqpack DE 2026-09-06): Ausrüstung, Nahrung (46), Zutaten (45/47), Arznei (44),
+  Handwerksmaterial (48–56), Materia (58), Kristalle/Katalysatoren (59/60),
+  Verschiedenes (61/63), Möbel (57, 64–80), Sonstiges.
+- Migration: altes `SellNonEquipment=false` → nur Ausrüstung; `true` → alle an.
+- Immer ausgenommen:
+  - `ItemUICategory` 33 Angelköder, 85 Saisonaler Gegenstand
+  - `IsUnique` / `IsUntradable`
+- SelectYesno gebunden/selten: warten, dann `Close(true)`, skip (1.5).
+- Ausrüstung weiter: Max-Rarity, Max-iLvl, Gearset-Schutz.
+- **Hotkeys:** `Strg+Alt+F9` Vorschau, `F10` verkaufen, `Numpad3` Abbruch,
+  `F12` Einstellungen, `Numpad0` Probe. Kein `Strg+Umschalt+F*` (Accessibility).
+
+## Händler-Kategorie (ShopNpcService) — TopicSelect/PreHandler (2026-09-06)
+
+Erkennung weiter nur über Spieldaten (ENpcBase.ENpcData), keine Namen.
+
+- Direkt: GilShop / SpecialShop / GCShop / FccShop / InclusionShop /
+  CollectablesShop / DisposalShop / LotteryExchangeShop
+- **Ein Hop:** TopicSelect.Shop → GilShop|SpecialShop|PreHandler
+  (Lumina TopicSelect.ShopCtor, ilspycmd 2026-09-06). Damit erscheinen
+  Battlecraft Armorer/Supplier (z.B. BaseId 1001965 Gwalter, 1001203 Iron
+  Thunder) — sqpack EN: nur Topic→GilShop, kein direktes GilShop.
+- **Ein Hop:** PreHandler.Target → GilShop|SpecialShop|InclusionShop|…
+- **Ein Hop:** CustomTalk.SpecialLinks → SpecialShop|CollectablesShop
+
+Offline-Zählung sqpack EN: +~186 NPCs nur über Indirection, ~666 schon direkt.
+

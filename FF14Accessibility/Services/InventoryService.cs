@@ -129,8 +129,23 @@ public sealed class InventoryService
     }
 
     /// <summary>
+    /// True when the given EventItem id is present in the KeyItems container
+    /// (quest/event key items, not the normal bag Item sheet).
+    /// </summary>
+    public bool HasKeyItem(uint eventItemId)
+    {
+        if (eventItemId == 0) return false;
+        foreach (var item in _inventory.GetInventoryItems(GameInventoryType.KeyItems))
+        {
+            if (!item.IsEmpty && item.ItemId == eventItemId) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// How many of an item the player holds, or -1 when the inventory is not
-    /// readable yet.
+    /// readable yet. Counts NQ only (<c>isHq: false</c> default) — for crafting
+    /// materials that accept either quality use <see cref="CountOfNqAndHq"/>.
     ///
     /// Uses the GAME'S OWN count (<c>InventoryManager.GetInventoryItemCount</c>),
     /// not a sum over containers: a currency like an achievement certificate
@@ -146,8 +161,6 @@ public sealed class InventoryService
         var manager = InventoryManager.Instance();
         if (manager == null) return -1;
 
-        // External game call, resolved by signature - the one case where
-        // try-catch is the right tool (same reasoning as the gearset check below).
         try
         {
             return manager->GetInventoryItemCount(itemId);
@@ -155,6 +168,34 @@ public sealed class InventoryService
         catch (Exception ex)
         {
             _log.Error($"[Inventory] Bestandsabfrage für Item {itemId} fehlgeschlagen: {ex.Message}");
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// How many of an item the player holds (NQ and HQ combined), or -1 when
+    /// the inventory is not readable yet.
+    ///
+    /// <c>GetInventoryItemCount(itemId)</c> defaults to <c>isHq: false</c> and
+    /// therefore counts ONLY NQ. Crafting accepts either quality, so both calls
+    /// are required (ClientStructs signature verified 2026-09-06).
+    /// </summary>
+    public unsafe int CountOfNqAndHq(uint itemId)
+    {
+        if (itemId == 0) return -1;
+
+        var manager = InventoryManager.Instance();
+        if (manager == null) return -1;
+
+        try
+        {
+            var nq = manager->GetInventoryItemCount(itemId, isHq: false);
+            var hq = manager->GetInventoryItemCount(itemId, isHq: true);
+            return nq + hq;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Inventory] NQ+HQ-Bestand für Item {itemId} fehlgeschlagen: {ex.Message}");
             return -1;
         }
     }

@@ -76,7 +76,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PlacesService      _places;
     private readonly FishingService     _fishing;
     private readonly FateService        _fates;
+    private readonly EventAreaService   _eventAreas;
     private readonly GatheringService   _gathering;
+    private readonly CraftingService    _crafting;
     private readonly BestiaryService    _bestiary;
     private readonly HuntingLogService  _huntingLog;
     private readonly AreaRangeService   _areaRanges;
@@ -177,9 +179,11 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    // 6.04: Ansage „gerade da“ vor „verfügbar“; Status nach der Stufe.
-    private const string PluginVersion    = "6.04";
-    private const string PluginVersionTag = "Sammelpunkte: Status nach Stufe";
+    // 6.08: Events-Kategorie = Yo-kai-Zonen (Uhr), nicht Sheet-Flag-FATEs.
+    // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
+    // 6.06: Rezepte nach Stufe statt IsRecipeUnlocked; Mats NQ+HQ — LOKAL, nicht pushen.
+    private const string PluginVersion    = "6.08.5";
+    private const string PluginVersionTag = "Battlecraft-Händler";
 
     public Plugin()
     {
@@ -330,6 +334,16 @@ public sealed class Plugin : IDalamudPlugin
             _config.Version = 13;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.Version < 14)
+        {
+            // ItemCompare und PartyRoster lagen beide auf Strg+Umschalt+F12.
+            // Die Zeile hing kurz in Version 13, die bei vielen schon gelaufen
+            // war — deshalb eigener Schritt, sonst blieb ItemCompare auf F12.
+            if (_config.KeyItemCompare == "Strg+Umschalt+F12")
+                _config.KeyItemCompare = "Strg+Umschalt+Einfg";
+            _config.Version = 14;
+            PluginInterface.SavePluginConfig(_config);
+        }
         // Language for all mod announcements (Auto = follow Windows). Must be set
         // before the first Speak below.
         Loc.Mode = _config.Language;
@@ -363,6 +377,8 @@ public sealed class Plugin : IDalamudPlugin
         _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);
         _fates        = new FateService(ClientState);
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
+        _crafting     = new CraftingService(ObjectTable, DataManager, GameGui, Framework, _inventoryReader, _tolk, Log);
+        _eventAreas   = new EventAreaService(ClientState, DataManager, _places, _inventoryReader, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _huntingLog   = new HuntingLogService(DataManager, ObjectTable, ClientState, _places, Log);
         // Die echten Umrisse der benannten Gebiete aus dem Zonen-Layout: die
@@ -419,7 +435,7 @@ public sealed class Plugin : IDalamudPlugin
         // Farb-Rufnamen fuer die Gegner im Kampf. VOR der Navigation, weil deren
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _crafting, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -1348,6 +1364,28 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
+    /// Bare Numpad0 starts synthesis for the selected CraftRecipes entry — only
+    /// when no other menu owns Confirm (SpokenMenu, skill menu, Talk/Yesno/
+    /// SelectString stack, or any focused game addon). Otherwise the key is left
+    /// alone so the player can confirm shops and dialogs while still browsing
+    /// the craft category.
+    /// </summary>
+    private void HandleCraftConfirmKey()
+    {
+        if (_menu.IsOpen) return;
+        if (_hotbar.IsSkillMenuOpen) return;
+        if (_uiReader.HasActiveMenu) return;
+        if (_uiReader.HasFocusedAddon()) return;
+        if (!IsJustPressed("Numpad0")) return;
+        if (!_navigation.TryCraftSelected()) return;
+
+        const int vkNumpad0 = 0x60;
+        var key = (Dalamud.Game.ClientState.Keys.VirtualKey)vkNumpad0;
+        if (KeyState.IsVirtualKeyValid(vkNumpad0) && KeyState[key])
+            KeyState[key] = false;
+    }
+
+    /// <summary>
     /// Turns the player towards the walk guide's next waypoint and takes the key
     /// away from the game.
     /// <para>
@@ -1988,6 +2026,10 @@ public sealed class Plugin : IDalamudPlugin
         else
         {
             _menuInput.Poll();
+            // Probe BEFORE the spoken menu may close on Escape, so the log still
+            // shows whether Escape was stolen by an open spoken menu.
+            if (IsJustPressed("Escape"))
+                _uiReader.LogEscapeProbe(_menu.IsOpen);
             if (_menu.HandleKeys(_menuInput)) return;
         }
 
@@ -2139,6 +2181,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyReadLootRolls)) _lootRolls.AnnounceOpenRolls();
         if (IsJustPressed(_config.KeyFocusLootRolls)) _lootRolls.FocusRollWindow();
         HandleSkillMenuKeys();
+        HandleCraftConfirmKey();
         // DIESELBEN TASTEN, ZWEI SYSTEME. Die vier gewohnten Tasten gibt es in
         // beiden - im alten fuehren sie durch die festen Kategorien, im neuen
         // durch die Puffer der Spielregister. Welche Bedeutung gilt, entscheidet
@@ -2968,6 +3011,7 @@ public sealed class Plugin : IDalamudPlugin
         _chatReader.Dispose();
         _legacyChatReader.Dispose();
         _uiReader.Dispose();
+        _crafting.Dispose();
         _autoWalk.Dispose();
         _beacon.Dispose();
         _aoeWarn.Dispose();

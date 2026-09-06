@@ -70,7 +70,7 @@ Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
 
 - **Objekt-Browser**: mit einer Taste durch Objekte in der Nähe blättern
   (NPCs, Händler, Gegner, **Verbündete**, Spieler, Objekte, **Inhalte**,
-  **Alle Inhalte**, Quest-Ziele, Freibriefe, FATEs, Sammelpunkte,
+  **Alle Inhalte**, Quest-Ziele, Freibriefe, FATEs, Events, Sammelpunkte,
   Angelplätze, Ätheryten, Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit
   Name, Art, Entfernung und Richtung; das Objekt wird gleichzeitig
   anvisiert.
@@ -471,15 +471,13 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 - **Bild-auf** — vorheriges Objekt
 - **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
   Verbündete, Spieler, Objekte, Inhalte, Alle Inhalte, Quest-Ziele,
-  Freibriefe, FATEs, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
+  Freibriefe, FATEs, Events, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
   Tiefen Gewölbe stattdessen nur Gegner, Verbündete, Truhen, Leuchten, Räume)
-  - **FATEs sind auch die Event-Ziele** von Kollaborations-Events wie dem
-    Yo-kai-Watch-Event — diese Events laufen technisch über normale FATEs in
-    bestimmten Gebieten, es gibt keine eigene Anzeige dafür. Die Yo-kai-Uhr
-    selbst ist nur ein Ausrüstungsteil ohne eigenes Radar. Wer die Yo-kai
-    (oder ein anderes Event) sucht: Strg+Bild-ab bis „FATEs" ansagt,
-    Bild-ab/-auf durchblättern, Numpad3 läuft automatisch hin, Strg+Numpad3
-    gibt stattdessen die Gehhilfe.
+  - **FATEs** = was in DEINER Zone gerade live ist (Name, Fortschritt). Numpad3
+    läuft hin. Beim Yo-kai-Event: FATE mit Uhr machen (Silber/Gold).
+  - **Events** (seit V6.08): Zonen für zeitliche Kollab-Events (aktuell Yo-kai).
+    Nur sichtbar mit Yo-kai-Uhr. Ansage „Yo-kai, Zonenname“; Numpad3 führt über
+    Übergänge dorthin. Dort dann Kategorie FATEs nutzen.
   - **Sammelpunkte sind klassenbezogen und kartenübergreifend** (seit V6.00):
     die Kategorie zeigt nur Erz-/Gestein-Vorkommen für Minenarbeiter bzw.
     Holz-/Pflanzen-Vorkommen für Botaniker, jeweils passend zur AKTUELLEN

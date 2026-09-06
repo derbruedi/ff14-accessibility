@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
+using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
 namespace FF14Accessibility.Services;
@@ -25,8 +26,20 @@ public enum ShopKind
 /// FccShop, GCShop, GilShop, GuildOrderGuide, GuildOrderOfficer,
 /// GuildleveAssignment, InclusionShop, LotteryExchangeShop, PreHandler, Quest,
 /// SpecialShop, Story, SwitchTalk, TopicSelect, TripleTriad, Warp).
-/// An NPC counts as a merchant when at least one of those references IS a shop
-/// sheet - nothing is inferred from names, titles or icons.
+///
+/// An NPC counts as a merchant when a shop sheet is reached by following those
+/// links — either directly, or one hop through the menus the game inserts in
+/// front of the counter:
+/// <list type="bullet">
+/// <item><see cref="TopicSelect"/>.<c>Shop</c> → GilShop / SpecialShop / PreHandler
+/// (ilspycmd 2026-09-06: TopicSelect.ShopCtor). Battlecraft Armorer / Supplier
+/// NPCs use only this path — verified against sqpack EN titles (e.g. Gwalter
+/// 1001965, Iron Thunder 1001203): oldDirect=false, Topic→GilShop=true.</item>
+/// <item><see cref="PreHandler"/>.<c>Target</c> → GilShop / SpecialShop / …
+/// (housing material suppliers and similar).</item>
+/// <item><see cref="CustomTalk"/>.<c>SpecialLinks</c> → SpecialShop / CollectablesShop.</item>
+/// </list>
+/// Nothing is inferred from names, titles or icons.
 ///
 /// The row id used for the lookup is the object's BaseId (its data-sheet id).
 /// That link is not new here: <c>NavigationService.NpcPrefix</c> already reads
@@ -79,23 +92,89 @@ public sealed class ShopNpcService
         {
             if (entry.RowId == 0) continue;
 
-            // A gil shop is the plain "buy and sell" counter.
-            if (entry.Is<GilShop>()) return ShopKind.GilShop;
+            var direct = KindFromShopRow(entry);
+            if (direct == ShopKind.GilShop) return ShopKind.GilShop;
+            if (direct == ShopKind.Exchange) exchange = true;
 
-            // Everything else that hands out goods does so against something
-            // other than gil. They stay one category: the player wants to know
-            // "can I get gear here", not which token sheet the game uses.
-            if (entry.Is<SpecialShop>()
-                || entry.Is<CollectablesShop>()
-                || entry.Is<GCShop>()
-                || entry.Is<FccShop>()
-                || entry.Is<InclusionShop>()
-                || entry.Is<DisposalShop>()
-                || entry.Is<LotteryExchangeShop>())
-                exchange = true;
+            // TopicSelect: the spoken menu in front of several gil counters
+            // (Battlecraft Armorer/Supplier, …). Sheet → Shop[] verified
+            // ilspycmd 2026-09-06.
+            if (entry.Is<TopicSelect>() && entry.TryGetValue<TopicSelect>(out var topic))
+            {
+                var via = KindFromTopicSelect(topic);
+                if (via == ShopKind.GilShop) return ShopKind.GilShop;
+                if (via == ShopKind.Exchange) exchange = true;
+                continue;
+            }
+
+            // PreHandler: unlock/accept wrapper around a shop target.
+            if (entry.Is<PreHandler>() && entry.TryGetValue<PreHandler>(out var pre))
+            {
+                var via = KindFromPreHandler(pre);
+                if (via == ShopKind.GilShop) return ShopKind.GilShop;
+                if (via == ShopKind.Exchange) exchange = true;
+                continue;
+            }
+
+            // CustomTalk may point at an exchange counter via SpecialLinks.
+            if (entry.Is<CustomTalk>() && entry.TryGetValue<CustomTalk>(out var talk))
+            {
+                var via = KindFromCustomTalk(talk);
+                if (via == ShopKind.GilShop) return ShopKind.GilShop;
+                if (via == ShopKind.Exchange) exchange = true;
+            }
         }
 
         return exchange ? ShopKind.Exchange : ShopKind.None;
+    }
+
+    /// <summary>Direct shop sheet on an ENpcData / TopicSelect.Shop / PreHandler.Target row.</summary>
+    private static ShopKind KindFromShopRow(RowRef entry)
+    {
+        if (entry.Is<GilShop>()) return ShopKind.GilShop;
+
+        if (entry.Is<SpecialShop>()
+            || entry.Is<CollectablesShop>()
+            || entry.Is<GCShop>()
+            || entry.Is<FccShop>()
+            || entry.Is<InclusionShop>()
+            || entry.Is<DisposalShop>()
+            || entry.Is<LotteryExchangeShop>())
+            return ShopKind.Exchange;
+
+        return ShopKind.None;
+    }
+
+    private static ShopKind KindFromTopicSelect(TopicSelect topic)
+    {
+        var exchange = false;
+        foreach (var shop in topic.Shop)
+        {
+            if (shop.RowId == 0) continue;
+
+            var direct = KindFromShopRow(shop);
+            if (direct == ShopKind.GilShop) return ShopKind.GilShop;
+            if (direct == ShopKind.Exchange) exchange = true;
+
+            if (shop.Is<PreHandler>() && shop.TryGetValue<PreHandler>(out var pre))
+            {
+                var via = KindFromPreHandler(pre);
+                if (via == ShopKind.GilShop) return ShopKind.GilShop;
+                if (via == ShopKind.Exchange) exchange = true;
+            }
+        }
+
+        return exchange ? ShopKind.Exchange : ShopKind.None;
+    }
+
+    private static ShopKind KindFromPreHandler(PreHandler pre) => KindFromShopRow(pre.Target);
+
+    private static ShopKind KindFromCustomTalk(CustomTalk talk)
+    {
+        var links = talk.SpecialLinks;
+        if (links.Is<SpecialShop>() || links.Is<CollectablesShop>())
+            return ShopKind.Exchange;
+        return ShopKind.None;
     }
 
     /// <summary>Sheet name of an NPC, for the diagnostic log only - it proves the

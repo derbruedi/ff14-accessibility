@@ -439,7 +439,9 @@ public static partial class AccessibilityStrings
         NavCategory.QuestObjects     => IsGerman ? "Quest-Objekte"     : "Quest objects",
         NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
+        NavCategory.CraftRecipes     => IsGerman ? "Rezepte"           : "Recipes",
         NavCategory.Fates            => "FATEs",
+        NavCategory.EventAreas       => IsGerman ? "Events" : "Events",
         NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
         // "Jagdziele der Gesellschaft" statt "Jagdtagebuch der Staatlichen
         // Gesellschaft": die Beschriftung wird bei jedem Blättern gesprochen,
@@ -559,6 +561,33 @@ public static partial class AccessibilityStrings
 
     public static string NoFatesInZone =>
         IsGerman ? "Keine FATEs in diesem Gebiet." : "No FATEs in this area.";
+
+    // ── Events: zeitliche Kollab-Events (Yo-kai-Zonen) ──
+    public static string CategoryTimedEventCount(int total, int here) =>
+        here > 0
+            ? (IsGerman
+                ? $"Events: {total} Gebiete, {here} hier."
+                : $"Events: {total} zones, {here} here.")
+            : (IsGerman
+                ? $"Events: {total} Gebiete, keines hier."
+                : $"Events: {total} zones, none here.");
+
+    /// <summary>One timed-event line: event name and zone.</summary>
+    public static string TimedEventEntry(string eventName, string zone) =>
+        $"{eventName}, {zone}";
+
+    public static string TimedEventYokaiName => "Yo-kai";
+
+    /// <summary>Spoken after a Yo-kai zone line — what to do there.</summary>
+    public static string TimedEventYokaiHint =>
+        IsGerman
+            ? "FATEs dort mit der Yo-kai-Uhr machen."
+            : "Do FATEs there with the Yo-kai Watch on.";
+
+    public static string NoTimedEvents =>
+        IsGerman
+            ? "Keine zeitlichen Events. Yo-kai-Uhr fehlt — erst den Event-Auftrag machen."
+            : "No timed events. Yo-kai Watch missing — finish the event quest first.";
 
     // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
     public static string CategoryHuntingCount(int total, int here) =>
@@ -994,6 +1023,33 @@ public static partial class AccessibilityStrings
         currentlyUp
             ? (IsGerman ? "gerade da" : "up now")
             : (IsGerman ? "verfügbar" : "available");
+
+    /// <summary>Header for the Rezepte category while on a crafter job.</summary>
+    public static string CategoryCraftCount(int count) =>
+        IsGerman
+            ? $"Rezepte: {count} herstellbar."
+            : $"Recipes: {count} craftable.";
+
+    /// <summary>One recipe in the browser: name and required level.</summary>
+    public static string CraftRecipeLine(string name, int level) =>
+        IsGerman ? $"{name}, Stufe {level}" : $"{name}, level {level}";
+
+    public static string NoCraftRecipes =>
+        IsGerman ? "Keine herstellbaren Rezepte." : "No craftable recipes.";
+
+    public static string NoCraftRecipeSelected =>
+        IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
+
+    public static string CraftNotCrafter =>
+        IsGerman ? "Nur als Handwerker." : "Crafter job only.";
+
+    public static string CraftStarting(string name) =>
+        IsGerman ? $"Stelle her: {name}." : $"Crafting: {name}.";
+
+    public static string CraftStartFailed =>
+        IsGerman
+            ? "Herstellung konnte nicht gestartet werden. Werkbank in Reichweite?"
+            : "Could not start crafting. Crafting station nearby?";
 
     /// <summary>Spoken the moment the game reports the player can cast from where
     /// they stand and face - the orientation cue a blind fisher rotates until
@@ -2149,7 +2205,7 @@ public static partial class AccessibilityStrings
           "Entfernen, HP des anvisierten Ziels ansagen. " +
           "Strg+F9, gewählte Aktionsleiste vorlesen. " +
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
-          "Strg+Umschalt+F12, Ausrüstungs-Vergleich als Tabelle öffnen: erst das Urteil, dann ein Wert je Zeile mit beiden Seiten. Nummernblock 8 und 2 blättern, Nummernblock 4 zurück. " +
+          "Strg+Umschalt+Einfg, Ausrüstungs-Vergleich als Tabelle öffnen: erst das Urteil, dann ein Wert je Zeile mit beiden Seiten. Nummernblock 8 und 2 blättern, Nummernblock 4 zurück. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
           "Strg+Nummernblock 0, Belegen-Menü öffnen: erst die Taste wählen, dann was darauf soll. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock 4 und 6 wechseln die Liste, Nummernblock Komma zurück. " +
@@ -2188,7 +2244,7 @@ public static partial class AccessibilityStrings
           "Delete, announce the current target's HP. " +
           "Ctrl+F9, read the selected hotbar. " +
           "Ctrl+F6, read worn equipment. " +
-          "Ctrl+Shift+F12, open the gear comparison as a table: the verdict first, then one value per row with both sides. Numpad 8 and 2 move, Numpad 4 goes back. " +
+          "Ctrl+Shift+Insert, open the gear comparison as a table: the verdict first, then one value per row with both sides. Numpad 8 and 2 move, Numpad 4 goes back. " +
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
           "Ctrl+Numpad 0, open the assignment menu: pick the key first, then what goes on it. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad 4 and 6 switch the list, Numpad decimal to go back. " +

@@ -44,7 +44,13 @@ internal enum NavCategory
     QuestObjects,
     QuestEnemies,
     GatheringNodes,
+    // Rezepte: freigeschaltete Crafts des aktiven Handwerkers, fuer die die
+    // Materialien reichen. Sheet + RecipeNote.IsRecipeUnlocked + Inventar;
+    // Numpad0 startet die Synthese (siehe CraftingService). Kein Laufziel.
+    CraftRecipes,
     Fates,
+    // Events: zeitliche Kollab-Events (Yo-kai-Zonen). Siehe EventAreaService.
+    EventAreas,
     // Jagdziele: die noch offenen Monster des aktuellen Jagdtagebuch-Rangs.
     // Kommt weder aus der Objekttabelle noch aus der Zone - Quelle sind
     // Jagdtagebuch-Fortschritt und Kartenmarker, siehe HuntingLogService.
@@ -114,7 +120,9 @@ public sealed class NavigationService
     private readonly PlacesService _places;
     private readonly FishingService _fishing;
     private readonly GatheringService _gathering;
+    private readonly CraftingService _crafting;
     private readonly FateService _fates;
+    private readonly EventAreaService _eventAreas;
     private readonly RouteService _routes;
     private readonly ShopNpcService _shops;
     private readonly HuntingLogService _huntingLog;
@@ -151,7 +159,9 @@ public sealed class NavigationService
         PlacesService places,
         FishingService fishing,
         GatheringService gathering,
+        CraftingService crafting,
         FateService fates,
+        EventAreaService eventAreas,
         RouteService routes,
         ShopNpcService shops,
         HuntingLogService huntingLog,
@@ -180,7 +190,9 @@ public sealed class NavigationService
         _places = places;
         _fishing = fishing;
         _gathering = gathering;
+        _crafting = crafting;
         _fates = fates;
+        _eventAreas = eventAreas;
         _routes = routes;
         _shops = shops;
         _huntingLog = huntingLog;
@@ -257,6 +269,7 @@ public sealed class NavigationService
                 SelectedHuntTarget        = null;
 
                 SelectedBlueMagicTarget   = null;
+                SelectedCraftRecipe       = null;
                 _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
             }
             DeepDungeon.Poll(player);
@@ -350,7 +363,6 @@ public sealed class NavigationService
 
 #if DEBUG
     private string _lastBeaconProbe = string.Empty;
-    private DateTime _lastBeaconProbeAt;
 
     /// <summary>
     /// Schreibt mit, WER den Peil-Ton gerade fuettert und was dabei herauskommt.
@@ -370,9 +382,10 @@ public sealed class NavigationService
     /// </para>
     ///
     /// <para>
-    /// Entdoppelt: geloggt wird nur, wenn sich die Lage aendert, sonst hoechstens
-    /// einmal pro Sekunde. Ein Peil-Ton laeuft ueber Minuten, und ein Eintrag pro
-    /// Frame macht das Log unlesbar.
+    /// Nur bei Zustandswechsel. Frueher zusaetzlich einmal/Sekunde als Heartbeat —
+    /// das hat das Dalamud-Log dauerhaft mit identischen Zeilen geflutet
+    /// (User 2026-09-06: „Meldung die nicht weg geht“), auch wenn der Peil-Ton
+    /// aus und nichts laeuft (`offen=False laeuft=False`).
     /// </para>
     /// </summary>
     private void BeaconProbe(IGameObject player, string quelle)
@@ -385,10 +398,8 @@ public sealed class NavigationService
                     $"rot={player.Rotation:F3} dirH={dirH?.ToString("F3") ?? "-"} " +
                     $"kameraAb={(dirH is { } d ? Normalise180((player.Rotation - d) * (180.0 / Math.PI)) : double.NaN):F1}";
 
-        var now = DateTime.UtcNow;
-        if (zeile == _lastBeaconProbe && (now - _lastBeaconProbeAt).TotalSeconds < 1.0) return;
+        if (zeile == _lastBeaconProbe) return;
         _lastBeaconProbe = zeile;
-        _lastBeaconProbeAt = now;
         _log.Info($"[BeaconProbe] {zeile}");
     }
 #else
@@ -643,10 +654,14 @@ public sealed class NavigationService
         // die AKTIVE Sammlerklasse und kartenuebergreifend - siehe
         // IsGatheringSpotCategory / CycleGatheringDestination.
         (NavCategory.GatheringNodes,  null),
+        // Rezepte: nur auf Handwerker-Jobs, Liste aus CraftingService.
+        (NavCategory.CraftRecipes,    null),
         // FATEs kommen aus dem FateManager (FateService), nicht aus der ObjectTable:
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
         // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
         (NavCategory.Fates,           null),
+        // Events: Yo-kai-Zonen (und spaeter weitere zeitliche Events).
+        (NavCategory.EventAreas,      null),
         // Jagdziele: was der aktuelle Rang des Jagdtagebuchs noch verlangt, mit
         // dem Gebiet, in dem das Monster lebt. Wie die Quest-Ziele auch dann,
         // wenn es in einer anderen Zone liegt - dort fuehrt Numpad3 zum
@@ -877,17 +892,21 @@ public sealed class NavigationService
     private bool IsAetheryteCategory       => Categories[_categoryIndex].Cat == NavCategory.Aetherytes;
     private bool IsFishingCategory         => Categories[_categoryIndex].Cat == NavCategory.FishingSpots;
     private bool IsFateCategory            => Categories[_categoryIndex].Cat == NavCategory.Fates;
+    private bool IsEventAreaCategory       => Categories[_categoryIndex].Cat == NavCategory.EventAreas;
     private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
     private bool IsCompanyHuntCategory     => Categories[_categoryIndex].Cat == NavCategory.GrandCompanyHunt;
     private bool IsBlueMagicCategory       => Categories[_categoryIndex].Cat == NavCategory.BlueMagic;
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
     private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
     private bool IsGatheringSpotCategory   => Categories[_categoryIndex].Cat == NavCategory.GatheringNodes;
+    private bool IsCraftCategory           => Categories[_categoryIndex].Cat == NavCategory.CraftRecipes;
 
     /// <summary>
-    /// The quest objective selected via the browser, or null when the browser
-    /// is not on the quest category. Plugin.cs routes Numpad 3 here: quest
-    /// markers have no game object to target, the auto-walk gets a position.
+    /// The recipe selected in the CraftRecipes category, or null. Numpad0 starts
+    /// synthesis via <see cref="CraftingService.TryStartCraft"/>; this is not a
+    /// walk destination (no SelectedQuestDestination).
+    /// </summary>
+    public CraftRecipeInfo? SelectedCraftRecipe { get; private set; }
     /// </summary>
     public QuestDestination? SelectedQuestDestination { get; private set; }
 
@@ -1126,6 +1145,7 @@ public sealed class NavigationService
         SelectedBlueMagicTarget = null;
         SelectedDutyEntrance = null;
         SelectedDungeonStep = null;
+        SelectedCraftRecipe = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -1182,11 +1202,26 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsCraftCategory)
+        {
+            var recipes = _crafting.GetCraftableRecipes();
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryCraftCount(recipes.Count));
+            return;
+        }
+
         if (IsFateCategory)
         {
             var fates = _fates.GetActiveFates();
             var preparing = fates.Count(f => f.IsPreparing);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryFateCount(fates.Count - preparing, preparing));
+            return;
+        }
+
+        if (IsEventAreaCategory)
+        {
+            var areas = _eventAreas.GetAreasSorted();
+            var here = areas.Count(a => a.InCurrentZone);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryTimedEventCount(areas.Count, here));
             return;
         }
 
@@ -1318,9 +1353,21 @@ public sealed class NavigationService
             return;
         }
 
+        if (IsCraftCategory)
+        {
+            CycleCraftRecipe(direction);
+            return;
+        }
+
         if (IsFateCategory)
         {
             CycleFateDestination(direction, player);
+            return;
+        }
+
+        if (IsEventAreaCategory)
+        {
+            CycleEventAreaDestination(direction, player);
             return;
         }
 
@@ -1636,6 +1683,72 @@ public sealed class NavigationService
                    $"{CalculateDirection(player, fate.Position)}. " +
                    $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Fate] Auswahl: {text} (id={fate.FateId})");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    // ── Events: zeitliche Kollab-Event-Zonen (Yo-kai u.a.) ──
+    private void CycleEventAreaDestination(int direction, IGameObject player)
+    {
+        var areas = _eventAreas.GetAreasSorted();
+        if (areas.Count == 0)
+        {
+            SelectedQuestDestination = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoTimedEvents);
+            return;
+        }
+
+        var count = areas.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var (dest, inCurrentZone) = areas[_cycleIndex];
+
+        SelectedQuestDestination = new QuestDestination(
+            QuestName: $"{dest.EventName}, {dest.ZoneName}",
+            Detail: string.Empty,
+            Position: dest.Position,
+            Radius: 0f,
+            TerritoryTypeId: (ushort)dest.TerritoryId,
+            MapId: dest.MapId,
+            InCurrentZone: inCurrentZone,
+            Kind: QuestKind.Unknown,
+            Level: 0);
+
+        string text;
+        if (inCurrentZone)
+        {
+            var hasPos = dest.Position != Vector3.Zero;
+            text = AccessibilityStrings.TimedEventEntry(dest.EventName, dest.ZoneName);
+            if (hasPos)
+            {
+                text += $", {FormatDistance(Distance2D(player.Position, dest.Position))}, " +
+                        $"{CalculateDirection(player, dest.Position)}";
+            }
+            text += $". {dest.Hint}";
+        }
+        else
+        {
+            PlaceDestination? hop = null;
+            var hops = 0;
+            if (dest.MapId != 0)
+                hop = _places.FindFirstHopToMap(dest.MapId, out hops);
+
+            text = $"{AccessibilityStrings.TimedEventEntry(dest.EventName, dest.ZoneName)}, " +
+                   AccessibilityStrings.InArea(dest.ZoneName);
+            if (hop != null)
+            {
+                text += AccessibilityStrings.RouteViaHop(
+                    hop.Name,
+                    FormatDistance(Distance2D(player.Position, hop.Position)),
+                    CalculateDirection(player, hop.Position),
+                    hops - 1);
+                text += AccessibilityStrings.NumpadWalksToTransition;
+            }
+            text += $" {dest.Hint}";
+        }
+
+        text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info(
+            $"[Events] Auswahl: {text} terr={dest.TerritoryId} " +
+            $"pos=({dest.Position.X:F1}|{dest.Position.Z:F1})");
         _tolk.SpeakInterrupt(text);
     }
 
@@ -2145,6 +2258,48 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
+    // ── Rezepte: freigeschaltet + Materialien da, Numpad0 startet ──
+    private void CycleCraftRecipe(int direction)
+    {
+        var recipes = _crafting.GetCraftableRecipes();
+        if (recipes.Count == 0)
+        {
+            SelectedCraftRecipe = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoCraftRecipes);
+            return;
+        }
+
+        var count = recipes.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var recipe = recipes[_cycleIndex];
+        SelectedCraftRecipe = recipe;
+
+        // Clear walk destinations so Numpad3 does not walk to a stale marker.
+        SelectedQuestDestination = null;
+        SelectedPlaceDestination = null;
+        SelectedObjectDestination = null;
+
+        var text = AccessibilityStrings.CraftRecipeLine(recipe.Name, recipe.Level)
+                 + $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
+        _log.Info($"[Craft] Auswahl: id={recipe.RecipeId} '{recipe.Name}' stufe={recipe.Level}");
+        _tolk.SpeakInterrupt(text);
+    }
+
+    /// <summary>
+    /// Starts synthesis for the browser selection when the CraftRecipes category
+    /// is active and a recipe is selected. Returns true only when the key was
+    /// consumed for a real craft attempt — so Numpad0 can still confirm other
+    /// menus while this category is merely open.
+    /// </summary>
+    public bool TryCraftSelected()
+    {
+        if (!IsCraftCategory) return false;
+        var recipe = SelectedCraftRecipe;
+        if (recipe == null) return false;
+        _crafting.TryStartCraft(recipe);
+        return true;
+    }
+
     // ── Jagdziele: was der aktuelle Rang noch verlangt ──
     //
     // Targets come from the hunting log (HuntingLogService), not the object
@@ -2643,6 +2798,11 @@ public sealed class NavigationService
         if (Categories[index].Cat == NavCategory.Fates)
             return _fates.GetActiveFates().Count > 0;
 
+        // Events nur, solange ein zeitliches Event fuer den Charakter greift
+        // (Yo-kai-Uhr vorhanden). Sonst nur Rauschen im Durchblaettern.
+        if (Categories[index].Cat == NavCategory.EventAreas)
+            return _eventAreas.Count > 0;
+
         // Jagdziele nur, solange der Rang noch etwas verlangt: Klassen ohne
         // Jagdtagebuch (Handwerker, Jobs nach ARR) und ein fertig gejagter Rang
         // liefern beide eine leere Liste, und eine leere Kategorie ist im
@@ -2687,6 +2847,11 @@ public sealed class NavigationService
         // fuer Nicht-Sammler ganz weg, nicht nur leer.
         if (Categories[index].Cat == NavCategory.GatheringNodes)
             return IsGatheringSpotClass() && _gathering.GetSpotsAcrossZones().Count > 0;
+
+        // Rezepte nur auf Handwerker-Jobs - auch bei 0 herstellbaren, damit der
+        // Beruf erkennbar bleibt ("Rezepte: 0 herstellbar").
+        if (Categories[index].Cat == NavCategory.CraftRecipes)
+            return _crafting.IsCrafterClassActive();
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;
@@ -2960,6 +3125,7 @@ public sealed class NavigationService
 
         DumpHousingPlot();
         DumpMapMarkers();
+        _eventAreas.DumpFateEventProbe();
     }
 
     /// <summary>
@@ -3037,7 +3203,8 @@ public sealed class NavigationService
             var m  = markers[i];
             var tt = m.TooltipString != null ? m.TooltipString->ToString() : string.Empty;
             _log.Info($"[MarkerProbe] Event[{i}] pos=({m.Position.X:F1}|{m.Position.Y:F1}|{m.Position.Z:F1}) " +
-                      $"icon={m.IconId} r={m.Radius:F1} tt='{tt}'");
+                      $"icon={m.IconId} r={m.Radius:F1} terr={m.TerritoryTypeId} map={m.MapId} " +
+                      $"lvlId={m.LevelId} tt='{tt}'");
             eventCount++;
         }
         _log.Info($"[MarkerProbe] EventMarkers gesamt: {eventCount}");

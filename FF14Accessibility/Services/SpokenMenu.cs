@@ -155,6 +155,7 @@ public sealed class MenuInput
     /// <summary>
     /// Takes every tracked key that is currently down away from the game. Called
     /// only while a menu is open, so nothing outside the menu changes behaviour.
+    /// Escape is intentionally NOT tracked, so the game always gets System Menu.
     /// </summary>
     public void ConsumeAll()
     {
@@ -192,8 +193,10 @@ public sealed class SpokenMenu
     // entry AND opened the chat box. The three remaining keys cover the same
     // action, and Numpad0 is already the user's confirm.
     public static readonly int[] KeysConfirm = { 0x60, 0x66, 0x27 };
-    // Numpad-Del (VK_DECIMAL) / Entf / Escape - close the whole menu
-    private static readonly int[] KeysClose = { 0x6E, 0x2E, 0x1B };
+    // Numpad-Del (VK_DECIMAL) closes the whole menu. Entf (VK_DELETE) is the
+    // same physical key when NumLock is OFF — keep both, never Escape.
+    // Escape belongs to the game (System Menu); user 2026-09-06.
+    private static readonly int[] KeysClose = { 0x6E, 0x2E };
     // Home / End
     private static readonly int[] KeysFirst = { 0x24 };
     private static readonly int[] KeysLast = { 0x23 };
@@ -271,6 +274,7 @@ public sealed class SpokenMenu
 
         // Take the keys away from the game FIRST, so even a frame we decide to
         // ignore never leaks a cursor move into the window underneath.
+        // Escape is not tracked — System Menu stays with the game.
         input.ConsumeAll();
 
         // WHILE A ROW IS PICKED UP, every key means something else, and no key

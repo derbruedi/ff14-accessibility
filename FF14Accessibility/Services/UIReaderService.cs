@@ -385,6 +385,52 @@ public sealed class UIReaderService : IDisposable
         }
     }
 
+    /// <summary>
+    /// True when any visible addon currently has UI focus
+    /// (<c>FocusedUnitsList</c>). Used to keep craft Numpad0 from stealing
+    /// Confirm while a shop, inventory, dialog or similar is open.
+    /// </summary>
+    public unsafe bool HasFocusedAddon()
+    {
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr == null) return false;
+        for (var i = 0; i < mgr->FocusedUnitsList.Count && i < 256; i++)
+        {
+            var a = mgr->FocusedUnitsList.Entries[i].Value;
+            if (a != null && a->IsVisible) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Logs why Escape might not open System Menu: spoken menu, YesNo, focus.
+    /// Called once per Escape edge from Plugin; does not speak.
+    /// </summary>
+    public unsafe void LogEscapeProbe(bool spokenMenuOpen)
+    {
+        var ynVis = false;
+        var ynPtr = _gameGui.GetAddonByName("SelectYesno");
+        if (!ynPtr.IsNull)
+            ynVis = ((AtkUnitBase*)(nint)ynPtr)->IsVisible;
+
+        var focused = new List<string>();
+        var mgr = RaptureAtkUnitManager.Instance();
+        if (mgr != null)
+        {
+            for (var i = 0; i < mgr->FocusedUnitsList.Count && i < 256; i++)
+            {
+                var a = mgr->FocusedUnitsList.Entries[i].Value;
+                if (a == null) continue;
+                focused.Add($"{a->NameString}(vis={a->IsVisible})");
+            }
+        }
+
+        _log.Info(
+            $"[EscapeProbe] spokenMenu={spokenMenuOpen} hasActiveMenu={HasActiveMenu} " +
+            $"selectYesnoVisible={ynVis} menuStack={_menuStack.Count} " +
+            $"focused=[{string.Join(", ", focused)}]");
+    }
+
     public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots)
     {
         _lootRolls      = lootRolls;
