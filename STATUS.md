@@ -18,7 +18,22 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
   bis der User freigibt. Absicherung: `.gitignore` (`AccessibleVendorSell/`,
   `tools/enable-vendorsell/`).
 
-## STAND JETZT (2026-09-07): RELEASE v6.08.5 ÖFFENTLICH — OHNE CRAFT / BOSSMOD / VENDORSELL
+## STAND JETZT (2026-09-07): RELEASE v6.08.6 — SKILL-BESCHREIBUNG BEIM BELEGEN
+
+>>> AUFTRAG (User): Beim Skill-Belegen über die Mod nach dem Skill-Namen die
+    Beschreibung sprechen — so dass NVDA sie aussprechen kann, nicht
+    überschneiden/abschneiden.
+
+>>> FIX:
+    - `HotbarService.AnnounceSkill` armert einen Dwell (0,4 s, wie ActionMenu).
+    - `UpdateSkillDescDwell` (Framework-Tick): nach dem Dwell
+      `ActionTransient.Description` per `_tolk.Speak` (ohne Interrupt), Prefix
+      „Beschreibung:“ / „Description:“.
+    - Schnelles Blättern bricht den Dwell ab (neuer Skill setzt neu an).
+
+>>> VERSION: gesprochen 6.08.6; Assembly/repo.json/Manifest 6.8.6.0.
+
+## STAND DAVOR (2026-09-07): RELEASE v6.08.5 ÖFFENTLICH — OHNE CRAFT / BOSSMOD / VENDORSELL
 
 >>> AUFTRAG (User): Status auf GitHub updaten; Kumpel hängt bei 5.96 (Latest war
     v5.96). Push alles außer Craften, BossMod und Verkaufsplugin.

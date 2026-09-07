@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using LuminaAction = Lumina.Excel.Sheets.Action;
+using LuminaActionTransient = Lumina.Excel.Sheets.ActionTransient;
 using LuminaEventItem = Lumina.Excel.Sheets.EventItem;
 using LuminaGeneralAction = Lumina.Excel.Sheets.GeneralAction;
 using LuminaMount = Lumina.Excel.Sheets.Mount;
@@ -238,6 +240,16 @@ public sealed class HotbarService
 
     private readonly List<(uint Id, string Name, byte Level)> _skills = new();
     private int _skillIndex = -1;
+
+    // Description dwell for the skill assign list (same idea as ActionMenu in
+    // UIReaderService): name+level is spoken interrupting on browse; the long
+    // ActionTransient description is queued NON-interrupting after a short
+    // dwell so NVDA finishes the name first and quick scanning never drowns
+    // in tooltip text.
+    private const double SkillDescDwellSeconds = 0.4;
+    private uint _skillDescDwellId;
+    private long _skillDescDwellTick;
+    private bool _skillDescSpoken;
 
     // Carried usable items, rebuilt every time the item list is entered - the
     // inventory changes constantly (potions get drunk), and a cached list would
@@ -550,7 +562,62 @@ public sealed class HotbarService
     {
         _menuStep = SkillMenuStep.Closed;
         _chosenBar = _chosenSlot = -1;
+        ClearSkillDescDwell();
         _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuClosed);
+    }
+
+    /// <summary>
+    /// Queues the selected skill's tooltip description once the browser has
+    /// dwelled on the same entry. Call every frame from the plugin update; exits
+    /// immediately when the skill list is not the active step.
+    /// </summary>
+    public void UpdateSkillDescDwell()
+    {
+        if (_menuStep != SkillMenuStep.PickEntry || _menuSource != AssignSource.Skills)
+        {
+            ClearSkillDescDwell();
+            return;
+        }
+        if (_skillDescDwellId == 0 || _skillDescSpoken) return;
+
+        var elapsed = (double)(Stopwatch.GetTimestamp() - _skillDescDwellTick) / Stopwatch.Frequency;
+        if (elapsed < SkillDescDwellSeconds) return;
+
+        _skillDescSpoken = true;
+        var desc = ResolveActionDescription(_skillDescDwellId);
+        if (string.IsNullOrEmpty(desc)) return;
+        // Non-interrupting: follows the name announcement instead of cutting it.
+        _tolk.Speak(AccessibilityStrings.ItemDescription(desc));
+    }
+
+    private void ClearSkillDescDwell()
+    {
+        _skillDescDwellId = 0;
+        _skillDescSpoken = false;
+    }
+
+    private void ArmSkillDescDwell(uint actionId)
+    {
+        _skillDescDwellId = actionId;
+        _skillDescDwellTick = Stopwatch.GetTimestamp();
+        _skillDescSpoken = false;
+    }
+
+    /// <summary>Flattened ActionTransient tooltip text, or empty when missing.</summary>
+    private string ResolveActionDescription(uint actionId)
+    {
+        if (!_data.GetExcelSheet<LuminaActionTransient>().TryGetRow(actionId, out var trans))
+            return string.Empty;
+        return FlattenDescription(trans.Description.ExtractText());
+    }
+
+    /// <summary>Collapses line breaks and runs of spaces for spoken output.</summary>
+    private static string FlattenDescription(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        var flat = s.Replace('\r', ' ').Replace('\n', ' ');
+        while (flat.Contains("  ", StringComparison.Ordinal)) flat = flat.Replace("  ", " ", StringComparison.Ordinal);
+        return flat.Trim();
     }
 
     /// <summary>Numpad 8 / 2: browse the current step's list (wraps).</summary>
@@ -662,12 +729,14 @@ public sealed class HotbarService
     }
 
     /// <summary>Announces the current skill: name, level, where it already sits
-    /// (if anywhere) and its position in the list.</summary>
+    /// (if anywhere) and its position in the list. Arms the description dwell so
+    /// the tooltip follows non-interrupting after a short pause.</summary>
     private void AnnounceSkill(bool interrupt = true)
     {
         var (id, name, level) = _skills[_skillIndex];
         var location = FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType.Action, id);
         Say(AccessibilityStrings.SkillBrowseEntry(name, level, location, _skillIndex + 1, _skills.Count), interrupt);
+        ArmSkillDescDwell(id);
     }
 
     /// <summary>Announces the current item: name, stack size, where it already

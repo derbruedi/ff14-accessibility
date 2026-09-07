@@ -178,11 +178,13 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
+    // 6.08.6: Skill-Belegen liest die ActionTransient-Beschreibung nach dem Namen
+    // (Dwell + Speak ohne Interrupt, wie ActionMenu).
     // 6.08: Events-Kategorie = Yo-kai-Zonen (Uhr), nicht Sheet-Flag-FATEs.
     // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
     // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem öffentlichen Stand nicht enthalten.
-    private const string PluginVersion    = "6.08.5";
-    private const string PluginVersionTag = "Battlecraft-Händler";
+    private const string PluginVersion    = "6.08.6";
+    private const string PluginVersionTag = "Skill-Beschreibung beim Belegen";
 
     public Plugin()
     {
@@ -1968,6 +1970,10 @@ public sealed class Plugin : IDalamudPlugin
         // Charaktererstellung: kostet nichts ausserhalb des Aussehen-Schritts -
         // die Methode steigt sofort wieder aus, wenn dessen Addon nicht sichtbar ist.
         _charaMake.Update();
+
+        // Skill-Belegen: Beschreibung nach dem Namen (Dwell), solange die
+        // Skill-Liste offen ist — sonst sofort wieder raus.
+        _hotbar.UpdateSkillDescDwell();
 
         // Sample the text-input state once for this frame. Log only on change so
         // the in-game test can confirm it flips exactly when the chat opens/closes.

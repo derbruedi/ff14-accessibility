@@ -1580,6 +1580,10 @@ Lumina.Excel.Sheets.Action dekompiliert):
   `ClassJob` (RowRef), `IsPvP`, `IsRoleAction`, `IsPlayerAction` (packed
   bools), `UnlockLink` (untypisierte RowRef, uint bei Offset+4; 0 = keine
   Quest-Freischaltung nötig).
+- Tooltip-Beschreibung der Action: Lumina `ActionTransient` gleiche RowId,
+  Feld `Description` (wie ActionMenu in UIReaderService). Hotbar-Skillmenü
+  (V6.08.6): Name interrupt, Beschreibung nach 0,4 s Dwell per Speak ohne
+  Interrupt — damit NVDA den Namen nicht abschneidet.
 - Freischaltungs-Check: `UIState.Instance()->
   IsUnlockLinkUnlockedOrQuestCompleted(uint unlockLinkOrQuestId, byte
   minQuestProgression=0, bool a4=true)` — nimmt laut Signatur UnlockLink-
