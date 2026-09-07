@@ -91,11 +91,9 @@ public sealed class HotbarService
 
     /// <summary>
     /// Announces the actions on the browser's target bar (default bar 1):
-    /// "Aktionsleiste 1. Taste 1, Vollschlag. Beschreibung: … Taste 2, …"
-    /// Combat actions include their ActionTransient tooltip after the name so
-    /// the player hears what the key does without opening the skill menu.
-    /// Other bars use their live-bound keys or slot numbers. Empty slots are
-    /// skipped; if the whole bar is empty, says so.
+    /// "Aktionsleiste 1. Taste 1, Vollschlag. ..." Other bars use their
+    /// live-bound keys or slot numbers. Empty slots are skipped; if the
+    /// whole bar is empty, says so.
     /// </summary>
     public unsafe void ReadHotbar()
     {
@@ -121,17 +119,7 @@ public sealed class HotbarService
                 : (BoundKeyFor(bar, slot) is { } key ? AccessibilityStrings.SlotMainKey(key) : AccessibilityStrings.SlotNumberWord(slot + 1));
             _log.Info($"[Hotbar] Leiste {bar + 1} Slot {slot} ({keyLabel}): type={s->CommandType} " +
                       $"id={s->CommandId} name='{name}'");
-
-            // One continuous utterance per slot: key, name, then description for
-            // combat actions. Same SpeakInterrupt stream so NVDA is not cut mid-name.
-            var line = $"{keyLabel}, {name}";
-            if (s->CommandType == RaptureHotbarModule.HotbarSlotType.Action)
-            {
-                var desc = ResolveActionDescription(s->CommandId);
-                if (!string.IsNullOrEmpty(desc))
-                    line += $". {AccessibilityStrings.ItemDescription(desc)}";
-            }
-            parts.Add(line);
+            parts.Add($"{keyLabel}, {name}");
         }
 
         if (parts.Count == 0)
@@ -579,17 +567,23 @@ public sealed class HotbarService
     }
 
     /// <summary>
-    /// Queues the selected skill's tooltip description once the browser has
-    /// dwelled on the same entry. Call every frame from the plugin update; exits
-    /// immediately when the skill list is not the active step.
+    /// Queues a skill tooltip description once the browser has dwelled on the
+    /// same Action. Used for the skill list (PickEntry) and for the key list
+    /// (PickSlot) when the key already holds a combat action — both speak the
+    /// name interrupting first; the description follows non-interrupting.
     /// </summary>
     public void UpdateSkillDescDwell()
     {
-        if (_menuStep != SkillMenuStep.PickEntry || _menuSource != AssignSource.Skills)
+        if (_menuStep == SkillMenuStep.PickSlot)
+        {
+            // Key list: dwell id was armed in AnnounceTarget for Action slots.
+        }
+        else if (_menuStep != SkillMenuStep.PickEntry || _menuSource != AssignSource.Skills)
         {
             ClearSkillDescDwell();
             return;
         }
+
         if (_skillDescDwellId == 0 || _skillDescSpoken) return;
 
         var elapsed = (double)(Stopwatch.GetTimestamp() - _skillDescDwellTick) / Stopwatch.Frequency;
@@ -598,7 +592,7 @@ public sealed class HotbarService
         _skillDescSpoken = true;
         var desc = ResolveActionDescription(_skillDescDwellId);
         if (string.IsNullOrEmpty(desc)) return;
-        // Non-interrupting: follows the name announcement instead of cutting it.
+        // Non-interrupting: follows "Taste 1, Ruin, 1 von 36" / skill browse line.
         _tolk.Speak(AccessibilityStrings.ItemDescription(desc));
     }
 
@@ -795,12 +789,20 @@ public sealed class HotbarService
     }
 
     /// <summary>Announces the current target key: its label, what is on it now,
-    /// and its position in the list.</summary>
-    private void AnnounceTarget(bool interrupt = true)
+    /// and its position in the list. Arms the description dwell when the key
+    /// holds a combat action (same pattern as the skill list).</summary>
+    private unsafe void AnnounceTarget(bool interrupt = true)
     {
         var (bar, slot) = _targets[_targetIndex];
         Say(AccessibilityStrings.SkillMenuTargetEntry(
             SlotLabel(bar, slot), CurrentSlotContent(bar, slot), _targetIndex + 1, _targets.Count), interrupt);
+
+        var module = RaptureHotbarModule.Instance();
+        var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
+        if (s != null && s->CommandType == RaptureHotbarModule.HotbarSlotType.Action)
+            ArmSkillDescDwell(s->CommandId);
+        else
+            ClearSkillDescDwell();
     }
 
     /// <summary>Spoken name of whatever sits on a slot right now, or "empty".

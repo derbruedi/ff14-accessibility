@@ -18,7 +18,20 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
   bis der User freigibt. Absicherung: `.gitignore` (`AccessibleVendorSell/`,
   `tools/enable-vendorsell/`).
 
-## STAND JETZT (2026-09-07): RELEASE v6.08.7 — AKTIONSLEISTE MIT SKILL-BESCHREIBUNG
+## STAND JETZT (2026-09-07): RELEASE v6.08.8 — TASTENLISTE MIT BESCHREIBUNG
+
+>>> AUFTRAG (User): Gemeint war nicht Strg+F9-Aktionsleiste, sondern die
+    Tastenliste im Belegen-Menü: „Taste 1, Ruin, 1 von 36“ — danach die
+    Skill-Beschreibung (wie bei der Skill-Liste).
+
+>>> FIX:
+    - `AnnounceTarget` armert denselben Dwell, wenn der Slot eine Action hält.
+    - `UpdateSkillDescDwell` gilt für PickSlot und PickEntry/Skills.
+    - ReadHotbar (v6.08.7) wieder ohne Beschreibungen.
+
+>>> VERSION: gesprochen 6.08.8; Assembly/repo.json/Manifest 6.8.8.0.
+
+## STAND DAVOR (2026-09-07): RELEASE v6.08.7 — AKTIONSLEISTE MIT SKILL-BESCHREIBUNG
 
 >>> AUFTRAG (User): Beim Vorlesen der Tasten (Aktionsleiste) auch die
     Skill-Beschreibung hören — analog zum Belegen-Menü.

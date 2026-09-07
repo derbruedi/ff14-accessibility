@@ -178,14 +178,16 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    // 6.08.7: Aktionsleisten-Vorlesen nennt bei Skills auch die Beschreibung.
+    // 6.08.8: Tastenliste im Belegen-Menü: Beschreibung nach „Taste X, Skill“.
+    // 6.08.7: Aktionsleisten-Vorlesen nannte Beschreibungen — zurückgenommen,
+    // gemeint war die Tastenliste im Zuweisungsmenü.
     // 6.08.6: Skill-Belegen liest die ActionTransient-Beschreibung nach dem Namen
     // (Dwell + Speak ohne Interrupt, wie ActionMenu).
     // 6.08: Events-Kategorie = Yo-kai-Zonen (Uhr), nicht Sheet-Flag-FATEs.
     // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
     // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem öffentlichen Stand nicht enthalten.
-    private const string PluginVersion    = "6.08.7";
-    private const string PluginVersionTag = "Aktionsleiste mit Beschreibung";
+    private const string PluginVersion    = "6.08.8";
+    private const string PluginVersionTag = "Tastenliste mit Beschreibung";
 
     public Plugin()
     {

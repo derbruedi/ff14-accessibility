@@ -2175,7 +2175,7 @@ public static partial class AccessibilityStrings
           "Strg+F11, Sprache stoppen. " +
           "Strg+Entfernen, HP und MP ansagen. " +
           "Entfernen, HP des anvisierten Ziels ansagen. " +
-          "Strg+F9, gewählte Aktionsleiste vorlesen, bei Skills mit Beschreibung. " +
+          "Strg+F9, gewählte Aktionsleiste vorlesen. " +
           "Strg+F6, angelegte Ausrüstung vorlesen. " +
           "Strg+Umschalt+Einfg, Ausrüstungs-Vergleich als Tabelle öffnen: erst das Urteil, dann ein Wert je Zeile mit beiden Seiten. Nummernblock 8 und 2 blättern, Nummernblock 4 zurück. " +
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
@@ -2214,7 +2214,7 @@ public static partial class AccessibilityStrings
           "Ctrl+F11, stop speech. " +
           "Ctrl+Delete, announce HP and MP. " +
           "Delete, announce the current target's HP. " +
-          "Ctrl+F9, read the selected hotbar, with skill descriptions. " +
+          "Ctrl+F9, read the selected hotbar. " +
           "Ctrl+F6, read worn equipment. " +
           "Ctrl+Shift+Insert, open the gear comparison as a table: the verdict first, then one value per row with both sides. Numpad 8 and 2 move, Numpad 4 goes back. " +
           "Ctrl+F7, apply recommended equipment. " +
