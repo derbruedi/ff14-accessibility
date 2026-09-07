@@ -2668,18 +2668,22 @@ Fact Discipline: keine Behauptung über Timing ohne Log.
 - Ausrüstungsset: `RaptureGearsetModule.IsItemRegisteredToGearset` (gleiche
   Begründung wie Inventar-Set-Marke in FF14Accessibility / STATUS 2026-08-14)
 
-### Vendor Sell Filter (AccessibleVendorSell 1.6, 2026-09-06)
+### Vendor Sell Filter (AccessibleVendorSell 1.8, 2026-09-07)
 - **Verkaufskategorien** (gesprochenes Untermenü): nur eingeschaltete Gruppen.
-  Default: nur Ausrüstung. Gruppen aus `Item.ItemUICategory` + Equip-Slot
-  (sqpack DE 2026-09-06): Ausrüstung, Nahrung (46), Zutaten (45/47), Arznei (44),
-  Handwerksmaterial (48–56), Materia (58), Kristalle/Katalysatoren (59/60),
-  Verschiedenes (61/63), Möbel (57, 64–80), Sonstiges.
-- Migration: altes `SellNonEquipment=false` → nur Ausrüstung; `true` → alle an.
+  Default neu: nur Ausrüstung (Inventar). Gruppen:
+  - **Ausrüstung** = Equip-Slot in Inventory1–4
+  - **Arsenal** = alle Slots in Armory* (eigene Kategorie; nicht unter Ausrüstung)
+  - Nahrung (46), Zutaten (45/47), Arznei (44), Handwerksmaterial (48–56),
+    Materia (58), Kristalle/Katalysatoren (59/60), Verschiedenes (61/63),
+    Möbel (57, 64–80), Sonstiges
+- Migration v6: altes `IncludeArmoury && SellEquipment` → `SellArmoury`
+  (Verhalten wie zuvor, wenn Arsenal + Ausrüstung an waren).
+- Menü-Schalter „Arsenal einbeziehen“ entfällt; Steuerung über Kategorie Arsenal.
 - Immer ausgenommen:
   - `ItemUICategory` 33 Angelköder, 85 Saisonaler Gegenstand
   - `IsUnique` / `IsUntradable`
 - SelectYesno gebunden/selten: warten, dann `Close(true)`, skip (1.5).
-- Ausrüstung weiter: Max-Rarity, Max-iLvl, Gearset-Schutz.
+- Ausrüstung + Arsenal weiter: Max-Rarity, Max-iLvl, Gearset-Schutz.
 - **Hotkeys:** `Strg+Alt+F9` Vorschau, `F10` verkaufen, `Numpad3` Abbruch,
   `F12` Einstellungen, `Numpad0` Probe. Kein `Strg+Umschalt+F*` (Accessibility).
 

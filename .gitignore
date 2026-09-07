@@ -38,3 +38,7 @@ BossMod-Rotationen.txt
 
 _local_craft_backup/
 
+# Privat bis Freigabe — nie ins Repo / nie ins Haupt-Release
+AccessibleVendorSell/
+tools/enable-vendorsell/
+

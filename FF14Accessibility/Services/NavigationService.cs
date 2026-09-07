@@ -44,10 +44,6 @@ internal enum NavCategory
     QuestObjects,
     QuestEnemies,
     GatheringNodes,
-    // Rezepte: freigeschaltete Crafts des aktiven Handwerkers, fuer die die
-    // Materialien reichen. Sheet + RecipeNote.IsRecipeUnlocked + Inventar;
-    // Numpad0 startet die Synthese (siehe CraftingService). Kein Laufziel.
-    CraftRecipes,
     Fates,
     // Events: zeitliche Kollab-Events (Yo-kai-Zonen). Siehe EventAreaService.
     EventAreas,
@@ -120,7 +116,6 @@ public sealed class NavigationService
     private readonly PlacesService _places;
     private readonly FishingService _fishing;
     private readonly GatheringService _gathering;
-    private readonly CraftingService _crafting;
     private readonly FateService _fates;
     private readonly EventAreaService _eventAreas;
     private readonly RouteService _routes;
@@ -159,7 +154,6 @@ public sealed class NavigationService
         PlacesService places,
         FishingService fishing,
         GatheringService gathering,
-        CraftingService crafting,
         FateService fates,
         EventAreaService eventAreas,
         RouteService routes,
@@ -190,7 +184,6 @@ public sealed class NavigationService
         _places = places;
         _fishing = fishing;
         _gathering = gathering;
-        _crafting = crafting;
         _fates = fates;
         _eventAreas = eventAreas;
         _routes = routes;
@@ -269,7 +262,6 @@ public sealed class NavigationService
                 SelectedHuntTarget        = null;
 
                 SelectedBlueMagicTarget   = null;
-                SelectedCraftRecipe       = null;
                 _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
             }
             DeepDungeon.Poll(player);
@@ -654,8 +646,6 @@ public sealed class NavigationService
         // die AKTIVE Sammlerklasse und kartenuebergreifend - siehe
         // IsGatheringSpotCategory / CycleGatheringDestination.
         (NavCategory.GatheringNodes,  null),
-        // Rezepte: nur auf Handwerker-Jobs, Liste aus CraftingService.
-        (NavCategory.CraftRecipes,    null),
         // FATEs kommen aus dem FateManager (FateService), nicht aus der ObjectTable:
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
         // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
@@ -899,15 +889,8 @@ public sealed class NavigationService
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
     private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
     private bool IsGatheringSpotCategory   => Categories[_categoryIndex].Cat == NavCategory.GatheringNodes;
-    private bool IsCraftCategory           => Categories[_categoryIndex].Cat == NavCategory.CraftRecipes;
 
-    /// <summary>
-    /// The recipe selected in the CraftRecipes category, or null. Numpad0 starts
-    /// synthesis via <see cref="CraftingService.TryStartCraft"/>; this is not a
-    /// walk destination (no SelectedQuestDestination).
-    /// </summary>
-    public CraftRecipeInfo? SelectedCraftRecipe { get; private set; }
-    /// </summary>
+    /// <summary>The quest destination selected via the browser, or null.</summary>
     public QuestDestination? SelectedQuestDestination { get; private set; }
 
     /// <summary>
@@ -1145,7 +1128,6 @@ public sealed class NavigationService
         SelectedBlueMagicTarget = null;
         SelectedDutyEntrance = null;
         SelectedDungeonStep = null;
-        SelectedCraftRecipe = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -1199,13 +1181,6 @@ public sealed class NavigationService
             var here = spots.Count(s => s.InCurrentZone);
             var upNow = spots.Count(s => s.Spot.CurrentlyUp);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryGatheringSpotCount(spots.Count, here, upNow));
-            return;
-        }
-
-        if (IsCraftCategory)
-        {
-            var recipes = _crafting.GetCraftableRecipes();
-            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryCraftCount(recipes.Count));
             return;
         }
 
@@ -1350,12 +1325,6 @@ public sealed class NavigationService
         if (IsGatheringSpotCategory)
         {
             CycleGatheringDestination(direction, player);
-            return;
-        }
-
-        if (IsCraftCategory)
-        {
-            CycleCraftRecipe(direction);
             return;
         }
 
@@ -2258,48 +2227,6 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
-    // ── Rezepte: freigeschaltet + Materialien da, Numpad0 startet ──
-    private void CycleCraftRecipe(int direction)
-    {
-        var recipes = _crafting.GetCraftableRecipes();
-        if (recipes.Count == 0)
-        {
-            SelectedCraftRecipe = null;
-            _tolk.SpeakInterrupt(AccessibilityStrings.NoCraftRecipes);
-            return;
-        }
-
-        var count = recipes.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
-        var recipe = recipes[_cycleIndex];
-        SelectedCraftRecipe = recipe;
-
-        // Clear walk destinations so Numpad3 does not walk to a stale marker.
-        SelectedQuestDestination = null;
-        SelectedPlaceDestination = null;
-        SelectedObjectDestination = null;
-
-        var text = AccessibilityStrings.CraftRecipeLine(recipe.Name, recipe.Level)
-                 + $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
-        _log.Info($"[Craft] Auswahl: id={recipe.RecipeId} '{recipe.Name}' stufe={recipe.Level}");
-        _tolk.SpeakInterrupt(text);
-    }
-
-    /// <summary>
-    /// Starts synthesis for the browser selection when the CraftRecipes category
-    /// is active and a recipe is selected. Returns true only when the key was
-    /// consumed for a real craft attempt — so Numpad0 can still confirm other
-    /// menus while this category is merely open.
-    /// </summary>
-    public bool TryCraftSelected()
-    {
-        if (!IsCraftCategory) return false;
-        var recipe = SelectedCraftRecipe;
-        if (recipe == null) return false;
-        _crafting.TryStartCraft(recipe);
-        return true;
-    }
-
     // ── Jagdziele: was der aktuelle Rang noch verlangt ──
     //
     // Targets come from the hunting log (HuntingLogService), not the object
@@ -2847,11 +2774,6 @@ public sealed class NavigationService
         // fuer Nicht-Sammler ganz weg, nicht nur leer.
         if (Categories[index].Cat == NavCategory.GatheringNodes)
             return IsGatheringSpotClass() && _gathering.GetSpotsAcrossZones().Count > 0;
-
-        // Rezepte nur auf Handwerker-Jobs - auch bei 0 herstellbaren, damit der
-        // Beruf erkennbar bleibt ("Rezepte: 0 herstellbar").
-        if (Categories[index].Cat == NavCategory.CraftRecipes)
-            return _crafting.IsCrafterClassActive();
 
         var kinds = Categories[index].Kinds;
         if (kinds == null || !kinds.Contains(ObjectKind.GatheringPoint)) return true;

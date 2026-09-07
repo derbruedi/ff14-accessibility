@@ -439,7 +439,6 @@ public static partial class AccessibilityStrings
         NavCategory.QuestObjects     => IsGerman ? "Quest-Objekte"     : "Quest objects",
         NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
         NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
-        NavCategory.CraftRecipes     => IsGerman ? "Rezepte"           : "Recipes",
         NavCategory.Fates            => "FATEs",
         NavCategory.EventAreas       => IsGerman ? "Events" : "Events",
         NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
@@ -1023,33 +1022,6 @@ public static partial class AccessibilityStrings
         currentlyUp
             ? (IsGerman ? "gerade da" : "up now")
             : (IsGerman ? "verfügbar" : "available");
-
-    /// <summary>Header for the Rezepte category while on a crafter job.</summary>
-    public static string CategoryCraftCount(int count) =>
-        IsGerman
-            ? $"Rezepte: {count} herstellbar."
-            : $"Recipes: {count} craftable.";
-
-    /// <summary>One recipe in the browser: name and required level.</summary>
-    public static string CraftRecipeLine(string name, int level) =>
-        IsGerman ? $"{name}, Stufe {level}" : $"{name}, level {level}";
-
-    public static string NoCraftRecipes =>
-        IsGerman ? "Keine herstellbaren Rezepte." : "No craftable recipes.";
-
-    public static string NoCraftRecipeSelected =>
-        IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
-
-    public static string CraftNotCrafter =>
-        IsGerman ? "Nur als Handwerker." : "Crafter job only.";
-
-    public static string CraftStarting(string name) =>
-        IsGerman ? $"Stelle her: {name}." : $"Crafting: {name}.";
-
-    public static string CraftStartFailed =>
-        IsGerman
-            ? "Herstellung konnte nicht gestartet werden. Werkbank in Reichweite?"
-            : "Could not start crafting. Crafting station nearby?";
 
     /// <summary>Spoken the moment the game reports the player can cast from where
     /// they stand and face - the orientation cue a blind fisher rotates until

@@ -10,12 +10,49 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - Ebenso privat: `BossMod-Rotationen.txt`, `PRIVAT.txt` (siehe `.gitignore`).
 - **Craft-Kategorie (ab 2026-09-06):** Jobbezogene Rezepte (freigeschaltet,
   Materialien da), Numpad0 craftet. Nur lokal entwickeln — **erstmal nicht
-  committen/pushen**, bis der User ausdrücklich freigibt.
+  committen/pushen**, bis der User ausdrücklich freigibt. Öffentliches
+  Release **v6.08.5** enthält die Kategorie **nicht** (aus dem Stand entfernt,
+  RecipeNote-UI-Vorlesen bleibt).
 - **AccessibleVendorSell (ab 2026-09-06):** Eigenes Plugin, lokal in
   `devPlugins\AccessibleVendorSell`. **Nicht** ins Haupt-Release / repo.json,
-  bis der User freigibt.
+  bis der User freigibt. Absicherung: `.gitignore` (`AccessibleVendorSell/`,
+  `tools/enable-vendorsell/`).
 
-## STAND JETZT (2026-09-06): BATTLECRAFT-HÄNDLER IN „HÄNDLER“
+## STAND JETZT (2026-09-07): RELEASE v6.08.5 ÖFFENTLICH — OHNE CRAFT / BOSSMOD / VENDORSELL
+
+>>> AUFTRAG (User): Status auf GitHub updaten; Kumpel hängt bei 5.96 (Latest war
+    v5.96). Push alles außer Craften, BossMod und Verkaufsplugin.
+
+>>> VERÖFFENTLICHT:
+    - GitHub Release **v6.08.5** als neues Latest (vorher v5.96).
+    - Craft-Browser-Kategorie „Rezepte“ aus dem öffentlichen Stand entfernt
+      (`CraftingService` + Nav/Plugin/Strings-Wiring). RecipeNote-A11y bleibt.
+    - BossMod und AccessibleVendorSell nicht im Repo / nicht im ZIP.
+    - Versionen synchron: csproj / Plugin.cs / repo.json → **6.08.5.0**.
+    - Installer unverändert 1.2.2.0 (von v5.96 übernommen, SHA geprüft).
+
+>>> ENTHALTEN u.a. seit v5.96: Chocobo-Rang, Sammelpunkte klassenbezogen,
+    Events/Yo-kai, Battlecraft-Händler in „Händler“, Escape nur Spiel-Menü,
+    Hotkey-Entzerrung, PRs auf test/prs.
+
+## STAND DAVOR (2026-09-07): VENDOR SELL 1.8 — ARSENAL EIGENE KATEGORIE
+
+>>> AUFTRAG (User): Arsenal als Verkaufskategorie extra — nur Arsenal verkaufen
+    können; „Ausrüstung“ = Rüstung/Waffen aus dem Inventar.
+
+>>> FIX (1.8.0):
+    - Neue Kategorie `Arsenal` (`SellArmoury`); Menü unter Verkaufskategorien.
+    - `Ausrüstung` nur noch Inventory1–4 mit Equip-Slot.
+    - Arsenal-Scan nur wenn Kategorie an (Schalter „Arsenal einbeziehen“ weg).
+    - Migration Config v6: `SellArmoury = IncludeArmoury && SellEquipment`
+      (bisheriges Verhalten beibehalten, wenn beides an war).
+
+>>> TEST: Einstellungen → Verkaufskategorien:
+    1. Nur Ausrüstung an → Vorschau zählt Inventar-Rüstung, nicht Arsenal.
+    2. Nur Arsenal an → Vorschau zählt Arsenal, nicht Inventar-Rüstung.
+    3. Beide an → wie früher gemischt (Filter Max-iLvl/Gearset weiter).
+
+## STAND DAVOR (2026-09-06): BATTLECRAFT-HÄNDLER IN „HÄNDLER“
 
 >>> AUFTRAG (EN-User): Battlecraft Armorer und ähnliche in Merchants-Liste.
 
