@@ -18,7 +18,19 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
   bis der User freigibt. Absicherung: `.gitignore` (`AccessibleVendorSell/`,
   `tools/enable-vendorsell/`).
 
-## STAND JETZT (2026-09-07): RELEASE v6.08.6 — SKILL-BESCHREIBUNG BEIM BELEGEN
+## STAND JETZT (2026-09-07): RELEASE v6.08.7 — AKTIONSLEISTE MIT SKILL-BESCHREIBUNG
+
+>>> AUFTRAG (User): Beim Vorlesen der Tasten (Aktionsleiste) auch die
+    Skill-Beschreibung hören — analog zum Belegen-Menü.
+
+>>> FIX: `ReadHotbar` hängt bei `HotbarSlotType.Action` die
+    ActionTransient-Beschreibung an denselben Ansage-String
+    („Taste X, Name. Beschreibung: …“), eine SpeakInterrupt-Kette — NVDA
+    schneidet den Namen nicht ab. Items/Mounts/GeneralActions unverändert.
+
+>>> VERSION: gesprochen 6.08.7; Assembly/repo.json/Manifest 6.8.7.0.
+
+## STAND DAVOR (2026-09-07): RELEASE v6.08.6 — SKILL-BESCHREIBUNG BEIM BELEGEN
 
 >>> AUFTRAG (User): Beim Skill-Belegen über die Mod nach dem Skill-Namen die
     Beschreibung sprechen — so dass NVDA sie aussprechen kann, nicht

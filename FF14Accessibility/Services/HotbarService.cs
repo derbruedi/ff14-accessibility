@@ -91,9 +91,11 @@ public sealed class HotbarService
 
     /// <summary>
     /// Announces the actions on the browser's target bar (default bar 1):
-    /// "Aktionsleiste 1. Taste 1, Vollschlag. ..." Other bars use their
-    /// live-bound keys or slot numbers. Empty slots are skipped; if the
-    /// whole bar is empty, says so.
+    /// "Aktionsleiste 1. Taste 1, Vollschlag. Beschreibung: … Taste 2, …"
+    /// Combat actions include their ActionTransient tooltip after the name so
+    /// the player hears what the key does without opening the skill menu.
+    /// Other bars use their live-bound keys or slot numbers. Empty slots are
+    /// skipped; if the whole bar is empty, says so.
     /// </summary>
     public unsafe void ReadHotbar()
     {
@@ -119,7 +121,17 @@ public sealed class HotbarService
                 : (BoundKeyFor(bar, slot) is { } key ? AccessibilityStrings.SlotMainKey(key) : AccessibilityStrings.SlotNumberWord(slot + 1));
             _log.Info($"[Hotbar] Leiste {bar + 1} Slot {slot} ({keyLabel}): type={s->CommandType} " +
                       $"id={s->CommandId} name='{name}'");
-            parts.Add($"{keyLabel}, {name}");
+
+            // One continuous utterance per slot: key, name, then description for
+            // combat actions. Same SpeakInterrupt stream so NVDA is not cut mid-name.
+            var line = $"{keyLabel}, {name}";
+            if (s->CommandType == RaptureHotbarModule.HotbarSlotType.Action)
+            {
+                var desc = ResolveActionDescription(s->CommandId);
+                if (!string.IsNullOrEmpty(desc))
+                    line += $". {AccessibilityStrings.ItemDescription(desc)}";
+            }
+            parts.Add(line);
         }
 
         if (parts.Count == 0)
