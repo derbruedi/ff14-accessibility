@@ -28,7 +28,9 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
     - Craft-Browser-Kategorie „Rezepte“ aus dem öffentlichen Stand entfernt
       (`CraftingService` + Nav/Plugin/Strings-Wiring). RecipeNote-A11y bleibt.
     - BossMod und AccessibleVendorSell nicht im Repo / nicht im ZIP.
-    - Versionen synchron: csproj / Plugin.cs / repo.json → **6.08.5.0**.
+    - Versionen synchron: csproj / Plugin.cs sprechen **6.08.5**; Assembly/
+      repo.json / Manifest = **6.8.5.0** (.NET streicht führende Nullen in
+      Versionskomponenten: `6.08.5` → `6.8.5`).
     - Installer unverändert 1.2.2.0 (von v5.96 übernommen, SHA geprüft).
 
 >>> ENTHALTEN u.a. seit v5.96: Chocobo-Rang, Sammelpunkte klassenbezogen,
