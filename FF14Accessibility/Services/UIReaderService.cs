@@ -3344,8 +3344,12 @@ public sealed class UIReaderService : IDisposable
     /// "Time Elapsed: 0:04/Average Wait Time: 5m" is not read once per second
     /// while real content changes still are.
     /// </summary>
-    private static bool SameIgnoringClocks(string a, string b)
+    private static bool SameIgnoringClocks(string? a, string? b)
     {
+        if (ReferenceEquals(a, b)) return true;
+        // A null on one side is a real change (first read / cleared line), not a
+        // ticking clock - announce it.
+        if (a is null || b is null) return false;
         if (a == b) return true;
         return StripLiveClocks(a) == StripLiveClocks(b);
     }
