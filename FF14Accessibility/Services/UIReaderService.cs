@@ -1348,8 +1348,13 @@ public sealed class UIReaderService : IDisposable
         var res = FindFocusedText(currentAddon);
         if (!string.IsNullOrEmpty(res.Text))
         {
+            // Clock-insensitive dedup: a focused line whose only change is a
+            // running clock ("0:04" -> "0:05") must not be announced again every
+            // second. The global focus reader already has this guard through
+            // StripLiveClocks (_lastFocusedNodeStable); this per-addon path did
+            // not, which is what made the duty-finder queue line unbearable.
             if (!_lastFocusByAddon.TryGetValue(name, out var last)
-                || res.Key != last.Key || res.Text != last.Text)
+                || res.Key != last.Key || !SameIgnoringClocks(res.Text, last.Text))
             {
                 _lastFocusByAddon[name] = (res.Key, res.Text);
                 _log.Info($"[Accessibility] {name} Fokus: {res.Text} (Key={res.Key})");
@@ -3330,6 +3335,23 @@ public sealed class UIReaderService : IDisposable
         }
 
         return i < text.Length && char.IsDigit(text[i]) ? -1 : i;
+    }
+
+    /// <summary>
+    /// True when two texts are equal once every running clock is blanked out -
+    /// i.e. the only thing that changed is a ticking counter. Used as the dedup
+    /// comparison wherever changed text is announced, so a line such as
+    /// "Time Elapsed: 0:04/Average Wait Time: 5m" is not read once per second
+    /// while real content changes still are.
+    /// </summary>
+    private static bool SameIgnoringClocks(string? a, string? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        // A null on one side is a real change (first read / cleared line), not a
+        // ticking clock - announce it.
+        if (a is null || b is null) return false;
+        if (a == b) return true;
+        return StripLiveClocks(a) == StripLiveClocks(b);
     }
 
     /// <summary>Whether a named addon currently exists and is visible.</summary>
@@ -6329,7 +6351,9 @@ public sealed class UIReaderService : IDisposable
                 var t = AtkText.Read((AtkTextNode*)n).Trim();
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var hasKey = cache.TryGetValue(n->NodeId, out var prev);
-                if (hasKey && prev == t) continue;
+                // Clock-insensitive: a node whose only change is a running clock
+                // is not re-announced (see SameIgnoringClocks).
+                if (hasKey && SameIgnoringClocks(prev, t)) continue;
                 cache[n->NodeId] = t;
                 if (!isInit && hasKey)
                 {
@@ -6351,7 +6375,8 @@ public sealed class UIReaderService : IDisposable
                 if (string.IsNullOrWhiteSpace(t) || t.Length <= 1) continue;
                 var key = n->NodeId * 10000u + child->NodeId;
                 var hasKey = cache.TryGetValue(key, out var prev);
-                if (hasKey && prev == t) continue;
+                // Clock-insensitive: see the note in the flat-node branch above.
+                if (hasKey && SameIgnoringClocks(prev, t)) continue;
                 cache[key] = t;
                 if (!isInit && hasKey)
                 {
