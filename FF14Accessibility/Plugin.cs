@@ -186,8 +186,8 @@ public sealed class Plugin : IDalamudPlugin
     // 6.08: Events-Kategorie = Yo-kai-Zonen (Uhr), nicht Sheet-Flag-FATEs.
     // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
     // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem öffentlichen Stand nicht enthalten.
-    private const string PluginVersion    = "6.08.8";
-    private const string PluginVersionTag = "Tastenliste mit Beschreibung";
+    private const string PluginVersion    = "6.08.9";
+    private const string PluginVersionTag = "Wirkungen auf dem Spieler ansagen";
 
     public Plugin()
     {
@@ -1140,6 +1140,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("Ziel-HP",        _config.KeyTargetStatus),
             ("SP-Stand",       _config.KeySpStatus),
+            ("Wirkungen",      _config.KeyStatusEffects),
             ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
             ("Flächenwarnung an/aus", _config.KeyToggleAoeWarning),
             ("Peil-Ton an/aus", _config.KeyToggleBeacon),
@@ -1581,6 +1582,57 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         _tolk.SpeakInterrupt(line);
+    }
+
+    /// <summary>
+    /// Says which effects are on the player right now, with their remaining time -
+    /// the question "is my Sneak still up" asked at the moment it matters.
+    ///
+    /// On a key and never automatic, on purpose: effects come and go by the second
+    /// in combat, and a line at every change would talk over the fight.
+    ///
+    /// The names come from the Status sheet (the client translates them itself) and
+    /// NOT from the buff bar: that one carries only the countdown as a text node,
+    /// never the name (see UIReaderService.StatusBarSpamAddons).
+    /// </summary>
+    private void AnnounceStatusEffects()
+    {
+        if (ObjectTable.LocalPlayer is not IBattleChara player)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.StatusEffectsNoPlayer);
+            return;
+        }
+
+        var rows = new List<string>();
+        foreach (var status in player.StatusList)
+        {
+            if (status.StatusId == 0) continue;
+
+            var name = status.GameData.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            if (name.Length == 0) continue;
+
+            // Param is LOGGED, not spoken: the Dalamud doc calls it only "the
+            // parameter value of the status", and what it carries per status
+            // (stack count? potency?) is not measured. Speaking it would announce
+            // a number whose meaning we do not know.
+            Log.Info($"[Wirkungen] {status.StatusId}:'{name}' Param={status.Param} " +
+                     $"Rest={status.RemainingTime:0.0}s");
+
+            var row = name;
+            var seconds = (int)status.RemainingTime;
+            if (seconds > 0) row += AccessibilityStrings.StatusEffectTimeLeft(seconds);
+
+            rows.Add(row);
+        }
+
+        if (rows.Count == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.StatusEffectsNone);
+            return;
+        }
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.StatusEffectsHeader(rows.Count)
+                             + ". " + string.Join(". ", rows));
     }
 
     /// <summary>
@@ -2110,6 +2162,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyTargetStatus))  _combat.AnnounceTargetStatus();
         if (IsJustPressed(_config.KeyDeepFloor))     AnnounceDeepFloor();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
+        if (IsJustPressed(_config.KeyStatusEffects)) AnnounceStatusEffects();
         if (IsJustPressed(_config.KeyToggleHeading)) ToggleHeading();
         if (IsJustPressed(_config.KeyToggleAoeWarning)) ToggleAoeWarning();
         if (IsJustPressed(_config.KeyToggleBeacon))     ToggleTargetBeacon();

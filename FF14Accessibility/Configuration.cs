@@ -47,6 +47,7 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt
     public string KeyTargetStatus = "Entf";             // NUR die HP des anvisierten Ziels (Spielerwunsch 2026-08-31). Bare Entf, weil der Keybind-Dump Entf gar nicht belegt - dieselbe Feststellung, die schon Strg+Entf traegt. Im Kampf will man die Gegner-HP OHNE die eigene HP/MP-Litanei davor, deshalb eine eigene Taste statt eines Anhangs an KeyCombatStatus.
     public string KeySpStatus     = "Strg+Ende";        // SP-Stand (Sammelpunkte, engl. GP) ansagen - der Vorrat, den Sammler fuer Sammel-Fertigkeiten verbrauchen. Strg+Ende ist im Keybind-Dump CAMERA_SAVE (Kamera-Preset speichern) - rein visuell, fuer blindes Spiel folgenlos (wie die akzeptierte Kamera-Zoom-Ueberschneidung der Bild-Tasten). Plugin schluckt die Taste nicht.
+    public string KeyStatusEffects = "Strg+Umschalt+Entf"; // Wirkungen auf dem Spieler ansagen (was liegt gerade auf mir). Eine Modifier-Stufe ueber dem Kampfstatus Strg+Entf, weil es dieselbe Frage ist - erst "wie stehe ich da", dann "was wirkt auf mir". Strg+Umschalt+Entf ist im Keybind-Dump weder vom Spiel noch vom Plugin belegt (Entf = Ziel-HP, Strg+Entf = Kampfstatus, Strg+Umschalt+Einfg = Ausruestungsvergleich).
     public string KeyToggleHeading = "N";               // Himmelsrichtungs-Ansage beim Drehen an/aus. Bare N ist die einzige freie Buchstaben-Taste im Spiel (in V5.31 fuer neue Features freigeraeumt, Keybind-Dump).
     public string KeyDumpUI       = "Strg+F5";          // Node-Tree des aktuellen Addons auf Desktop speichern
     public string KeyWhereAmI     = "Strg+F2";          // Aktives Fenster ansagen + sichtbare Fenster ins Log
@@ -202,6 +203,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyCombatStatus = defaults.KeyCombatStatus;
         KeyTargetStatus = defaults.KeyTargetStatus;
         KeySpStatus     = defaults.KeySpStatus;
+        KeyStatusEffects = defaults.KeyStatusEffects;
         KeyToggleHeading = defaults.KeyToggleHeading;
         KeyToggleAoeWarning = defaults.KeyToggleAoeWarning;
         KeyDumpUI       = defaults.KeyDumpUI;
