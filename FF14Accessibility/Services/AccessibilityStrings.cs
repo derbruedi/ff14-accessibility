@@ -3436,6 +3436,53 @@ public static partial class AccessibilityStrings
     public static string RecipeNoSelection =>
         IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
 
+    // ── Laufendes Handwerk: das Synthese-Fenster vorlesen ───────────
+    /// <summary>Opening line of a craft (and the answer to the on-demand read):
+    /// names the item, then the same numbers as <see cref="SynthesisProgress"/>,
+    /// plus step and running effects. Every figure is the game's own - above all
+    /// the HQ chance, which is read, never computed from the quality bar.</summary>
+    public static string SynthesisOpened(string item, string quality, string maxQuality,
+        string hqPercent, string progress, string maxProgress, string durability,
+        string maxDurability, string step, string effects)
+    {
+        var head = item.Length == 0 ? string.Empty : IsGerman ? $"{item}. " : $"{item}. ";
+        var effectsPart = effects.Length == 0
+            ? string.Empty
+            : IsGerman ? $" Wirkt: {effects}." : $" Active: {effects}.";
+        return head
+             + (IsGerman
+                ? $"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
+                  + $"Fortschritt {progress} von {maxProgress}, Haltbarkeit {durability} von "
+                  + $"{maxDurability}, Schritt {step}."
+                : $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
+                  + $"progress {progress} of {maxProgress}, durability {durability} of "
+                  + $"{maxDurability}, step {step}.")
+             + effectsPart;
+    }
+
+    /// <summary>The short line after an action. Deliberately without step and
+    /// effects: it is spoken on every change, and the two numbers that decide the
+    /// craft are quality (which is the HQ chance) and durability (how much room
+    /// is left).</summary>
+    public static string SynthesisProgress(string quality, string maxQuality, string hqPercent,
+        string progress, string maxProgress, string durability, string maxDurability)
+        => IsGerman
+            ? $"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
+              + $"Fortschritt {progress} von {maxProgress}, Haltbarkeit {durability} von {maxDurability}."
+            : $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
+              + $"progress {progress} of {maxProgress}, durability {durability} of {maxDurability}.";
+
+    /// <summary>Only spoken when the condition CHANGES - the game's own word
+    /// ("Normal", "Good", "Excellent", "Poor"), passed through as read. The mod
+    /// does not translate or classify it: on Good and Excellent a quality action
+    /// does more, and that decision is the player's.</summary>
+    public static string SynthesisCondition(string condition) =>
+        IsGerman ? $"Zustand: {condition}." : $"Condition: {condition}.";
+
+    /// <summary>Answer of the on-demand read outside a craft - so the user can
+    /// tell "no window" apart from "the mod did not answer".</summary>
+    public static string SynthesisNoWindow =>
+        IsGerman ? "Kein Synthese-Fenster offen." : "No synthesis window is open.";
     // ── Inventar / Gegenstands-Slots ────────────────────────────────
     /// <summary>An item with its stack count. German needs the "mal" connector,
     /// English just puts the number first.</summary>
