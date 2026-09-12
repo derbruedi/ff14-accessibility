@@ -121,6 +121,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TrailService       _trails;
     private readonly CharaMakeReader    _charaMake;
     private readonly UIReaderService    _uiReader;
+    // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte
+    // Rezept beantwortet: was ist mit dem Beutelinhalt jetzt machbar.
+    private readonly RecipeCraftService _recipeCraft;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
     // DIE BEIDEN CHATSYSTEME LAUFEN NEBENEINANDER, und der Schalter im
@@ -504,6 +507,10 @@ public sealed class Plugin : IDalamudPlugin
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
+        // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte
+        // Rezept beantwortet: was ist mit dem Beutelinhalt jetzt herstellbar. Der
+        // Bestandsleser liefert die Mengen, die Sheets die fehlenden Kristall-Ids.
+        _recipeCraft = new RecipeCraftService(_inventoryReader, DataManager, GameGui, Log);
 #if DEBUG
         // Teilt sich den Leser mit dem Fenster-Leser: dort haengen die geladenen
         // Sheet-Tabellen des Zauberbuchs.
@@ -950,6 +957,14 @@ public sealed class Plugin : IDalamudPlugin
             case "soundtest":
                 SoundTest();
                 break;
+            // Dasselbe wie die Taste im offenen Notizbuch, nur zum Tippen: was
+            // ist mit dem Beutelinhalt jetzt herstellbar.
+            case "craftable":
+            case "machbar":
+                _tolk.SpeakInterrupt(_recipeCraft.DescribeCraftableFromBag(
+                    AccessibilityStrings.SpokenKeyLabel(_config.KeyTakeHqMaterials)));
+                break;
+
             case "trails":
                 _trails.AnnounceTrails();
                 break;
@@ -1159,7 +1174,8 @@ public sealed class Plugin : IDalamudPlugin
             ("Emote weiter",   _config.KeyEmoteNext),
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
-            ("Bestiarium",     _config.KeyBestiary),
+            ("Bestiarium, im Rezeptbuch herstellbar", _config.KeyBestiary),
+            ("HQ-Materialien im Rezeptbuch übernehmen", _config.KeyTakeHqMaterials),
             ("Benachrichtigung", _config.KeyNotification),
             ("Ausrüstung",     _config.KeyReadEquipment),
             ("Ausrüstung vergleichen", _config.KeyItemCompare),
@@ -2133,7 +2149,27 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();
         if (IsJustPressed(_config.KeyEmoteDo))       _emote.ExecuteSelected();
-        if (IsJustPressed(_config.KeyBestiary))      _uiReader.AnnounceBestiaryOverview();
+        if (IsJustPressed(_config.KeyBestiary))
+        {
+            // Dieselbe Taste liest dieselbe Art Ganzes: im offenen Handwerker-
+            // Notizbuch ist das die Frage "was ist mit dem Beutelinhalt jetzt
+            // machbar?" - das Spiel beantwortet sie nur fuer das ausgewaehlte
+            // Rezept, der Rest ist Rechnerei aus dem Beutel. Ausserhalb bleibt
+            // die Taste das Bestiarium (Vorbild Strg+F3: im Uebergabefenster
+            // liest sie anderes als im Beutel).
+            if (_recipeCraft.IsCraftingLogOpen())
+                _tolk.SpeakInterrupt(_recipeCraft.DescribeCraftableFromBag(
+                    AccessibilityStrings.SpokenKeyLabel(_config.KeyTakeHqMaterials)));
+            else
+                _uiReader.AnnounceBestiaryOverview();
+        }
+        // HQ-Materialien im Rezeptbuch. Einfg trug bis 6.08.17 auch die
+        // Filteransage des Sammel-Journals und unterschied sie ueber "ist das
+        // Journal offen" - das traegt nicht, weil FF14 beide Fenster gleichzeitig
+        // offen laesst (Spielerhinweis 2026-09-12: "дак на инсерте же уже hq").
+        // Die Filter haben seit 6.08.18 gar keine Taste mehr: ihr Zustand steht
+        // am Ankreuzfeld und wird dort gesprochen.
+        if (IsJustPressed(_config.KeyTakeHqMaterials)) _uiReader.TakeHqMaterials();
         if (IsJustPressed(_config.KeyPluginsNext))   _dalamudPlugins.CycleNext();
         if (IsJustPressed(_config.KeyPluginsPrev))   _dalamudPlugins.CyclePrev();
         if (IsJustPressed(_config.KeyPluginsConfig)) _dalamudPlugins.OpenConfigOfSelected();
@@ -2308,6 +2344,13 @@ public sealed class Plugin : IDalamudPlugin
             || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x64]  // Numpad4
             || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x66]; // Numpad6
         _uiReader.UpdateGlobalFocus(navKeyHeld);
+        // Ergebnis der HQ-Uebernahme (Einfg) nachlesen: gesprochen wird erst,
+        // wenn das Fenster die Aenderung zeigt - oder wenn sie ausbleibt.
+        _uiReader.HqFillVerifyTick();
+        // Sammel-Journal: Ergebnis des Filter-Ausschaltens nachlesen und die
+        // Spielzeile "There are no items to display" ansagen, sobald sie
+        // erscheint (vorher war eine leere Liste einfach Stille).
+        _uiReader.GatheringNoteTick();
 
 #if DEBUG
         // Debug-only auto-probe: logs focused config-menu elements while a
