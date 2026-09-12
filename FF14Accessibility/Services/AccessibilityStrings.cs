@@ -2183,6 +2183,7 @@ public static partial class AccessibilityStrings
           "Strg+Nummernblock 0, Belegen-Menü öffnen: erst die Taste wählen, dann was darauf soll. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock 4 und 6 wechseln die Liste, Nummernblock Komma zurück. " +
           "Strg+Umschalt+F6, Spur aufzeichnen an oder aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. " +
           "Strg+Umschalt+F7, Aufgabenliste des laufenden Inhalts vorlesen: Freibrief, Dungeon oder FATE. " +
+          "Strg+F4, Bestiarium vorlesen; im offenen Handwerker-Notizbuch stattdessen, was der Beutel jetzt hergibt, samt Bonus fürs erste Mal. " +
           "Befehle: " +
           "/acc nav, Richtung zum Ziel. " +
           "/acc set, Aktuelles Ziel verfolgen. " +
@@ -2197,6 +2198,7 @@ public static partial class AccessibilityStrings
           "/acc gegner, alle Gegner im Kampf mit Farbe, Leben und wer auf dir ist. " +
           "/acc trails, aufgezeichnete Spuren in diesem Gebiet auflisten. " +
           "/acc trail del und die Nummer, eine Spur löschen. " +
+          "/acc machbar, was der Beutel im offenen Rezeptbuch jetzt hergibt. " +
           "/acc stop, Sprache stoppen."
         : "Keys: " +
           "Page Down, announce and target the next object. " +
@@ -2222,7 +2224,9 @@ public static partial class AccessibilityStrings
           "Ctrl+Numpad 0, open the assignment menu: pick the key first, then what goes on it. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad 4 and 6 switch the list, Numpad decimal to go back. " +
           "Ctrl+Shift+F6, record a trail on or off: walk a stretch the navmesh does not know once yourself. " +
           "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
+          "Ctrl+F4, read the bestiary out; while the crafting log is open instead what the bag can make right now, with the first-craft bonus named. " +
           "Commands: " +
+          "/acc craftable, same list, for typing. " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +
           "/acc clear, clear the target. " +
@@ -2729,20 +2733,51 @@ public static partial class AccessibilityStrings
     public static string ModifierAlt => IsGerman ? "Alt+" : "Alt+";
 
     /// <summary>
-    /// A configured hotkey ("Strg+F12") as it should be SPOKEN ("Ctrl+F12").
+    /// Every part of a configured hotkey that is German only because the config
+    /// format is German, as it should be SPOKEN in English ("Strg+Umschalt+Einfg"
+    /// -> "Ctrl+Shift+Insert", "BildAb" -> "PageDown").
     /// <para>
-    /// The config format is fixed German: <see cref="KeyNames.NameToVk"/> looks
-    /// the string up verbatim and the version migrations in Plugin.cs compare
-    /// against the exact spelling, so it cannot be translated at the source -
-    /// only here, at the point where it is read out. Only the modifier words are
-    /// swapped; a German KEY name in a rebound hotkey ("BildAb") still comes out
-    /// as stored, because those are the parser's own tokens.
+    /// The config format itself cannot be translated at the source:
+    /// <see cref="KeyNames.NameToVk"/> looks the string up verbatim and the
+    /// version migrations in Plugin.cs compare against the exact spelling. The
+    /// translation therefore happens here, at the point where a binding is read
+    /// out loud. Keys whose name is identical in both languages (letters, digits,
+    /// F-keys, "Numpad3") are absent and pass through.
+    /// </para>
+    /// <para>
+    /// User report 2026-09-12: the gathering-log filter hint handed the raw config
+    /// string to the announcement, so an English-speaking blind player heard
+    /// "press Umschalt+Einfg" - German words read by a Russian screen reader.
     /// </para>
     /// </summary>
-    public static string SpokenKeyLabel(string configKey) =>
-        IsGerman || string.IsNullOrEmpty(configKey)
-            ? configKey
-            : configKey.Replace("Strg+", "Ctrl+").Replace("Umschalt+", "Shift+");
+    private static readonly Dictionary<string, string> GermanKeyWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Strg"]        = "Ctrl",
+        ["Umschalt"]    = "Shift",
+        ["Leertaste"]   = "Space",
+        ["Rücktaste"]   = "Backspace",
+        ["Einfg"]       = "Insert",
+        ["Entf"]        = "Delete",
+        ["Pos1"]        = "Home",
+        ["Ende"]        = "End",
+        ["BildAuf"]     = "PageUp",
+        ["BildAb"]      = "PageDown",
+        ["NumpadKomma"] = "NumpadComma",
+    };
+
+    /// <summary>
+    /// A configured hotkey ("Strg+F12") as it should be SPOKEN ("Ctrl+F12").
+    /// German in German mode, English in English mode - both the modifiers and
+    /// the key names, word by word (see <see cref="GermanKeyWords"/>).
+    /// </summary>
+    public static string SpokenKeyLabel(string configKey)
+    {
+        if (IsGerman || string.IsNullOrEmpty(configKey)) return configKey;
+        var parts = configKey.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (var i = 0; i < parts.Length; i++)
+            parts[i] = GermanKeyWords.GetValueOrDefault(parts[i], parts[i]);
+        return string.Join("+", parts);
+    }
 
     /// <summary>Slot label: main bar is "key X", other bars name bar+slot/key.</summary>
     public static string SlotMainKey(string key) =>
@@ -3392,6 +3427,33 @@ public static partial class AccessibilityStrings
     public static string GatherIntegrity(string current, string max) =>
         IsGerman ? $"Belastbarkeit {current} von {max}" : $"Integrity {current} of {max}";
 
+    // ── Sammel-Journal (GatheringNote) ──────────────────────────────
+    //  Der Zustand einer Zeile steckt im Spiel NUR in der Grafik: ein Haken
+    //  ueber dem Gegenstandssymbol. Fuer blinde Spieler ist er bis hierhin
+    //  unsichtbar gewesen - dabei ist er die einzige Auskunft darueber, ob
+    //  ein Gegenstand noch den Bonus fuer die erste Ernte bringt.
+    /// <summary>Row state: the item carries the game's check mark.</summary>
+    public static string GatherNoteGathered =>
+        IsGerman ? "schon gesammelt" : "already gathered";
+    /// <summary>Row state: no check mark - the first-gather bonus is still open.</summary>
+    public static string GatherNoteNew =>
+        IsGerman ? "noch nie gesammelt, Bonus für die erste Ernte"
+                 : "not gathered yet, first-time bonus";
+
+    //  Filter des Journals: ihr Zustand wird NICHT hier gesprochen, sondern am
+    //  Bedienelement selbst - der Fokusleser liest das Ankreuzfeld des Fensters
+    //  GatheringNoteSetting und nennt es mit denselben Worten wie jeden anderen
+    //  Schalter im Mod (siehe UIReaderService.TryReadGatheringFilterFocus).
+    //  Eigene Filterzeilen gab es bis 6.08.18; sie brauchten eine eigene Taste.
+    /// <summary>The log's own line for an empty list, read from the window and
+    /// passed through in the client's words (the sentence below it is ours). The
+    /// second half names the cause without naming a key: rows disappear when a
+    /// filter hides them, and the filter is switched where it stands.</summary>
+    public static string GatherNoteEmpty(string clientText) =>
+        IsGerman
+            ? $"{clientText} Keine Zeilen in der Liste - ein Filter kann sie ausblenden."
+            : $"{clientText} No rows in the list - a filter may be hiding them.";
+
     // ── Handwerker-Notizbuch (RecipeNote) ───────────────────────────
     //  Die Werte selbst (Klasse, "Stufe 5", Zahlen) sind GELESENER Client-Text
     //  und werden unveraendert durchgereicht - hier stehen nur die Bindewoerter.
@@ -3403,6 +3465,15 @@ public static partial class AccessibilityStrings
     /// <summary>A list row with its position ("Destilliertes Wasser, Stufe 1, 3 von 12").</summary>
     public static string RowWithPosition(string row, int index, int total) =>
         IsGerman ? $"{row}, {index} von {total}" : $"{row}, {index} of {total}";
+    /// <summary>Recipe row whose craft has never been performed: the one-off
+    /// bonus for the first craft is still open (counterpart of the gathering
+    /// log's "noch nie gesammelt").</summary>
+    public static string RecipeRowNew =>
+        IsGerman ? "noch nie hergestellt, Bonus für das erste Mal"
+                 : "not crafted yet, first-time bonus";
+    /// <summary>Recipe row that has been crafted at least once before.</summary>
+    public static string RecipeRowCrafted =>
+        IsGerman ? "schon hergestellt" : "already crafted";
     /// <summary>Progress needed to finish the craft (client label "Fertig mit").</summary>
     public static string RecipeDifficulty(string value) =>
         IsGerman ? $"Fertig mit {value}" : $"Progress needed {value}";
@@ -3436,6 +3507,79 @@ public static partial class AccessibilityStrings
     public static string RecipeNoSelection =>
         IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
 
+    // ── "Was ist mit dem Beutelinhalt jetzt machbar?" (/acc craftable) ──
+    /// <summary>The list is assembled from the RUNNING game's recipe list, so it
+    /// only exists while the notebook is open.</summary>
+    public static string RecipeBagNoLog =>
+        IsGerman ? "Dafür muss das Handwerker-Notizbuch offen sein."
+                 : "The crafting log has to be open for that.";
+    /// <summary>Header of the list: how many of the recipes in this log can be
+    /// made from what the player carries right now.</summary>
+    public static string RecipeBagHeader(int count, int total) =>
+        IsGerman ? $"Jetzt herstellbar: {count} von {total} Rezepten"
+                 : $"Craftable now: {count} of {total} recipes";
+    /// <summary>Not a single recipe of the open log is makeable right now.</summary>
+    public static string RecipeBagNone(int total) =>
+        IsGerman ? $"Keins von {total} Rezepten ist mit dem Beutelinhalt herstellbar"
+                 : $"None of {total} recipes can be made from the bag";
+    /// <summary>One makeable recipe; the first-craft bonus is named in the same
+    /// words as the row mark (<see cref="RecipeRowNew"/>) when the recipe has
+    /// never been crafted.
+    ///
+    /// <paramref name="needsHq"/> marks the recipes the game's own count lists as
+    /// makeable but the normal synthesis then refuses: the bag holds the material
+    /// ONLY in HQ, and the log starts out with no quality picked, which reads as
+    /// "Maple Syrup, Unselected" (user 2026-09-11). The count is right - the
+    /// material is there - but it has to be taken with
+    /// <see cref="RecipeBagHqHint"/> first.</summary>
+    public static string RecipeBagEntry(string name, bool firstTime, bool needsHq = false)
+    {
+        var hq = needsHq ? (IsGerman ? ", nur mit HQ-Materialien" : ", only with HQ materials") : string.Empty;
+        return firstTime ? $"{name}{hq}, {RecipeRowNew}" : $"{name}{hq}";
+    }
+    /// <summary>Trailing count when more recipes are makeable than are spoken.</summary>
+    public static string RecipeBagMore(int count) =>
+        IsGerman ? $"dazu {count} weitere Rezepte" : $"plus {count} more recipes";
+    /// <summary>How to get at the HQ materials the marked recipes need. Both ways
+    /// are named: the log's own HQ key and Quick Synthesis, which is the one the
+    /// user found on her own (2026-09-11, after the log's HQ column would not
+    /// take her clicks).</summary>
+    public static string RecipeBagHqHint(string key) =>
+        IsGerman
+            ? $"Dafür sind HQ-Materialien nötig: im Notizbuch {key} drücken oder Schnellsynthese mit HQ-Materialien."
+            : $"These need HQ materials: press {key} in the crafting log, or use Quick Synthesis with HQ materials.";
+    // ── HQ-Materialien im Rezeptbuch nehmen (Einfg) ────────────────
+    /// <summary>Spoken only AFTER the window itself shows the change: the mod
+    /// presses the game's own "take HQ" button, then re-reads the material rows
+    /// and compares. 6.08.15 announced this on the return value of the dispatch
+    /// alone - "geklickt=True" in the user's diagnostic (2026-09-12) while both
+    /// rows stayed exactly as they were: the announcement claimed a success the
+    /// game never performed.</summary>
+    public static string HqFillDone =>
+        IsGerman ? "HQ-Materialien übernommen." : "HQ materials taken.";
+    /// <summary>For the case the BUTTON is missing - and only for that. 6.08.16
+    /// said here "Dieses Rezept hat keine HQ-Materialien": a claim about the
+    /// RECIPE, while the code had measured nothing but the button. The user's
+    /// diagnostic of 2026-09-12 02:39 shows the button was there all along
+    /// (node 4, visible, with MouseOver/Down/Up/Click) - the sentence told her
+    /// something false about her recipe. This one states only what was read.</summary>
+    public static string HqFillNoButton =>
+        IsGerman ? "In diesem Fenster finde ich keinen HQ-Knopf."
+                 : "I cannot find an HQ button in this window.";
+    /// <summary>The click went out but the window did not change - said instead of
+    /// <see cref="HqFillDone"/> so silence and a false "done" can be told apart.</summary>
+    public static string HqFillFailed =>
+        IsGerman
+            ? "HQ-Materialien ließen sich nicht übernehmen - im Notizbuch hat sich nichts geändert."
+            : "Could not take HQ materials - nothing changed in the crafting log.";
+    /// <summary>Nothing changed, but the craft ALREADY had HQ material in it before
+    /// the press (starting quality above zero) - the button simply had nothing
+    /// left to fill. Test 2026-09-12 04:15: the first press took quality 0 -> 132,
+    /// every later press left 132 standing. Calling that a failure would say
+    /// something false about her craft, the mistake 6.08.16 made.</summary>
+    public static string HqAlreadyTaken =>
+        IsGerman ? "HQ-Materialien stehen schon - nichts zu ändern."
+                 : "HQ materials are already in - nothing to change.";
     // ── Inventar / Gegenstands-Slots ────────────────────────────────
     /// <summary>An item with its stack count. German needs the "mal" connector,
     /// English just puts the number first.</summary>

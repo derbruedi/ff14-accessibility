@@ -64,6 +64,41 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyEmotePrev     = "Umschalt+F4";     // Emote-Browser: vorheriges Emote ansagen
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
     public string KeyBestiary      = "Strg+F4";         // Bestiarium (Jagdtagebuch) komplett vorlesen (Strg+F4 laut Keybind-Dump frei)
+    // HQ-Materialien im Handwerker-Notizbuch uebernehmen. Das Notizbuch hat je
+    // Materialzeile eine NQ- und eine HQ-Spalte, und nur ein KLICK markiert sie -
+    // der Beutel-Spruch "Herstellbar 3" zaehlt HQ mit, der normale Synthese-Knopf
+    // verweigert aber mit "You have not selected all of the materials", solange
+    // nichts markiert ist (User 2026-09-11: "Maple Syrup, Unselected"). Fuer
+    // einen blinden Spieler ist diese Spalte nicht zu treffen.
+    //
+    // TASTE: Alt+Entf, und Einfg ist hier ABSICHTLICH frei (6.08.28). Einfg war
+    // bis 6.08.27 die HQ-Taste, aber Einfg IST eine NVDA-Modifikatortaste und
+    // geht nur bei schnellem Doppeldruck ans Spiel durch ("нужно нажать на эту
+    // клавишу дважды быстро", NVDA-Handbuch). Spielerhinweis 2026-09-12
+    // (msg 9379): "на 1 нажатие он ничего не говорит хоть 10 секунд жди.
+    // говорит только на несколько быстрых" - jede angekommene Druck landete in
+    // ihrer Diagnose mit 63/109 ms beantwortet, die stummen fehlten darin ganz.
+    // Die Taste kam also nie beim Spiel an, und keine Mod-Taste darf davon
+    // abhaengen, wie der Screenreader eingestellt ist (Spielerhinweis msg 9407:
+    // "убери ... и инсерт. а то все ж это важная клавиша для скринридера").
+    //
+    // Warum Alt+Entf und nicht ein neuer Strg+F-Platz: Entf ist im Keybind-Dump
+    // voellig spielfrei, und Alt-Kombinationen sind im Mod bewiesen (Alt+BildAuf
+    // / Alt+BildAb / Alt+Pos1 / Alt+Ende tragen die Nachlese). Die Modifier-
+    // Pruefung vergleicht exakt (Plugin.IsJustPressed), deshalb stoert Alt+Entf
+    // die bare Entf ("Ziel-HP") nicht und umgekehrt. Kein Kontext-Zweig, keine
+    // Sonderregel - die Taste tut ueberall dasselbe. Alle Strg+F-, Umschalt+F-
+    // und Strg+Umschalt+F-Plaetze sind vergeben.
+    public string KeyTakeHqMaterials = "Alt+Entf";      // HQ-Materialien des gewaehlten Rezepts uebernehmen
+    // Die Filter des Sammel-Journals haben KEINE eigene Taste. 6.08.17 legte sie
+    // auf Einfg (wie die HQ-Materialien, getrennt nur durch "ist das Journal
+    // offen") - das traegt nicht, weil FF14 beide Fenster gleichzeitig offen
+    // laesst ("дак на инсерте же уже hq", 2026-09-12). 6.08.18 legte sie auf
+    // Strg+Einfg, aber auch das war der falsche Weg: der Zustand eines
+    // Ankreuzfelds gehoert an das Feld selbst, nicht an eine Taste
+    // ("просто где фильтры подписывать выбран не выбран", 2026-09-12).
+    // Er wird jetzt vom Fokusleser gesprochen (UIReaderService
+    // .TryReadGatheringFilterFocus), und Einfg bleibt allein bei den HQ-Materialien.
     public string KeyReadEquipment = "Strg+F6";         // Angelegte Ausrüstung vorlesen (Strg+F6 laut Keybind-Dump frei)
     // Ausrüstungs-Vergleich als Tabelle oeffnen (siehe ItemCompareService).
     //
@@ -216,6 +251,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyEmotePrev     = defaults.KeyEmotePrev;
         KeyEmoteDo       = defaults.KeyEmoteDo;
         KeyBestiary      = defaults.KeyBestiary;
+        KeyTakeHqMaterials = defaults.KeyTakeHqMaterials;
         KeyReadEquipment = defaults.KeyReadEquipment;
         KeyItemCompare   = defaults.KeyItemCompare;
         KeyEquipBest     = defaults.KeyEquipBest;

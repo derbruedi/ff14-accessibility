@@ -1848,6 +1848,83 @@ public sealed class UIReaderService : IDisposable
         return false;
     }
 
+    // ── Sammel-Journal (GatheringNote) ────────────────────────────────
+
+    // Node ids des Sammel-Journals, aus dem UI-Dump vom 2026-09-11 (Client EN):
+    // die Liste der Gegenstaende der gewaehlten Zone ist der oberste Knoten
+    // id=19 (TreeList), in einer Zeile traegt id=11 den Namen (SeString-
+    // Gegenstandslink -> ReadClean), id=9 die Stufenangabe ("Lv. 1") und id=7
+    // den Haken. Der Haken steckt in JEDER Zeile; sichtbar macht ihn das Spiel
+    // nur bei Gegenstaenden, die schon einmal gesammelt wurden. Belegt am
+    // selben Dump: sichtbar bei Copper Ore, Wind Shard, Lightning Shard, Muddy
+    // Water und Bone Chip - vom Spieler als gesammelt bestaetigt -, unsichtbar
+    // bei Ice Shard und Earth Shard, die er noch nie gesammelt hat.
+    // Der Haken ist die EINZIGE Auskunft darueber, ob ein Gegenstand noch den
+    // Bonus fuer die erste Ernte bringt - und er ist rein grafisch.
+    private const uint GatheringNoteItemListId   = 19;
+    private const uint GatheringNoteRowNameId    = 11;
+    private const uint GatheringNoteRowLevelId   = 9;
+    private const uint GatheringNoteRowGatheredId = 7;
+
+    /// <summary>
+    /// The gathering-log item row that contains the given focused node,
+    /// formatted for speech, or null. The journal lists an item's name (the
+    /// window holds it as an item link, so it is read clean), its level and
+    /// whether it has ever been gathered - the last piece was invisible until
+    /// now, because the game draws it as a check mark over the item icon.
+    /// </summary>
+    private unsafe bool TryReadGatheringNoteFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        var handle = _gameGui.GetAddonByName("GatheringNote");
+        if (handle.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)handle;
+        if (addon == null || !addon->IsVisible) return false;
+
+        var list = FindTopComponent(addon, GatheringNoteItemListId);
+        if (list == null) return false;
+
+        var uld = &list->UldManager;
+        for (var i = 0; i < uld->NodeListCount; i++)
+        {
+            var rowNode = uld->NodeList[i];
+            if (rowNode == null || (int)rowNode->Type < 1000) continue; // rows are components
+            var comp = ((AtkComponentNode*)rowNode)->Component;
+            if (comp == null) continue;
+            if (FindChildNode(comp, GatheringNoteRowNameId) == null) continue; // not an item row
+            var name = ReadVisibleChildText(comp, GatheringNoteRowNameId, clean: true);
+            if (name.Length == 0) continue; // empty slot
+
+            // Only the row under the cursor is spoken; the zone list and the
+            // level filter beside it keep their generic reading.
+            if (rowNode != node && !IsNodeInComponent(comp, node)) continue;
+
+            text = DescribeGatheringNoteItem(comp, name);
+            return text.Length > 0;
+        }
+        return false;
+    }
+
+    /// <summary>Formats one row of the gathering journal for speech.</summary>
+    private static unsafe string DescribeGatheringNoteItem(AtkComponentBase* comp, string name)
+    {
+        var parts = new List<string> { name };
+
+        // "Lv. 1" is the client's own label, passed through as read - only the
+        // abbreviation is expanded, exactly like the harvest window's "St.".
+        // NOTE: matching "Lv." is client-language-specific (Teil 2).
+        var level = ReadVisibleChildText(comp, GatheringNoteRowLevelId);
+        if (level.Length > 0) parts.Add(level.Replace("Lv.", AccessibilityStrings.LevelWord));
+
+        // The check mark is the whole answer to "is there still a first-gather
+        // bonus on this item?" - so it is always said, in both directions.
+        parts.Add(IsVisibleFlag(FindChildNode(comp, GatheringNoteRowGatheredId))
+            ? AccessibilityStrings.GatherNoteGathered
+            : AccessibilityStrings.GatherNoteNew);
+
+        return string.Join(", ", parts);
+    }
+
     /// <summary>True if <paramref name="node"/> is one of the component's own nodes.</summary>
     private static unsafe bool IsNodeInComponent(AtkComponentBase* comp, AtkResNode* node)
     {
@@ -1857,6 +1934,119 @@ public sealed class UIReaderService : IDisposable
             if (uld->NodeList[i] == node) return true;
         return false;
     }
+
+    // ── Sammel-Journal: Filter-Fenster (GatheringNoteSetting) ─────────
+    //
+    // Das Filterfenster ist ein EIGENES Addon neben dem Journal (Dump des
+    // Spielers 2026-09-12, docs/dump_gatheringnote_filter_20260912.txt):
+    // "Filter Settings" mit drei Ankreuzfeldern und den Knoepfen Apply/Cancel.
+    // Der Spieler hatte "Display Only Recordable Items" gesetzt und danach in
+    // der Stufe 6-10 nichts mehr gesehen - der Filter gehoert dem Spiel (Patch
+    // 7.1), nur ANSAGBAR war er nicht: den Haken malt das Spiel als Bild.
+    //
+    // Aus dem Knotenbaum ist der Zustand NICHT ablesbar. In beiden Dumps trug
+    // jedes Kaestchen dieselben Flags auf beiden Bildknoten (F=0x2032, beide
+    // sichtbar), obwohl der Zustand sich zwischen den Dumps geaendert hatte.
+    // FFXIVClientStructs fuehrt ihn als eigenes Feld (AtkComponentCheckBox
+    // .IsChecked) - dasselbe, das AozNotebookService fuer die Zauber-Kacheln
+    // und der generische Fokusleser fuer Konfig-Schalter liest. Darauf steht
+    // die Ansage; ein Dump allein haette sie nie hergegeben.
+    //
+    // Zweite Beobachtung aus demselben Dump-Paar: sind die beiden unteren
+    // Schalter grau (NodeFlags.Enabled geloescht, 0x2033 -> 0x2013), haengen sie
+    // am oberen "Display Only Recordable Items" - das Spiel schaltet sie mit
+    // ihm ab. Die Ansage nennt das, statt einen Schalter zu verschweigen, der
+    // sichtbar dasteht und nichts bewirkt.
+    private const string GatheringNoteSettingAddon = "GatheringNoteSetting";
+    private const uint GatheringNoteEmptyTextId = 22; // Text "There are no items to display."
+
+    /// <summary>
+    /// Liest das fokussierte Ankreuzfeld der Filter-Einstellungen
+    /// (<c>GatheringNoteSetting</c>): Beschriftung plus Zustand.
+    ///
+    /// ANLASS: die Filter waren nur ueber eine eigene Mod-Taste zu erfahren
+    /// (6.08.17 auf Einfg, 6.08.18 auf Strg+Einfg). Der Spielerhinweis vom
+    /// 2026-09-12 trifft den Kern besser - "besser waere ... einfach da, wo die
+    /// Filter sind, ausgewaehlt / nicht ausgewaehlt". Der Zustand gehoert an das
+    /// Bedienelement, auf dem der Fokus steht: dann braucht es keine Taste, die
+    /// man sich merken muss, und keine, die einem anderen Fenster weggenommen
+    /// wird - Einfg liegt weiter auf den HQ-Materialien, und Umschalt+F11
+    /// gehoert dem NVDA-Addon "Speech History".
+    ///
+    /// Wortgleich zu den Konfigurationsfenstern und zur Spielersuche, inklusive
+    /// des Wortes "Schalter": derselbe Bedienelementtyp muss ueberall gleich
+    /// klingen.
+    ///
+    /// Eigene Methode statt einer Erweiterung von
+    /// <see cref="TryReadPlayerSearchFocus"/> oder <see cref="TryReadConfigFocusRow"/>:
+    /// beide sind auf ihr Fenster beschraenkt, und das bleibt so (siehe dort).
+    /// </summary>
+    private unsafe bool TryReadGatheringFilterFocus(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (node == null) return false;
+        if (!string.Equals(FindAddonNameForNode(node), GatheringNoteSettingAddon, StringComparison.Ordinal))
+            return false;
+
+        // Zur naechsten Komponente hoch, den Knoten selbst mitgeprueft - der
+        // Fokus sitzt mal auf dem Kollisionskind, mal auf der Komponente selbst
+        // (dieselbe Messung wie in der Spielersuche).
+        AtkComponentBase* comp = null;
+        AtkResNode* compNode = null;
+        var cur = node;
+        for (var up = 0; up < 4 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var candidate = ((AtkComponentNode*)cur)->Component;
+            if (candidate == null) continue;
+            comp     = candidate;
+            compNode = cur;
+            break;
+        }
+        if (comp == null || compNode == null) return false;
+        if (comp->GetComponentType() != ComponentType.CheckBox) return false;
+
+        // Dump 2026-09-12: die Beschriftung ist das Textkind (id=2) der
+        // Ankreuzfeld-Komponente ("Display Only Recordable Items", ...).
+        var label = GetTextFromNodeTree(compNode).Trim();
+        if (string.IsNullOrWhiteSpace(label)) return false;
+
+        var isChecked = ((AtkComponentButton*)comp)->IsChecked;
+        text = $"{label}, {AccessibilityStrings.SwitchControl}, "
+             + (isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff);
+        // Grau heisst hier etwas Bestimmtes: die beiden unteren Schalter haengen
+        // am oberen "Display Only Recordable Items" und sind ohne ihn wirkungslos
+        // (Dump-Paar 2026-09-12: 0x2033 -> 0x2013). Gesagt wird es, statt den
+        // Schalter zu verschweigen, der sichtbar dasteht und nichts bewirkt.
+        if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+            text = $"{text}, {AccessibilityStrings.StateDisabled}";
+        return true;
+    }
+
+    /// <summary>
+    /// Per-frame companion of the gathering log: says the window's own "There
+    /// are no items to display." once when it appears. Until now an empty list
+    /// was simply silence, and a player who had switched a filter on had no way
+    /// to tell it from a broken mod. The sentence itself is read from the window
+    /// and passed through in the client's words; only the hint around it is ours.
+    /// </summary>
+    public unsafe void GatheringNoteTick()
+    {
+        var ptr = _gameGui.GetAddonByName("GatheringNote");
+        var addon = ptr.IsNull ? null : (AtkUnitBase*)(nint)ptr;
+        if (addon == null || !addon->IsVisible) { _gatherEmptySpoken = false; return; }
+
+        var empty = FindTopNode(addon, GatheringNoteEmptyTextId);
+        if (!IsVisibleFlag(empty)) { _gatherEmptySpoken = false; return; }
+        if (_gatherEmptySpoken) return;
+
+        _gatherEmptySpoken = true;
+        var text = AtkText.Read((AtkTextNode*)empty).Trim();
+        _log.Info($"[Sammel-Journal] Leere Liste: \"{text}\"");
+        _tolk.SpeakInterrupt(AccessibilityStrings.GatherNoteEmpty(text));
+    }
+
+    private bool _gatherEmptySpoken;
 
     // ── Node helpers (component/addon child lookup by id) ─────────────
 
@@ -2611,6 +2801,22 @@ public sealed class UIReaderService : IDisposable
             // item-name resolver and the generic reader - which would only find
             // the raw, payload-polluted name - never run for these rows.
             text = gatherRow;
+        }
+        else if (TryReadGatheringNoteFocusRow(node, out var journalRow))
+        {
+            // Sammel-Journal (Hauptmenue -> Logs -> Gathering Log): der
+            // generische Leser fand hier nur den rohen Gegenstandslink, und der
+            // Haken "schon gesammelt" - die einzige Auskunft darueber, ob noch
+            // ein Bonus fuer die erste Ernte offen ist - ist reine Grafik.
+            text = journalRow;
+        }
+        else if (TryReadGatheringFilterFocus(node, out var filterSwitch))
+        {
+            // Filter-Fenster des Sammel-Journals: der Zustand der Ankreuzfelder
+            // ist reine Grafik (beide Bildknoten tragen dieselben Flags, Dump-Paar
+            // 2026-09-12) und wurde bis 6.08.18 nur auf einer eigenen Mod-Taste
+            // gesprochen - hier steht er dort, wo der Fokus steht.
+            text = filterSwitch;
         }
         else if (TryReadEventTutorialFocusRow(node, out var tutorialRow))
         {
@@ -10479,16 +10685,58 @@ public sealed class UIReaderService : IDisposable
         if (text.Length == 0) return string.Empty;
 
         var tree = addon->RecipeList;
-        if (tree == null) return text;
-
-        var total = (int)tree->Items.LongCount;
-        for (var i = 0; i < total; i++)
+        if (tree != null)
         {
-            var item = tree->Items[i].Value;
-            if (item != null && item->Renderer == renderer)
-                return AccessibilityStrings.RowWithPosition(text, i + 1, total);
+            var total = (int)tree->Items.LongCount;
+            for (var i = 0; i < total; i++)
+            {
+                var item = tree->Items[i].Value;
+                if (item != null && item->Renderer == renderer)
+                {
+                    text = AccessibilityStrings.RowWithPosition(text, i + 1, total);
+                    break;
+                }
+            }
         }
-        return text; // a row of one of the other two lists
+
+        // Whether this recipe was ever crafted decides if the one-off bonus for
+        // the first craft is still open. The game says so only with a picture
+        // over the row, so it has to be read from the node (see the helper).
+        var crafted = IsRecipeRowCrafted(renderer);
+        if (crafted.HasValue)
+            text += ", " + (crafted.Value
+                ? AccessibilityStrings.RecipeRowCrafted
+                : AccessibilityStrings.RecipeRowNew);
+        return text; // a row of one of the other two lists carries neither position nor mark
+    }
+
+    // The crafting log marks a recipe that has been crafted at least once with a
+    // small icon over the item icon. Measured on a user dump (2026-09-11): a
+    // direct child of the row, Image id=3, 28x24, sitting on the lower right of
+    // the icon - visible only on the two crafted rows of the thirteen listed.
+    // Both the id AND the size are checked because the row reuses id=3 for a
+    // second, differently sized marker inside the icon component.
+    private const uint RecipeRowCraftedMarkNodeId = 3;
+    private const int  RecipeRowCraftedMarkWidth  = 28;
+    private const int  RecipeRowCraftedMarkHeight = 24;
+
+    /// <summary>
+    /// True = already crafted, false = never crafted, null = the marker node was
+    /// not found at all. Null means "say nothing": a wrong first-craft claim
+    /// would send a blind player after a bonus that is already spent.
+    /// </summary>
+    private static unsafe bool? IsRecipeRowCrafted(AtkComponentListItemRenderer* renderer)
+    {
+        var comp = (AtkComponentBase*)renderer;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var n = comp->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Image) continue;
+            if (n->NodeId != RecipeRowCraftedMarkNodeId) continue;
+            if (n->Width != RecipeRowCraftedMarkWidth || n->Height != RecipeRowCraftedMarkHeight) continue;
+            return n->IsVisible();
+        }
+        return null;
     }
 
     /// <summary>
@@ -10625,6 +10873,408 @@ public sealed class UIReaderService : IDisposable
 
         return lines;
     }
+
+    // Zustand zwischen dem Einfg-Druck und der Ergebnispruefung. Die Annahme
+    // der Auswahl steht fruehestens im naechsten Frame im Fenster, deshalb wird
+    // nicht im selben Aufruf geurteilt (siehe HqFillVerifyTick).
+    private bool _hqPending;
+    private int _hqStage;
+    private string _hqBefore = string.Empty;
+    // Die Startqualitaet VOR dem Druck (null = Fenster gibt sie nicht her).
+    // Sie unterscheidet "nichts passiert, weil schon alles HQ ist" von "nichts
+    // passiert" - siehe Urteilszweig in HqFillVerifyTick.
+    private int? _hqQualityBefore;
+    private long _hqDeadline;
+    // Zeitpunkt des letzten Drucks. Die Erfolgsmeldung nennt damit die GEMESSENE
+    // Antwortzeit des Fensters (Druck -> sichtbare Aenderung), nicht die
+    // veranschlagte: HqVerifyWindowMs ist bis jetzt eine Schaetzung. Die Zahl ist
+    // die einzige belastbare Grundlage dafuer, das Fenster zu verkuerzen - und die
+    // Frage des Users vom 2026-09-12 04:49 ("и другие функции мода же работают
+    // мгновенно. как-то же он это сделал может и нам также?") laesst sich ohne sie
+    // nicht ehrlich beantworten.
+    private long _hqPressedAt;
+
+    // Wartephase zwischen dem Einfg-Druck und dem ersten lesbaren HQ-Knopf.
+    // Gemeldet vom User (2026-09-12 03:30, msg 9249): "в начале кнопки не было,
+    // потом ... я её увидела" - der Knopf stand beim ersten Einfg noch nicht im
+    // Fenster und war eine Sekunde spaeter da. Ohne diese Phase beschuldigt die
+    // Ansage das Rezept fuer eine blosse Ladezeit des Fensters.
+    private bool _hqWaiting;
+    private int  _hqWaitFrames;
+    private long _hqWaitStart;
+    private long _hqWaitDeadline;
+
+    /// <summary>How long one dispatch is given to show up in the window before
+    /// it counts as failed. Long enough for a frame that was already spoken for,
+    /// short enough that the answer comes while the user still waits for it.</summary>
+    private const int HqVerifyWindowMs = 700;
+
+    /// <summary>How long the window is given to put its HQ button up before the
+    /// mod says it is not there. The button is not part of the window from the
+    /// first frame (user report 2026-09-12 03:30); a real "this recipe has no HQ
+    /// button" answer therefore has to wait. Long enough for a window still
+    /// building itself, short enough that the answer is not a stale surprise.</summary>
+    private const int HqButtonWaitMs = 1500;
+
+    /// <summary>
+    /// Takes the HQ materials of the recipe selected in the crafting log - the
+    /// keyboard stand-in for a click on the log's HQ column, which a blind player
+    /// cannot hit. Each material row carries its own NQ and HQ column
+    /// (<see cref="AddonRecipeNote.IngredientNodes"/>, probe 2026-09-11) and only
+    /// a click marks them; the user's report that evening was "I click and it
+    /// still says Maple Syrup, Unselected", after which the normal synthesis
+    /// refused with "You have not selected all of the materials" while the log's
+    /// own count said "Craftable 3".
+    ///
+    /// Presses the game's OWN HQ fill button, see
+    /// <see cref="PressHqButton"/>: the verified ButtonClick path first, then the
+    /// mouse events a real click produces. 6.08.16 knew only the first of the
+    /// two, and the button has no ButtonClick at all (her diagnostic 2026-09-12
+    /// 02:39, node 4: MouseOver/Down/Up/Click) - so the press never happened,
+    /// and the fallback that could have caught it was unreachable because this
+    /// method returned on the failed stage 1.
+    ///
+    /// Nothing is spoken here. The verdict comes from
+    /// <see cref="HqFillVerifyTick"/>, which re-reads the window on the frames
+    /// after the press: a blind user cannot tell "working, nothing to say" from
+    /// "said done, did nothing", so the mod does not claim a result it has not
+    /// read back.
+    /// </summary>
+    public unsafe void TakeHqMaterials()
+    {
+        var ptr = _gameGui.GetAddonByName("RecipeNote");
+        if (ptr.IsNull)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.RecipeBagNoLog);
+            return;
+        }
+
+        var addon = (AddonRecipeNote*)(nint)ptr;
+        if (addon == null || !addon->AtkUnitBase.IsVisible)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.RecipeBagNoLog);
+            return;
+        }
+
+        // Der Knopf steht nicht vom ersten Frame an im Fenster (User 2026-09-12
+        // 03:30, msg 9249: erst war er nicht da, eine Sekunde spaeter war er zu
+        // sehen). Ein sofortiges "kein Knopf" waere eine Anschuldigung an das
+        // Rezept fuer eine Ladezeit des Fensters - deshalb erst warten und in
+        // HqFillVerifyTick nachsehen.
+        if (!HasHqButton(addon))
+        {
+            // Ein Druck waehrend der Wartezeit verlaengert sie NICHT: gestartet
+            // hat sie der erste Druck, und ein zweiter darf die Antwort nicht
+            // weiter hinausschieben - dieselbe Ursache wie in BeginHqPress, ihr
+            // Log 2026-09-12 04:36.
+            if (!_hqWaiting)
+            {
+                _hqWaiting = true;
+                _hqWaitFrames = 0;
+                _hqWaitStart = Environment.TickCount64;
+                _hqWaitDeadline = _hqWaitStart + HqButtonWaitMs;
+            }
+
+            return;
+        }
+
+        BeginHqPress(addon);
+    }
+
+    /// <summary>The window's HQ button - present, readable, with a node to send to.
+    /// The one condition both <see cref="TakeHqMaterials"/> and the waiting phase
+    /// judge by, so "readable" cannot drift between them.</summary>
+    private static unsafe bool HasHqButton(AddonRecipeNote* addon)
+    {
+        var button = addon->HqFillButton;
+        return button != null && IsReadable(button) && button->AtkResNode != null;
+    }
+
+    /// <summary>Liegt fuer eine Zutat dieses Rezepts HQ in der Tasche?
+    /// <c>QuantityInInventoryHq</c> ist der Bestand (Dump 2026-09-12: Table Salt
+    /// 85/101, Sunset Wheat Flour 0/2) - eine Zahl, die ein Druck nicht aendert.
+    /// Sie sagt nur, ob der HQ-Knopf ueberhaupt etwas zu fuellen haette: ohne HQ
+    /// in der Tasche kann ein zweiter Versuch nichts bewirken.</summary>
+    private static unsafe bool HasHqInBag(AddonRecipeNote* addon)
+    {
+        foreach (var ing in addon->Ingredients)
+        {
+            if (AtkText.ReadClean(ing.Name).Trim().Length == 0) continue;
+            if (int.TryParse(AtkText.ReadClean(ing.QuantityInInventoryHq).Trim(), out var hq) && hq > 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Snapshot the rows, press the button, arm the read-back. Split off
+    /// from <see cref="TakeHqMaterials"/> because the press can be held back
+    /// until the button appears.</summary>
+    private unsafe void BeginHqPress(AddonRecipeNote* addon)
+    {
+        // Ein Druck waehrend einer laufenden Nachpruefung ist die Wiederholung
+        // DERSELBEN Frage, kein neuer Vorgang: Schnappschuss und Urteilsgrundlage
+        // bleiben die des ersten Drucks, nur die Frist wird um ein Fenster
+        // geschoben, und der Wiederholungsdruck gilt als erledigt (Stufe 2), damit
+        // der Mod nicht noch einen dritten hinterher schickt. Vorher fing jeder
+        // weitere Druck die Pruefung des vorigen ab - in ihrem Log 2026-09-12
+        // bleibt der Druck um 04:36:54 genau so spurlos, waehrend sie auf eine
+        // Antwort wartete und deshalb erneut drueckte: "чтобы что-то услышать
+        // надо жать инсерт не один раз а 2 или 3". Ein verschluckter Druck darf
+        // die Antwort nicht kosten.
+        if (_hqPending)
+        {
+            _hqPressedAt = Environment.TickCount64;
+            if (addon->HqFillButton != null) PressHqButton(addon->HqFillButton);
+            _hqStage = 2;
+            _hqDeadline = Environment.TickCount64 + HqVerifyWindowMs;
+            return;
+        }
+
+        _hqBefore = DescribeHqState(addon);
+        _hqQualityBefore = ReadStartingQuality(addon);
+
+        var button = addon->HqFillButton;
+        _hqPressedAt = Environment.TickCount64;
+        var sent = PressHqButton(button);
+        if (sent.Length == 0)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.HqFillNoButton);
+            return;
+        }
+
+        _hqPending = true;
+        _hqStage = 1;
+        _hqDeadline = Environment.TickCount64 + HqVerifyWindowMs;
+    }
+
+    /// <summary>
+    /// Reads the verdict of the HQ press: succeeded when the state the window
+    /// shows for the craft (<see cref="DescribeHqState"/>: starting quality and
+    /// the NQ/HQ amount taken per material) differs from the snapshot taken at
+    /// the press. While nothing changes, one window is given to the same press
+    /// again - and only when HQ for this recipe lies in the bag, the one case
+    /// where a missed press could still be rescued; without HQ in the bag the
+    /// answer is ready at the first window. Then the verdict, which is "already
+    /// taken" when the craft carried HQ material before the press (started above
+    /// zero quality) and the honest failure only otherwise.
+    /// Called every frame; a no-op unless a press is waiting for its answer or a
+    /// press was held back because the button was not in the window yet.
+    /// </summary>
+    public unsafe void HqFillVerifyTick()
+    {
+        if (!_hqPending && !_hqWaiting) return;
+
+        var ptr = _gameGui.GetAddonByName("RecipeNote");
+        if (ptr.IsNull) { _hqPending = false; _hqWaiting = false; return; }
+        var addon = (AddonRecipeNote*)(nint)ptr;
+        if (addon == null || !addon->AtkUnitBase.IsVisible) { _hqPending = false; _hqWaiting = false; return; }
+
+        // Waiting for the button to show up. The press is not dropped, only
+        // delayed: as soon as the window has it, the same press runs.
+        if (_hqWaiting)
+        {
+            _hqWaitFrames++;
+            if (HasHqButton(addon))
+            {
+                _hqWaiting = false;
+                BeginHqPress(addon);
+                return;
+            }
+
+            if (Environment.TickCount64 < _hqWaitDeadline) return;
+
+            _hqWaiting = false;
+            _log.Info($"[Recipe] kein HQ-Knopf nach {HqButtonWaitMs} ms.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HqFillNoButton);
+            return;
+        }
+
+        var now = DescribeHqState(addon);
+        if (now != _hqBefore)
+        {
+            _hqPending = false;
+            var answeredAfter = Environment.TickCount64 - _hqPressedAt;
+            _log.Info($"[Recipe] HQ uebernehmen: uebernommen nach {answeredAfter} ms. "
+                    + $"vorher=[{_hqBefore}] nachher=[{now}]");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HqFillDone);
+            return;
+        }
+
+        if (Environment.TickCount64 < _hqDeadline) return;
+
+        // Zweiter Versuch nur, wenn er etwas bringen kann: liegt fuer eine Zutat
+        // dieses Rezepts HQ in der Tasche, hat der erste Druck vielleicht nur
+        // nicht gegriffen (Fenster noch beim Aufbau) - dann dieselbe, gemessen
+        // funktionierende Druckform noch einmal. Liegt kein HQ in der Tasche, hat
+        // der Knopf nichts zu fuellen: ein zweiter Versuch waere 700 ms Stille
+        // vor einer Antwort, die schon feststeht (Nutzerhinweis 2026-09-12 04:47:
+        // "мы же делали два разных чтобы проверить, а теперь ты можешь оставить
+        // самое быстрое"). Die zweite Fassung (nur Druck und Loslassen) ist damit
+        // weg: sie hat in keinem Log je etwas bewirkt - und nie die Gelegenheit
+        // gehabt zu zeigen, dass sie es koennte.
+        if (_hqStage == 1 && HasHqInBag(addon))
+        {
+            var button = addon->HqFillButton;
+            _hqPressedAt = Environment.TickCount64;
+            if (button != null) PressHqButton(button);
+            _hqStage = 2;
+            _hqDeadline = Environment.TickCount64 + HqVerifyWindowMs;
+            return;
+        }
+
+        _hqPending = false;
+        // Nichts hat sich geaendert - aber ob das ein Fehlschlag WAR, entscheidet
+        // der Zustand vor dem Druck: stand schon HQ im Craft, hatte der Knopf
+        // nichts mehr zu fuellen (ihr Test 04:15: erster Druck 0 -> 132, danach
+        // liess jeder weitere Druck 132 stehen). "Nicht uebernommen" waere dort
+        // eine falsche Aussage ueber ihren Craft - dieselbe Sorte Fehler wie
+        // 6.08.16. Nur wenn VOR dem Druck keine Startqualitaet stand, ist es
+        // wirklich nicht gelungen.
+        var alreadyTaken = _hqQualityBefore is > 0;
+        _log.Info($"[Recipe] HQ uebernehmen: ohne Wirkung. vorher=[{_hqBefore}] "
+                + $"StartQual vorher={_hqQualityBefore?.ToString() ?? "<null>"} "
+                + $"nachher=[{now}] bereits={alreadyTaken}");
+        _tolk.SpeakInterrupt(alreadyTaken
+            ? AccessibilityStrings.HqAlreadyTaken
+            : AccessibilityStrings.HqFillFailed);
+    }
+
+    /// <summary>
+    /// Dispatches exactly the <see cref="AtkEventType.ButtonClick"/> event of the
+    /// button - searched on the component's own node and in its node list (the
+    /// click event of a game button sits on the collision child or on the
+    /// component node, docs/game-api.md). The type is not ranked against others:
+    /// a MouseClick or DragDropClick event hanging on the same node belongs to
+    /// something else (tooltip, drag source) and would press nothing.
+    /// </summary>
+    private unsafe bool DispatchButtonClick(AtkComponentButton* button)
+    {
+        if (TryDispatchButtonClickAt(button->AtkResNode)) return true;
+        for (var i = 0; i < button->UldManager.NodeListCount; i++)
+            if (TryDispatchButtonClickAt(button->UldManager.NodeList[i])) return true;
+        return false;
+    }
+
+    /// <summary>One node of that search: its own ButtonClick event, or (depth 2,
+    /// like <see cref="TryClickButton"/>) one of its component children's.</summary>
+    private unsafe bool TryDispatchButtonClickAt(AtkResNode* node)
+    {
+        if (node == null || !IsReadable(node)) return false;
+
+        var evt = FindEventOfType(node, AtkEventType.ButtonClick, new List<string>(), 2);
+        if (evt == null || evt->Listener == null || !IsReadable(evt->Listener)) return false;
+
+        var data = default(AtkEventData); // genullt, Size=40 (ilspycmd)
+        evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
+        _log.Info($"[Recipe] HQ-Knopf: ButtonClick param={evt->Param} an Node {node->NodeId} gesendet");
+        return true;
+    }
+
+    /// <summary>The events a real mouse click produces, in the order it produces
+    /// them. The HQ button of the crafting log carries exactly this set and NO
+    /// ButtonClick - user diagnostic 2026-09-12 02:39: node 4, type Collision,
+    /// visible, events MouseOver(256) MouseOut(257) MouseDown(258) MouseUp(259)
+    /// MouseClick(260) InputReceived(512) on one listener. 6.08.16 searched
+    /// ButtonClick only, found nothing, and told the user her recipe had no HQ
+    /// materials - the button had been there the whole time.</summary>
+    private static readonly AtkEventType[] NaturalClickOrder =
+    [
+        AtkEventType.MouseOver,
+        AtkEventType.MouseDown,
+        AtkEventType.MouseUp,
+        AtkEventType.MouseClick,
+    ];
+
+    /// <summary>Sends ONE event type of the node's own event list, if it has one.
+    /// Returns what was sent ("MouseClick(param=260)") or an empty string. The
+    /// AtkEventData stays zeroed, like every other dispatch in this file.</summary>
+    private unsafe string SendNodeEvent(AtkResNode* node, AtkEventType wanted)
+    {
+        if (node == null || !IsReadable(node)) return string.Empty;
+
+        var evt = FindEventOfType(node, wanted, new List<string>(), 2);
+        if (evt == null || evt->Listener == null || !IsReadable(evt->Listener)) return string.Empty;
+
+        var data = default(AtkEventData);
+        evt->Listener->ReceiveEvent(evt->State.EventType, (int)evt->Param, evt, &data);
+        _log.Info($"[Recipe] HQ-Knopf: {wanted} param={evt->Param} an Node {node->NodeId} gesendet");
+        return $"{wanted}(param={evt->Param})";
+    }
+
+    /// <summary>
+    /// Presses the crafting log's HQ button and reports what was sent. The
+    /// verified ButtonClick path first - for windows whose button really uses
+    /// it - and otherwise the mouse order a real click produces. Returning the
+    /// attempt (instead of a bool) is what the diagnostic file needs: a press
+    /// that finds no event at all is a different failure from a press that
+    /// found one and changed nothing.
+    /// </summary>
+    private unsafe string PressHqButton(AtkComponentButton* button)
+    {
+        if (DispatchButtonClick(button)) return "ButtonClick";
+
+        var sent = new List<string>();
+        foreach (var type in NaturalClickOrder)
+        {
+            var one = SendNodeEvent(button->AtkResNode, type);
+            if (one.Length > 0) sent.Add(one);
+        }
+        return string.Join(" -> ", sent);
+    }
+
+    /// <summary>Der Zustand, auf dem das HQ-Urteil ruht: die Startqualitaet, die
+    /// die gewaehlten HQ-Materialien dem Craft schon geben, und wie viel jedes
+    /// Materials als NQ bzw. HQ genommen ist. Beides sind die eigenen Zahlen des
+    /// Fensters, und beide bewegen sich, wenn der HQ-Knopf gewirkt hat - anders
+    /// als die Bestandszahlen derselben Zeilen, die nur sagen, wie viel die
+    /// Spielerin besitzt, und deshalb durch einen Druck unveraendert bleiben
+    /// (Dumps 2026-09-12: Bestand 85/102 unveraendert, StartQual 0 -> 132,
+    /// NQ/HQ-Auswahl 1/0 -> 0/1). EIN String fuer Log und Vergleich, damit die
+    /// Diagnosedatei das Urteil erklaert, das sie erzeugt hat.</summary>
+    private static unsafe string DescribeHqState(AddonRecipeNote* addon)
+    {
+        var parts = new List<string>
+        {
+            $"StartQual={ReadNodeText(addon->SelectedRecipeStartingQuality, out var startId)} (id={startId})"
+            + $" MaxQual={ReadNodeText(addon->SelectedRecipeMaximumQuality, out var maxId)} (id={maxId})"
+        };
+        foreach (var ing in addon->Ingredients)
+        {
+            var name = AtkText.ReadClean(ing.Name).Trim();
+            if (name.Length == 0) continue;
+            parts.Add($"{name} req={AtkText.Read(ing.QuantityRequiredForCraft).Trim()}"
+                    + $" NQsel={AtkText.Read(ing.QuantityIncrementButtonNqText).Trim()}"
+                    + $" HQsel={AtkText.Read(ing.QuantityIncrementButtonHqText).Trim()}"
+                    + $" Bestand={AtkText.Read(ing.QuantityInInventoryNq).Trim()}"
+                    + $"/{AtkText.Read(ing.QuantityInInventoryHq).Trim()}"
+                    + $" unsel='{AtkText.Read(ing.QuantityUnselectedText).Trim()}'");
+        }
+        return string.Join(" | ", parts);
+    }
+
+    /// <summary>Text eines Fensterknotens samt seiner Id. Ueber die Id laesst
+    /// sich das benannte Feld im Dump einem Knoten zuordnen - eine falsche
+    /// Zuordnung faellt dann in der Diagnosedatei auf, statt still das Urteil zu
+    /// entscheiden.</summary>
+    private static unsafe string ReadNodeText(AtkTextNode* node, out string nodeId)
+    {
+        if (node == null) { nodeId = "-"; return "<null>"; }
+        nodeId = node->NodeId.ToString();
+        return AtkText.ReadClean(node).Trim();
+    }
+
+    /// <summary>Die Startqualitaet des gewaehlten Rezepts als Zahl, oder null, wenn
+    /// das Fenster sie nicht hergibt. Sie ist der einzige Zeuge, der sich beim
+    /// Uebernehmen der HQ-Materialien bewegt - Messung 2026-09-12 04:15:
+    /// StartQual 0 -> 132, waehrend die Texte in den NQ/HQ-Knoepfen der Zeilen
+    /// leer zurueckkamen (QuantityIncrementButtonNq/HqText) und der Bestand
+    /// unveraendert blieb.</summary>
+    private static unsafe int? ReadStartingQuality(AddonRecipeNote* addon)
+        => int.TryParse(AtkText.ReadClean(addon->SelectedRecipeStartingQuality).Trim(),
+                        out var quality)
+            ? quality
+            : null;
 
     /// <summary>
     /// The requirement lines ("Empfohlen: Kunstfertigkeit min. 22"). The window
@@ -11759,6 +12409,16 @@ public sealed class UIReaderService : IDisposable
             {
                 var ct = comp->GetComponentType();
                 extra = $" [CT={ct}({(int)ct}) Ch={comp->UldManager.NodeListCount}]";
+
+                // Haken-Zustand von Schaltern. Er steht NICHT in den Knoten-
+                // Flags: in beiden Dumps des Spielers (2026-09-12) trugen die
+                // Bildknoten jedes Kaestchens dieselben Flags, obwohl die
+                // Zustaende verschieden waren - aus so einem Dump laesst sich
+                // der Haken also nicht ablesen. FFXIVClientStructs fuehrt ihn
+                // als Feld; es gehoert in den Dump, sonst stellt sich die Frage
+                // beim naechsten Mal wieder.
+                if (ct is ComponentType.CheckBox or ComponentType.RadioButton)
+                    extra += ((AtkComponentButton*)comp)->IsChecked ? " [Checked]" : " [unchecked]";
 
                 // F�r Listen: L�nge und aktuell gew�hlter Index
                 if (ct == ComponentType.List)
