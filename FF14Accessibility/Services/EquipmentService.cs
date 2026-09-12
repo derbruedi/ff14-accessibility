@@ -21,14 +21,17 @@ namespace FF14Accessibility.Services;
 public sealed class EquipmentService
 {
     private readonly IGameInventory _inventory;
+    private readonly InventoryService _inventoryReader;
     private readonly IDataManager _data;
     private readonly GearInfoService _gearInfo;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
 
-    public EquipmentService(IGameInventory inventory, IDataManager data, GearInfoService gearInfo, TolkService tolk, IPluginLog log)
+    public EquipmentService(IGameInventory inventory, InventoryService inventoryReader, IDataManager data,
+                            GearInfoService gearInfo, TolkService tolk, IPluginLog log)
     {
         _inventory = inventory;
+        _inventoryReader = inventoryReader;
         _data = data;
         _gearInfo = gearInfo;
         _tolk = tolk;
@@ -41,11 +44,16 @@ public sealed class EquipmentService
     /// Announces every worn item with its slot: "Waffe: Bronzegladius,
     /// Kopf: leer, ...". Slot labels derive from the item's own
     /// EquipSlotCategory sheet row (game data), not from slot-index guesses.
+    /// Durability comes from the worn instance itself and is named only when the
+    /// piece is not at full condition - see InventoryService.DescribeWornCondition
+    /// for why full pieces stay unsaid, and EquipmentAllFullCondition for why
+    /// "nothing damaged" is still spoken once.
     /// </summary>
     public void ReadEquipment()
     {
         var parts = new List<string>();
         var empty = 0;
+        var damaged = 0;
         foreach (var item in _inventory.GetInventoryItems(GameInventoryType.EquippedItems))
         {
             if (item.IsEmpty || item.ItemId == 0)
@@ -62,8 +70,11 @@ public sealed class EquipmentService
             // class change) is worth words: "nicht tragbar, nur für ...".
             var gear = _gearInfo.DescribeGear(item.BaseItemId, briefWhenWearable: true);
             var gearNote = gear.Length > 0 ? $", {gear}" : string.Empty;
-            _log.Info($"[Equip] slot={item.InventorySlot} id={item.ItemId} '{label}: {name}'{hq}{gearNote}");
-            parts.Add($"{label}: {name}{hq}{gearNote}");
+            var condition = _inventoryReader.DescribeWornCondition(item.Address, item.BaseItemId, onlyWhenDamaged: true);
+            var conditionNote = condition.Length > 0 ? $", {condition}" : string.Empty;
+            if (condition.Length > 0) damaged++;
+            _log.Info($"[Equip] slot={item.InventorySlot} id={item.ItemId} '{label}: {name}'{hq}{gearNote}{conditionNote}");
+            parts.Add($"{label}: {name}{hq}{gearNote}{conditionNote}");
         }
 
         if (parts.Count == 0)
@@ -72,7 +83,8 @@ public sealed class EquipmentService
             return;
         }
         var emptyNote = empty > 0 ? AccessibilityStrings.SlotsFree(empty) : string.Empty;
-        _tolk.SpeakInterrupt(AccessibilityStrings.EquipmentList(string.Join(". ", parts), emptyNote));
+        var allFullNote = damaged == 0 ? AccessibilityStrings.EquipmentAllFullCondition : string.Empty;
+        _tolk.SpeakInterrupt(AccessibilityStrings.EquipmentList(string.Join(". ", parts), emptyNote + allFullNote));
     }
 
     /// <summary>

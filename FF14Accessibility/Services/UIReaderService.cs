@@ -3744,7 +3744,30 @@ public sealed class UIReaderService : IDisposable
 
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
-                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}' klassen='{owners}' set={set.Length > 0}");
+
+                // Durability - the one line of the tooltip that cannot be worked
+                // out from anything else on the slot (user 2026-09-12, armoury
+                // chest). The game's own tooltip text comes first; where the game
+                // does not open that window (measured 2026-09-05: it opens on
+                // hover only, never on keyboard focus), the single owned copy of
+                // the item answers instead - and stays silent when there are
+                // several, because the item id cannot say which copy the cursor
+                // is on. Both sources read the game's value; neither recomputes it.
+                var condition       = string.Empty;
+                var conditionSource = "-";
+                if (agentItemId != 0)
+                {
+                    condition       = ReadTooltipCondition();
+                    conditionSource = "tooltip";
+                    if (condition.Length == 0)
+                    {
+                        condition = _inventory.DescribeOwnedCondition(
+                            itemId, ItemSlotService.IsHighQuality(icon->IconId));
+                        conditionSource = condition.Length > 0 ? "inventory" : "none";
+                    }
+                }
+
+                _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}' klassen='{owners}' set={set.Length > 0} cond='{condition}' via={conditionSource}");
                 var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
                 // HQ, which a sighted player reads off the symbol drawn on the slot.
                 // Without it the two Honey stacks in the bag were the SAME sentence
@@ -3755,6 +3778,7 @@ public sealed class UIReaderService : IDisposable
                 if (ItemSlotService.IsHighQuality(icon->IconId)) spoken += AccessibilityStrings.HighQuality;
                 if (basics.Length > 0) spoken = $"{spoken}, {basics}";
                 if (gear.Length > 0)   spoken = $"{spoken}, {gear}";
+                if (condition.Length > 0) spoken = $"{spoken}, {condition}";
                 return spoken + owners + set;
             }
             cur = cur->ParentNode;
@@ -8694,6 +8718,33 @@ public sealed class UIReaderService : IDisposable
         _log.Info($"[Item] Tooltip: {parts.Count} Teile - {msg}");
         _tolk.SpeakInterrupt(msg);
         return true;
+    }
+
+    /// <summary>
+    /// The condition (durability) line of the open item tooltip, in the game's
+    /// own words - "Zustand 87 Prozent" / "Condition: 87%". Read from the tooltip
+    /// node the game fills (AddonItemDetail.ConditionValue), never derived: the
+    /// percentage is relative to a maximum that lives in the item sheet, and the
+    /// game has already done that arithmetic for the line it draws.
+    ///
+    /// The caller only asks while the item agent names THIS slot's item, so a
+    /// tooltip about some other item cannot contribute a number here.
+    ///
+    /// Empty when the tooltip is closed, when the item has no condition line at
+    /// all (materials, crystals), or while that line is hidden - the caller then
+    /// falls back to the owned item instance (InventoryService).
+    /// </summary>
+    private unsafe string ReadTooltipCondition()
+    {
+        var ptr = _gameGui.GetAddonByName("ItemDetail");
+        if (ptr.IsNull) return string.Empty;
+
+        var addon = (AddonItemDetail*)(nint)ptr;
+        if (!addon->IsVisible) return string.Empty;
+        if (addon->ConditionLine == null || !addon->ConditionLine->IsVisible()) return string.Empty;
+        if (addon->ConditionValue == null) return string.Empty;
+
+        return AtkText.ReadClean(addon->ConditionValue).Trim();
     }
 
     /// <summary>

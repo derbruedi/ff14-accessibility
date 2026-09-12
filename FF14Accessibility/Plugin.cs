@@ -375,7 +375,7 @@ public sealed class Plugin : IDalamudPlugin
         _itemSlots       = new ItemSlotService(DataManager);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
         _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
-        _equipment    = new EquipmentService(GameInventory, DataManager, _gearInfo, _tolk, Log);
+        _equipment    = new EquipmentService(GameInventory, _inventoryReader, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
         _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);

@@ -278,6 +278,81 @@ public sealed class InventoryService
     }
 
     /// <summary>
+    /// Durability of the ONE copy of this item the player owns, in percent, from
+    /// the game's own value on the item instance - the fallback for slots whose
+    /// tooltip window the game does not open (UIReaderService.ReadTooltipCondition
+    /// is the primary source, and this only runs when that came back empty).
+    ///
+    /// Equipment only: everything else (materials, crystals) has no condition.
+    ///
+    /// Says NOTHING when more than one copy exists. Condition lives on the
+    /// individual instance, and the item id alone cannot say which of the two the
+    /// cursor is on. Silence is the only honest answer there: this is the number a
+    /// player decides on (repair now or not), and a plausible wrong one is worse
+    /// than none - the same reasoning that made the icon lookup a fallback
+    /// everywhere else.
+    /// </summary>
+    public unsafe string DescribeOwnedCondition(uint baseItemId, bool isHq)
+    {
+        if (baseItemId == 0) return string.Empty;
+
+        // The same early-out IsAnyCopyRegisteredToGearset uses: the sheet tells us
+        // whether this can carry a condition at all, before any container scan.
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return string.Empty;
+        if (row.EquipSlotCategory.RowId == 0) return string.Empty;
+
+        var found   = 0;
+        byte percent = 0;
+
+        foreach (var container in BagPages.Concat(GearContainers))
+            foreach (var item in _inventory.GetInventoryItems(container))
+            {
+                if (item.IsEmpty || item.BaseItemId != baseItemId || item.IsHq != isHq) continue;
+                if (item.Address == 0) continue;
+
+                if (++found > 1) return string.Empty; // two copies - cannot tell which one
+                // The game's own percentage, not a re-derived one: the max
+                // condition it is relative to lives in the item sheet's level rows.
+                percent = ((InventoryItem*)item.Address)->GetConditionPercentage();
+            }
+
+        if (found != 1) return string.Empty;
+        _log.Info($"[Inventory] Zustand aus dem Bestand: item={baseItemId} hq={isHq} -> {percent}%");
+        return AccessibilityStrings.ItemCondition(percent);
+    }
+
+    /// <summary>
+    /// Durability of a WORN piece, read from the equipped instance itself - the
+    /// same game value DescribeOwnedCondition reads, but here the instance is not
+    /// in doubt: a slot wears exactly one copy, so no container scan decides and
+    /// the "several copies" silence of that method has no reason to apply.
+    ///
+    /// <paramref name="onlyWhenDamaged"/> leaves a piece at full condition unsaid.
+    /// The worn-gear readout is one sentence for the whole body; full condition is
+    /// the normal case, and naming it twelve times would drown the single piece
+    /// that needs a repair - which is the same thing the durability bars in the
+    /// character window say, and the reason a player looks at them at all. Pass
+    /// false where the number itself is the answer (a single piece on its own).
+    ///
+    /// Silence when the sheet says the piece carries no condition at all, and
+    /// when the game reports no readable instance.
+    /// </summary>
+    public unsafe string DescribeWornCondition(IntPtr itemAddress, uint baseItemId, bool onlyWhenDamaged)
+    {
+        if (itemAddress == 0 || baseItemId == 0) return string.Empty;
+
+        // Same early-out as DescribeOwnedCondition: the sheet tells us whether
+        // this slot can carry a condition at all.
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return string.Empty;
+        if (row.EquipSlotCategory.RowId == 0) return string.Empty;
+
+        var percent = ((InventoryItem*)itemAddress)->GetConditionPercentage();
+        _log.Info($"[Inventory] Zustand der getragenen Sache: item={baseItemId} -> {percent}%");
+        if (onlyWhenDamaged && percent >= 100) return string.Empty;
+        return AccessibilityStrings.ItemCondition(percent);
+    }
+
+    /// <summary>
     /// One carried item that can be placed on a hotbar slot.
     /// <paramref name="ItemId"/> is the id the GAME uses, HQ offset already
     /// applied - that is the value a hotbar slot must hold, so nothing is

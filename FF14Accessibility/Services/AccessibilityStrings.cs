@@ -1927,6 +1927,12 @@ public static partial class AccessibilityStrings
         IsGerman ? $"Ausrüstung: {parts}.{emptyNote}" : $"Equipment: {parts}.{emptyNote}";
     public static string ItemFallback(uint id) => IsGerman ? $"Gegenstand {id}" : $"Item {id}";
 
+    // Traegt kein Stueck einen Schaden, sagt die Liste sonst gar nichts ueber den
+    // Zustand - und Schweigen ist von "nicht angesagt" nicht zu unterscheiden.
+    // Ein Satz fuer den ganzen Koerper statt zwölfmal "Zustand 100 Prozent".
+    public static string EquipmentAllFullCondition =>
+        IsGerman ? " Alle in vollem Zustand." : " All at full condition.";
+
     public static string EquipChangeInProgress => IsGerman ? "Ausrüstungswechsel läuft schon." : "Equipment change already in progress.";
     public static string EquipModuleUnavailable => IsGerman ? "Ausrüstungsmodul nicht verfügbar." : "Equipment module not available.";
     public static string ApplyingRecommendedGear => IsGerman ? "Lege empfohlene Ausrüstung an." : "Applying recommended equipment.";
@@ -3443,6 +3449,11 @@ public static partial class AccessibilityStrings
         IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
     /// <summary>A visible but empty inventory/equipment slot.</summary>
     public static string EmptySlot => IsGerman ? "Leer" : "Empty";
+    /// <summary>Durability of a piece of gear, as the game's tooltip line gives it:
+    /// the percentage alone, because the slot's own sentence already says which
+    /// item it is ("Bronzegladius, Stufe 5, tragbar, Zustand 87 Prozent").</summary>
+    public static string ItemCondition(int percent) =>
+        IsGerman ? $"Zustand {percent} Prozent" : $"condition {percent} percent";
 
     // ── Listen / Reiter ohne eigene Beschriftung ────────────────────
     /// <summary>Icon-only tab: position alone, no label to announce.</summary>
