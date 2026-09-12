@@ -121,6 +121,11 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TrailService       _trails;
     private readonly CharaMakeReader    _charaMake;
     private readonly UIReaderService    _uiReader;
+    // [Synthese-Fenster] Das laufende Handwerk vorlesen: Qualitaet, HQ-Chance,
+    // Fortschritt, Haltbarkeit. Der Fokus-Leser liest das Fenster nur, wenn der
+    // Fokus sich BEWEGT - beim Handwerk liegt der auf der Hotbar, deshalb war das
+    // Fenster bisher stumm, waehrend sich die Balken aenderten.
+    private readonly SynthesisService _synthesis;
     private readonly ChatReaderService  _chatReader;
     private readonly MessageHistoryService _history;
     // DIE BEIDEN CHATSYSTEME LAUFEN NEBENEINANDER, und der Schalter im
@@ -504,6 +509,7 @@ public sealed class Plugin : IDalamudPlugin
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
+        _synthesis   = new SynthesisService(GameGui, _tolk, Log);
 #if DEBUG
         // Teilt sich den Leser mit dem Fenster-Leser: dort haengen die geladenen
         // Sheet-Tabellen des Zauberbuchs.
@@ -950,6 +956,13 @@ public sealed class Plugin : IDalamudPlugin
             case "soundtest":
                 SoundTest();
                 break;
+            // Das Synthese-Fenster auf Anforderung: dieselben Zahlen noch einmal,
+            // mit Gegenstand, Schritt und laufenden Effekten.
+            case "synthese":
+            case "synthesis":
+                _tolk.SpeakInterrupt(_synthesis.DescribeNow());
+                break;
+
             case "trails":
                 _trails.AnnounceTrails();
                 break;
@@ -2290,6 +2303,9 @@ public sealed class Plugin : IDalamudPlugin
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
         // on a bite - the last-mile fishing cues (reads the game's own state).
         _fishing.Update();
+        // Liest das laufende Handwerk und sagt nach jeder Aenderung eine kurze
+        // Zeile (Qualitaet / HQ-Chance / Fortschritt / Haltbarkeit).
+        _synthesis.Update();
         // Global UI focus (AtkInputManager.FocusedNode): announces whatever
         // control the game itself considers keyboard-focused - dialogs,
         // options, everything. See UIReaderService.UpdateGlobalFocus.
