@@ -49,15 +49,17 @@ public sealed class InventoryService
 
     /// <summary>
     /// Announces the whole inventory: key items first (quests usually need
-    /// those), then the bag contents. Stacks read as "name mal count".
+    /// those), then the bag contents, then the crystals. Stacks read as
+    /// "name mal count".
     /// </summary>
     public void ReadInventory()
     {
         var gil      = GetGil();
         var keyItems = CollectKeyItems();
         var bagItems = CollectBagItems();
+        var crystals = CollectCrystals();
 
-        if (gil < 0 && keyItems.Count == 0 && bagItems.Count == 0)
+        if (gil < 0 && keyItems.Count == 0 && bagItems.Count == 0 && crystals.Count == 0)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.InventoryEmpty);
             return;
@@ -70,6 +72,8 @@ public sealed class InventoryService
             parts.Add(AccessibilityStrings.KeyItemsLabel(string.Join(", ", keyItems)));
         if (bagItems.Count > 0)
             parts.Add(AccessibilityStrings.BagLabel(bagItems.Count, string.Join(", ", bagItems)));
+        if (crystals.Count > 0)
+            parts.Add(AccessibilityStrings.CrystalsLabel(crystals.Count, string.Join(", ", crystals)));
 
         _tolk.SpeakInterrupt(string.Join(". ", parts) + ".");
     }
@@ -124,6 +128,30 @@ public sealed class InventoryService
                     ? AccessibilityStrings.ItemStack(name, item.Quantity, hq)
                     : $"{name}{hq}") + set);
             }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Elemental shards, crystals and clusters, in the container of their own
+    /// the game keeps them in - NOT in the four bag pages. That is why the
+    /// player could not find them and why the readout stayed silent about them
+    /// (2026-09-12, msg 9212). Same shape as the bag: non-empty stacks only,
+    /// with their count; empty kinds are not worth a word.
+    /// </summary>
+    private List<string> CollectCrystals()
+    {
+        var result = new List<string>();
+        foreach (var item in _inventory.GetInventoryItems(GameInventoryType.Crystals))
+        {
+            if (item.IsEmpty || item.ItemId == 0) continue;
+
+            var name = ResolveItemName(item.BaseItemId);
+            _log.Info($"[Inventory] Crystals slot={item.InventorySlot} id={item.ItemId} " +
+                      $"qty={item.Quantity} name='{name}'");
+            result.Add(item.Quantity > 1
+                ? AccessibilityStrings.ItemStack(name, item.Quantity, string.Empty)
+                : name);
         }
         return result;
     }
