@@ -3142,6 +3142,12 @@ public static partial class AccessibilityStrings
         IsGerman ? "Inventar ist leer." : "Inventory is empty.";
     public static string GilUnavailable =>
         IsGerman ? "Gil-Stand nicht verfügbar." : "Gil amount not available.";
+    /// <summary>Elemental shards, crystals and clusters. The game keeps them in
+    /// a container of their own, outside the bag pages - the player asked where
+    /// her shards are at all (2026-09-12, msg 9212): the Ctrl+F3 readout never
+    /// mentioned them because it only walked the bag and the key items.</summary>
+    public static string CrystalsLabel(int count, string joined) =>
+        IsGerman ? $"Kristalle, {count} Sorten: {joined}" : $"Crystals, {count} kinds: {joined}";
     public static string KeyItemsLabel(string joined) =>
         IsGerman ? $"Schlüsselgegenstände: {joined}" : $"Key items: {joined}";
     public static string BagLabel(int count, string joined) =>
