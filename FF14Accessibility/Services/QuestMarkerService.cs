@@ -76,6 +76,15 @@ public enum QuestKind
 /// <param name="Kind">Which journal section the quest belongs to.</param>
 /// <param name="Level">Required quest level, 0 when unknown.</param>
 /// <param name="Role">Giver NPC vs. objective for levequests; Quest otherwise.</param>
+/// <param name="TargetBaseId">BaseId of the object this marker points at, from
+/// the game's own marker -> Level sheet link (see
+/// <see cref="QuestMarkerService.GetQuestObjectIds"/>); 0 for pure position
+/// markers (areas, "go to X"). This is what lets the plugin aim at the right
+/// NPC or prop instead of guessing by distance.</param>
+/// <param name="TargetLevelType">The Level sheet's Type for that object
+/// (8 = ENpcBase, 9 = BNpcBase, 45 = EObj), 0 when unknown. The BaseId alone
+/// would be ambiguous - ENpcBase and BNpcBase are separate sheets with
+/// overlapping row ids.</param>
 public sealed record QuestDestination(
     string QuestName,
     string Detail,
@@ -86,7 +95,9 @@ public sealed record QuestDestination(
     bool InCurrentZone,
     QuestKind Kind,
     int Level,
-    QuestMarkerRole Role = QuestMarkerRole.Quest);
+    QuestMarkerRole Role = QuestMarkerRole.Quest,
+    uint TargetBaseId = 0,
+    byte TargetLevelType = 0);
 
 /// <summary>
 /// Reads the objective markers of ACCEPTED quests from the game's map
@@ -461,8 +472,29 @@ public sealed class QuestMarkerService
                       $"map={data.MapId} icon={data.IconId} render={marker.ShouldRender} " +
                       $"lvlMarker={data.RecommendedLevel} lvlSheet={sheetLevel}");
             var level = data.RecommendedLevel > 0 ? data.RecommendedLevel : sheetLevel;
+
+            // The object behind THIS location, over the game's own link (the
+            // same one GetQuestObjectIds uses): LevelId -> Level sheet row ->
+            // Level.Object, typed by Level.Type. Only rows of the current zone
+            // count, for the same reason as there. 0 means "pure position
+            // marker" - an area or a "go to X", where there is nothing to aim
+            // at and the plugin must not guess one.
+            var targetBaseId = 0u;
+            byte targetType = 0;
+            if (data.LevelId != 0
+                && _data.GetExcelSheet<LuminaLevel>().TryGetRow(data.LevelId, out var levelRow))
+            {
+                var territory = levelRow.Territory.RowId;
+                if (levelRow.Object.RowId != 0 && (territory == 0 || territory == currentTerritory))
+                {
+                    targetBaseId = levelRow.Object.RowId;
+                    targetType   = levelRow.Type;
+                }
+            }
+
             result.Add(new QuestDestination(questName, tooltip, data.Position,
-                data.Radius, data.TerritoryTypeId, data.MapId, inZone, kind, level, role));
+                data.Radius, data.TerritoryTypeId, data.MapId, inZone, kind, level, role,
+                targetBaseId, targetType));
         }
     }
 }

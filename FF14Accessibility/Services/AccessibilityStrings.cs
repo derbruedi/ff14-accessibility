@@ -1233,6 +1233,14 @@ public static partial class AccessibilityStrings
     /// player has no other way to tell.</summary>
     public static string MarkerTargeted => IsGerman ? "Angezielt." : "Targeted.";
 
+    /// <summary>Spoken when the plugin aims the game at the object behind the
+    /// current selection by itself - a gathering node, the NPC or prop of a
+    /// quest goal, a lever or coffer in a dungeon. Unlike
+    /// <see cref="MarkerTargeted"/> it names what was aimed at: the player did
+    /// not pick it by hand, so "Targeted." alone would leave them guessing what
+    /// the interact key is now pointing at.</summary>
+    public static string AimedAt(string name) => IsGerman ? $"Angezielt: {name}." : $"Targeted: {name}.";
+
     public static string NoAetherytesFound => IsGerman ? "Keine Ätheryten in diesem Gebiet gefunden." : "No aetherytes found in this area.";
     public static string NoWaypointsFound  => IsGerman ? "Keine Wegpunkte in diesem Gebiet gefunden." : "No waypoints found in this area.";
     public static string NoNavmeshStraightLine => IsGerman ? "Kein Wegenetz, führe in Luftlinie." : "No navmesh, guiding in a straight line.";

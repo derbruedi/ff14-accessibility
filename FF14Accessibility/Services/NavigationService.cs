@@ -10,6 +10,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LuminaENpcResident = Lumina.Excel.Sheets.ENpcResident;
+using LuminaGatheringPoint = Lumina.Excel.Sheets.GatheringPoint;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 // Aliased, not imported wholesale: that namespace carries its own ObjectKind,
 // which would collide with the Dalamud one used throughout this file.
@@ -242,6 +243,7 @@ public sealed class NavigationService
 
         PollMapFlag(player);
         PollHuntTargetInRange(player);
+        PollAimAtSelection();
 
         // [Tiefes Gewoelbe] Das Betreten oder Verlassen tauscht den gesamten
         // Kategoriensatz, also faengt der Browser von vorne an, statt auf dem Index zu
@@ -1098,6 +1100,38 @@ public sealed class NavigationService
     /// <summary>Search radius for the object browser, in yalms/meters.</summary>
     private const float CycleRange = 100f;
 
+    /// <summary>How far a live node may sit from the selected gathering spot and
+    /// still count as the same spot. Both sides are exact world coordinates
+    /// (ExportedGatheringPoint sheet and the object table), so this only has to
+    /// absorb that one GatheringPointBase can cover a small cluster of separate
+    /// nodes - the same reach the marker categories use for their map-pixel
+    /// coarse markers (<see cref="MarkerObjectMatchRange"/>).</summary>
+    private const float GatherSpotMatchRange = 15f;
+
+    /// <summary>How far a dungeon station's object may sit from the station's
+    /// recorded point. The path files carry the position the player walks to,
+    /// not the object; the recorded point IS the lever (UNVERIFIED assumption -
+    /// if it turns out to sit at a safe stand-off instead, the aim stays without
+    /// effect), so 10 m is generous enough for the recording's coarseness and
+    /// short enough not to reach the next interactive thing in the same room.
+    /// </summary>
+    private const float DungeonStepMatchRange = 10f;
+
+    /// <summary>
+    /// The gathering spot the "Sammelpunkte" category is steering to, as its own
+    /// selection: that category browses sheet DATA (also across zones), so there
+    /// is no game object in it - the node only exists once the player is close
+    /// enough for the engine to stream it in. Hence the spot's identity (base id
+    /// + position) is kept here, and <see cref="ResolveSelectionObject"/> fetches
+    /// the object once it is there.
+    /// </summary>
+    private (uint BaseId, Vector3 Position, string Name)? _selectedGatherSpot;
+
+    /// <summary>The object <see cref="PollAimAtSelection"/> has already aimed at
+    /// for the current selection; 0 while it has not (yet) aimed. Kept so the
+    /// aim happens once per arrival instead of every frame - see there.</summary>
+    private ulong _aimedAtId;
+
     private int _categoryIndex;
     private int _cycleIndex = -1;
 
@@ -1128,6 +1162,7 @@ public sealed class NavigationService
         SelectedBlueMagicTarget = null;
         SelectedDutyEntrance = null;
         SelectedDungeonStep = null;
+        _selectedGatherSpot = null;
 
         if (IsQuestCategory || IsUnacceptedQuestCategory)
         {
@@ -2175,6 +2210,7 @@ public sealed class NavigationService
         if (spots.Count == 0)
         {
             SelectedQuestDestination = null;
+            _selectedGatherSpot = null;
             _tolk.SpeakInterrupt(AccessibilityStrings.NoGatheringSpotsJob);
             return;
         }
@@ -2197,6 +2233,11 @@ public sealed class NavigationService
             Level: spot.Level);
 
         var typeName = GatheringService.ShortTypeName(spot.TypeName);
+
+        // Die Auswahl zusaetzlich als FUNDSTELLE merken (Basis-Id + Position,
+        // nicht als Objekt - siehe _selectedGatherSpot).
+        _selectedGatherSpot = (spot.GatheringPointBaseId, spot.Position, typeName);
+
         var level = AccessibilityStrings.LevelPrefix(spot.Level);
         var status = AccessibilityStrings.GatheringSpotStatus(spot.CurrentlyUp);
         string text;
@@ -2225,6 +2266,11 @@ public sealed class NavigationService
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
         _log.Info($"[Gather] Auswahl: {text} pos=({spot.Position.X:F1}|{spot.Position.Z:F1}) Zone={territoryId} live={spot.CurrentlyUp}");
         _tolk.SpeakInterrupt(text);
+
+        // Erst NACH der Ansage: der Versuch visiert an und meldet sich, und ein
+        // SpeakInterrupt danach schnitte ihn ab. Wer schon an der Stelle steht,
+        // hat das Ziel damit direkt auf sich.
+        PollAimAtSelection();
     }
 
     // ── Jagdziele: was der aktuelle Rang noch verlangt ──
@@ -2669,6 +2715,195 @@ public sealed class NavigationService
                   $"{match.Gap:F1} m vom Marker, anvisiert={accepted}");
         return accepted;
     }
+
+    /// <summary>
+    /// Aims the game at the object behind the current browser selection, as soon
+    /// as the game has it loaded.
+    ///
+    /// Three categories steer by POSITION and never set a game target of their
+    /// own: "Sammelpunkte" (sheet data, see <see cref="CycleGatheringDestination"/>),
+    /// the quest goals (map markers) and the dungeon stations (path files). The
+    /// player walks to the spot, and the target the interact key then uses is
+    /// whatever the game finds nearest - at a cluster a neighbouring node, at a
+    /// quest goal the enemy standing closer (user report 2026-09-11: pressing 0
+    /// at a chosen spot aimed at the other mine, the enemy instead of the quest
+    /// NPC, the wrong lever).
+    ///
+    /// Runs every frame, but only ADOPTS a target, and only once per arrival: it
+    /// does not reach for its own aim again and again, which would fight the
+    /// player the moment they deliberately pick a different node.
+    ///
+    /// In combat a target with a will of its own wins - there the player is
+    /// fighting, and a browse selection from seconds ago is not her intent any
+    /// more. Out of combat the selection wins instead: at a gather spot the
+    /// enemy or NPC in the target window is the game's own pick from the Confirm
+    /// key, and refusing to touch it left the player aimed at the wrong thing
+    /// until she pressed Escape (msg 9198). See <see cref="IsInCombat"/>.
+    /// </summary>
+    private void PollAimAtSelection()
+    {
+        var candidate = ResolveSelectionObject();
+        if (candidate == null)
+        {
+            // Out of reach or not streamed in yet. The latch goes with it: come
+            // back later and the aim happens again.
+            _aimedAtId = 0;
+            return;
+        }
+
+        var current = _targetManager.Target;
+        if (current != null && current.GameObjectId == candidate.GameObjectId)
+        {
+            _aimedAtId = candidate.GameObjectId;
+            return;
+        }
+
+        if (_aimedAtId == candidate.GameObjectId) return;
+
+        // Whatever the player picked themselves stays picked - but only while it
+        // matters. Out of combat the browser selection IS the player's pick: the
+        // target sitting there came from the game, not from her. Measured
+        // 2026-09-12 (msg 9198): at a chosen gather spot the Confirm key handed
+        // her the nearest enemy or NPC, this rule read that as "something with a
+        // will of its own", the mod stayed quiet - and the aim only happened
+        // after Escape cleared the target again. In combat that enemy or NPC
+        // target really is hers, so it stays untouched.
+        if (current != null && !IsWorldProp(current) && IsInCombat()) return;
+
+        var accepted = TargetFromBrowser(candidate);
+        _aimedAtId = candidate.GameObjectId;
+        _log.Info($"[Nav] Ziel zur Auswahl: id={candidate.GameObjectId:X} " +
+                  $"({candidate.Name.TextValue}), anvisiert={accepted}");
+        // Only when the game took it: a refused target is not something the
+        // player can act on, and saying so would just be noise on the way.
+        if (accepted)
+            _tolk.Speak(AccessibilityStrings.AimedAt(
+                candidate.ObjectKind == ObjectKind.GatheringPoint
+                    ? DescribeGatheringPoint(candidate)
+                    : _objectNames.Describe(candidate)));
+    }
+
+    /// <summary>
+    /// The object the current browser selection stands for, or null while it has
+    /// none: a spot whose node is not loaded, a quest marker that only names an
+    /// area (<c>TargetBaseId</c> 0), a dungeon station that is nothing to
+    /// interact with (waypoint, boss arena, jump).
+    /// </summary>
+    private IGameObject? ResolveSelectionObject()
+    {
+        // Sammelstelle: exakt ueber die Basis-Id des Knotens plus Naehe - eine
+        // Basis-Id deckt einen kleinen Schwarm einzelner Knoten ab.
+        if (_selectedGatherSpot is { } spot)
+        {
+            var gpSheet = _data.GetExcelSheet<LuminaGatheringPoint>();
+            if (gpSheet == null) return null;
+            return NearestObject(spot.Position, GatherSpotMatchRange,
+                obj => obj.ObjectKind == ObjectKind.GatheringPoint
+                       && gpSheet.TryGetRow(obj.BaseId, out var gp)
+                       && gp.GatheringPointBase.RowId == spot.BaseId,
+                // Ein abgebauter Platz derselben Basis darf den nutzbaren Knoten
+                // nicht verdecken (gemessen 2026-08-09: nur lebende Knoten sind
+                // zielbar).
+                prefer: o => o.IsTargetable);
+        }
+
+        // Dungeon-Station: die Wege-Dateien tragen eine Position, kein Objekt.
+        // Der aufgezeichnete Punkt IST der Hebel bzw. die Truhe; naeher als der
+        // naechste Hebel im selben Raum kommt man an die Zuordnung nicht heran.
+        if (SelectedDungeonStep is { } step)
+        {
+            var kind = step.Kind switch
+            {
+                DungeonStepKind.Interact  => ObjectKind.EventObj,
+                DungeonStepKind.Treasure  => ObjectKind.Treasure,
+                _                         => (ObjectKind?)null,
+            };
+            if (kind == null) return null;
+            return NearestObject(step.Position, DungeonStepMatchRange,
+                obj => obj.ObjectKind == kind.Value,
+                prefer: o => o.IsTargetable);
+        }
+
+        // Quest-Ziel: ueber den Spiel-Link Marker -> Level.Object (TargetBaseId),
+        // eingegrenzt auf die Objektart, die Level.Type nennt.
+        if (SelectedQuestDestination is { InCurrentZone: true, TargetBaseId: > 0 } dest)
+        {
+            var expected = ExpectedObjectKind(dest.TargetLevelType);
+            return NearestObject(dest.Position, MarkerObjectMatchRange,
+                obj => obj.BaseId == dest.TargetBaseId
+                       && (expected == null || obj.ObjectKind == expected.Value),
+                prefer: o => o.IsTargetable);
+        }
+
+        return null;
+    }
+
+    /// <summary>Level sheet Type -> the ObjectTable kind carrying it. Only the
+    /// three types a quest marker can point at (docs/game-api.md, "Level.Type"):
+    /// 8 = ENpcBase, 9 = BNpcBase, 45 = EObj. Anything else returns null and the
+    /// search stays kind-agnostic: a wider match on a verified BaseId is still
+    /// better than excluding the right object by a guessed kind.</summary>
+    private static ObjectKind? ExpectedObjectKind(byte levelType) => levelType switch
+    {
+        8  => ObjectKind.EventNpc,
+        9  => ObjectKind.BattleNpc,
+        45 => ObjectKind.EventObj,
+        _  => null,
+    };
+
+    /// <summary>
+    /// Nearest object matching <paramref name="match"/> within
+    /// <paramref name="range"/> of a point, or null.
+    ///
+    /// <paramref name="prefer"/> breaks ties between candidates that are all
+    /// matches: one that satisfies it beats one that does not, whatever the
+    /// distance. Distance is 2D for the same reason as at the map markers - the
+    /// sheet's Y is not the object's.
+    /// </summary>
+    private IGameObject? NearestObject(Vector3 position, float range,
+        Func<IGameObject, bool> match, Func<IGameObject, bool>? prefer = null)
+    {
+        IGameObject? best = null;
+        var bestGap = range;
+        var bestPreferred = false;
+
+        foreach (var obj in _objectTable)
+        {
+            if (obj == null || !match(obj)) continue;
+
+            var gap = Distance2D(obj.Position, position);
+            if (gap > bestGap) continue;
+
+            var preferred = prefer?.Invoke(obj) ?? false;
+            if (best != null && (preferred != bestPreferred ? !preferred : gap >= bestGap))
+                continue;
+
+            best = obj;
+            bestGap = gap;
+            bestPreferred = preferred;
+        }
+
+        return best;
+    }
+
+    /// <summary>World props with no will of their own - the things a selection
+    /// can point at. NPCs, enemies and players are deliberately not among them:
+    /// targeting those is the player's decision.</summary>
+    /// <summary>
+    /// Whether the player is in combat, read from her own status flags - the
+    /// same field <c>CombatService</c> uses. Decides whether a target with a
+    /// will of its own outranks the browser selection (see
+    /// <see cref="PollAimAtSelection"/>).
+    /// </summary>
+    private bool IsInCombat()
+        => _objectTable.LocalPlayer is { } me
+           && (me.StatusFlags & StatusFlags.InCombat) != 0;
+
+    private static bool IsWorldProp(IGameObject obj) => obj.ObjectKind
+        is ObjectKind.GatheringPoint
+        or ObjectKind.EventObj
+        or ObjectKind.Treasure
+        or ObjectKind.HousingEventObject;
 
     /// <summary>
     /// Targets an object ON BEHALF of the browser and reports whether the game
