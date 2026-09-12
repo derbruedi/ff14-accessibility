@@ -3393,6 +3393,11 @@ public static partial class AccessibilityStrings
         IsGerman ? "Spieler nicht gefunden." : "Player not found.";
     /// <summary>Remaining time of an effect; the wording is the one of the task line.</summary>
     public static string StatusEffectTimeLeft(int seconds) => TodoTimeLeft(seconds);
+    /// <summary>Name+time plus the effect's own tooltip text. The separator is a
+    /// binder that reads the same in both languages; the text itself is read
+    /// client wording and passes through untouched.</summary>
+    public static string StatusEffectDescription(string row, string description) =>
+        string.IsNullOrWhiteSpace(description) ? row : row + " — " + description;
 
     // ── Sammel-Fenster (Gathering) ──────────────────────────────────
     public static string GatherChance(string percent) =>

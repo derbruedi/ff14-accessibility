@@ -1594,6 +1594,11 @@ public sealed class Plugin : IDalamudPlugin
     /// The names come from the Status sheet (the client translates them itself) and
     /// NOT from the buff bar: that one carries only the countdown as a text node,
     /// never the name (see UIReaderService.StatusBarSpamAddons).
+    ///
+    /// The DESCRIPTION comes from the same sheet row, so it is the client's own
+    /// tooltip wording in the client's own language - what a sighted player reads
+    /// when hovering the icon. Effects without one (plain counters) keep name and
+    /// time only: nothing is invented here to fill the gap.
     /// </summary>
     private void AnnounceStatusEffects()
     {
@@ -1608,19 +1613,23 @@ public sealed class Plugin : IDalamudPlugin
         {
             if (status.StatusId == 0) continue;
 
-            var name = status.GameData.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            var effect = status.GameData.ValueNullable;
+            var name = effect?.Name.ExtractText().Trim() ?? string.Empty;
             if (name.Length == 0) continue;
+
+            var description = FlattenEffectText(effect?.Description.ExtractText() ?? string.Empty);
 
             // Param is LOGGED, not spoken: the Dalamud doc calls it only "the
             // parameter value of the status", and what it carries per status
             // (stack count? potency?) is not measured. Speaking it would announce
             // a number whose meaning we do not know.
             Log.Info($"[Wirkungen] {status.StatusId}:'{name}' Param={status.Param} " +
-                     $"Rest={status.RemainingTime:0.0}s");
+                     $"Rest={status.RemainingTime:0.0}s Desc='{description}'");
 
             var row = name;
             var seconds = (int)status.RemainingTime;
             if (seconds > 0) row += AccessibilityStrings.StatusEffectTimeLeft(seconds);
+            row = AccessibilityStrings.StatusEffectDescription(row, description);
 
             rows.Add(row);
         }
@@ -1633,6 +1642,17 @@ public sealed class Plugin : IDalamudPlugin
 
         _tolk.SpeakInterrupt(AccessibilityStrings.StatusEffectsHeader(rows.Count)
                              + ". " + string.Join(". ", rows));
+    }
+
+    /// <summary>Collapses line breaks and runs of blanks in a sheet description to
+    /// one spoken line, so the effect row stays a single sentence.</summary>
+    private static string FlattenEffectText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        var flat = text.Replace('\r', ' ').Replace('\n', ' ');
+        while (flat.Contains("  ", StringComparison.Ordinal))
+            flat = flat.Replace("  ", " ", StringComparison.Ordinal);
+        return flat.Trim();
     }
 
     /// <summary>
