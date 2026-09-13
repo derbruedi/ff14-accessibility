@@ -1861,6 +1861,7 @@ public sealed class UIReaderService : IDisposable
     // bei Ice Shard und Earth Shard, die er noch nie gesammelt hat.
     // Der Haken ist die EINZIGE Auskunft darueber, ob ein Gegenstand noch den
     // Bonus fuer die erste Ernte bringt - und er ist rein grafisch.
+    private const string GatheringNoteAddon      = "GatheringNote";
     private const uint GatheringNoteItemListId   = 19;
     private const uint GatheringNoteRowNameId    = 11;
     private const uint GatheringNoteRowLevelId   = 9;
@@ -2866,14 +2867,25 @@ public sealed class UIReaderService : IDisposable
         }
         else
         {
+            // Sammel-Journal: jede Zeile der Stufenliste traegt einen "NEW"-
+            // Textknoten, den das Spiel nur einblendet, wenn in dem Bereich noch
+            // etwas offen ist (Dump 2026-09-12: "1-5" mit F=0x003B sichtbar,
+            // "NEW" mit F=0x0023 ohne Sichtbar-Bit). Der generische Leser prueft
+            // das Bit nicht und sprach das unsichtbare Schild mit - der Spieler
+            // hoerte "1-5, NEW", obwohl in dem Bereich alles gesammelt war. In
+            // diesem Fenster zaehlt deshalb nur, was auch gezeichnet wird; die
+            // Gegenstandszeilen selbst haben ihren eigenen Leser (oben) und
+            // laufen hier gar nicht durch.
+            var journalRows = string.Equals(FindAddonNameForNode(node), GatheringNoteAddon, StringComparison.Ordinal);
+
             // Focus often sits on a child (collision node) of the actual
             // control - climb up a few levels until some text resolves.
-            text = GetTextFromNodeTree(node);
+            text = journalRows ? GetVisibleTextFromNodeTree(node) : GetTextFromNodeTree(node);
             var cur = node;
             for (var up = 0; string.IsNullOrEmpty(text) && up < 3 && cur->ParentNode != null; up++)
             {
                 cur  = cur->ParentNode;
-                text = GetTextFromNodeTree(cur);
+                text = journalRows ? GetVisibleTextFromNodeTree(cur) : GetTextFromNodeTree(cur);
             }
 
             // LAST resort only. V5.16 had this BEFORE the generic reader, which
@@ -11771,6 +11783,68 @@ public sealed class UIReaderService : IDisposable
             var child = comp->UldManager.NodeList[j];
             if (child == null) continue;
             var childText = GetTextFromNodeTree(child, depth + 1);
+            if (!string.IsNullOrWhiteSpace(childText)) parts.Add(childText);
+        }
+        return JoinDistinctParts(parts);
+    }
+
+    /// <summary>
+    /// Wie <see cref="GetTextFromNodeTree"/>, aber Textknoten ohne Sichtbar-Bit
+    /// bleiben stumm. FFXIV legt Zustandsschilder ("NEW", "Woche", "Gesamt")
+    /// fest in jede Zeilenvorlage und blendet sie je Zeile ein oder aus - ein
+    /// generisches Lesen der Vorlage sagt also Dinge an, die auf dem Bildschirm
+    /// gar nicht stehen (Dump 2026-09-12: Stufenzeile "1-5" mit F=0x003B,
+    /// daneben "NEW" mit F=0x0023). Nur der Textknoten wird geprueft, nicht der
+    /// Weg dorthin: Huelle und Kollisionsknoten tragen das Bit nicht zuverlaessig,
+    /// ihre sichtbaren Kinder aber schon.
+    /// </summary>
+    private unsafe string GetVisibleTextFromNodeTree(AtkResNode* node, int depth = 0)
+    {
+        if (node == null || depth > 6) return string.Empty;
+
+        // Text-Node: Inhalt direkt zurueckgeben, aber nur wenn er gezeichnet wird
+        if (node->Type == NodeType.Text)
+        {
+            if (!IsVisibleFlag(node)) return string.Empty;
+            var t = AtkText.Read((AtkTextNode*)node).Trim();
+            return t.Length > 1 ? t : string.Empty;
+        }
+
+        // Kein Komponenten-Node (Image, Collision, Res usw.): ignorieren
+        if ((int)node->Type < 1000) return string.Empty;
+
+        var compNode = (AtkComponentNode*)node;
+        var comp     = compNode->Component;
+        if (comp == null) return string.Empty;
+
+        var compType = comp->GetComponentType();
+
+        // Liste / Dropdown: aktuell gewaehlten Eintrag lesen
+        if (compType == ComponentType.List)
+        {
+            var list = (AtkComponentList*)comp;
+            return ReadListItemText(list, Math.Max(0, list->SelectedItemIndex));
+        }
+
+        // Button: nur ein gezeichnetes ButtonTextNode zaehlt
+        if (compType == ComponentType.Button)
+        {
+            var btn = (AtkComponentButton*)comp;
+            if (btn->ButtonTextNode != null && IsVisibleFlag((AtkResNode*)btn->ButtonTextNode))
+            {
+                var t = AtkText.Read(btn->ButtonTextNode).Trim();
+                if (t.Length > 1) return t;
+            }
+        }
+
+        // CheckBox, RadioButton, ListItemRenderer und alle weiteren:
+        // Kind-Nodes rekursiv durchsuchen - ergibt automatisch Label + Wert/Status.
+        var parts = new List<string>();
+        for (var j = 0; j < comp->UldManager.NodeListCount; j++)
+        {
+            var child = comp->UldManager.NodeList[j];
+            if (child == null) continue;
+            var childText = GetVisibleTextFromNodeTree(child, depth + 1);
             if (!string.IsNullOrWhiteSpace(childText)) parts.Add(childText);
         }
         return JoinDistinctParts(parts);
