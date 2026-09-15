@@ -61,6 +61,10 @@ public sealed class Configuration : IPluginConfiguration
     // ausschliesslich mit Buchstaben fuer die Chatmodi (Alt+R/S/P/L/H/Y/F/A/N/M/T/C,
     // siehe KeyChatTabPrev weiter unten), Alt+L schaltet also den Chat um.
     public string KeyChocoboRank   = "Strg+Umschalt+L"; // Rang, Sterne und fehlende EXP des Begleit-Chocobos ansagen
+    // Kompanon-Fenster: zu, wenn geschlossen (ueber den Spielbefehl /companion),
+    // sonst Rang, Erfahrung, HP, Zeit und Reiter ansagen. Strg+Umschalt+C steht
+    // weder im Keybind-Dump noch sonst im Plugin.
+    public string KeyCompanionWindow = "Strg+Umschalt+C"; // Fenster "Kompanon" oeffnen bzw. vorlesen
     public string KeyEmoteNext     = "Umschalt+F5";     // Emote-Browser: nächstes Emote ansagen
     public string KeyEmotePrev     = "Umschalt+F4";     // Emote-Browser: vorheriges Emote ansagen
     public string KeyEmoteDo       = "Umschalt+F6";     // Gewähltes Emote ausführen
@@ -214,6 +218,7 @@ public sealed class Configuration : IPluginConfiguration
         KeyLevelExp      = defaults.KeyLevelExp;
         KeyRestedStatus  = defaults.KeyRestedStatus;
         KeyChocoboRank   = defaults.KeyChocoboRank;
+        KeyCompanionWindow = defaults.KeyCompanionWindow;
         KeyEmoteNext     = defaults.KeyEmoteNext;
         KeyEmotePrev     = defaults.KeyEmotePrev;
         KeyEmoteDo       = defaults.KeyEmoteDo;

@@ -1166,6 +1166,7 @@ public sealed class Plugin : IDalamudPlugin
             ("Stufe",          _config.KeyLevelExp),
             ("Erholungsbonus", _config.KeyRestedStatus),
             ("Chocobo-Rang",   _config.KeyChocoboRank),
+            ("Kompanon-Fenster", _config.KeyCompanionWindow),
             ("Emote weiter",   _config.KeyEmoteNext),
             ("Emote zurück",   _config.KeyEmotePrev),
             ("Emote ausführen", _config.KeyEmoteDo),
@@ -1662,6 +1663,43 @@ public sealed class Plugin : IDalamudPlugin
         while (flat.Contains("  ", StringComparison.Ordinal))
             flat = flat.Replace("  ", " ", StringComparison.Ordinal);
         return flat.Trim();
+    }
+
+    /// <summary>
+    /// Mod key for the companion window: closed -> open it through the game's
+    /// own text command "/companion" ("opens and closes the Companion
+    /// interface", ffxiv.consolegameswiki.com/wiki/Text_commands), open -> read
+    /// rank, experience, HP, summon time and the active tab out of the window.
+    ///
+    /// Why the command and not a direct call: neither Dalamud's IGameGui nor
+    /// FFXIVClientStructs exposes a function that opens this window - the
+    /// ClientStructs metadata of the dev folder carries AddonBuddy and Buddy
+    /// data but no Open/Close method - and the window's own button inside the
+    /// Character window is mouse-only. The command is the documented path.
+    ///
+    /// The spoken "opening" line matters: without it a command that fails would
+    /// be indistinguishable from a silent mod (a blind player cannot check).
+    /// </summary>
+    private void ToggleCompanionWindow()
+    {
+        if (_uiReader.IsCompanionWindowOpen)
+        {
+            _uiReader.AnnounceCompanionWindow();
+            return;
+        }
+
+        _tolk.Speak(AccessibilityStrings.CompanionOpening);
+        try
+        {
+            CommandManager.ProcessCommand("/companion");
+        }
+        catch (Exception ex)
+        {
+            // The command manager is game code; a failure there must not take the
+            // key press down without a word.
+            Log.Warning($"[Chocobo] /companion fehlgeschlagen: {ex.Message}");
+            _tolk.Speak(AccessibilityStrings.CompanionWindowEmpty);
+        }
     }
 
     /// <summary>
@@ -2213,6 +2251,7 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyLevelExp))      _combat.AnnounceLevelExp();
         if (IsJustPressed(_config.KeyRestedStatus))  _combat.AnnounceRestedStatus();
         if (IsJustPressed(_config.KeyChocoboRank))   _combat.AnnounceChocoboRank();
+        if (IsJustPressed(_config.KeyCompanionWindow)) ToggleCompanionWindow();
         if (IsJustPressed(_config.KeyReadTasks))     AnnounceActiveTasks();
         if (IsJustPressed(_config.KeyEmoteNext))     _emote.CycleNext();
         if (IsJustPressed(_config.KeyEmotePrev))     _emote.CyclePrev();

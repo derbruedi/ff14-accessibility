@@ -1930,6 +1930,39 @@ public static partial class AccessibilityStrings
             ? (stars == 1 ? " 1 Stern." : $" {stars} Sterne.")
             : (stars == 1 ? " 1 star." : $" {stars} stars.");
 
+    // ── Begleit-Chocobo: Fenster "Buddy" / "BuddySkill" ──────────────
+    // Gelesen wird fast alles AUS DEM FENSTER (Name, "1", "1200/4000", "675",
+    // "0:59", Reitername, "ОУ: 1", "Уровень 0") - hier stehen nur die
+    // Geruest-Saetze, die diese Teile zu einem Satz verbinden. Die zitierten
+    // Beschriftungen stammen aus meinem Client (russische Spielsprache); sie
+    // kommen aus dem Fenster und folgen der Spielsprache, der Rahmen ist unser.
+    public static string CompanionWindow(string name, string rank, string xp, string hp, string time, string tab) =>
+        IsGerman
+            ? $"{name}. Rang {rank}. Erfahrung {xp}. HP {hp}. Zeit {time}. Reiter: {tab}."
+            : $"{name}. Rank {rank}. Experience {xp}. HP {hp}. Time {time}. Tab: {tab}.";
+    public static string CompanionTab(string tab) =>
+        IsGerman ? $"Reiter: {tab}." : $"Tab: {tab}.";
+    public static string CompanionSkillWindow(string points, string branches) =>
+        IsGerman
+            ? $"Fertigkeiten. {points}. Zweige: {branches}."
+            : $"Skills. {points}. Branches: {branches}.";
+    // Ohne gelesene Punktezeile bleibt der Satz vollstaendig, nur ohne den
+    // Punkteteil - siehe BuildCompanionSkillSummary.
+    public static string CompanionSkillWindowNoPoints(string branches) =>
+        IsGerman
+            ? $"Fertigkeiten. Zweige: {branches}."
+            : $"Skills. Branches: {branches}.";
+    // Nur der Slot allein: das Fenster traegt die Namen der Faehigkeiten NICHT
+    // als Text - ohne Tooltip-Bindung bleibt die Nummer die einzige Auskunft.
+    public static string CompanionSkillSlot(string number) =>
+        IsGerman ? $"Fähigkeit {number}." : $"Skill {number}.";
+    // Wird gesagt, waehrend der Mod auf das Oeffnen wartet: ein Fenster, das
+    // nicht aufgeht, darf nicht wie ein stummer Mod aussehen.
+    public static string CompanionOpening =>
+        IsGerman ? "Kompanon-Fenster wird geoeffnet." : "Opening the companion window.";
+    public static string CompanionWindowEmpty =>
+        IsGerman ? "Kompanon-Fenster noch leer." : "Companion window still empty.";
+
     // ── Ausruestungsset-Markierung ───────────────────────────────────
     // Das Symbol, das dem sehenden Spieler sagt "steckt in einem gespeicherten
     // Set" - also NICHT verkaufen. Wortwahl wie im Spiel (Addon 756/11993).

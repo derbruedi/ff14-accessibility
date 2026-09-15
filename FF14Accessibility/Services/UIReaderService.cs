@@ -173,6 +173,11 @@ public sealed class UIReaderService : IDisposable
         // bleibt leer" (Log 2026-09-02 07:11:04 und 07:11:05). Angesagt wurde
         // dabei nur der Fenstertitel.
         "AOZNotebook",
+        // Kompanon und seine Fertigkeiten: eigene Handler (OnCompanionOpen /
+        // OnCompanionSkillOpen). Ohne den Eintrag liest der generische
+        // Oeffnungs-Pfad die Beschriftungen als Wortkette vor ("Rang ОЗ Zeit").
+        "Buddy",
+        "BuddySkill",
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -256,6 +261,18 @@ public sealed class UIReaderService : IDisposable
         // Ueberschrift, Seite und Text. Die THEMENLISTE "HowToList" ist NICHT
         // betroffen und bleibt im generischen Pfad - die funktioniert.
         "HowTo",
+        // Kompanon-Fenster: eigener Handler (OnCompanionOpen/Update). Der
+        // generische Scanner las beim Oeffnen die Beschriftungen und Werte als
+        // eine Wortkette ("Rang Erfahrung ОЗ Zeit") und beim Reiterwechsel gar
+        // nichts - der Reiter ist ein RadioButton ohne eigenen Sprecher.
+        "Buddy",
+        // Fertigkeiten-Reiter (eigenes Addon, erscheint mit dem Reiter): eigener
+        // Handler (OnCompanionSkillOpen/Update). Die Namen der Faehigkeiten
+        // stehen NICHT im Knotenbaum - dort gibt es nur die Slot-Nummern 1..10
+        // und ein "Уровень N" pro Zweig -, der generische Pfad las deshalb nur
+        // Nummern und Zahlen. Name und Beschreibung kommen aus dem Tooltip des
+        // Slots (TryReadCompanionSkillFocusRow/HandleCompanionSkillDwell).
+        "BuddySkill",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -533,6 +550,18 @@ public sealed class UIReaderService : IDisposable
         // -- Dialog-Button-Fokus (SelectYesno + JournalResult) -----
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
+
+        // -- Kompanon (Begleit-Chocobo) -----------------------------
+        // Zwei Fenster: "Buddy" (Rang, Erfahrung, OЗ, Zeit, Reiter) und
+        // "BuddySkill" (der Fertigkeiten-Reiter als eigenes Addon). Beide
+        // werden auf PostSetup einmal gelesen (die Werte stehen erst dann) und
+        // auf PostUpdate auf Aenderungen geprueft - Reiterwechsel, Kauf einer
+        // Faehigkeit. Grund: Beide Fenster haben keinen eigenen Sprecher, und
+        // der Wechsel auf den Fertigkeiten-Reiter war bisher vollstaendig stumm.
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "Buddy",      OnCompanionOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Buddy",      OnCompanionUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,  "BuddySkill", OnCompanionSkillOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BuddySkill", OnCompanionSkillUpdate);
 
         // -- Quest-Fenster automatisch vorlesen (Beschreibung/Ziel) -----
         // Content is populated a few frames after PostSetup and changes on page
@@ -1940,6 +1969,464 @@ public sealed class UIReaderService : IDisposable
         return AtkText.Read((AtkTextNode*)n).Trim();
     }
 
+    // -- Companion chocobo: the windows "Buddy" and "BuddySkill" ------
+    //
+    // The companion window had no reader until 6.08.71. Everything in it is an
+    // icon button, a radio tab or a painted number, and the skills tab carries
+    // NO skill names - only the slot numbers 1..10 and one "Уровень N" per
+    // branch - so the generic text scanner read a word salad and the skills
+    // stayed unusable. Node map taken from the user's own dumps of 2026-09-14
+    // (Buddy, BuddyAction, BuddySkill and the purchase SelectYesno):
+    //
+    //   Buddy      [31] id=2  name ("Moonlight")       [13] id=22 xp ("1200/4000")
+    //              [26] id=10 rank value, label [27] id=9 "Ранг:"
+    //              [6] id=28 HP  block, [5] id=29 time block - each a Comp(1008)
+    //              with the value in text id=3 and the maximum in text id=6
+    //              [30]/[29]/[28] id=3/4/5 RadioButtons, label in text id=2
+    //   BuddySkill [1]/[2]/[3] id=8/7/6 Base blocks = branches in node order
+    //              (Атакующий, Целитель, Защитник), branch name in text id=3,
+    //              level in text id=4; the points line "ОУ: 1" is top level id=4
+    //
+    // Everything spoken here is READ from the window - the client is Russian,
+    // so the words are the game's ("Ранг:", "ОЗ", "Время", "ОУ: 1",
+    // "Уровень 0"); only the sentence frame is ours. The skill NAMES are not in
+    // the node tree at all; they come from the tooltip the game binds to a slot
+    // (TryReadCompanionSkillFocusRow), exactly like the action menu.
+
+    private const string BuddyAddon      = "Buddy";
+    private const string BuddySkillAddon = "BuddySkill";
+
+    private const uint BuddyNameNode = 2;   // "Moonlight"
+    private const uint BuddyRankNode = 10;  // value next to the "Ранг:" label
+    private const uint BuddyExpNode  = 22;  // "1200/4000"
+    private const uint BuddyHpComp   = 28;  // "ОЗ" block
+    private const uint BuddyTimeComp = 29;  // "Время" block
+
+    private const uint CompanionBarValue = 3; // upper text of a bar block = current
+    private const uint CompanionBarMax   = 6; // lower text of a bar block = maximum
+    private const uint CompanionTabLabel = 2; // label inside a tab RadioButton
+
+    private const uint CompanionBranchName  = 3; // "Атакующий"
+    private const uint CompanionBranchLevel = 4; // "Уровень 0"
+    private const uint CompanionPointsNode  = 4; // top level "ОУ: 1"
+    private const uint CompanionSlotNumber  = 5; // "1".."10" on a slot button
+
+    /// <summary>Name of the probe file: what the two windows really contain.</summary>
+    private const string CompanionProbeFile = "FF14_Chocobo.txt";
+
+    // Last announced tab / skill summary, for the change detectors below.
+    private string _lastBuddyTab               = string.Empty;
+    private string _lastCompanionSkillSummary  = string.Empty;
+    private DateTime _companionSkillReadAt     = DateTime.MinValue;
+
+    // Dwell state for the deferred skill description (mirrors
+    // HandleActionMenuDwell, but for the companion's skill grid).
+    private uint _companionSkillDwellId;
+    private long _companionSkillDwellTick;
+    private bool _companionSkillDwellSpoken;
+
+    /// <summary>True while the companion window is open and drawn. The mod key
+    /// asks this to decide between "open it" and "read it".</summary>
+    public unsafe bool IsCompanionWindowOpen
+    {
+        get
+        {
+            var ptr = _gameGui.GetAddonByName(BuddyAddon);
+            return !ptr.IsNull && ((AtkUnitBase*)(nint)ptr)->IsVisible;
+        }
+    }
+
+    /// <summary>Reads the open companion window out loud on demand (mod key).</summary>
+    public unsafe void AnnounceCompanionWindow()
+    {
+        var ptr = _gameGui.GetAddonByName(BuddyAddon);
+        if (ptr.IsNull) return;
+        AnnounceCompanionWindow((AtkUnitBase*)(nint)ptr);
+    }
+
+    private unsafe void OnCompanionOpen(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+        AnnounceCompanionWindow(addon);
+    }
+
+    /// <summary>Reiterwechsel (7/9 oder Klick): der Reiter selbst hat keinen
+    /// eigenen Sprecher, ein Wechsel war bisher vollstaendig stumm.</summary>
+    private unsafe void OnCompanionUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->IsVisible)
+        {
+            _lastBuddyTab = string.Empty;
+            return;
+        }
+
+        var tab = ReadCompanionTab(addon);
+        if (string.IsNullOrEmpty(tab) || tab == _lastBuddyTab) return;
+        _lastBuddyTab = tab;
+        _tolk.Speak(AccessibilityStrings.CompanionTab(tab));
+    }
+
+    private unsafe void AnnounceCompanionWindow(AtkUnitBase* addon)
+    {
+        if (addon == null || !addon->IsVisible) return;
+
+        var name = ReadTopLevelText(addon, BuddyNameNode);
+        var rank = ReadTopLevelText(addon, BuddyRankNode);
+        var xp   = ReadTopLevelText(addon, BuddyExpNode);
+        var hp   = ReadCompanionBar(addon, BuddyHpComp,   out var hpMax);
+        var time = ReadCompanionBar(addon, BuddyTimeComp, out var timeMax);
+        var tab  = ReadCompanionTab(addon);
+        _lastBuddyTab = tab;
+
+        _log.Info($"[Chocobo] Fenster: name='{name}' rang='{rank}' xp='{xp}' " +
+                  $"hp='{hp}/{hpMax}' zeit='{time}/{timeMax}' reiter='{tab}'");
+
+        // Name und Rang sind das Minimum; fehlen beide, ist das Fenster noch im
+        // Aufbau (PostSetup laeuft vor dem ersten Zeichnen) - dann lieber die
+        // ehrliche Leer-Meldung als ein Satz aus lauter Luecken.
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(rank))
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.CompanionWindowEmpty);
+            return;
+        }
+
+        var text = AccessibilityStrings.CompanionWindow(
+            name, rank, xp, JoinValueMax(hp, hpMax), JoinValueMax(time, timeMax), tab);
+        _tolk.SpeakInterrupt(text);
+        WriteCompanionProbe("Fenster Kompanon gelesen");
+    }
+
+    /// <summary>Upper/lower text of a bar block ("ОЗ", "Время"). The upper text
+    /// is the current value, the lower the maximum - read off the user's dump
+    /// (time "0:59" above "60:00").</summary>
+    private static unsafe string ReadCompanionBar(AtkUnitBase* addon, uint compNodeId, out string max)
+    {
+        max = string.Empty;
+        var comp = FindTopComponent(addon, compNodeId);
+        if (comp == null) return string.Empty;
+        max = ReadComponentTextById(comp, CompanionBarMax).Trim();
+        return ReadComponentTextById(comp, CompanionBarValue).Trim();
+    }
+
+    private static string JoinValueMax(string value, string max)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        if (string.IsNullOrEmpty(max) || max == value) return value;
+        return $"{value}/{max}";
+    }
+
+    /// <summary>Label of the active tab of the companion window. The tabs are
+    /// RadioButtons; the checked one is the active one (IsChecked = bit 18 of
+    /// the button flags), and its own text node carries the game's wording.</summary>
+    private static unsafe string ReadCompanionTab(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.RadioButton) continue;
+            if (!((AtkComponentButton*)comp)->IsChecked) continue;
+            var label = ReadComponentTextById(comp, CompanionTabLabel).Trim();
+            if (label.Length > 0) return label;
+        }
+        return string.Empty;
+    }
+
+    private unsafe void OnCompanionSkillOpen(AddonEvent type, AddonArgs args)
+        => ReadCompanionSkillWindow(args, interrupt: true);
+
+    private unsafe void OnCompanionSkillUpdate(AddonEvent type, AddonArgs args)
+        => ReadCompanionSkillWindow(args, interrupt: false);
+
+    /// <summary>
+    /// Speaks the skills tab: the free points line ("ОУ: 1") and every branch
+    /// with its level. The tab is its own addon (BuddySkill), it appears and
+    /// disappears with the tab, and the line changes the moment a skill is
+    /// bought - which is exactly the moment a blind player needs it.
+    /// </summary>
+    private unsafe void ReadCompanionSkillWindow(AddonArgs args, bool interrupt)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (!addon->IsVisible)
+        {
+            _lastCompanionSkillSummary = string.Empty;
+            return;
+        }
+
+        var summary = BuildCompanionSkillSummary(addon);
+        if (summary.Length == 0 || summary == _lastCompanionSkillSummary) return;
+
+        // Erstes Lesen nach dem Oeffnen = Oeffnungsansage; spaeter aendert sich
+        // nur noch etwas durch einen Kauf (Punkte runter, Zweig-Stufe hoch) und
+        // wird als Nachtrag gesprochen, damit es die laufende Ansage nicht
+        // abschneidet.
+        var first = _lastCompanionSkillSummary.Length == 0;
+        var openedNow = (DateTime.UtcNow - _companionSkillReadAt).TotalSeconds > 3;
+        _lastCompanionSkillSummary = summary;
+        _companionSkillReadAt      = DateTime.UtcNow;
+
+        _log.Info($"[Chocobo] Fertigkeiten: '{summary}'");
+        if (first && interrupt) _tolk.SpeakInterrupt(summary);
+        else                    _tolk.Speak(summary);
+
+        if (openedNow) WriteCompanionProbe("Fenster Fertigkeiten gelesen");
+    }
+
+    /// <summary>"Умения. ОУ: 1. Ветки: Атакующий — Уровень 0, ...". The branch
+    /// blocks are Base components carrying the name in text id=3 and the level
+    /// in text id=4 - picked by that pair rather than by node id, so a layout
+    /// change cannot silently swap the branches. Node order equals the game's
+    /// order (Атакующий, Целитель, Защитник); the probe file records it.</summary>
+    private unsafe string BuildCompanionSkillSummary(AtkUnitBase* addon)
+    {
+        var points   = ReadTopLevelText(addon, CompanionPointsNode);
+        var branches = new List<string>();
+
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || !n->IsVisible() || (int)n->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Base) continue;
+
+            var branch = ReadComponentTextById(comp, CompanionBranchName).Trim();
+            var level  = ReadComponentTextById(comp, CompanionBranchLevel).Trim();
+            if (branch.Length == 0 || level.Length == 0) continue;
+            branches.Add($"{branch} — {level}");
+        }
+
+        if (branches.Count == 0) return string.Empty;
+        var joined = string.Join(", ", branches);
+        return points.Length > 0
+            ? AccessibilityStrings.CompanionSkillWindow(points, joined)
+            : AccessibilityStrings.CompanionSkillWindowNoPoints(joined);
+    }
+
+    /// <summary>
+    /// Name of the companion skill the focus is on. The skills grid has no text
+    /// node with the name - the slots carry their number 1..10 and nothing else
+    /// - so the name comes from the tooltip the game binds to the slot, the same
+    /// source the action menu uses. Without such a binding the slot is at least
+    /// made navigable by its number instead of staying silent.
+    /// </summary>
+    private unsafe bool TryReadCompanionSkillFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible(BuddySkillAddon)) return false;
+        if (!TryFindCompanionSkillSlot(node, out var slotComp, out var slotNode)) return false;
+
+        // Der Tooltip gewinnt: er ist das, was in diesem Fenster schon heute
+        // angesagt wird, und er kommt in der Sprache des Spiels. Der
+        // Gegenstands-/Aktionszweig wuerde dieselbe Nummer in einer anderen
+        // Schreibweise liefern - ein funktionierendes Wort darf nicht von einer
+        // Ersatzschreibweise verdraengt werden (dieselbe Regel wie beim
+        // Positions-Fallback weiter unten).
+        var label = _tooltips.TryGetTooltipDeep(node);
+        if (!string.IsNullOrEmpty(label)) { text = label; return true; }
+
+        var action = _tooltips.TryGetActionDeep(node) ?? _tooltips.TryGetActionDeep(slotNode);
+        if (action != null)
+        {
+            var line = DescribeActionDetail(action.Value.Kind, action.Value.Id);
+            if (line.Length > 0) { text = line; return true; }
+        }
+
+        // Ganz ohne Spieltext bleibt die Nummer: der Slot war sonst STUMM, und
+        // eine Zahl ist immer noch besser als kein Anhaltspunkt beim Blaettern.
+        var number = ReadComponentTextById(slotComp, CompanionSlotNumber).Trim();
+        if (number.Length == 0) return false;
+        text = AccessibilityStrings.CompanionSkillSlot(number);
+        return true;
+    }
+
+    /// <summary>
+    /// Climbs from the focused node to the surrounding skill slot button. A slot
+    /// is a Button component whose text child id=5 holds "1".."10"; the branch
+    /// blocks are Base components without that child, so the pair is what tells
+    /// the two apart (the slot buttons carry no Icon/DragDrop child, which is
+    /// why FocusIsActionSlot does not match them).
+    /// </summary>
+    private static unsafe bool TryFindCompanionSkillSlot(AtkResNode* node,
+                                                        out AtkComponentBase* slot,
+                                                        out AtkResNode* slotNode)
+    {
+        slot     = null;
+        slotNode = null;
+
+        var cur = node;
+        for (var up = 0; up < 3 && cur != null; up++)
+        {
+            if ((int)cur->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)cur)->Component;
+                if (comp == null || comp->GetComponentType() != ComponentType.Button) return false;
+
+                var number = ReadComponentTextById(comp, CompanionSlotNumber).Trim();
+                if (!uint.TryParse(number, out var slotNumber) || slotNumber is < 1 or > 10) return false;
+
+                slot     = comp;
+                slotNode = cur;
+                return true;
+            }
+            cur = cur->ParentNode;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Deferred description of the companion skill under the focus - the same
+    /// split as the action menu: name on arrival, description only once the
+    /// focus dwells. Nothing is spoken when the game binds no action to the
+    /// slot; that case is what the probe file records.
+    /// </summary>
+    private unsafe void HandleCompanionSkillDwell(AtkResNode* node)
+    {
+        // Nur das offene Fenster und eine vom Spiel gebundene Aktion sind die
+        // Bedingung - NICHT die Slot-Form: haengt der Tooltip an anderer Stelle
+        // als vermutet, soll die Beschreibung trotzdem kommen statt wegen einer
+        // Layout-Annahme auszufallen.
+        if (!IsAddonVisible(BuddySkillAddon))
+        {
+            _companionSkillDwellId = 0;
+            return;
+        }
+
+        var action = _tooltips.TryGetActionDeep(node);
+        if (action == null)
+        {
+            _companionSkillDwellId = 0;
+            return;
+        }
+        var id = action.Value.Id;
+
+        if (id != _companionSkillDwellId)
+        {
+            // Fokus gerade angekommen - der Name laeuft in diesem Moment.
+            _companionSkillDwellId     = id;
+            _companionSkillDwellTick   = System.Diagnostics.Stopwatch.GetTimestamp();
+            _companionSkillDwellSpoken = false;
+            return;
+        }
+
+        if (_companionSkillDwellSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _companionSkillDwellTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _companionSkillDwellSpoken = true; // einmal pro Verweilen, auch ohne Text
+        var desc = ActionMenuDescription(action.Value.Kind, id);
+        if (desc.Length > 0) _tolk.Speak(desc);
+    }
+
+    /// <summary>
+    /// Writes what the companion windows actually contain to
+    /// <c>Desktop\FF14_Chocobo.txt</c>: the readings of both windows, the
+    /// branch blocks with their order, and for every skill slot the tooltip
+    /// label plus the action the game binds to it. That binding is the only
+    /// source for the skill NAMES, and whether the game creates one for
+    /// companion skills is documented nowhere - so it is read off the running
+    /// client instead of assumed. Saved data (CompanionInfo) is logged next to
+    /// it, which is what pins the branch order to the three level bytes.
+    /// </summary>
+    private unsafe void WriteCompanionProbe(string why)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Chocobo-Sonde: {why} | {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+            // Gespeicherte Daten - unabhaengig vom Fenster lesbar. Die drei
+            // Stufen-Bytes stehen laut docs/game-api.md (Metadaten-Dump
+            // 2026-09-04) hinter SkillPoints, Offsets 59/60/61 von CompanionInfo.
+            var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
+            if (ui != null)
+            {
+                var companion = &ui->Buddy.CompanionInfo;
+                var levels    = (byte*)companion + 59;
+                sb.AppendLine($"CompanionInfo: rang={companion->Rank} xp={companion->CurrentXP} " +
+                              $"punkte={companion->SkillPoints} sterne={companion->Stars} " +
+                              $"stufenbytes=[{levels[0]},{levels[1]},{levels[2]}]");
+            }
+            else sb.AppendLine("CompanionInfo nicht verfuegbar.");
+
+            var buddy = _gameGui.GetAddonByName(BuddyAddon);
+            if (!buddy.IsNull)
+            {
+                var addon = (AtkUnitBase*)(nint)buddy;
+                sb.AppendLine($"Buddy sichtbar={addon->IsVisible}");
+                sb.AppendLine($"  name='{ReadTopLevelText(addon, BuddyNameNode)}' " +
+                              $"rang='{ReadTopLevelText(addon, BuddyRankNode)}' " +
+                              $"xp='{ReadTopLevelText(addon, BuddyExpNode)}' " +
+                              $"reiter='{ReadCompanionTab(addon)}'");
+                var hp   = ReadCompanionBar(addon, BuddyHpComp,   out var hpMax);
+                var time = ReadCompanionBar(addon, BuddyTimeComp, out var timeMax);
+                sb.AppendLine($"  hp='{hp}/{hpMax}' zeit='{time}/{timeMax}'");
+            }
+            else sb.AppendLine("Buddy nicht offen.");
+
+            var skills = _gameGui.GetAddonByName(BuddySkillAddon);
+            if (skills.IsNull)
+            {
+                sb.AppendLine("BuddySkill nicht offen.");
+            }
+            else
+            {
+                var addon = (AtkUnitBase*)(nint)skills;
+                sb.AppendLine($"BuddySkill sichtbar={addon->IsVisible} " +
+                              $"punkte='{ReadTopLevelText(addon, CompanionPointsNode)}'");
+                sb.AppendLine("Knoten (Reihenfolge = Spielreihenfolge):");
+                for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+                {
+                    var n = addon->UldManager.NodeList[i];
+                    if (n == null) continue;
+                    sb.AppendLine($"  [{i}] id={n->NodeId} typ={(int)n->Type} sichtbar={n->IsVisible()}");
+
+                    if ((int)n->Type < 1000 || !n->IsVisible()) continue;
+                    var comp = ((AtkComponentNode*)n)->Component;
+                    if (comp == null) continue;
+                    var ct = comp->GetComponentType();
+
+                    if (ct == ComponentType.Base)
+                    {
+                        sb.AppendLine($"      Zweig '{ReadComponentTextById(comp, CompanionBranchName)}' " +
+                                      $"'{ReadComponentTextById(comp, CompanionBranchLevel)}'");
+                    }
+                    else if (ct == ComponentType.Button)
+                    {
+                        sb.AppendLine($"      Slot {ReadComponentTextById(comp, CompanionSlotNumber)} " +
+                                      $"tooltip='{_tooltips.TryGetTooltipDeep(n) ?? "-"}' " +
+                                      $"aktion={DescribeTruncatedAction(n)}");
+                    }
+                }
+            }
+
+            var file = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop), CompanionProbeFile);
+            File.WriteAllText(file, sb.ToString(), Encoding.UTF8);
+            _log.Info($"[Chocobo] Sonde geschrieben: {file} ({why}).");
+        }
+        catch (Exception ex)
+        {
+            // Datei- und Spielzugriff: ein Fehler darf die Ansage nicht kosten.
+            _log.Warning($"[Chocobo] Sonde fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    /// <summary>Action binding of a node as "id/kind" plus the resolved line, for
+    /// the probe file. "-" when the game bound nothing.</summary>
+    private unsafe string DescribeTruncatedAction(AtkResNode* node)
+    {
+        var action = _tooltips.TryGetActionDeep(node);
+        if (action == null) return "-";
+        var line = DescribeActionDetail(action.Value.Kind, action.Value.Id);
+        return $"id={action.Value.Id} art={action.Value.Kind} text='{line}'";
+    }
+
     // -- ArmouryBoard (Arsenalkammer) ---------------------------------
 
     // Category title of the armoury chest ("Kopf", "Waffe" ...) as last
@@ -2654,6 +3141,14 @@ public sealed class UIReaderService : IDisposable
             // nachgeschlagen wuerde.
             text = aozRow;
         }
+        else if (TryReadCompanionSkillFocusRow(node, out var companionRow))
+        {
+            // Fertigkeiten des Begleit-Chocobos: die Slots tragen nur ihre
+            // Nummer 1..10, kein Namensschild - der Name kommt aus dem Tooltip
+            // des Slots. Ohne diesen Zweig las der allgemeine Fokus-Pfad die
+            // Nummer ("5") und sonst nichts.
+            text = companionRow;
+        }
         else if (TryReadActionMenuFocusRow(node, out var actionRow))
         {
             // Skill window (Aktionen & Talente): the list rows are icon-only,
@@ -2740,6 +3235,12 @@ public sealed class UIReaderService : IDisposable
         // Dedup, damit die Uhr weiterlaeuft, waehrend der Fokus auf einer Kachel
         // parkt.
         HandleAozNotebookDwell(node);
+
+        // Fertigkeiten des Begleit-Chocobos: gleiche Stelle und derselbe Grund.
+        // Genau hier fehlte bis 6.08.71 die Beschreibung - der Fokus sagte den
+        // Namen des Skills an (ueber den Tooltip), aber die Beschreibung dazu
+        // wurde nur im Aktionsmenue ("ActionMenu") nachgeschoben.
+        HandleCompanionSkillDwell(node);
 
         // Deferred item description (same reason it runs before the dedup return):
         // after the name was spoken, add the tooltip text once the focus has
@@ -11843,6 +12344,11 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Talk",         OnTalkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "TalkSubtitle", OnTalkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "_BattleTalk",  OnTalkUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,  "Buddy",      OnCompanionOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Buddy",      OnCompanionUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,  "BuddySkill", OnCompanionSkillOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BuddySkill", OnCompanionSkillUpdate);
+
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "SelectYesno", OnYesNoOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "SelectYesno", OnYesNoReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
