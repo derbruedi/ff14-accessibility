@@ -605,6 +605,11 @@ public sealed class UIReaderService : IDisposable
         // SpecialSetup/Update halten den generischen Scanner raus.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Buddy", OnBuddyUpdate);
 
+        // Skills tab of the same window: it is its own addon, it appears and
+        // disappears with the tab, and only its repaints tell a purchase apart
+        // (rank up, points down) - the parent addon reports the tab switch only.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BuddySkill", OnBuddySkillUpdate);
+
         // MountNoteBook (Reittier-Verzeichnis): announce the active view tab
         // (Favoriten/Alle/Suche) and page when they change. Source is the
         // agent's own ViewType + CurrentSelection->Page (verified 2026-07-26 to
@@ -2468,6 +2473,12 @@ public sealed class UIReaderService : IDisposable
     private int  _lastBuddyTabIndex = -1;
     private string _lastBuddyTabLabel = string.Empty;
 
+    // Skills tab (child addon BuddySkill): last branch line spoken, and whether
+    // this opening of the tab has had its ranks said. Empty/false while the tab
+    // is closed - see ReadBuddySkillBranches and OnBuddySkillUpdate.
+    private string _lastBuddySkillBranches = string.Empty;
+    private bool   _buddySkillBranchesSpoken;
+
     /// <summary>
     /// True while the Mitstreiter (<c>Buddy</c>) window is open and drawn.
     /// The mod key uses this to choose between open and re-read.
@@ -2560,8 +2571,20 @@ public sealed class UIReaderService : IDisposable
 
         _lastBuddyTabIndex = tabIndex;
         _lastBuddyTabLabel = tabLabel;
-        _log.Info($"[Buddy] Reiter: '{tabLabel}' (index={tabIndex})");
-        _tolk.SpeakInterrupt(tabLabel);
+
+        // Switching onto the skills tab is what makes those ranks readable, so
+        // they go into the same sentence as the tab name - otherwise the tab
+        // would announce itself without its content. Empty for every other tab,
+        // and empty again the moment the skills tab goes away.
+        var skillBranches = ReadBuddySkillBranches();
+        _lastBuddySkillBranches   = skillBranches;
+        _buddySkillBranchesSpoken = skillBranches.Length > 0;
+        var tabLine = skillBranches.Length > 0
+            ? $"{tabLabel}. {AccessibilityStrings.BuddySkillBranches(skillBranches)}."
+            : tabLabel;
+
+        _log.Info($"[Buddy] Reiter: '{tabLine}' (index={tabIndex})");
+        _tolk.SpeakInterrupt(tabLine);
     }
 
     /// <summary>
@@ -2603,6 +2626,14 @@ public sealed class UIReaderService : IDisposable
         var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
         int skillPoints = ui != null ? ui->Buddy.CompanionInfo.SkillPoints : 0;
 
+        // The skills tab paints its own child addon; its branch ranks are part of
+        // what the window says, so they belong into the one sentence. Saying them
+        // here also arms the change detector below, which would otherwise repeat
+        // the ranks the moment the window opens.
+        var skillBranches = ReadBuddySkillBranches();
+        _lastBuddySkillBranches   = skillBranches;
+        _buddySkillBranchesSpoken = skillBranches.Length > 0;
+
         return AccessibilityStrings.BuddyWindowSummary(
             title,
             name,
@@ -2612,7 +2643,8 @@ public sealed class UIReaderService : IDisposable
             timeCur,
             timeMax,
             skillPoints,
-            tabLabel);
+            tabLabel,
+            skillBranches);
     }
 
     /// <summary>Rank / XP clause shared wording with the chocobo hotkey.</summary>
@@ -2668,6 +2700,74 @@ public sealed class UIReaderService : IDisposable
         }
 
         return string.Empty;
+    }
+
+    // -- Mitstreiter: Kunststuecke-Reiter (Zweig-Stufen) ---------------
+
+    private const string BuddySkillAddon = "BuddySkill";
+
+    private const uint BuddySkillBranchName  = 3; // "Атакующий"
+    private const uint BuddySkillBranchLevel = 4; // "Уровень 0"
+
+    /// <summary>
+    /// The branch ranks the skills tab shows, joined for speech, or empty while
+    /// that tab is not on screen - empty means the caller says nothing rather
+    /// than guess. Every branch is a Base block carrying its name in text id=3
+    /// and its rank in text id=4 (dump 2026-09-14: "Атакующий" / "Уровень 0");
+    /// the blocks are picked by that id pair and not by node id, so a layout
+    /// change cannot silently swap two branches. Node order is the game's order.
+    /// </summary>
+    private unsafe string ReadBuddySkillBranches()
+    {
+        if (!IsAddonVisible(BuddySkillAddon)) return string.Empty;
+
+        var ptr = _gameGui.GetAddonByName(BuddySkillAddon);
+        if (ptr.IsNull) return string.Empty;
+        var addon = (AtkUnitBase*)(nint)ptr;
+
+        var branches = new List<string>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var comp = ((AtkComponentNode*)n)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Base) continue;
+
+            var name  = TolkService.Sanitize(ReadComponentTextById(comp, BuddySkillBranchName)).Trim();
+            var level = TolkService.Sanitize(ReadComponentTextById(comp, BuddySkillBranchLevel)).Trim();
+            if (name.Length == 0 || level.Length == 0) continue;
+            branches.Add(AccessibilityStrings.BuddySkillBranch(name, level));
+        }
+
+        return branches.Count == 0 ? string.Empty : string.Join(", ", branches);
+    }
+
+    /// <summary>
+    /// The skills tab repaints while it is open, and a bought skill raises one of
+    /// the ranks - which is exactly the moment the player needs the line. Sounds
+    /// only on a change: the opening announcement and the tab switch already
+    /// carried the ranks, so those readings stay quiet. A reading nothing has
+    /// said yet - the tab was painted after its tab switch, so the switch found
+    /// it empty - is spoken here instead. Not an interrupt: it must queue behind
+    /// whatever is being said rather than cut it.
+    /// </summary>
+    private unsafe void OnBuddySkillUpdate(AddonEvent type, AddonArgs args)
+    {
+        var branches = ReadBuddySkillBranches();
+        if (branches.Length == 0)
+        {
+            _lastBuddySkillBranches   = string.Empty;
+            _buddySkillBranchesSpoken = false;
+            return;
+        }
+
+        if (_buddySkillBranchesSpoken && branches == _lastBuddySkillBranches) return;
+
+        _lastBuddySkillBranches   = branches;
+        _buddySkillBranchesSpoken = true;
+        var line = AccessibilityStrings.BuddySkillBranches(branches) + ".";
+        _log.Info($"[Buddy] Zweige: '{line}'");
+        _tolk.Speak(line);
     }
 
     // -- MountNoteBook: Ansichts-Reiter + Seite -----------------------
@@ -13679,6 +13779,7 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Inventory", OnInventoryUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Buddy", OnBuddyUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BuddySkill", OnBuddySkillUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);

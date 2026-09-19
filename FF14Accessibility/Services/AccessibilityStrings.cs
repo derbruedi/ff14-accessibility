@@ -2038,7 +2038,9 @@ public static partial class AccessibilityStrings
     /// <summary>
     /// Full open announcement for the Mitstreiter window. Rank part already
     /// includes "Chocobo Rang …" wording from the hotkey strings. HP/time are
-    /// omitted when max is 0 (bars not painted yet).
+    /// omitted when max is 0 (bars not painted yet). <paramref name="tabLabel"/>
+    /// and <paramref name="skillBranches"/> are empty unless that tab is the one
+    /// on screen; the branches are the ranks the skills tab shows.
     /// </summary>
     public static string BuddyWindowSummary(
         string title,
@@ -2049,7 +2051,8 @@ public static partial class AccessibilityStrings
         int timeCurSec,
         int timeMaxSec,
         int skillPoints,
-        string tabLabel)
+        string tabLabel,
+        string skillBranches)
     {
         var parts = new List<string> { title };
         if (!string.IsNullOrWhiteSpace(name))
@@ -2064,6 +2067,8 @@ public static partial class AccessibilityStrings
             parts.Add(BuddySkillPoints(skillPoints));
         if (!string.IsNullOrWhiteSpace(tabLabel))
             parts.Add(tabLabel);
+        if (!string.IsNullOrWhiteSpace(skillBranches))
+            parts.Add(BuddySkillBranches(skillBranches));
         return string.Join(". ", parts) + ".";
     }
 
@@ -2100,6 +2105,21 @@ public static partial class AccessibilityStrings
     /// <summary>Spoken when the window is missing or not painted yet.</summary>
     public static string CompanionWindowEmpty =>
         IsGerman ? "Mitstreiter-Fenster noch leer." : "Companion window still empty.";
+
+    /// <summary>
+    /// The branch ranks of the skills tab (child addon <c>BuddySkill</c>) as one
+    /// clause: "Zweige: &lt;name&gt; — &lt;rank&gt;, …". Both halves of every
+    /// entry come from the window ("Атакующий — Уровень 0" on the Russian
+    /// client), so only the leading word is ours. No trailing period: the clause
+    /// sits inside <see cref="BuddyWindowSummary"/> and is also spoken on its own.
+    /// </summary>
+    public static string BuddySkillBranches(string branches) =>
+        IsGerman ? $"Zweige: {branches}" : $"Branches: {branches}";
+
+    /// <summary>
+    /// One branch of the skills tab: name and rank as the window paints them.
+    /// </summary>
+    public static string BuddySkillBranch(string name, string level) => $"{name} — {level}";
 
     // ── Ausruestungsset-Markierung ───────────────────────────────────
     // Das Symbol, das dem sehenden Spieler sagt "steckt in einem gespeicherten
