@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
@@ -526,6 +527,22 @@ public sealed class AutoWalkService : IDisposable
     /// </para>
     /// </summary>
     public bool IsWalking => IsActive || IsFollowing;
+
+    /// <summary>
+    /// Switches an active auto-walk onto a live object (hunting-log specimen that
+    /// appeared during areal search). Position is refreshed each frame via
+    /// <c>GameObjectId</c>. Silent when nothing is walking — the caller already
+    /// announced the sighting. <paramref name="fresh"/> stays false so the
+    /// "walking to …" line is not repeated on top of that announcement.
+    /// </summary>
+    public void RetargetToObject(IGameObject obj, string name)
+    {
+        if (!IsActive) return;
+        StopFollowQuiet();
+        _flightDeclined = false;
+        Begin(obj.Position, name, StopRange, obj.GameObjectId, fresh: false);
+        _log.Info($"[Nav] Auto-Lauf: umgebogen auf lebendes '{name}' (id={obj.GameObjectId:X}).");
+    }
 
     public AutoWalkService(
         IDalamudPluginInterface pluginInterface,

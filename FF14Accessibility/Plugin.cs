@@ -202,8 +202,8 @@ public sealed class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.20";
-    private const string PluginVersionTag = "Mitstreiter Taste";
+    private const string PluginVersion    = "6.08.30";
+    private const string PluginVersionTag = "Buddy Crossbar Dialog GC";
 
     public Plugin()
     {
@@ -463,6 +463,14 @@ public sealed class Plugin : IDalamudPlugin
         // dort optional, der Lauf laeuft ohne sie unveraendert weiter.
         _bridges     = new MeshBridgeService(ClientState, Log);
         _autoWalk   = new AutoWalkService(PluginInterface, ObjectTable, TargetManager, ClientState, _tolk, _config, _places, _routes, _trails, _bridges, _objectNames, Log);
+        // Jagd: erscheint ein Exemplar waehrend der Areal-Suche, den Lauf vom
+        // MapRange-Mittelpunkt auf das lebende Monster umbiegen (Numpad3 macht
+        // das schon beim Start; ohne diesen Haken blieb der Suchlauf am Bahnhof).
+        _navigation.OnHuntSpecimenFound = (obj, name) =>
+        {
+            if (!_autoWalk.IsActive) return;
+            _autoWalk.RetargetToObject(obj, name);
+        };
         // Erst jetzt: der Handler teilt sich die vnavmesh-Verbindung des Auto-Laufs,
         // statt eine zweite zu oeffnen.
         // Sagt, WAS im Weg steht, wenn ein Lauf sich festfaehrt - Wesen beim Namen,
@@ -519,7 +527,7 @@ public sealed class Plugin : IDalamudPlugin
         // und liefert dem Fokus-Leser an einer Stelle den Satz zur Kategorie bzw.
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
         _synthesis   = new SynthesisService(GameGui, _tolk, Log);
         // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte
         // Rezept beantwortet: was ist mit dem Beutelinhalt jetzt herstellbar. Der
@@ -1011,6 +1019,12 @@ public sealed class Plugin : IDalamudPlugin
             case "gegner":
             case "enemies":
                 _tolk.SpeakInterrupt(_enemyMarkers.DescribeField());
+                break;
+            // Mitgliedschaft vs. Agent-Tab vs. RankData-Slots — wenn Kategorie
+            // und Bestiarium verschiedene Gesellschaften nennen (User 2026-09-20).
+            case "huntprobe":
+            case "jagdsond":
+                _tolk.SpeakInterrupt(_huntingLog.ProbeHuntingLog());
                 break;
 #if DEBUG
             // Objekt-Sonde per Befehl: auf Strg+F5 kommt sie nur ans Ruder, wenn

@@ -588,6 +588,10 @@ public sealed class ChatReaderService : IDisposable
             return $"{AccessibilityStrings.OwnChatPrefix(kind)}{addressee}: {messageText}";
         if (string.IsNullOrWhiteSpace(senderText))
             return string.IsNullOrEmpty(prefix) ? messageText : $"{prefix}: {messageText}";
+        // Named speaker, no channel word (NPC dialogue): "Y'shtola: ..." -
+        // ChatFromLine would produce a dangling " von Y'shtola: ...".
+        if (string.IsNullOrEmpty(prefix))
+            return $"{senderText}: {messageText}";
         return AccessibilityStrings.ChatFromLine(prefix, senderText, messageText);
     }
 

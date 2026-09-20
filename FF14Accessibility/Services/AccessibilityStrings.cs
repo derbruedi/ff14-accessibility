@@ -69,6 +69,46 @@ public static partial class AccessibilityStrings
                         : $"Rank tier {index} of {count}{range}";
     }
 
+    /// <summary>Fallback title for GrandCompanyRank when the window node is empty.</summary>
+    public static string GrandCompanyRankTitleFallback =>
+        IsGerman ? "Rang der staatlichen Gesellschaft" : "Grand company rank";
+
+    /// <summary>Opening summary: title, company name, current rank (if marked).</summary>
+    public static string GrandCompanyRankSummary(string title, string company, string rank) =>
+        string.IsNullOrWhiteSpace(rank)
+            ? (IsGerman ? $"{title}. {company}." : $"{title}. {company}.")
+            : (IsGerman
+                ? $"{title}. {company}. Dein Rang: {rank}."
+                : $"{title}. {company}. Your rank: {rank}.");
+
+    /// <summary>Next GC rank above the player's current one.</summary>
+    public static string GrandCompanyNextRank(string nextRank) =>
+        IsGerman ? $"Nächster Rang: {nextRank}." : $"Next rank: {nextRank}.";
+
+    /// <summary>GC rank still needed before hunting-log rank 2 unlocks.</summary>
+    public static string GrandCompanyHuntRankNeeds(int huntRank, string gcRank) =>
+        IsGerman
+            ? $"Für Jagd-Rang {huntRank} brauchst du: {gcRank}."
+            : $"For hunting log rank {huntRank} you need: {gcRank}.";
+
+    /// <summary>Player already holds the GC rank that unlocks this hunt log.</summary>
+    public static string GrandCompanyHuntRankUnlocked(int huntRank) =>
+        IsGerman
+            ? $"Jagd-Rang {huntRank}: Gesellschaftsrang erreicht."
+            : $"Hunting log rank {huntRank}: grand company rank met.";
+
+    /// <summary>Company tab switch inside GrandCompanyRank.</summary>
+    public static string GrandCompanyRankTab(string company, string rank) =>
+        string.IsNullOrWhiteSpace(rank)
+            ? company
+            : (IsGerman ? $"{company}. Dein Rang: {rank}." : $"{company}. Your rank: {rank}.");
+
+    /// <summary>Icon-only GC radio when the sheet name is missing.</summary>
+    public static string GrandCompanyTabFallback(int oneBased, int total) =>
+        IsGerman
+            ? $"Gesellschaft {oneBased} von {total}"
+            : $"grand company {oneBased} of {total}";
+
     /// <summary>Appended to a tab/button announcement when it is the active one.</summary>
     public static string SelectedSuffix => IsGerman ? ", ausgewählt" : ", selected";
 
@@ -597,14 +637,14 @@ public static partial class AccessibilityStrings
             : "No timed events. Yo-kai Watch missing — finish the event quest first.";
 
     // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
-    public static string CategoryHuntingCount(int total, int here) =>
+    public static string CategoryHuntingCount(int rank, int total, int here) =>
         here > 0
             ? (IsGerman
-                ? $"Jagdziele: {total} offen, {here} in diesem Gebiet."
-                : $"Hunting targets: {total} open, {here} in this area.")
+                ? $"Jagdziele, Rang {rank}: {total} offen, {here} in diesem Gebiet."
+                : $"Hunting targets, rank {rank}: {total} open, {here} in this area.")
             : (IsGerman
-                ? $"Jagdziele: {total} offen, keines in diesem Gebiet."
-                : $"Hunting targets: {total} open, none in this area.");
+                ? $"Jagdziele, Rang {rank}: {total} offen, keines in diesem Gebiet."
+                : $"Hunting targets, rank {rank}: {total} open, none in this area.");
 
     /// <summary>One hunting log line: the monster and how many kills are still missing.</summary>
     public static string HuntingTargetEntry(string monster, int killed, int required) =>
@@ -671,18 +711,18 @@ public static partial class AccessibilityStrings
     // Der Name der Gesellschaft steht in der Kopfansage, damit hörbar ist,
     // WESSEN Liste da läuft - die Zuordnung ist das Einzige an dieser Kategorie,
     // das vom Spielstand abhängt.
-    public static string CategoryCompanyHuntCount(string company, int total, int here)
+    public static string CategoryCompanyHuntCount(string company, int rank, int total, int here)
     {
         var label = company.Length > 0
             ? company
             : (IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets");
         return here > 0
             ? (IsGerman
-                ? $"{label}: {total} offen, {here} in diesem Gebiet."
-                : $"{label}: {total} open, {here} in this area.")
+                ? $"{label}, Rang {rank}: {total} offen, {here} in diesem Gebiet."
+                : $"{label}, rank {rank}: {total} open, {here} in this area.")
             : (IsGerman
-                ? $"{label}: {total} offen, keines in diesem Gebiet."
-                : $"{label}: {total} open, none in this area.");
+                ? $"{label}, Rang {rank}: {total} offen, keines in diesem Gebiet."
+                : $"{label}, rank {rank}: {total} open, none in this area.");
     }
 
     public static string NoCompanyHuntTargets =>
@@ -1392,6 +1432,20 @@ public static partial class AccessibilityStrings
             ? $"{label}, Registerkarte {index} von {total}"
             : $"{label}, tab {index} of {total}";
 
+    /// <summary>Character window (key C) tab: Attributes / Profile / Classes / Reputation.</summary>
+    public static string CharacterTabHeader(string label, int index, int total) =>
+        SocialTabHeader(label, index, total);
+
+    /// <summary>Fallback when a Character tab radio has no readable label yet.</summary>
+    public static string CharacterTabFallback(int zeroBasedIndex) => zeroBasedIndex switch
+    {
+        0 => IsGerman ? "Attribute" : "Attributes",
+        1 => IsGerman ? "Profil" : "Profile",
+        2 => IsGerman ? "Klassen und Jobs" : "Classes and Jobs",
+        3 => IsGerman ? "Ansehen" : "Reputation",
+        _ => IsGerman ? $"Registerkarte {zeroBasedIndex + 1}" : $"tab {zeroBasedIndex + 1}",
+    };
+
     public static string OnlineWindowPrefix(string rest) =>
         IsGerman ? $"Online-Fenster. {rest}" : $"Online window. {rest}";
 
@@ -1440,10 +1494,18 @@ public static partial class AccessibilityStrings
     public static string LivesIn(string habitat) => IsGerman ? $", lebt in {habitat}" : $", lives in {habitat}";
     public static string BestiaryOverview(int count, string rows) =>
         IsGerman ? $"Bestiarium, {count} Monster. {rows}" : $"Bestiary, {count} monsters. {rows}";
-    /// <summary>A rank picker row: which rank, and how many of its ten entries are done.</summary>
-    public static string BestiaryRankRow(string rank, int done, int total) => done >= total
-        ? (IsGerman ? $"Rang {rank}, alle {total} Einträge erledigt" : $"Rank {rank}, all {total} entries complete")
-        : (IsGerman ? $"Rang {rank}, {done} von {total} Einträgen erledigt" : $"Rank {rank}, {done} of {total} entries done");
+    /// <summary>A rank picker row: which class's log, which rank, and how many of its ten entries are done.</summary>
+    public static string BestiaryRankRow(string className, string rank, int done, int total)
+    {
+        var body = done >= total
+            ? (IsGerman ? $"Rang {rank}, alle {total} Einträge erledigt" : $"Rank {rank}, all {total} entries complete")
+            : (IsGerman ? $"Rang {rank}, {done} von {total} Einträgen erledigt" : $"Rank {rank}, {done} of {total} entries done");
+        return string.IsNullOrEmpty(className) ? body : $"{className}, {body}";
+    }
+
+    /// <summary>Class / company tab of the hunting log, with the rank currently shown.</summary>
+    public static string BestiaryClassTab(string className, int rank) =>
+        IsGerman ? $"{className}, Rang {rank}" : $"{className}, rank {rank}";
 
     // ── Gegenstand abliefern (Request / delivery) ────────────────────
     // "Hand Over" is the EN client's button; verify against an EN dump in Teil 2.
@@ -3731,9 +3793,12 @@ public static partial class AccessibilityStrings
     public static string ChatAddressee(string name) =>
         IsGerman ? $" an {name}" : $" to {name}";
 
-    /// <summary>A chat line with a named sender: "&lt;prefix&gt; from &lt;sender&gt;: &lt;message&gt;".</summary>
+    /// <summary>A chat line with a named sender: "&lt;prefix&gt; from &lt;sender&gt;: &lt;message&gt;".
+    /// Empty prefix (NPC dialogue) yields "&lt;sender&gt;: &lt;message&gt;" — never a dangling " von "/" from ".</summary>
     public static string ChatFromLine(string prefix, string sender, string message) =>
-        IsGerman ? $"{prefix} von {sender}: {message}" : $"{prefix} from {sender}: {message}";
+        string.IsNullOrEmpty(prefix)
+            ? $"{sender}: {message}"
+            : IsGerman ? $"{prefix} von {sender}: {message}" : $"{prefix} from {sender}: {message}";
 
     // ════════════════════════════════════════════════════════════════
     //  BeaconService

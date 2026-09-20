@@ -85,6 +85,24 @@ CMFSlider (2x), CMFColorL, CharaMakeSelectYesNo, CharaMakeDCWorldMap(Bg)
   (wie RaceGender, Textkinder leer) und Zurück/Ok-Buttons (id=19/18)
 - Kopfzeile: „Volksstamm", Hilfetext „Wähle einen Volksstamm aus."
 
+### _CharaMakeBirthDay (Dump+Log 2026-09-19 15:56)
+
+- Tag-Raster = RadioButtons mit Text "01".."32"; Zusammenfassung oben als
+  Top-Level-Text **id=37** ("1. Sonne im 1. Lichtmond"), Kurzform id=38
+  ("（1.1.）") ist fuer die Ansage unbrauchbar.
+- Mond = DropDownList (id=3) mit Checkbox-Label "1. Lichtmond".
+- Kalender-Erklaerung steht in `_CharaMakeHelp` Text **id=4** (nicht im
+  BirthDay-Addon selbst).
+- Bug (vor 6.08.22): generisches `FindFocusedText` klebte auf Zurueck
+  (Key=40004 = Node 40/Kind 4) und sprach jedes Mal "Zurueck" nach der
+  korrekten Event-Target-Tagzahl; Scan holte id=37 danach nach.
+- Bug (vor 6.08.23): Beim Oeffnen sprach der globale Fokus nur "01", weil
+  SpeakInterrupt die Open-Hilfe schnitt bzw. Hilfe noch leer war.
+- Fix 6.08.23: PostSetup + nachgereichte Help-Update-Ansage; Fokus ersetzt
+  "01" durch id=37 und schweigt die ersten 800 ms nach Open.
+- Fix 6.08.22: Addon in `SpecialUpdateAddons`, eigener Receive/Update-Handler —
+  bei Tag-Hover die Zusammenfassung id=37, bei Mondwechsel ebenfalls.
+
 ### _CharaMakeProgress (Dump 2026-07-10 10:20) — Fortschrittsmenü links
 - Comp(1002)-Buttons je Schritt, Label in Text-Kind id=3, aktueller Wert in
   id=5: „Volk & Geschlecht" (Wert z.B. „Hyuran ©"), „Volksstamm" (Wert
@@ -1509,6 +1527,35 @@ aus den Assembly-Metadaten gelesen (kein Raten an Offsets).
   Warnung im Log. So gebaut in `CombatService.AnnounceChocoboRank` /
   `ChocoboCompanionReading`.
 
+### Charakter-Fenster (`Character` / AddonCharacter) — Reiter (2026-09-20)
+
+Quelle: FFXIVClientStructs `AddonCharacter` (ilspycmd lokal gegen Dalamud-DLL).
+
+- Addon-Name: `Character` (Taste C). Vier Registerkarten: Attribute, Profil,
+  Klassen und Jobs, Ansehen (Dump STATUS V5.19).
+- Felder: `Tabs` (`FixedSizeArray4` / Span von `AtkComponentRadioButton*`),
+  `TabIndex`, `TabCount`. Member: `SetTab(int tab)`.
+- Problem (User 2026-09-20): Fokus auf dem Radio sagte nur den Label-Text;
+  `TabIndex` blieb stehen → Inhalt (Ausrüstungssets) wechselte nicht.
+- Plugin: `OnCharacterUpdate` — Fokus auf anderem Reiter → `SetTab`; Ansage
+  bei TabIndex-Wechsel; generischer Fokus-Leser stumm auf den vier Radios
+  (`IsOwnerNodeAncestorOf`).
+
+### Rangfenster (`GrandCompanyRank`) — aus Profil (2026-09-20)
+
+Quelle: Desktop-Dump `FFXIV_UI_Dump.txt` + dalamud.log 01:27.
+
+- Addon-Name: `GrandCompanyRank`, Titel „RANG DER STAATLICHEN GESELLSCHAFT“.
+- Kein typed `AddonGrandCompanyRank` in ClientStructs.
+- Gesellschaftsname: Top-Level Text id=3. Drei icon-only Radios id=5/6/7
+  (links→rechts = GrandCompany 1/2/3). Spalten „Offiziere“ /
+  „Unteroffiziere/Soldaten“. Rangzeilen Comp(1007): Text id=4 = Rangname;
+  aktueller Rang = Kind-Bild id=2 sichtbar (Flags).
+- Plugin: `OnGrandCompanyRankUpdate` (SpecialSetup/Update). Fokus-Fallback
+  `ReadGcRankWindowTabFocus` für die Radios. Ab 6.08.29: nächster Rang +
+  Jagd-Rang-2-Tor aus `GrandCompanyRank.RequiredHuntingLogRank` (Row 5 =
+  ReqHunt 1 → Legionsgefreiter 3. Klasse / Sergeant Third).
+
 ### Mitstreiter-Fenster (`Buddy` / AddonBuddy) — UI (2026-09-10)
 
 Quelle: Desktop-Dump `FFXIV_UI_Dump.txt` + dalamud.log 10:31; ClientStructs
@@ -2765,6 +2812,23 @@ Aoz-Sheets; `AozActionXdQZ` existiert nicht einmal als Sheet
 Jagdtagebuch genau das: `BNpcName` + `PlaceNameZone[3]` + `PlaceNameLocation[3]`.
 Deshalb kann eine Blaumagie-Kategorie nur zum ORT fuehren, nicht zum Monster.
 Die Monsternamen stehen in den Beschreibungstexten, sind dort aber Prosa.
+
+### Jagdtagebuch-Areal (gemessen 2026-09-19, Territory 141)
+
+`PlaceNameLocation` ist oft ein **Block** (z. B. 248 „Kohlenstaub“), kein Spawn.
+Im Layout (`planmap.lgb` MapRange) sitzen darunter benannte Spots — u. a. 290
+„Kohlenstaub-Bahnhof“ (4 Stuecke) und 291 „Sil'dih-Ruinen“ (47 m vom Wiki-Spawn
+Karte 17/23). Client-Spawnpunkte fuer Weltmonster gibt es nicht; lebendig nur
+ueber die Objekttabelle. Areal-Suche: bei Block-Treffer Spots deduplizieren,
+benannte Unterorte vor unbenannten Volumen, Sortierung am Kartenmarker
+(`AreaRangeService` / `BuildHuntSearch`).
+
+### Bestiarium-Register (AgentMonsterNote, 2026-09-20)
+
+`AgentMonsterNote.Instance()->ClassIndex` ist der aktuelle Klassen-/Gesellschafts-
+Reiter (gleicher Index wie `ClassJob.MonsterNote` / `OpenWithData`). `Rank` ist
+0-basiert wie `MonsterNoteManager`. Die Icon-Reiter haben keinen Textknoten;
+Ansage laeuft ueber den Agent + Sheet-Namen (`HuntingLogService.GetDisplayName`).
 
 **Beide Fundort-Arten sind vollstaendig abbildbar:**
 

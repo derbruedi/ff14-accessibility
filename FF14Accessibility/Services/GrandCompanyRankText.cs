@@ -73,7 +73,7 @@ internal sealed unsafe class GrandCompanyRankText
     /// the RowId of the GrandCompany sheet (1 Maelstrom, 2 Twin Adder, 3 Immortal
     /// Flames), which the log line below makes verifiable in game.
     /// </summary>
-    private string RankName(uint rank)
+    public string RankName(uint rank)
     {
         var state = PlayerState.Instance();
         if (state == null) return string.Empty;
@@ -91,6 +91,74 @@ internal sealed unsafe class GrandCompanyRankText
         if (company == 3 && !female && _data.GetExcelSheet<GCRankUldahMaleText>()     .TryGetRow(rank, out var um)) return Read(um.Singular);
         if (company == 3 &&  female && _data.GetExcelSheet<GCRankUldahFemaleText>()   .TryGetRow(rank, out var uf)) return Read(uf.Singular);
         return string.Empty;
+    }
+
+    /// <summary>
+    /// Player's current GC rank RowId from <see cref="PlayerState.GetGrandCompanyRank"/>,
+    /// or 0 when unknown / not enlisted.
+    /// </summary>
+    public byte CurrentRankId()
+    {
+        var state = PlayerState.Instance();
+        if (state == null || state->GrandCompany is < 1 or > 3) return 0;
+        return state->GetGrandCompanyRank();
+    }
+
+    /// <summary>Name of the next GC rank above the player's, or empty at the top.</summary>
+    public string NextRankName()
+    {
+        var current = CurrentRankId();
+        if (current == 0) return string.Empty;
+        var next = (uint)(current + 1);
+        if (!_data.GetExcelSheet<GrandCompanyRank>().TryGetRow(next, out _)) return string.Empty;
+        return RankName(next);
+    }
+
+    /// <summary>
+    /// GC rank name that unlocks hunting-log rank <paramref name="huntRank"/>
+    /// (1-based), or empty when that hunt rank has no GC gate.
+    ///
+    /// Sheet rule (offline dump 2026-09-20): <c>GrandCompanyRank.RequiredHuntingLogRank</c>
+    /// is the hunting-log rank you must finish to promote INTO that GC row.
+    /// Hunt-log rank H becomes available once you hold the lowest GC row whose
+    /// RequiredHuntingLogRank == H-1 (e.g. H=2 → row 5 Sergeant Third /
+    /// Legionsgefreiter 3. Klasse). Matches the published Immortal Flames log.
+    /// </summary>
+    public string RankNameUnlockingHuntLog(byte huntRank)
+    {
+        if (huntRank <= 1) return string.Empty;
+        var need = (byte)(huntRank - 1);
+        uint bestId = 0;
+        byte bestOrder = byte.MaxValue;
+        foreach (var rank in _data.GetExcelSheet<GrandCompanyRank>())
+        {
+            if (rank.RowId == 0 || rank.RequiredHuntingLogRank != need) continue;
+            if (rank.Order >= bestOrder) continue;
+            bestOrder = rank.Order;
+            bestId = rank.RowId;
+        }
+        return bestId == 0 ? string.Empty : RankName(bestId);
+    }
+
+    /// <summary>
+    /// True when the player's GC rank is at or above the gate for hunting-log
+    /// rank <paramref name="huntRank"/>.
+    /// </summary>
+    public bool HasHuntLogGate(byte huntRank)
+    {
+        if (huntRank <= 1) return true;
+        var need = (byte)(huntRank - 1);
+        uint gateId = 0;
+        byte bestOrder = byte.MaxValue;
+        foreach (var rank in _data.GetExcelSheet<GrandCompanyRank>())
+        {
+            if (rank.RowId == 0 || rank.RequiredHuntingLogRank != need) continue;
+            if (rank.Order >= bestOrder) continue;
+            bestOrder = rank.Order;
+            gateId = rank.RowId;
+        }
+        if (gateId == 0) return false;
+        return CurrentRankId() >= gateId;
     }
 
     private static string Read(Lumina.Text.ReadOnly.ReadOnlySeString text)

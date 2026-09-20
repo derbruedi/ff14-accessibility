@@ -51,6 +51,10 @@ When setting up Tolk for a mod project, ALWAYS copy BOTH DLLs to the game direct
 - Private fields: `_camelCase`
 - Logs/comments: English
 - Build & Deploy: always use `scripts/Build-Mod.ps1` and `scripts/Deploy-Mod.ps1`, never raw `dotnet build`.
+  If those scripts are missing: `dotnet build FF14Accessibility/FF14Accessibility.csproj -c Debug`
+  (copies to `devPlugins\FF14Accessibility`). **After every plugin code change, run that
+  Debug build immediately** so Dalamud AutomaticReloading picks it up — do not leave
+  the user with a stale DLL.
 - XML docs: `<summary>` on all public members. Private only if non-obvious.
 - Localization from day one: ALL ScreenReader strings through `Loc.Get()`. No exceptions.
 
@@ -100,6 +104,10 @@ A workaround without all four steps is a bug.
   `.gitignore`, damit der Name nicht öffentlich mitwandert). Vor jedem Push/Release:
   prüfen, dass kein BossMod-Pfad und kein BossMod-Binary im Commit/ZIP landet.
   User (2026-08-26/30): „nie das bossmod mit pushen das ist nur fuer mich“.
+- **AutoDuty (Fremd-Plugin) — NIE committen, NIE pushen, NIE in Releases.**
+  Nur lokal beim User. Öffentlich erlaubt sind allein die Routen-JSONs von
+  GitHub (erdelf/AutoDuty) für DungeonPaths — nicht das Plugin, keine Binaries,
+  keine private Einrichtung. Vor Push/Release gegenprüfen.
 
 # Session & Context Management
 

@@ -952,9 +952,21 @@ public sealed class NavigationService
         /// <summary>Ob fuer dieses Monster schon gemeldet wurde, dass eines in
         /// Reichweite steht - sonst wiederholt sich die Meldung im Sekundentakt.</summary>
         public bool Announced { get; set; }
+
+        /// <summary>GameObjectId of the specimen we already redirected the walk
+        /// toward, or 0. Cleared when the specimen leaves the object table so a
+        /// later sighting can retarget again.</summary>
+        public ulong RetargetedId { get; set; }
     }
 
     private HuntSearch? _huntSearch;
+
+    /// <summary>
+    /// Wired by the plugin to <see cref="AutoWalkService.RetargetToObject"/> so a
+    /// hunting specimen that appears mid-search pulls the walk off a MapRange
+    /// centre onto the live monster. Null until the plugin finishes wiring.
+    /// </summary>
+    public Action<IGameObject, string>? OnHuntSpecimenFound { get; set; }
 
     /// <summary>Wie nah man einem Teilstueck gewesen sein muss, damit der
     /// naechste Tastendruck zum naechsten weitergeht. Bewusst grosszuegig: es
@@ -992,26 +1004,34 @@ public sealed class NavigationService
 
     /// <summary>
     /// Baut den Suchlauf fuer ein Jagdziel auf: die Teilstuecke seines
-    /// Lebensraums, das naechstgelegene zuerst, dazu der Kartenmarker als
-    /// weiterer Punkt. Der Marker bleibt drin, weil er das ist, was das Spiel
-    /// selbst anzeigt - er ist kein falscher Punkt, nur ein unvollstaendiger.
+    /// Lebensraums, vom Kartenmarker aus (sonst vom Spieler), dazu der Marker
+    /// selbst wenn er noch fehlt. Sortierung am Marker statt am Spieler, damit
+    /// man nicht an einem nahen Nebenort (Bahnhof) haengen bleibt, waehrend das
+    /// Jagdtagebuch den Block-Mittelpunkt meint (gemessen Kohlenstaub 2026-09-19).
     /// </summary>
     private void BuildHuntSearch(HuntingTarget target, Vector3 playerPosition)
     {
         _huntSearch = null;
         if (!target.InCurrentZone || target.TerritoryId == 0) return;
 
+        // Marker first: that is the point the game itself labels for the habitat.
+        // Player-distance order preferred Bahnhof when the player stood there.
+        var sortFrom = target.Position ?? playerPosition;
         var parts = _areaRanges.GetParts(target.TerritoryId, target.AreaPlaceNameId,
-                                         target.AreaName, playerPosition);
+                                         target.AreaName, sortFrom);
         if (target.Position is { } marker
             && !parts.Any(p => Distance2D(p.Centre, marker) <= HuntPartReached))
         {
             parts.Add(new AreaPart(marker, target.AreaName, 0f));
-            // Nach dem Anfuegen neu sortieren, sonst haengt der Marker hinter
-            // Punkten, die viel weiter weg sind - die Reihenfolge ist die ganze
-            // Aussage dieser Liste.
-            parts.Sort((a, b) => Distance2D(playerPosition, a.Centre)
-                                 .CompareTo(Distance2D(playerPosition, b.Centre)));
+            // Named-before-unnamed for Block habitats must survive re-sort: empty
+            // SpotName ranks after named ones, then distance to the marker.
+            parts.Sort((a, b) =>
+            {
+                var an = a.SpotName.Length == 0 ? 1 : 0;
+                var bn = b.SpotName.Length == 0 ? 1 : 0;
+                if (an != bn) return an.CompareTo(bn);
+                return Distance2D(sortFrom, a.Centre).CompareTo(Distance2D(sortFrom, b.Centre));
+            });
         }
         if (parts.Count == 0) return;
 
@@ -1022,7 +1042,8 @@ public sealed class NavigationService
             Parts = parts,
         };
         _log.Info($"[Jagd] '{target.MonsterName}' in '{target.AreaName}': {parts.Count} Teilstuecke, " +
-                  $"naechstes {Distance2D(playerPosition, parts[0].Centre):F0} m.");
+                  $"naechstes '{parts[0].SpotName}' {Distance2D(playerPosition, parts[0].Centre):F0} m " +
+                  $"(Sortierung {(target.Position != null ? "Kartenmarker" : "Spieler")}).");
     }
 
     /// <summary>
@@ -1044,17 +1065,30 @@ public sealed class NavigationService
         var live = _huntingLog.FindNearestLive(target.MonsterName);
         if (live == null)
         {
-            // Wieder ausser Sicht: die naechste Ankunft soll erneut melden.
+            // Wieder ausser Sicht: die naechste Ankunft soll erneut melden und
+            // den Lauf wieder umbiegen koennen.
             search.Announced = false;
+            search.RetargetedId = 0;
             return;
         }
-        if (search.Announced) return;
 
-        search.Announced = true;
         var distance = Distance2D(player.Position, live.Position);
-        _log.Info($"[Jagd] '{target.MonsterName}' in Reichweite: {distance:F0} m.");
-        _tolk.SpeakInterrupt(AccessibilityStrings.HuntingTargetInRange(
-            target.MonsterName, FormatDistance(distance), CalculateDirection(player, live.Position)));
+        if (!search.Announced)
+        {
+            search.Announced = true;
+            _log.Info($"[Jagd] '{target.MonsterName}' in Reichweite: {distance:F0} m.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.HuntingTargetInRange(
+                target.MonsterName, FormatDistance(distance), CalculateDirection(player, live.Position)));
+        }
+
+        // Areal-Suche laeuft zu MapRange-Mittelpunkten (Bahnhof, Beschriftung),
+        // nicht zu Spawns. Sobald die Objekttabelle ein Exemplar hat, gehoert der
+        // Lauf dorthin - dasselbe, was Numpad3 beim Start schon tut
+        // (User 2026-09-19: Bahnhof anlaufen, Monster nicht da).
+        if (search.RetargetedId == live.GameObjectId) return;
+        search.RetargetedId = live.GameObjectId;
+        TargetFromBrowser(live);
+        OnHuntSpecimenFound?.Invoke(live, target.MonsterName);
     }
 
     private long _lastHuntPoll;
@@ -1248,7 +1282,8 @@ public sealed class NavigationService
         {
             var targets = _huntingLog.GetOpenTargets();
             var here = targets.Count(t => t.InCurrentZone);
-            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(targets.Count, here));
+            var rank = _huntingLog.GetClassHuntRank() ?? 0;
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryHuntingCount(rank, targets.Count, here));
             return;
         }
 
@@ -1258,10 +1293,14 @@ public sealed class NavigationService
             // Gegenprobe der einzigen Zuordnung, die hier vom Spielstand abhaengt:
             // haette die Mod die falsche Gesellschaft erkannt, liste sie stumm
             // deren Monster - so ist es beim ersten Tastendruck hoerbar.
+            // Der Jagd-Rang dazu: nach einem Gesellschafts-Aufstieg springt das
+            // Tagebuch oft auf Rang 2/3; alte Rang-1-Kills zaehlen dann nicht
+            // mehr (User 2026-09-20).
             var targets = _huntingLog.GetOpenGrandCompanyTargets();
             var here = targets.Count(t => t.InCurrentZone);
+            var rank = _huntingLog.GetGrandCompanyHuntRank() ?? 0;
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryCompanyHuntCount(
-                _huntingLog.GetGrandCompanyName(), targets.Count, here));
+                _huntingLog.GetGrandCompanyName(), rank, targets.Count, here));
             return;
         }
 

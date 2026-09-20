@@ -44,6 +44,16 @@ public sealed record AreaPart(Vector3 Centre, string SpotName, float Extent);
 /// block and its sub-places are found by the same lookup. Territory 145 holds
 /// 101 of them, 66 in planmap.lgb and 35 in planevent.lgb; bg.lgb has none.
 ///
+/// MEASURED 2026-09-19 (offline sqpack, Territory 141 / Kohlenstaub): habitat
+/// PlaceNameLocation 248 "Kohlenstaub" matches the Block on 35 MapRanges.
+/// Among them Spot 291 "Sil'dih-Ruinen" is 47 m from the community spawn
+/// (map 17/23); Spot 290 "Kohlenstaub-Bahnhof" sits near Camp and is four
+/// separate pieces. Sorting those 35 by player distance while standing at the
+/// station therefore announced "Suchpunkt 2 von 35, Kohlenstaub-Bahnhof" and
+/// never reached Sil'dih first. Fix: when the habitat is a Block, collapse
+/// duplicate Spots to one centre and walk named Spots before unnamed volumes;
+/// the caller sorts from the habitat map marker when it has one.
+///
 /// WHAT IS DELIBERATELY NOT CLAIMED: the meaning of Transform.Scale. It is
 /// plausibly the half-extent (the Sandtor label falls inside the big cylinder
 /// under that reading), but nothing measured proves it, so no size is ever
@@ -78,11 +88,16 @@ public sealed class AreaRangeService
     /// row 305 (the place in the world). Same word, different row - and the
     /// row-only comparison is why the mod used to answer "not marked on the
     /// map" for a place that is right there.
+    ///
+    /// When the habitat matches as a Block (whole district), named Spots are
+    /// collapsed to one centre each and listed before unnamed volumes - see
+    /// class summary (Kohlenstaub / Sil'dih, 2026-09-19).
     /// </summary>
     /// <param name="territoryId">Zone to read the layout of.</param>
     /// <param name="placeNameRowId">Place name row the hunting log names.</param>
     /// <param name="placeNameText">Its display text, for the fallback match.</param>
-    /// <param name="from">Position to sort by - usually the player.</param>
+    /// <param name="from">Position to sort by - habitat map marker when known,
+    /// otherwise the player.</param>
     public List<AreaPart> GetParts(uint territoryId, uint placeNameRowId, string placeNameText, Vector3 from)
     {
         var result = new List<AreaPart>();
@@ -102,13 +117,65 @@ public sealed class AreaRangeService
                          || (wanted.Length > 0
                              && string.Equals(TextOf(row), wanted, StringComparison.OrdinalIgnoreCase)));
 
+        var spotHits = new List<Piece>();
+        var blockHits = new List<Piece>();
         foreach (var piece in pieces)
         {
-            if (!Matches(piece.Block) && !Matches(piece.Spot)) continue;
-            result.Add(new AreaPart(piece.Centre, TextOf(piece.Spot), piece.Extent));
+            var spot = Matches(piece.Spot);
+            var block = Matches(piece.Block);
+            if (!spot && !block) continue;
+            if (spot) spotHits.Add(piece);
+            if (block) blockHits.Add(piece);
         }
 
-        result.Sort((a, b) => Distance2D(from, a.Centre).CompareTo(Distance2D(from, b.Centre)));
+        // Exact Spot match wins alone: "Halatali" must not expand into every
+        // Sandtor volume just because Halatali pieces sit under that Block.
+        // Block-only habitats ("Kohlenstaub") keep the full Block set.
+        var matched = spotHits.Count > 0 ? spotHits : blockHits;
+        var blockHabitat = spotHits.Count == 0 && blockHits.Count > 0;
+
+        if (blockHabitat)
+            result.AddRange(CollapseBlockSearch(matched, TextOf));
+        else
+        {
+            foreach (var piece in matched)
+                result.Add(new AreaPart(piece.Centre, TextOf(piece.Spot), piece.Extent));
+        }
+
+        result.Sort((a, b) =>
+        {
+            // Named Spots before empty Block volumes - only for Block habitats.
+            if (blockHabitat)
+            {
+                var an = a.SpotName.Length == 0 ? 1 : 0;
+                var bn = b.SpotName.Length == 0 ? 1 : 0;
+                if (an != bn) return an.CompareTo(bn);
+            }
+            return Distance2D(from, a.Centre).CompareTo(Distance2D(from, b.Centre));
+        });
+        return result;
+    }
+
+    /// <summary>
+    /// One search point per named Spot (largest Extent centre), plus every
+    /// unnamed Block volume kept separate so coverage of open ground remains.
+    /// </summary>
+    private static List<AreaPart> CollapseBlockSearch(List<Piece> blockHits, Func<uint, string> textOf)
+    {
+        var result = new List<AreaPart>();
+        var bySpot = new Dictionary<uint, Piece>();
+        foreach (var piece in blockHits)
+        {
+            if (piece.Spot == 0)
+            {
+                result.Add(new AreaPart(piece.Centre, string.Empty, piece.Extent));
+                continue;
+            }
+            if (!bySpot.TryGetValue(piece.Spot, out var known) || piece.Extent > known.Extent)
+                bySpot[piece.Spot] = piece;
+        }
+        foreach (var piece in bySpot.Values)
+            result.Add(new AreaPart(piece.Centre, textOf(piece.Spot), piece.Extent));
         return result;
     }
 

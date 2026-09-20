@@ -102,6 +102,11 @@ public sealed class HuntingLogService
     // from the sheet; static per game version.
     private Dictionary<uint, uint>? _blockStarts;
 
+    // Class index -> spoken class or company name (same map BuildBlockStarts
+    // uses to find blocks). Filled with the blocks so a ClassIndex from
+    // AgentMonsterNote can be announced without a second sheet walk.
+    private Dictionary<uint, string>? _displayNames;
+
     public HuntingLogService(IDataManager data, IObjectTable objectTable, IClientState clientState,
                              PlacesService places, IPluginLog log)
     {
@@ -110,6 +115,20 @@ public sealed class HuntingLogService
         _clientState = clientState;
         _places = places;
         _log = log;
+    }
+
+    /// <summary>
+    /// Spoken name of a hunting-log class or grand company for
+    /// <paramref name="classIndex"/> (AgentMonsterNote.ClassIndex /
+    /// ClassJob.MonsterNote), or empty when the index has no block. Same names
+    /// the sheet uses in entries ("Thaumaturg", "Mahlstrom").
+    /// </summary>
+    public string GetDisplayName(uint classIndex)
+    {
+        _blockStarts ??= BuildBlockStarts();
+        return _displayNames != null && _displayNames.TryGetValue(classIndex, out var name)
+            ? name
+            : string.Empty;
     }
 
     /// <summary>
@@ -263,6 +282,15 @@ public sealed class HuntingLogService
                 starts[index] = row.RowId;
         }
 
+        // Invert for AgentMonsterNote.ClassIndex announcements. Prefer the
+        // name that actually matched a block (prefix from MonsterNote rows).
+        _displayNames = new Dictionary<uint, string>();
+        foreach (var (name, index) in indexByName)
+        {
+            if (!starts.ContainsKey(index)) continue;
+            _displayNames.TryAdd(index, name);
+        }
+
         _log.Info($"[Jagd] Bloecke (Klassen + Gesellschaften): {starts.Count} " +
                   string.Join(", ", starts.OrderBy(s => s.Key).Select(s => $"{s.Key}->{s.Value}")));
         return starts;
@@ -307,6 +335,11 @@ public sealed class HuntingLogService
     ///   3, exactly the "3/48" of the window header.
     /// The Flags field is left alone: what it means is not established, and
     /// "entry done" follows from the counters anyway.
+    ///
+    /// Lookup prefers the slot whose <see cref="MonsterNoteRankInfo.Index"/>
+    /// matches <paramref name="classIndex"/> (same rule the 2026-08-17 probe
+    /// measured). Falling back to RankData[classIndex] only if no slot claims
+    /// that Index - so a drifted layout cannot silently read the wrong block.
     /// </summary>
     private unsafe (int Rank, MonsterNoteRankInfo Info)? GetProgress(uint classIndex)
     {
@@ -316,6 +349,16 @@ public sealed class HuntingLogService
             _log.Info("[Jagd] MonsterNoteManager.Instance() ist null - kein Fortschritt lesbar.");
             return null;
         }
+
+        var wanted = (int)classIndex;
+        for (var i = 0; i < manager->RankData.Length; i++)
+        {
+            if (manager->RankData[i].Index != wanted) continue;
+            if (i != wanted)
+                _log.Info($"[Jagd] Fortschritt Index {wanted} liegt in Slot {i} (nicht am Array-Index).");
+            return (manager->RankData[i].Rank + 1, manager->RankData[i]);
+        }
+
         if (classIndex >= (uint)manager->RankData.Length)
         {
             _log.Info($"[Jagd] Klassen-Index {classIndex} liegt ausserhalb der {manager->RankData.Length} Slots.");
@@ -323,7 +366,123 @@ public sealed class HuntingLogService
         }
 
         var info = manager->RankData[(int)classIndex];
+        _log.Info($"[Jagd] Kein Slot mit Index={wanted} - Fallback RankData[{classIndex}] " +
+                  $"(dessen Index-Feld={info.Index}).");
         return (info.Rank + 1, info);
+    }
+
+    /// <summary>
+    /// Spoken name of the hunting-log tab the agent is showing. Prefers the
+    /// MonsterNote sheet row from <c>ClassId * BaseId + Rank * 10 + 1</c>
+    /// (AgentMonsterNote.GetMonsterNoteIdForIndex formula, ClientStructs) so
+    /// grand-company tabs are named from the block ("Legion der Unsterblichen")
+    /// even when ClassIndex mapping is wrong. Falls back to
+    /// <see cref="GetDisplayName"/>.
+    /// </summary>
+    public string ResolveAgentTabName(byte classId, uint baseId, byte rank, byte classIndex)
+    {
+        if (baseId != 0)
+        {
+            var rowId = classId * baseId + (uint)(rank * 10) + 1u;
+            if (_data.GetExcelSheet<MonsterNote>().TryGetRow(rowId, out var row))
+            {
+                var full = row.Name.ExtractText().Trim();
+                var cut = full.LastIndexOf(' ');
+                if (cut > 0) return full[..cut];
+                if (full.Length > 0) return full;
+            }
+            else
+            {
+                _log.Info($"[Jagd] Agent-Tab: MonsterNote-Zeile {rowId} fehlt " +
+                          $"(ClassId={classId} BaseId={baseId} Rank={rank}).");
+            }
+        }
+
+        return GetDisplayName(classIndex);
+    }
+
+    /// <summary>
+    /// One-shot audit of PlayerState membership, AgentMonsterNote fields, and
+    /// every RankData slot. Spoken summary for the blind user; full detail in
+    /// the plugin log. Needed when category and bestiary disagree on which
+    /// grand company log is active (User 2026-09-20).
+    /// </summary>
+    public unsafe string ProbeHuntingLog()
+    {
+        var lines = new List<string>();
+
+        var state = PlayerState.Instance();
+        if (state == null)
+        {
+            lines.Add("PlayerState fehlt.");
+        }
+        else
+        {
+            var company = (uint)state->GrandCompany;
+            var companyName = GetGrandCompanyName();
+            var sheetIndex = GetGrandCompanyIndex();
+            lines.Add($"Mitgliedschaft {company} '{companyName}', Sheet-Index {(sheetIndex?.ToString() ?? "keiner")}.");
+            _log.Info($"[JagdSonde] PlayerState.GrandCompany={company} Name='{companyName}' " +
+                      $"MonsterNoteIndex={sheetIndex?.ToString() ?? "-"}");
+        }
+
+        var agent = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentMonsterNote.Instance();
+        if (agent == null)
+        {
+            lines.Add("Agent MonsterNote fehlt (Bestiarium zu?).");
+            _log.Info("[JagdSonde] AgentMonsterNote.Instance() null.");
+        }
+        else
+        {
+            var tabName = ResolveAgentTabName(agent->ClassId, agent->BaseId, agent->Rank, agent->ClassIndex);
+            lines.Add($"Agent: ClassId {agent->ClassId}, ClassIndex {agent->ClassIndex}, " +
+                      $"BaseId {agent->BaseId}, Rank {agent->Rank + 1}, " +
+                      $"Filter {agent->Filter}, Locked {agent->IsLocked}, Tab '{tabName}'.");
+            _log.Info($"[JagdSonde] Agent ClassId={agent->ClassId} ClassIndex={agent->ClassIndex} " +
+                      $"BaseId={agent->BaseId} MonsterNoteField={agent->MonsterNote} " +
+                      $"Rank={agent->Rank} Filter={agent->Filter} IsLocked={agent->IsLocked} " +
+                      $"TabName='{tabName}'");
+        }
+
+        var manager = MonsterNoteManager.Instance();
+        if (manager == null)
+        {
+            lines.Add("MonsterNoteManager fehlt.");
+            _log.Info("[JagdSonde] MonsterNoteManager.Instance() null.");
+        }
+        else
+        {
+            for (var i = 0; i < manager->RankData.Length; i++)
+            {
+                var slot = manager->RankData[i];
+                var kills = 0;
+                for (var e = 0; e < 10; e++)
+                for (var t = 0; t < 4; t++)
+                    kills += slot.RankData[e].Counts[t];
+
+                var name = GetDisplayName((uint)slot.Index);
+                _log.Info($"[JagdSonde] Slot {i}: Index={slot.Index} Rank={slot.Rank} " +
+                          $"Flags=0x{slot.Flags:X} KillsSumme={kills} Name='{name}'");
+
+                // Only speak the three GC slots and any slot whose Index is a GC index.
+                if (i is 8 or 9 or 10 || slot.Index is 8 or 9 or 10)
+                {
+                    lines.Add($"Slot {i}, Index {slot.Index} '{name}', " +
+                              $"Jagd-Rang {slot.Rank + 1}, Kill-Summe {kills}.");
+                }
+            }
+        }
+
+        var open = GetOpenGrandCompanyTargets();
+        lines.Add($"Kategorie Gesellschaft: {open.Count} offene Ziele, " +
+                  $"Jagd-Rang {(GetGrandCompanyHuntRank()?.ToString() ?? "keiner")}.");
+        foreach (var t in open.Take(5))
+            _log.Info($"[JagdSonde] Offen: '{t.MonsterName}' {t.Killed}/{t.Required} " +
+                      $"in {t.ZoneName}/{t.AreaName}");
+
+        var spoken = string.Join(" ", lines);
+        _log.Info($"[JagdSonde] Ansage: {spoken}");
+        return spoken;
     }
 
     /// <summary>
@@ -356,6 +515,28 @@ public sealed class HuntingLogService
             ? GetOpenTargetsFor(companyIndex, RanksPerGrandCompany, "Gesellschaft")
             : new List<HuntingTarget>();
 
+    /// <summary>
+    /// The hunting-log rank the player is currently working on for their grand
+    /// company (1-based, as the window shows it), or null when membership or
+    /// progress is missing. Spoken in the category header so a jump to the next
+    /// rank after a GC promotion is audible - Rank-1 kills stop counting then
+    /// (User 2026-09-20).
+    /// </summary>
+    public int? GetGrandCompanyHuntRank()
+        => GetGrandCompanyIndex() is { } companyIndex
+           && GetProgress(companyIndex) is { } progress
+            ? progress.Rank
+            : null;
+
+    /// <summary>
+    /// The hunting-log rank for the player's current class (1-based), or null
+    /// when this job has no log or progress is missing.
+    /// </summary>
+    public int? GetClassHuntRank()
+        => GetCurrentClassIndex() is { } classIndex
+           && GetProgress(classIndex) is { } progress
+            ? progress.Rank
+            : null;
     /// <summary>
     /// Shared core of both lists above: the open entries of one block's current
     /// rank. Kept in one place so a class and a company entry can never be read

@@ -7,6 +7,7 @@ using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using DetailKind = FFXIVClientStructs.FFXIV.Client.Enums.DetailKind;
@@ -36,6 +37,7 @@ public sealed class UIReaderService : IDisposable
     private readonly InventoryService _inventory;
     private readonly GearInfoService _gearInfo;
     private readonly BestiaryService _bestiary;
+    private readonly HuntingLogService _huntingLog;
     private readonly MessageHistoryService _history;
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
@@ -182,6 +184,11 @@ public sealed class UIReaderService : IDisposable
         // Skills per Fokus-Tooltip (kein ReadAllTexts).
         "BuddySkill",
         "BuddyAction",
+        // Rang der staatlichen Gesellschaft (Profil → Gesellschaftsknopf).
+        // Generischer Pfad sprach nur den Titel; Ränge liegen in Comp(1007)
+        // und wurden nicht mitgelesen, Fokus sprang auf „Schließen“
+        // (Dump/Log 2026-09-20 GrandCompanyRank).
+        "GrandCompanyRank",
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -213,6 +220,11 @@ public sealed class UIReaderService : IDisposable
         "_CharaMakeRaceGender",
         // Volksstamm: eigene Handler, gleiche Struktur wie RaceGender.
         "_CharaMakeTribe",
+        // Namenstag: eigener Handler. Generischer FindFocusedText klebt auf dem
+        // Zurueck-Button (Key=40004 = Node 40, Kind 4) und ueberschreibt die
+        // Tag-Ansage; Scan sprach danach zwar "N. Sonne im … Lichtmond", aber
+        // davor jedes Mal "Zurueck" (Dump+Log 2026-09-19 15:56/_CharaMakeBirthDay).
+        "_CharaMakeBirthDay",
         // Beschreibungs-Pane: der generische Scanner sprach den Text mit
         // SpeakInterrupt und schnitt damit die Volk-Ansage ab (Log 2026-07-17
         // 16:56); OnCharaMakeHelpUpdate liest ihn dediziert NACH dem Namen.
@@ -273,6 +285,9 @@ public sealed class UIReaderService : IDisposable
         // und STUFE-Zeilen ohne Skillnamen (Log 2026-09-10).
         "BuddySkill",
         "BuddyAction",
+        // Rangfenster: eigener Handler (OnGrandCompanyRankUpdate). Generischer
+        // Scanner + Fokus auf „Schließen“ deckten Inhalt zu (Dump 2026-09-20).
+        "GrandCompanyRank",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -463,7 +478,7 @@ public sealed class UIReaderService : IDisposable
             $"focused=[{string.Join(", ", focused)}]");
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, HuntingLogService huntingLog, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots)
     {
         _lootRolls      = lootRolls;
         _itemSlots      = itemSlots;
@@ -477,6 +492,7 @@ public sealed class UIReaderService : IDisposable
         _inventory      = inventory;
         _gearInfo       = gearInfo;
         _bestiary       = bestiary;
+        _huntingLog     = huntingLog;
         _history        = history;
         _config         = config;
         _data           = data;
@@ -594,6 +610,10 @@ public sealed class UIReaderService : IDisposable
         // switch (user 2026-07-25: tabs were silent).
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
 
+        // Rang der staatlichen Gesellschaft (aus Charakter-Profil): Gesellschaft
+        // + aktueller Rang. Radios sind nur Icons (Dump 2026-09-20).
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "GrandCompanyRank", OnGrandCompanyRankUpdate);
+
         // Inventory (Standard-Inventar): announce the active bag tab (Tasche
         // 1..4) on switch. The tabs are RadioButtons found via their checked
         // state (dump 2026-07-31), so the announcement is input-agnostic.
@@ -609,6 +629,12 @@ public sealed class UIReaderService : IDisposable
         // disappears with the tab, and only its repaints tell a purchase apart
         // (rank up, points down) - the parent addon reports the tab switch only.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "BuddySkill", OnBuddySkillUpdate);
+
+        // Charakter (Taste C): Registerkarten Attribute/Profil/Klassen/Ansehen.
+        // Fokus auf dem Radio sagte bisher den Namen, ohne TabIndex zu wechseln —
+        // der Inhalt blieb bei den Ausrüstungssets (User 2026-09-20). SetTab
+        // aktiviert den Reiter; Ansage erst, wenn TabIndex wirklich wechselt.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Character", OnCharacterUpdate);
 
         // MountNoteBook (Reittier-Verzeichnis): announce the active view tab
         // (Favoriten/Alle/Suche) and page when they change. Source is the
@@ -679,6 +705,11 @@ public sealed class UIReaderService : IDisposable
         // Charaktererstellung: Volksstamm - gleiche Struktur wie RaceGender (F5-Dump 2026-07-10)
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
         _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
+
+        // Charaktererstellung: Namenstag (Dump+Log 2026-09-19 — siehe SpecialUpdateAddons)
+        _addonLifecycle.RegisterListener(AddonEvent.PostSetup,        "_CharaMakeBirthDay", OnBirthDayOpen);
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate,       "_CharaMakeBirthDay", OnBirthDayUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeBirthDay", OnBirthDayReceive);
 
         // Charaktererstellung: Beschreibungstext (Volk/Volksstamm) - Dumps
         // 2026-07-17 16:31: der Text steht in _CharaMakeHelp, Text-Node id=4,
@@ -919,6 +950,12 @@ public sealed class UIReaderService : IDisposable
         {
             _lastTribe = string.Empty;
             _lastTribeHover = string.Empty;
+        }
+
+        if (name == "_CharaMakeBirthDay")
+        {
+            _lastBirthDaySpoken = string.Empty;
+            _birthDayHelpSpoken = false;
         }
 
         if (name == "_TitleMenu")
@@ -2297,6 +2334,186 @@ public sealed class UIReaderService : IDisposable
         else          _tolk.Speak(AccessibilityStrings.CategoryLabel(category));
     }
 
+    // -- GrandCompanyRank: Rangfenster aus dem Charakter-Profil -------
+
+    private bool _gcRankSummarySpoken;
+    private int  _lastGcRankTab = -1;
+
+    /// <summary>
+    /// Speaks the Grand Company rank chart opened from Character Profile.
+    /// Generic ReadAllTexts only saw top-level labels (title / company /
+    /// column headers); rank names live inside Comp(1007) rows, and focus
+    /// jumped to "Schließen" and cut the rest (Dump/Log 2026-09-20).
+    /// Current rank = row whose image child id=2 is visible (dump marker).
+    /// </summary>
+    private unsafe void OnGrandCompanyRankUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _gcRankSummarySpoken = false;
+            _lastGcRankTab = -1;
+            return;
+        }
+
+        var company = TolkService.Sanitize(ReadTopText(addon, 3)).Trim();
+        var rank    = ReadMarkedGrandCompanyRank(addon);
+        var tab     = ReadCheckedGcRankTabIndex(addon);
+        if (string.IsNullOrWhiteSpace(company)) return; // not painted yet
+
+        if (!_gcRankSummarySpoken)
+        {
+            var title = ReadWindowTitle(addon);
+            if (string.IsNullOrWhiteSpace(title))
+                title = AccessibilityStrings.GrandCompanyRankTitleFallback;
+
+            var spoken = BuildGrandCompanyRankSpoken(
+                AccessibilityStrings.GrandCompanyRankSummary(title, company, rank),
+                hasOwnRank: !string.IsNullOrWhiteSpace(rank));
+            _gcRankSummarySpoken = true;
+            _lastGcRankTab = tab;
+            _log.Info($"[GCRank] Oeffnung: '{spoken}'");
+            _tolk.SpeakInterrupt(spoken);
+            _lastFocusedNodePtr = 0;
+            _lastFocusedNodeText = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
+            return;
+        }
+
+        if (tab < 0 || tab == _lastGcRankTab) return;
+        _lastGcRankTab = tab;
+        var tabSpoken = BuildGrandCompanyRankSpoken(
+            AccessibilityStrings.GrandCompanyRankTab(company, rank),
+            hasOwnRank: !string.IsNullOrWhiteSpace(rank));
+        _log.Info($"[GCRank] Reiter {tab + 1}: '{tabSpoken}'");
+        _tolk.SpeakInterrupt(tabSpoken);
+    }
+
+    /// <summary>
+    /// Appends next-rank and hunting-log gate lines from
+    /// <see cref="GrandCompanyRank"/> / PlayerState when the painted marker
+    /// shows the player's own rank (other companies have no marker).
+    /// </summary>
+    private string BuildGrandCompanyRankSpoken(string core, bool hasOwnRank)
+    {
+        if (!hasOwnRank) return core;
+
+        var parts = new List<string> { core.TrimEnd() };
+        var next = _gcRanks.NextRankName();
+        if (!string.IsNullOrWhiteSpace(next))
+            parts.Add(AccessibilityStrings.GrandCompanyNextRank(next));
+
+        const byte huntRank = 2;
+        if (_gcRanks.HasHuntLogGate(huntRank))
+        {
+            parts.Add(AccessibilityStrings.GrandCompanyHuntRankUnlocked(huntRank));
+        }
+        else
+        {
+            var gate = _gcRanks.RankNameUnlockingHuntLog(huntRank);
+            if (!string.IsNullOrWhiteSpace(gate))
+                parts.Add(AccessibilityStrings.GrandCompanyHuntRankNeeds(huntRank, gate));
+        }
+
+        _gcRanks.LogSource();
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Rank name whose row shows the current-rank marker (image child id=2
+    /// visible). Empty when viewing another company with no marker painted.
+    /// </summary>
+    private static unsafe string ReadMarkedGrandCompanyRank(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var node = addon->UldManager.NodeList[i];
+            if (node == null || (int)node->Type < 1000 || !IsEffectivelyVisible(node)) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (comp == null || comp->GetComponentType() != ComponentType.Base) continue;
+            if (!IsVisibleFlag(FindChildNode(comp, 2))) continue;
+            var name = ReadVisibleChildText(comp, 4);
+            if (!string.IsNullOrWhiteSpace(name))
+                return TolkService.Sanitize(name).Trim();
+        }
+        return string.Empty;
+    }
+
+    /// <summary>0-based index of the checked GC radio (left→right), or -1.</summary>
+    private static unsafe int ReadCheckedGcRankTabIndex(AtkUnitBase* addon)
+    {
+        var radios = CollectGcRankTabRadios(addon);
+        for (var i = 0; i < radios.Count; i++)
+        {
+            if (((AtkComponentButton*)radios[i].Comp)->IsChecked) return i;
+        }
+        return -1;
+    }
+
+    private static unsafe List<(nint Node, nint Comp, float X)> CollectGcRankTabRadios(AtkUnitBase* addon)
+    {
+        var radios = new List<(nint, nint, float)>();
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || (int)n->Type < 1000 || !IsEffectivelyVisible(n)) continue;
+            var c = ((AtkComponentNode*)n)->Component;
+            if (c == null || c->GetComponentType() != ComponentType.RadioButton) continue;
+            // Icon-only tabs (dump: no readable label on id=2/5).
+            if (!string.IsNullOrWhiteSpace(ReadComponentTextById(c, 2))) continue;
+            radios.Add(((nint)n, (nint)c, n->ScreenX));
+        }
+        radios.Sort((a, b) => a.Item3.CompareTo(b.Item3));
+        return radios;
+    }
+
+    /// <summary>
+    /// Label for the icon-only Grand Company radios in GrandCompanyRank.
+    /// Left→right maps to GrandCompany sheet rows 1..3 (same order as membership).
+    /// </summary>
+    private unsafe string ReadGcRankWindowTabFocus(AtkResNode* node)
+    {
+        if (node == null || FindAddonNameForNode(node) != "GrandCompanyRank") return string.Empty;
+        var addon = FindAddonForNode(node);
+        if (addon == null) return string.Empty;
+
+        AtkResNode*       button = null;
+        AtkComponentBase* comp   = null;
+        for (var cur = node; cur != null && button == null; cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var c = ((AtkComponentNode*)cur)->Component;
+            if (c == null || c->GetComponentType() != ComponentType.RadioButton) continue;
+            if (!string.IsNullOrWhiteSpace(ReadComponentTextById(c, 2))) return string.Empty;
+            button = cur;
+            comp   = c;
+        }
+        if (button == null || comp == null) return string.Empty;
+
+        var radios = CollectGcRankTabRadios(addon);
+        var index  = radios.FindIndex(r => r.Node == (nint)button);
+        if (index < 0) return string.Empty;
+
+        var name = LookupGrandCompanyName((uint)(index + 1));
+        if (string.IsNullOrWhiteSpace(name))
+            name = AccessibilityStrings.GrandCompanyTabFallback(index + 1, radios.Count);
+
+        if (((AtkComponentButton*)comp)->IsChecked)
+            name += AccessibilityStrings.SelectedSuffix;
+        return name;
+    }
+
+    /// <summary>GrandCompany sheet Name with grammar placeholders stripped.</summary>
+    private string LookupGrandCompanyName(uint rowId)
+    {
+        if (!_data.GetExcelSheet<Lumina.Excel.Sheets.GrandCompany>().TryGetRow(rowId, out var row))
+            return string.Empty;
+        var raw = row.Name.ExtractText();
+        if (raw.Contains('['))
+            raw = raw.Replace("[a]", string.Empty).Replace("[p]", string.Empty).Replace("[t]", string.Empty);
+        return TolkService.Sanitize(raw).Trim();
+    }
+
 #if DEBUG
     // Last probe line, so the state is logged on change instead of every frame.
     private string _lastGcProbe = string.Empty;
@@ -2770,6 +2987,98 @@ public sealed class UIReaderService : IDisposable
         _tolk.Speak(line);
     }
 
+    // -- Character (Charakter-Fenster, Taste C) -----------------------
+
+    private int _lastCharacterTabIndex = -1;
+
+    /// <summary>
+    /// Character window tabs (Attributes / Profile / Classes / Reputation).
+    /// Keyboard focus on a tab radio used to speak the label without changing
+    /// <see cref="AddonCharacter.TabIndex"/>, so the gearset panel kept reading
+    /// as if nothing switched (User 2026-09-20). Activating via SetTab syncs
+    /// content; announcement follows the real TabIndex change.
+    /// </summary>
+    private unsafe void OnCharacterUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastCharacterTabIndex = -1;
+            return;
+        }
+
+        var character = (AddonCharacter*)addon;
+        var focusedTab = FindFocusedCharacterTabIndex(character);
+        if (focusedTab >= 0 && focusedTab != character->TabIndex)
+        {
+            _log.Info($"[Character] SetTab {focusedTab} (Fokus auf Reiter, TabIndex war {character->TabIndex})");
+            character->SetTab(focusedTab);
+        }
+
+        var tabIndex = character->TabIndex;
+        if (tabIndex == _lastCharacterTabIndex) return;
+        if (tabIndex < 0 || tabIndex >= character->TabCount) return;
+
+        _lastCharacterTabIndex = tabIndex;
+        var label = ReadCharacterTabLabel(character, tabIndex);
+        if (string.IsNullOrWhiteSpace(label))
+            label = AccessibilityStrings.CharacterTabFallback(tabIndex);
+
+        var spoken = AccessibilityStrings.CharacterTabHeader(label, tabIndex + 1, character->TabCount);
+        _log.Info($"[Character] Registerkarte: '{spoken}'");
+        _tolk.SpeakInterrupt(spoken);
+
+        // New panel: allow the next focus read even if the node pointer matches.
+        _lastFocusedNodePtr = 0;
+        _lastFocusedNodeText = string.Empty;
+        _lastFocusedNodeStable = string.Empty;
+    }
+
+    /// <summary>Which Character tab radio contains the stage focus, or -1.</summary>
+    private static unsafe int FindFocusedCharacterTabIndex(AddonCharacter* character)
+    {
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return -1;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return -1;
+
+        var tabs = character->Tabs;
+        for (var i = 0; i < tabs.Length; i++)
+        {
+            var radio = tabs[i].Value;
+            if (radio == null) continue;
+            // ClientStructs: OwnerNode ancestry (ilspycmd AtkComponentBase).
+            if (((AtkComponentBase*)radio)->IsOwnerNodeAncestorOf(focus)) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>True when global focus sits on a Character window tab radio.</summary>
+    private unsafe bool IsCharacterTabRadioFocus(AtkResNode* node)
+    {
+        if (node == null) return false;
+        if (FindAddonNameForNode(node) != "Character") return false;
+        var ptr = _gameGui.GetAddonByName("Character");
+        if (ptr.IsNull) return false;
+        return FindFocusedCharacterTabIndex((AddonCharacter*)(nint)ptr) >= 0;
+    }
+
+    private static unsafe string ReadCharacterTabLabel(AddonCharacter* character, int tabIndex)
+    {
+        var tabs = character->Tabs;
+        if (tabIndex < 0 || tabIndex >= tabs.Length) return string.Empty;
+        var rb = tabs[tabIndex].Value;
+        if (rb == null) return string.Empty;
+
+        var textNode = rb->AtkComponentButton.ButtonTextNode;
+        if (textNode != null)
+        {
+            var label = TolkService.Sanitize(AtkText.Read(textNode)).Trim();
+            if (!string.IsNullOrWhiteSpace(label)) return label;
+        }
+        return TolkService.Sanitize(ReadComponentTextById((AtkComponentBase*)rb, 2)).Trim();
+    }
+
     // -- MountNoteBook: Ansichts-Reiter + Seite -----------------------
 
     // Last announced view/page, so a switch speaks once. -1 = nothing yet.
@@ -3117,6 +3426,18 @@ public sealed class UIReaderService : IDisposable
             return;
         }
 
+        // Charakter-Registerkarten: Fokus sagte bisher nur den Radio-Text, ohne
+        // TabIndex zu wechseln (User 2026-09-20: Inhalt blieb bei Ausrüstungssets).
+        // OnCharacterUpdate ruft SetTab und sagt die Karte an — hier stumm.
+        if (IsCharacterTabRadioFocus(node))
+        {
+            _lastFocusedNodePtr  = (nint)node;
+            _lastFocusedNodeText   = string.Empty;
+            _lastFocusedNodeStable = string.Empty;
+            _lastFocusedItemName = string.Empty;
+            return;
+        }
+
         // Item slots (inventory grid, hand-over, quest reward) show only an
         // icon - no name. Their raw text is empty or JUST the stack quantity
         // ("10"), so the icon->name resolution must take PRIORITY over the text
@@ -3358,6 +3679,11 @@ public sealed class UIReaderService : IDisposable
             if (string.IsNullOrEmpty(text))
                 text = ReadGcRankTierButton(node);
 
+            // GrandCompanyRank: the three GC radios are icon-only (dump
+            // 2026-09-20). Same fallback slot as the seal-shop tier buttons.
+            if (string.IsNullOrEmpty(text))
+                text = ReadGcRankWindowTabFocus(node);
+
             if (string.IsNullOrEmpty(text) && TryReadIconRowPosition(node, out var iconRow))
                 text = iconRow;
         }
@@ -3534,6 +3860,21 @@ public sealed class UIReaderService : IDisposable
             // faltet er Anzahl, aktuellen Wert und Position in DIESELBE Ansage, statt
             // eine zweite hinterherzuschicken, die die erste abschneiden wuerde.
             text = _charaMake.DescribeFocus(node, text);
+            // Namenstag: der globale Fokus landet auf dem Radio mit nacktem "01".
+            // Die lesbare Zeile ist Text id=37; ohne Ersetzung hoert man nur die Zahl
+            // (User 2026-09-19: beim Oeffnen nur "01"). Ok/Zurueck bleiben unveraendert.
+            var birthDayRaw = text;
+            text = EnrichBirthDayFocusText(node, text);
+            // Open-Handler hat Hilfe+Datum. SpeakInterrupt hier wuerde die
+            // Kalender-Erklaerung abschneiden (User 2026-09-19: nur "01").
+            if (birthDayRaw != text)
+            {
+                if (Environment.TickCount64 - _birthDayOpenedAt < 800)
+                    return;
+                if (text == _lastBirthDaySpoken)
+                    return;
+                _lastBirthDaySpoken = text;
+            }
             // Was die Ware kostet, direkt hinter ihrem Namen - vor der Gear-Info,
             // weil in einem Tauschfenster der Preis die Entscheidung traegt und
             // die Werte nur die Zugabe sind.
@@ -8902,6 +9243,155 @@ public sealed class UIReaderService : IDisposable
         return string.Empty;
     }
 
+    /// <summary>
+    /// Last spoken Namenstag line — shared by hover, focus rewrite and summary
+    /// updates so day navigation does not double-speak the same date.
+    /// </summary>
+    private string _lastBirthDaySpoken = string.Empty;
+
+    /// <summary>Calendar help from _CharaMakeHelp — spoken once per open.</summary>
+    private bool _birthDayHelpSpoken;
+
+    /// <summary>Tick when BirthDay opened — focus must not cut the open help.</summary>
+    private long _birthDayOpenedAt;
+
+    /// <summary>
+    /// On open: calendar help (CharaMakeHelp id=4) once, then the current date
+    /// line — never the bare radio "01" (User 2026-09-19).
+    /// </summary>
+    private unsafe void OnBirthDayOpen(AddonEvent type, AddonArgs args)
+    {
+        _lastBirthDaySpoken = string.Empty;
+        _birthDayHelpSpoken = false;
+        _birthDayOpenedAt = Environment.TickCount64;
+
+        var help = ReadCharaMakeHelpText();
+        if (!string.IsNullOrWhiteSpace(help))
+        {
+            _tolk.SpeakInterrupt(help);
+            _birthDayHelpSpoken = true;
+            // Help-Handler puffert denselben Text fuer Volk/Stamm — sonst kaeme er
+            // gleich nochmal ueber FlushPendingRaceDescription.
+            _pendingRaceDescription = string.Empty;
+            _lastCharaMakeHelpText = help;
+            _log.Info($"[Accessibility] BirthDay geoeffnet, Hilfe ({help.Length} Zeichen).");
+        }
+
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        var summary = ReadBirthDaySummary(addon);
+        if (string.IsNullOrWhiteSpace(summary)) return;
+        _lastBirthDaySpoken = summary;
+        // Queue behind help so the calendar explanation is not cut off.
+        _tolk.Speak(summary);
+        _log.Info($"[Accessibility] BirthDay Start: '{summary}'");
+    }
+
+    /// <summary>
+    /// MouseOver / click on _CharaMakeBirthDay. Day radios only carry "01".."32";
+    /// the human date is top-level Text id=37 ("1. Sonne im 1. Lichtmond", Dump
+    /// 2026-09-19). Ok / Zurueck keep their own labels.
+    /// </summary>
+    private unsafe void OnBirthDayReceive(AddonEvent type, AddonArgs args)
+    {
+        if (args is not AddonReceiveEventArgs recv) return;
+        var et = (int)recv.AtkEventType;
+        if (et != 6 && et != 25) return; // MouseOver / ButtonClick
+
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null) return;
+        if (recv.AtkEvent == 0) return;
+        var evt = (AtkEvent*)recv.AtkEvent;
+        if (!IsReadable(evt)) return;
+
+        var match = FindComponentForEvent(addon, (nint)evt->Node, (nint)evt->Target);
+        if (match == 0) return;
+
+        var label = ReadFirstTextInComponent((AtkResNode*)match).Trim();
+        if (string.IsNullOrWhiteSpace(label)) return;
+
+        // Day grid: digits only — speak the full summary instead of "01".
+        var spoken = label;
+        if (IsBirthDayNumber(label))
+        {
+            var summary = ReadBirthDaySummary(addon);
+            if (!string.IsNullOrWhiteSpace(summary))
+                spoken = summary;
+        }
+
+        if (spoken == _lastBirthDaySpoken) return;
+        _lastBirthDaySpoken = spoken;
+        _tolk.SpeakInterrupt(spoken);
+        _log.Info($"[Accessibility] BirthDay Fokus: '{spoken}' (Roh='{label}')");
+    }
+
+    /// <summary>
+    /// When the month dropdown changes the summary without a new day hover,
+    /// id=37 updates alone — speak that once.
+    /// </summary>
+    private unsafe void OnBirthDayUpdate(AddonEvent type, AddonArgs args)
+    {
+        var addon = (AtkUnitBase*)(nint)args.Addon;
+        if (addon == null || !addon->IsVisible) return;
+
+        var summary = ReadBirthDaySummary(addon);
+        if (string.IsNullOrWhiteSpace(summary) || summary == _lastBirthDaySpoken) return;
+        _lastBirthDaySpoken = summary;
+        _tolk.SpeakInterrupt(summary);
+        _log.Info($"[Accessibility] BirthDay Zusammenfassung: '{summary}'");
+    }
+
+    /// <summary>
+    /// Global focus reader lands on day radios with bare "01". Replace with the
+    /// summary so opening the window does not speak only the digit.
+    /// </summary>
+    private unsafe string EnrichBirthDayFocusText(AtkResNode* node, string text)
+    {
+        if (string.IsNullOrEmpty(text) || !IsBirthDayNumber(text)) return text;
+        if (FindAddonNameForNode(node) != "_CharaMakeBirthDay") return text;
+
+        var ptr = _gameGui.GetAddonByName("_CharaMakeBirthDay");
+        if (ptr.IsNull) return text;
+        var summary = ReadBirthDaySummary((AtkUnitBase*)(nint)ptr);
+        if (string.IsNullOrWhiteSpace(summary)) return text;
+        // Do not touch _lastBirthDaySpoken — open/receive/update own that flag so
+        // the focus path can skip duplicates without silencing first navigation.
+        return summary;
+    }
+
+    /// <summary>Top-level Text id=37 — full Namenstag line from the dump.</summary>
+    private unsafe string ReadBirthDaySummary(AtkUnitBase* addon)
+    {
+        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
+        {
+            var n = addon->UldManager.NodeList[i];
+            if (n == null || n->Type != NodeType.Text || n->NodeId != 37) continue;
+            if (!n->IsVisible()) continue;
+            return AtkText.ReadClean((AtkTextNode*)n).Trim();
+        }
+        return string.Empty;
+    }
+
+    /// <summary>Calendar explanation in _CharaMakeHelp id=4 while Namenstag is open.</summary>
+    private unsafe string ReadCharaMakeHelpText()
+    {
+        var ptr = _gameGui.GetAddonByName("_CharaMakeHelp");
+        if (ptr.IsNull) return string.Empty;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return string.Empty;
+        var node = addon->GetNodeById(4);
+        if (node == null || node->Type != NodeType.Text || !node->IsVisible()) return string.Empty;
+        return AtkText.ReadClean((AtkTextNode*)node).Trim();
+    }
+
+    private static bool IsBirthDayNumber(string label)
+    {
+        if (label.Length is < 1 or > 2) return false;
+        foreach (var c in label)
+            if (c is < '0' or > '9') return false;
+        return true;
+    }
+
     private string _lastCharaMakeHelpText = string.Empty;
 
     private void OnCharaMakeHelpOpen(AddonEvent type, AddonArgs args)
@@ -8952,6 +9442,31 @@ public sealed class UIReaderService : IDisposable
         }
         _lastCharaMakeHelpText = text;
         if (string.IsNullOrWhiteSpace(text)) { ProbeHelpState("Text leer"); return; }
+
+        // Namenstag offen: Hilfe gehoert hierher, nicht in den Volk/Stamm-Puffer.
+        // PostSetup kann zu frueh greifen (Hilfe noch leer) — dann kommt der Text
+        // erst hier (User 2026-09-19: Oeffnen sagt nur "01").
+        if (IsAddonVisible("_CharaMakeBirthDay") && !_birthDayHelpSpoken)
+        {
+            _tolk.SpeakInterrupt(text);
+            _birthDayHelpSpoken = true;
+            _pendingRaceDescription = string.Empty;
+            ProbeHelpState($"BirthDay-Hilfe ({text.Length} Zeichen)");
+            _log.Info($"[Accessibility] BirthDay Hilfe (nachgereicht, {text.Length} Zeichen).");
+
+            var birthPtr = _gameGui.GetAddonByName("_CharaMakeBirthDay");
+            if (!birthPtr.IsNull)
+            {
+                var summary = ReadBirthDaySummary((AtkUnitBase*)(nint)birthPtr);
+                if (!string.IsNullOrWhiteSpace(summary) && summary != _lastBirthDaySpoken)
+                {
+                    _lastBirthDaySpoken = summary;
+                    _tolk.Speak(summary);
+                    _log.Info($"[Accessibility] BirthDay Start (nachgereicht): '{summary}'");
+                }
+            }
+            return;
+        }
 
         // NOT spoken here: _CharaMakeHelp rewrites its text a few milliseconds
         // BEFORE the RaceGender handler announces "<race>, <gender>", and that
@@ -11413,6 +11928,11 @@ public sealed class UIReaderService : IDisposable
     private string _lastBestiaryRow = string.Empty;
     private nint   _lastBestiaryRendererPtr;
     private string? _selectedBestiaryMonster;
+    // Last announced AgentMonsterNote tab (ClassId / ClassIndex / Rank / BaseId).
+    private byte _lastBestiaryClassId;
+    private byte _lastBestiaryClassIndex = 255;
+    private byte _lastBestiaryRank = 255;
+    private uint _lastBestiaryBaseId = uint.MaxValue;
 
     /// <summary>
     /// The hunting log monster whose row is currently focused in the open
@@ -11428,7 +11948,18 @@ public sealed class UIReaderService : IDisposable
     private unsafe void OnMonsterNoteUpdate(AddonEvent type, AddonArgs args)
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null || !addon->IsVisible) return;
+        if (addon == null || !addon->IsVisible)
+        {
+            _lastBestiaryClassIndex = 255;
+            _lastBestiaryRank = 255;
+            _lastBestiaryBaseId = uint.MaxValue;
+            return;
+        }
+
+        // Class / company tabs first. Naming uses ClassId*BaseId (sheet block),
+        // not only ClassIndex — GC tabs are ClassId 1/2/3 with BaseId 1000000
+        // while ClassIndex stays 8/9/10 (AgentMonsterNote.GetMonsterNoteIdForIndex).
+        AnnounceBestiaryClassTabIfChanged();
 
         var tree = FindTreeList(addon);
         if (tree == null) return;
@@ -11458,7 +11989,8 @@ public sealed class UIReaderService : IDisposable
             // 2026-07-19). Rows OUTSIDE the tree list are the rank picker -
             // silencing those would make rank selection unusable.
             if (index >= 0 && total > 0) return;
-            _tolk.SpeakInterrupt(TryFormatBestiaryRank(row, out var rankRow) ? rankRow : row);
+            var className = ReadBestiaryClassName();
+            _tolk.SpeakInterrupt(TryFormatBestiaryRank(row, className, out var rankRow) ? rankRow : row);
             return;
         }
 
@@ -11478,6 +12010,53 @@ public sealed class UIReaderService : IDisposable
             _log.Info($"[Bestiary] Kein Lebensraum für '{monster}' (kein Sheet-Treffer).");
         }
         _tolk.SpeakInterrupt(announce);
+    }
+
+    /// <summary>
+    /// Speaks the hunting-log class or company when the agent tab changes.
+    /// Rank is 0-based in the agent; spoken as 1-based like the window.
+    /// </summary>
+    private unsafe void AnnounceBestiaryClassTabIfChanged()
+    {
+        var agent = AgentMonsterNote.Instance();
+        if (agent == null) return;
+
+        if (agent->ClassIndex == _lastBestiaryClassIndex
+            && agent->ClassId == _lastBestiaryClassId
+            && agent->Rank == _lastBestiaryRank
+            && agent->BaseId == _lastBestiaryBaseId)
+            return;
+
+        var isSwitch = _lastBestiaryClassIndex != 255;
+        _lastBestiaryClassId = agent->ClassId;
+        _lastBestiaryClassIndex = agent->ClassIndex;
+        _lastBestiaryRank = agent->Rank;
+        _lastBestiaryBaseId = agent->BaseId;
+
+        var name = _huntingLog.ResolveAgentTabName(
+            agent->ClassId, agent->BaseId, agent->Rank, agent->ClassIndex);
+        if (string.IsNullOrEmpty(name))
+        {
+            _log.Info($"[Bestiary] Tab ohne Namen: ClassId={agent->ClassId} " +
+                      $"ClassIndex={agent->ClassIndex} BaseId={agent->BaseId} Rank={agent->Rank}");
+            return;
+        }
+
+        var rank = agent->Rank + 1;
+        var spoken = AccessibilityStrings.BestiaryClassTab(name, rank);
+        _log.Info($"[Bestiary] Registerkarte: '{spoken}' " +
+                  $"(ClassId={agent->ClassId} ClassIndex={agent->ClassIndex} BaseId={agent->BaseId})");
+        if (isSwitch) _tolk.SpeakInterrupt(spoken);
+        else          _tolk.Speak(spoken);
+    }
+
+    /// <summary>Display name for the tab currently selected in the agent, or empty.</summary>
+    private unsafe string ReadBestiaryClassName()
+    {
+        var agent = AgentMonsterNote.Instance();
+        if (agent == null) return string.Empty;
+        return _huntingLog.ResolveAgentTabName(
+            agent->ClassId, agent->BaseId, agent->Rank, agent->ClassIndex);
     }
 
     /// <summary>
@@ -11537,7 +12116,7 @@ public sealed class UIReaderService : IDisposable
     /// other focusable list in this window is the class filter, whose rows carry
     /// names ("Alle anzeigen"), never this shape.
     /// </summary>
-    private static bool TryFormatBestiaryRank(string row, out string spoken)
+    private static bool TryFormatBestiaryRank(string row, string className, out string spoken)
     {
         spoken = string.Empty;
         var parts = row.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -11548,7 +12127,7 @@ public sealed class UIReaderService : IDisposable
         if (rank == null || progress == null) return false;
         if (!TryParseSpokenProgress(progress, out var done, out var total)) return false;
 
-        spoken = AccessibilityStrings.BestiaryRankRow(rank, done, total);
+        spoken = AccessibilityStrings.BestiaryRankRow(className, rank, done, total);
         return true;
     }
 
@@ -13777,9 +14356,11 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyRank", OnGrandCompanyRankUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Inventory", OnInventoryUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Buddy", OnBuddyUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BuddySkill", OnBuddySkillUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Character", OnCharacterUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "MountNoteBook", OnMountNoteBookUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalDetail", OnQuestWindowUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalAccept", OnQuestWindowUpdate);
@@ -13802,6 +14383,9 @@ public sealed class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeRaceGender", OnRaceGenderReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeTribe", OnTribeUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeTribe", OnTribeReceive);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_CharaMakeBirthDay", OnBirthDayOpen);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeBirthDay", OnBirthDayUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostReceiveEvent, "_CharaMakeBirthDay", OnBirthDayReceive);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "_CharaMakeHelp", OnCharaMakeHelpOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate,       "_CharaMakeHelp", OnCharaMakeHelpUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,        "CharaMakeDataInputString", OnCharaMakeInputOpen);

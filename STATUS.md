@@ -8,6 +8,9 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
   User, nie committen, nie pushen, nie in latest.zip. Absicherung:
   `.git/info/exclude` (nicht `.gitignore`). Vor Push/Release gegenprüfen.
 - Ebenso privat: `BossMod-Rotationen.txt`, `PRIVAT.txt` (siehe `.gitignore`).
+- **AutoDuty (Fremd-Plugin) — NIE committen, nie pushen, nie in latest.zip.**
+  Nur lokal. Öffentlich ok: Routen-JSONs von GitHub (erdelf/AutoDuty) für
+  DungeonPaths. Nicht das Plugin, keine Binaries, keine private Einrichtung.
 - **Craft-Kategorie (ab 2026-09-06):** Jobbezogene Rezepte (freigeschaltet,
   Materialien da), Numpad0 craftet. Nur lokal entwickeln — **erstmal nicht
   committen/pushen**, bis der User ausdrücklich freigibt. Öffentliches
@@ -21,7 +24,215 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **BossMod-Hotkeys Minus / Alt+Minus:** nur lokal (Temp-Backup beim
   Release-Push 2026-09-18). **Nie** committen/pushen. Details: PRIVAT.txt.
 
-## STAND JETZT (2026-09-18): PR 28 — FREISCHALT-HINWEIS BEI ANNEHMBAREN QUESTS
+## STAND JETZT (2026-09-20): RELEASE v6.08.30
+
+>>> VERSION: gesprochen / Tag 6.08.30; Assembly/repo.json/Manifest 6.8.30.0
+    (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
+
+>>> INHALT:
+    - PR #29: Kunststücke-Zweige mit Stufe (BuddySkill)
+    - PR #30: Controller-Kreuzleiste lesen/belegen
+    - Dialog: kein hängendes „von“, Echo einmal
+    - Gesellschaftsrang: nächster Rang + Jagd-Tor
+    - Charakter-Registerkarten aktivieren/ansagen
+    - AutoDuty in NIE-PUSHEN-Liste (CLAUDE/STATUS)
+
+>>> NIE IM RELEASE: BossMod, AutoDuty-Plugin, AccessibleVendorSell, Craft-Kategorie.
+
+## STAND DAVOR (2026-09-20): PR #29 + #30 EINGEMERGT
+
+>>> MERGE: #29 (Buddy-Zweige Kunststücke) und #30 (Controller-Kreuzleiste)
+    auf main. Lokaler WIP (Dialog-von-Fix, Character-Tabs, …) wieder drauf;
+    Konflikt in UIReaderService (BuddySkill vs Character) aufgelöst — beides.
+
+>>> TEST: Mitstreiter → Kunststücke: Zweige mit Stufe. Controller: Strg+F9 /
+    `/acc crossread` / `/acc crossbar`. Dialog weiterhin ohne hängendes „von“.
+
+## STAND DAVOR (2026-09-20): NPC-DIALOG — KEIN HÄNGENDES „VON“, EINE ANSAGE
+
+>>> PROBLEM (User): Dialog-Text kommt normal, manchmal danach nochmal mit
+    „ von Name: …“ davor.
+
+>>> URSACHE: Neues Chat-System (`ChatReaderService.BuildSpokenText`) rief bei
+    leerem Kanal-Präfix (NPCDialogue) immer `ChatFromLine` auf →
+    `" von {sender}: {message}"`. Legacy hatte den Guard schon.
+
+>>> FIX: Leer-Präfix-Zweig wie Legacy (`"{sender}: {message}"`); `ChatFromLine`
+    härtet leeres Präfix genauso ab. Echo-Guard unverändert.
+
+>>> TEST: Quest/Talk-Dialog — eine Ansage `Name: Text`, kein zweites
+    ` von Name: …`. Say/Party weiter `Sagt von X: …`.
+
+## STAND DAVOR (2026-09-20): GRANDCOMPANYRANK — NÄCHSTER RANG + JAGD-TOR
+
+>>> FIX 6.08.29: Beim Öffnen zusätzlich „Nächster Rang: …“ und für Jagd-Rang 2
+    entweder „brauchst du: Legionsgefreiter 3. Klasse“ oder „Gesellschaftsrang
+    erreicht“. Quelle: `GrandCompanyRank.RequiredHuntingLogRank` (Sheet-Dump).
+
+>>> TEST: Profil → Gesellschaft öffnen. Erwartung z.B.:
+    „… Dein Rang: Legionär 1. Klasse. Nächster Rang: Phönixlegionär.
+    Für Jagd-Rang 2 brauchst du: Legionsgefreiter 3. Klasse.“
+
+## STAND DAVOR (2026-09-20): GRANDCOMPANYRANK — RANGFENSTER LESEN
+
+>>> PROBLEM (User): Dump/Log — Fenster wird nicht ausgelesen.
+    Addon `GrandCompanyRank` („Rang der staatlichen Gesellschaft“), aus
+    Charakter-Profil → Gesellschaftsknopf. Log: nur Titel, Fokus „Schließen“.
+
+>>> URSACHE: Ränge sitzen in Comp(1007)-Zeilen; generisches ReadAllTexts liest
+    nur Top-Level-Texte. Fokus springt auf Schließen und unterbricht.
+
+>>> FIX 6.08.28: `OnGrandCompanyRankUpdate` — Titel + Gesellschaft +
+    markierter Rang (Bild-Kind id=2 sichtbar). Icon-Radios per Sheet-Namen.
+    Log: `[GCRank] Oeffnung:` / `[GCRank] Reiter`.
+
+>>> TEST: Charakter → Profil → Legion der Unsterblichen öffnen.
+    Erwartung: „Rang der staatlichen Gesellschaft. Legion der Unsterblichen.
+    Dein Rang: Legionär 1. Klasse.“ (o.ä.)
+
+## STAND DAVOR (2026-09-20): CHARAKTER — REGISTERKARTEN WECHSELN INHALT
+
+>>> PROBLEM (User): Mit C Charakter öffnen, Registerkarten wechseln: Namen
+    werden angesagt, Inhalt bleibt bei Ausrüstungssets (als ob nichts
+    aktualisiert).
+
+>>> URSACHE: Fokus auf dem Radio-Button sagte den Label-Text (generischer
+    Fokus-Leser), ohne `AddonCharacter.TabIndex` / Panel zu wechseln.
+    ClientStructs: `AddonCharacter` hat `Tabs` (4 Radios), `TabIndex`,
+    `TabCount`, `SetTab(int)` (ilspycmd lokal).
+
+>>> FIX 6.08.27: `OnCharacterUpdate` — Fokus auf anderem Reiter → `SetTab`;
+    Ansage bei TabIndex-Wechsel; Fokus-Leser stumm auf den vier Radios.
+    Log: `[Character] SetTab` / `[Character] Registerkarte:`.
+
+>>> TEST: C → Charakter. Mit Pfeiltasten Attribute / Profil / Klassen und
+    Jobs / Ansehen ansteuern. Inhalt muss mitwechseln (nicht mehr nur
+    Ausrüstungssets). Ansage z.B. „Attribute, Registerkarte 1 von 4“.
+
+## STAND DAVOR (2026-09-20): JAGD — LEGION FEHLT IM BESTIARIUM / ZÄHLER TOT
+
+>>> PROBLEM (User): Nach Rangaufstieg zählt nichts; im Bestiarium nur Mahlstrom
+    und Morgenviper, nicht Legion — obwohl Kategorie „Legion“ sagt.
+
+>>> VERDACHT: Agent tab = ClassId*BaseId (GC: ClassId 1/2/3), Category =
+    PlayerState→MonsterNote-Index 8/9/10. Abweichung muss gemessen werden.
+
+>>> FIX 6.08.26: Tab-Namen über ClassId*BaseId; Fortschritt per Index-Feld;
+    `/acc huntprobe` spricht Mitgliedschaft + Agent + Slots 8/9/10.
+
+>>> TEST: Bestiarium öffnen, `/acc huntprobe`, Ansage/Log schicken. Reiter
+    durchschalten: hören die Namen jetzt zum sichtbaren Block?
+
+## STAND DAVOR (2026-09-20): JAGD — RANG IN KATEGORIE NACH GC-AUFSTIEG
+
+>>> PROBLEM (User): Nach Gesellschafts-Rangaufstieg zählen Kills nicht mehr;
+    vorher ging der Zähler hoch.
+
+>>> URSACHE (Spielmechanik): Nach Aufstieg/Abschluss von Jagd-Rang 1 ist oft
+    Rang 2 aktiv. Rang-1-Monster zählen dann nicht. Rang 2 hat viele Dungeon-
+    Ziele (Qarn/Cutter’s Cry).
+
+>>> FIX 6.08.25: Kopfansage nennt den Jagd-Rang
+    („Legion der Unsterblichen, Rang 2: … offen“).
+
+>>> TEST: Kategorie Gesellschaft → Ansage mit Rang. Gegenprobe Bestiarium
+    GC-Reiter: gleicher Rang, gleiche Monster.
+
+## STAND DAVOR (2026-09-20): BESTIARIUM — JOB-REGISTER ANSAGEN
+
+>>> PROBLEM (User): Beim Wechsel der Registerkarten im Bestiarium wird nicht
+    angesagt, welcher Job / welche Klasse es ist.
+
+>>> URSACHE: Die Klassen-Reiter sind textlose Icons; UpdateGlobalFocus schweigt
+    solange MonsterNote offen ist; OnMonsterNoteUpdate brach ab, wenn Fokus
+    keinen ListItemRenderer hatte. Rang-Zeilen nannten nur „Rang X“, nicht die
+    Klasse.
+
+>>> FIX 6.08.24:
+    - AgentMonsterNote.ClassIndex (ClientStructs) → Sheet-Name via
+      HuntingLogService.GetDisplayName; Ansage „Thaumaturg, Rang 3“.
+    - Rang-Picker-Zeilen mit Klassen-Namen davor.
+
+>>> TEST: Bestiarium öffnen → Klassen-Icons wechseln → Job/Gesellschaft + Rang.
+    Rang-Liste: „Thaumaturg, Rang 1, … von 10 …“. Log: `[Bestiary] Registerkarte:`.
+
+## STAND DAVOR (2026-09-19): CHARAKTER — NAMENSTAG ÖFFNEN MIT HILFE
+
+>>> PROBLEM (User): Beim Öffnen nur „01“, Kalender-Beschreibung wird nicht
+    vorgelesen.
+
+>>> URSACHE: Globaler Fokus landet auf Radio „01“; Hilfe steht in
+    _CharaMakeHelp id=4, wurde nicht beim BirthDay-Open angesagt.
+
+>>> FIX 6.08.23: PostSetup spricht Hilfe + Datumszeile; Fokus-Pfad ersetzt
+    nackte Tageszahl durch id=37.
+
+>>> TEST: Namenstag öffnen → zuerst Kalender-Erklärung, dann z.B.
+    „1. Sonne im 1. Lichtmond“, nicht „01“.
+
+## STAND DAVOR (2026-09-19): CHARAKTER — NAMENSTAG VOLL ANSAGEN
+
+>>> PROBLEM (User): Dump _CharaMakeBirthDay + Log — nicht alle Infos, beim
+    Blaettern der Tage stoert etwas.
+
+>>> GEMESSEN: Event-Target findet "01"/"02"; danach Speak "Zurueck" (Key=40004
+    = Zurueck-Button). Scan sprach korrekt "N. Sonne im 1. Lichtmond" (id=37).
+
+>>> FIX 6.08.22: _CharaMakeBirthDay eigener Handler (wie RaceGender/Tribe);
+    Tag-Hover → Zusammenfassung id=37; kein generisches FindFocusedText mehr.
+
+>>> TEST: Charaktererstellung → Namenstag → Tage/Mond blaettern: nur noch
+    "1. Sonne im 1. Lichtmond" (o.ae.), kein "Zurueck" dazwischen. Log:
+    `[Accessibility] BirthDay Fokus:`.
+
+## STAND DAVOR (2026-09-19): JAGD — AREAL-SUCHE TRIFFT BLOCK-LEBENSRÄUME
+
+>>> PROBLEM (User): Grabräuber-Spriggan → „Suchpunkt 2 von 35, Kohlenstaub-
+    Bahnhof“. Monster nicht gefunden; Zielgebiet stimmt oft nicht. Live-Umbiegen
+    geht nur, wenn Exemplare schon geladen sind.
+
+>>> GEMESSEN (offline sqpack, Territory 141):
+    - MonsterNoteTarget Location=248 „Kohlenstaub“ (Block).
+    - Layout: 35 MapRanges unter Block 248; Spot 291 „Sil'dih-Ruinen“ liegt 47 m
+      vom Wiki-Spawn (Karte 17/23); Spot 290 „Kohlenstaub-Bahnhof“ ×4 nahe Camp.
+    - Kartenmarker Kohlenstaub (-70|-288) ist 441 m von Sil'dih entfernt.
+    - Keine Client-Spawndaten (Level/BNpcBase ohne Name-Verweis) — nur Objekttabelle.
+
+>>> FIX:
+    - AreaRangeService: bei Block-Lebensraum Spots deduplizieren; benannte
+      Unterorte vor unbenannten Volumen; Spot-Treffer bleiben Spot-only (kein
+      Aufblasen in den ganzen Block).
+    - BuildHuntSearch sortiert am Kartenmarker, nicht am Spieler.
+    - Live-Umbiegen (Retarget) bleibt für geladene Exemplare.
+
+>>> GRENZE: Das Jagdtagebuch nennt den Block; Sil'dih ist nur einer der Spots.
+    Nach dem Fix kommt Sil'dih in der Spot-Liste vor (~8 benannte statt 35
+    Bahnhof-Stückelung), nicht als erster Punkt. Das ist dieselbe Unschärfe
+    wie für Sehende.
+
+>>> TEST: Plugin neu laden (6.08.21). Jagdziele → Grabräuber-Spriggan ohne
+    Monster in Nähe → Ansage „Suchpunkt …“ soll NICHT mehr „2 von 35,
+    Kohlenstaub-Bahnhof“ als Startbild sein; Numpad3 mehrfach durch benannte
+    Orte (u. a. Sil'dih-Ruinen). Log: `[Jagd] … Teilstuecke, … (Sortierung
+    Kartenmarker)`.
+
+## STAND DAVOR (2026-09-19): JAGD — LAUF AUF LEBENDES MONSTER UMBIEGEN
+
+>>> PROBLEM (User): Jagdtagebuch z.B. Grabräuber-Spriggan → „Suchpunkt 2 von 35,
+    Kohlenstaub-Bahnhof“ — Auto-Lauf geht zum Bahnhof, nicht zum Monster.
+
+>>> URSACHE: Areal-Suche fährt MapRange-Mittelpunkte an (keine Spawndaten im
+    Client). Poll meldete „in Reichweite“, lenkte den Lauf aber nicht um;
+    Umbiegen nur bei erneutem Numpad3.
+
+>>> FIX: PollHuntTargetInRange → TargetFromBrowser + AutoWalk.RetargetToObject
+    (live GameObjectId, Position pro Frame).
+
+>>> TEST: Plugin neu laden. Jagdziele → Eintrag ohne Monster in Nähe → Numpad3
+    Suchpunkt. Wenn Spriggan lädt: Ansage „in Reichweite“, Lauf biegt um.
+    Log: `[Nav] Auto-Lauf: umgebogen auf lebendes …`.
+
+## STAND DAVOR (2026-09-18): PR 28 — FREISCHALT-HINWEIS BEI ANNEHMBAREN QUESTS
 
 >>> AUFTRAG: Offene PRs prüfen; PR 28 lokal portieren.
 
