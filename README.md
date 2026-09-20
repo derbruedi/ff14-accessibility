@@ -566,20 +566,24 @@ aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
 
 ### Aktionsleisten belegen
 
-- **Strg+F9** — erste Aktionsleiste vorlesen (was liegt auf Taste 1 bis 0)
+- **Strg+F9** — im Controller-Modus die normale Kreuzleiste, sonst Leiste 1 vorlesen
 - **Strg+Nummernblock 0** — Zuweisungs-Menü öffnen bzw. schließen
+- **`/acc crossbar`** — Kreuzleisten-Menü direkt öffnen
+- **`/acc crossread`** — alle 16 Tasten der aktuellen normalen Kreuzleiste vorlesen
 
-Das Menü fragt zuerst nach der **Taste** und danach nach dem **Inhalt**. Im
+Das Menü fragt nach **Leiste**, **Taste** und **Inhalt**. Zur Wahl stehen
+Kreuzleisten 1–8 und Tastaturleisten. Die [Kreuzleisten-Anleitung](docs-de/controller-crossbar.md)
+erklärt Tasten, geteilte Leisten und Einschränkungen. Im
 geöffneten Menü steuert der Nummernblock; die Tasten werden so lange vom
 Spiel ferngehalten, damit die Figur nicht losläuft:
 
-- **Nummernblock 8 / 2** — in der Liste blättern; im ersten Schritt sagt
+- **Nummernblock 8 / 2** — in der Liste blättern; bei der Tastenauswahl sagt
   jede Taste an, was gerade auf ihr liegt
-- **Nummernblock 0** — Taste wählen; danach den Eintrag wählen und erneut
+- **Nummernblock 0** — Leiste und Taste wählen; danach den Eintrag wählen und erneut
   Nummernblock 0 zum Ablegen
-- **Nummernblock 4 / 6** — im zweiten Schritt zwischen **Fähigkeiten**,
+- **Nummernblock 4 / 6** — bei der Tastenauswahl die Leiste wechseln; beim Inhalt zwischen **Fähigkeiten**,
   **Gegenständen** (Tränke, Elixiere, Essen aus der Tasche),
-  **Quest-Gegenständen**, **allgemeinen Aktionen** und **Reittieren**
+  **Quest-Gegenständen**, **allgemeinen Aktionen**, **Reittieren** und **Mitstreiter-Kommandos**
   wechseln
 - **Nummernblock Komma** — einen Schritt zurück bzw. Menü schließen
 

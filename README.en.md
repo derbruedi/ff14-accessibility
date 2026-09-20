@@ -503,20 +503,24 @@ navigation keys above the arrow block.
 
 ### Filling hotbars
 
-- **Ctrl+F9** — read the first hotbar (what sits on keys 1 to 0)
+- **Ctrl+F9** — read the current normal crossbar in controller mode, or Hotbar 1 in keyboard mode
 - **Ctrl+Numpad 0** — open or close the assignment menu
+- **`/acc crossbar`** — open the crossbar assignment menu directly
+- **`/acc crossread`** — read all 16 buttons of the current normal crossbar
 
-The menu asks for the **key** first and for its **content** second. While it
+The menu asks for the **bar**, then the **button**, then its **content**. Choose
+Crossbar 1–8 or Keyboard hotbars. See the [controller crossbar guide](docs/controller-crossbar.md)
+for button labels, shared sets, limitations, and step-by-step instructions. While it
 is open the numpad drives it, and those keys are kept away from the game so
 your character does not run off:
 
-- **Numpad 8 / 2** — browse the list; in the first step every key says what
+- **Numpad 8 / 2** — browse the list; at the button step every key says what
   sits on it right now
-- **Numpad 0** — pick the key; then pick the entry and press Numpad 0 again
+- **Numpad 0** — choose a bar, then a button, then press Numpad 0 on an entry
   to place it
-- **Numpad 4 / 6** — in the second step, switch between **actions**,
+- **Numpad 4 / 6** — at the button step, switch bars; at the content step, switch between **actions**,
   **items** (potions, elixirs, food from your bag), **quest items**,
-  **general actions** and **mounts**
+  **general actions**, **mounts**, and **companion commands**
 - **Numpad decimal** — one step back, or close the menu
 
 After a placement the menu stays open and returns to the key list, so a whole

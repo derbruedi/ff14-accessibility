@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using LuminaAction = Lumina.Excel.Sheets.Action;
 using LuminaActionTransient = Lumina.Excel.Sheets.ActionTransient;
@@ -36,6 +37,45 @@ public sealed class HotbarService
     private readonly InventoryService _inventory;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
+    private readonly CrossHotbarChangeTracker _crossHotbarChanges = new();
+    private int? _unexpectedCrossHotbarId;
+    private int? _activeCrossBar;
+
+    /// <summary>Observe the game's chosen set; never read or consume controller buttons.</summary>
+    public unsafe void UpdateCrossHotbar(IGameGui gameGui, bool announceChanges)
+    {
+        var ptr = _clientState.IsLoggedIn ? gameGui.GetAddonByName("_ActionCross") : default;
+        var addon = (AddonActionCross*)(nint)ptr;
+        if (addon == null)
+        {
+            _activeCrossBar = null;
+            if (!_clientState.IsLoggedIn && IsSkillMenuOpen) CloseSkillMenu();
+            _crossHotbarChanges.Update(null);
+            _unexpectedCrossHotbarId = null;
+            return;
+        }
+        // Verified against the installed ClientStructs: RaptureHotbarId changes
+        // when cycling sets and references module Hotbars (cross bars 10..17).
+        // WXHB has a separate source; do not infer it from trigger presses.
+        var id = (int)addon->RaptureHotbarId;
+        _activeCrossBar = CrossHotbarLayout.IsCrossBar(id) && !addon->DisplayPetBarCross ? id : null;
+        if (id is < 10 or > 17)
+        {
+            if (_unexpectedCrossHotbarId != id)
+            {
+                _log.Warning($"[CrossHotbar] Cannot announce set: module ID={id}, pet={addon->DisplayPetBarCross}");
+                _unexpectedCrossHotbarId = id;
+                if (announceChanges && addon->IsVisible && !addon->DisplayPetBarCross)
+                    _tolk.SpeakInterrupt(AccessibilityStrings.HotbarUnavailable);
+            }
+        }
+        else _unexpectedCrossHotbarId = null;
+
+        var number = _crossHotbarChanges.Update(announceChanges ? _activeCrossBar : null);
+        if (number == null) return;
+        _log.Info($"[CrossHotbar] Active set changed: module ID={id}, set={number.Value}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.HotbarPrefix(number.Value).Trim());
+    }
 
     public HotbarService(IDataManager data, IClientState clientState, IFramework framework,
                          GearInfoService gearInfo, KeybindService keybinds, InventoryService inventory,
@@ -55,7 +95,7 @@ public sealed class HotbarService
     private const int MainHotbarIndex = 0;
     private const int SlotsToRead = 12;
     // RaptureHotbarModule.StandardHotbars = Hotbars[0..9] (ilspycmd
-    // 2026-07-17); indices 10..17 are the gamepad cross bars - not offered.
+    // 2026-07-17); indices 10..17 are offered separately as controller sets.
     private const int StandardBarCount = 10;
 
     // Slot index -> the key the player presses (HOTBAR_1_1..HOTBAR_1_0 = 1..0,
@@ -83,6 +123,8 @@ public sealed class HotbarService
     /// ("Leiste 2, Taste Strg+3"), or the slot number when unbound.</summary>
     private string SlotLabel(int bar, int slot)
     {
+        if (CrossHotbarLayout.IsCrossBar(bar))
+            return AccessibilityStrings.CrossSlotLabel(bar - 9, slot);
         if (bar == MainHotbarIndex)
             return AccessibilityStrings.SlotMainKey(BoundKeyFor(bar, slot) ?? SlotKeyNames[slot]);
         var key = BoundKeyFor(bar, slot);
@@ -131,6 +173,22 @@ public sealed class HotbarService
         }
 
         _tolk.SpeakInterrupt(AccessibilityStrings.HotbarPrefix(bar + 1) + string.Join(". ", parts) + ".");
+    }
+
+    /// <summary>Read every button, including empty ones, on the normal active cross set.</summary>
+    public unsafe void ReadCrossHotbar()
+    {
+        var module = RaptureHotbarModule.Instance();
+        if (!_clientState.IsLoggedIn || module == null || _activeCrossBar is not int bar)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.CrossReadUnavailable);
+            return;
+        }
+        var parts = new List<string> { AccessibilityStrings.CrossBarName(bar - 9),
+            AccessibilityStrings.CrossBarState(module->IsHotbarShared((uint)bar)) };
+        for (var slot = 0; slot < CrossHotbarLayout.SlotCount; slot++)
+            parts.Add($"{SlotLabel(bar, slot)}, {CurrentSlotContent(bar, slot)}");
+        _tolk.SpeakInterrupt(string.Join(". ", parts) + ".");
     }
 
     /// <summary>
@@ -229,8 +287,10 @@ public sealed class HotbarService
     //    PlaceOnSlot. Driven from the numpad while open; Plugin.cs swallows
     //    those keys so the character does not move.
 
-    private enum SkillMenuStep { Closed, PickSlot, PickEntry }
+    private enum SkillMenuStep { Closed, PickBar, PickSlot, PickEntry }
     private SkillMenuStep _menuStep = SkillMenuStep.Closed;
+    private int _barChoice;
+    private uint _menuJob;
 
     /// <summary>Which list the menu is browsing once a key has been picked.
     /// Numpad 4/6 steps through the sources (user choice 2026-08-06; quest
@@ -317,7 +377,7 @@ public sealed class HotbarService
     /// <summary>Opens the assignment menu, or closes it when already open (the
     /// same key toggles). On open the list of assignable KEYS is built and the
     /// first one announced; what goes on it is the second step.</summary>
-    public unsafe void ToggleSkillMenu()
+    public unsafe void ToggleSkillMenu(bool controllerMode = true)
     {
         if (_menuStep != SkillMenuStep.Closed) { CloseSkillMenu(); return; }
 
@@ -337,21 +397,43 @@ public sealed class HotbarService
             return;
         }
 
-        BuildTargetList();
-        if (_targets.Count == 0)
-        {
-            _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuNoTargets);
-            return;
-        }
-
-        _targetIndex = 0;
+        _barChoice = controllerMode
+            ? (_activeCrossBar is int active ? active - CrossHotbarLayout.FirstBar : 0)
+            : CrossHotbarLayout.SetCount;
+        var player = PlayerState.Instance();
+        _menuJob = player == null ? 0u : player->CurrentClassJobId;
         _chosenBar = _chosenSlot = -1;
         // Reset the source only here, not per key: within one open session the
         // list the player last used stays selected, so filling several keys
         // from the bag does not walk back to the skills every time.
         _menuSource = AssignSource.Skills;
+        _menuStep = SkillMenuStep.PickBar;
+        _tolk.SpeakInterrupt(AccessibilityStrings.BarPickerOpened);
+        AnnounceBarChoice(interrupt: false);
+    }
+
+    private unsafe void AnnounceBarChoice(bool interrupt = true)
+    {
+        if (_barChoice == CrossHotbarLayout.SetCount)
+        {
+            Say(AccessibilityStrings.KeyboardBarChoice, interrupt);
+            return;
+        }
+        var module = RaptureHotbarModule.Instance();
+        if (module == null) { Say(AccessibilityStrings.HotbarUnavailable, interrupt); return; }
+        Say($"{AccessibilityStrings.CrossBarName(_barChoice + 1)}, " +
+            AccessibilityStrings.CrossBarState(module->IsHotbarShared((uint)(_barChoice + 10))), interrupt);
+    }
+
+    private void OpenChosenBar()
+    {
+        BuildTargetList();
+        if (_targets.Count == 0) { _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuNoTargets); return; }
+        _targetIndex = 0;
         _menuStep = SkillMenuStep.PickSlot;
-        _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuSlotsOpened(_targets.Count));
+        ClearSkillDescDwell();
+        AnnounceBarChoice();
+        _tolk.Speak(AccessibilityStrings.CrossButtonsOpened);
         AnnounceTarget(interrupt: false);
     }
 
@@ -369,6 +451,13 @@ public sealed class HotbarService
     /// </summary>
     public void SkillMenuSwitchSource(int direction)
     {
+        if (_menuStep == SkillMenuStep.PickSlot)
+        {
+            _barChoice = CrossHotbarLayout.MoveChoice(_barChoice, direction);
+            OpenChosenBar();
+            return;
+        }
+        if (_menuStep == SkillMenuStep.PickBar) { SkillMenuBrowse(direction); return; }
         if (_menuStep != SkillMenuStep.PickEntry) return;
 
         var at = Array.IndexOf(SourceOrder, _menuSource);
@@ -700,6 +789,10 @@ public sealed class HotbarService
     {
         switch (_menuStep)
         {
+            case SkillMenuStep.PickBar:
+                _barChoice = CrossHotbarLayout.MoveChoice(_barChoice, direction);
+                AnnounceBarChoice();
+                break;
             case SkillMenuStep.PickSlot:
                 if (_targets.Count == 0) return;
                 _targetIndex = ((_targetIndex + direction) % _targets.Count + _targets.Count) % _targets.Count;
@@ -743,10 +836,20 @@ public sealed class HotbarService
     /// and open the lists of what can go on it; entry step -> place it and
     /// return to the key list, so the next key can be filled right away (user
     /// choice 2026-09-05).</summary>
-    public void SkillMenuConfirm()
+    public unsafe void SkillMenuConfirm()
     {
+        var player = PlayerState.Instance();
+        if (!_clientState.IsLoggedIn || player == null || _menuJob == 0 || player->CurrentClassJobId != _menuJob)
+        {
+            CloseSkillMenu();
+            _tolk.Speak(AccessibilityStrings.CrossJobChanged);
+            return;
+        }
         switch (_menuStep)
         {
+            case SkillMenuStep.PickBar:
+                OpenChosenBar();
+                break;
             case SkillMenuStep.PickSlot:
                 if (_targetIndex < 0 || _targetIndex >= _targets.Count) return;
                 var (bar, slot) = _targets[_targetIndex];
@@ -804,6 +907,13 @@ public sealed class HotbarService
             _chosenBar = _chosenSlot = -1;
             _tolk.SpeakInterrupt(AccessibilityStrings.SkillMenuBackAtSlots(_targets.Count));
             AnnounceTarget(interrupt: false);
+        }
+        else if (_menuStep == SkillMenuStep.PickSlot)
+        {
+            ClearSkillDescDwell();
+            _menuStep = SkillMenuStep.PickBar;
+            _tolk.SpeakInterrupt(AccessibilityStrings.BarPickerOpened);
+            AnnounceBarChoice(interrupt: false);
         }
         else
         {
@@ -880,8 +990,11 @@ public sealed class HotbarService
     private unsafe void AnnounceTarget(bool interrupt = true)
     {
         var (bar, slot) = _targets[_targetIndex];
+        var content = CurrentSlotContent(bar, slot);
         Say(AccessibilityStrings.SkillMenuTargetEntry(
-            SlotLabel(bar, slot), CurrentSlotContent(bar, slot), _targetIndex + 1, _targets.Count), interrupt);
+            SlotLabel(bar, slot), content, _targetIndex + 1, _targets.Count), interrupt);
+        if (CrossHotbarLayout.IsCrossBar(bar))
+            _log.Info($"[CrossHotbar] Browse set={bar - 9} slot={slot} code={CrossHotbarLayout.SlotCode(slot)} content='{content}'");
 
         var module = RaptureHotbarModule.Instance();
         var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
@@ -898,7 +1011,12 @@ public sealed class HotbarService
     {
         var module = RaptureHotbarModule.Instance();
         var s = module == null ? null : module->GetSlotById((uint)bar, (uint)slot);
-        return s == null || s->CommandType == RaptureHotbarModule.HotbarSlotType.Empty
+        if (s == null)
+        {
+            _log.Warning($"[Hotbar] Cannot read slot: bar={bar} slot={slot}");
+            return AccessibilityStrings.HotbarUnavailable;
+        }
+        return s->CommandType == RaptureHotbarModule.HotbarSlotType.Empty
             ? AccessibilityStrings.InputEmpty
             : ResolveName(s->CommandType, s->CommandId, s->PopUpHelp.ToString());
     }
@@ -911,6 +1029,12 @@ public sealed class HotbarService
     private void BuildTargetList()
     {
         _targets.Clear();
+        if (_barChoice < CrossHotbarLayout.SetCount)
+        {
+            for (var slot = 0; slot < CrossHotbarLayout.SlotCount; slot++)
+                _targets.Add((_barChoice + CrossHotbarLayout.FirstBar, slot));
+            return;
+        }
         for (var bar = 0; bar < StandardBarCount; bar++)
         for (var slot = 0; slot < SlotsToRead; slot++)
             if (bar == MainHotbarIndex || BoundKeyFor(bar, slot) != null)
@@ -984,6 +1108,18 @@ public sealed class HotbarService
     private unsafe bool PlaceOnSlot(RaptureHotbarModule* module, int bar, int slot,
         RaptureHotbarModule.HotbarSlotType type, uint id, string name)
     {
+        if (module->PvPHotbarsActive)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.CrossAssignPvpBlocked);
+            return false;
+        }
+        if (!(bar is >= 0 and < StandardBarCount && slot is >= 0 and < SlotsToRead)
+            && !CrossHotbarLayout.IsValidTarget(bar, slot))
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.AssignFailed);
+            _log.Warning($"[Hotbar] Invalid assignment destination: bar={bar} slot={slot}");
+            return false;
+        }
         var ps = PlayerState.Instance();
         if (ps == null)
         {
@@ -1344,20 +1480,24 @@ public sealed class HotbarService
             : $"type={s->CommandType} id={s->CommandId} apparent={s->ApparentActionId}";
     }
 
-    /// <summary>Spoken location of this action or item on any standard bar
-    /// ("Taste 7" / "Leiste 2, Taste Strg+3"), or null when not placed.</summary>
+    /// <summary>All locations of this action or item on standard and cross bars,
+    /// or null when not placed. Cross locations include the trigger and button.</summary>
     private unsafe string? FindSlotLocationFor(RaptureHotbarModule.HotbarSlotType type, uint id)
     {
         var module = RaptureHotbarModule.Instance();
         if (module == null) return null;
-        for (var bar = 0; bar < StandardBarCount; bar++)
-        for (var slot = 0; slot < SlotsToRead; slot++)
+        var locations = new List<string>();
+        // Cross destinations first when configuring a controller set; report all copies.
+        var bars = _barChoice < CrossHotbarLayout.SetCount
+            ? Enumerable.Range(10, 8).Concat(Enumerable.Range(0, 10)) : Enumerable.Range(0, 18);
+        foreach (var bar in bars)
+        for (var slot = 0; slot < (CrossHotbarLayout.IsCrossBar(bar) ? CrossHotbarLayout.SlotCount : SlotsToRead); slot++)
         {
             var s = module->GetSlotById((uint)bar, (uint)slot);
             if (s != null && s->CommandType == type && s->CommandId == id)
-                return SlotLabel(bar, slot);
+                locations.Add(SlotLabel(bar, slot));
         }
-        return null;
+        return locations.Count == 0 ? null : string.Join("; ", locations);
     }
 
     /// <summary>

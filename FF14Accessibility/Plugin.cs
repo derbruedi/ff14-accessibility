@@ -978,6 +978,12 @@ public sealed class Plugin : IDalamudPlugin
             case "soundtest":
                 SoundTest();
                 break;
+            case "crossbar":
+                _hotbar.ToggleSkillMenu(controllerMode: true);
+                break;
+            case "crossread":
+                _hotbar.ReadCrossHotbar();
+                break;
             // Das Synthese-Fenster auf Anforderung: dieselben Zahlen noch einmal,
             // mit Gegenstand, Schritt und laufenden Effekten.
             case "synthese":
@@ -2105,9 +2111,17 @@ public sealed class Plugin : IDalamudPlugin
         _history.EnterTab(index, name);
     }
 
+    private bool IsControllerMode()
+    {
+        var available = GameConfig.System.TryGetUInt("PadMode", out var mode)
+            || GameConfig.UiConfig.TryGetUInt("PadMode", out mode);
+        return available && mode != 0;
+    }
+
     private void OnFrameworkUpdate(IFramework framework)
     {
         UpdateKeyEdges();
+        _hotbar.UpdateCrossHotbar(GameGui, IsControllerMode());
 #if DEBUG
         // UNGEGATTERT, mit Absicht: die Sonde sagt am Ende der Messung "fertig",
         // und dieser letzte Aufruf faellt genau dann weg, wenn man ihn an
@@ -2270,7 +2284,11 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyDutyAction1))    _dutyActions.Execute(1);
         if (IsJustPressed(_config.KeyDutyAction2))    _dutyActions.Execute(2);
         if (IsJustPressed(_config.KeyDutyActionList)) _dutyActions.Announce();
-        if (IsJustPressed(_config.KeyReadHotbar))    _hotbar.ReadHotbar();
+        if (IsJustPressed(_config.KeyReadHotbar))
+        {
+            if (IsControllerMode()) _hotbar.ReadCrossHotbar();
+            else _hotbar.ReadHotbar();
+        }
         if (IsJustPressed(_config.KeyReadInventory))
         {
             // In a hand-over (Request) window Strg+F3 reads the eligible items
@@ -2332,7 +2350,7 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
-        if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu();
+        if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu(IsControllerMode());
         // [Job-Anzeige] Zustand auf Nachfrage, ohne auf eine Flanke zu warten.
         if (IsJustPressed(_config.KeyJobGauge))      _jobGauge.AnnounceCurrent();
         HandleFaceWaypointKey();
