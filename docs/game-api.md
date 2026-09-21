@@ -2070,6 +2070,23 @@ Ab 6.08.16: `ActionDetail` in `HudNoiseAddons`. Lesepfad:
 - `ActionMenu` hat keine brauchbare Liste — keine „Keine Eintraege“-Ansage.
 
 
+## Sammel-Notizbuch Ort/Gebiet (GatherLogService, 2026-09-20)
+
+Kein SpokenMenu mehr. Fokus-Ansage im Addon `GatheringNote` hängt Ort und
+Gebiet an Name / Stufe / Haken (`UIReaderService.DescribeGatheringNoteItem`
+→ `GatherLogService.TryDescribeLocation`).
+
+### Daten (EXDSchema)
+- Miner/Gärtner: `GatheringPointBase.Item[8]` → `GatheringItem`; Territory über
+  `GatheringPoint`; **Ort** = `GatheringPoint.PlaceName`, **Gebiet** =
+  `TerritoryType.PlaceName`. Mehrere Spots: wenige Hops aus
+  `PlacesService.GetHopDistances`, sonst erster Sheet-Eintrag; bei gleichen
+  Hops lieber Spot mit PlaceName.
+- Fischer: `FishParameter` + `FishingSpot.PlaceName` (Ort) + Territory-PlaceName
+  (Gebiet). Ort == Gebiet → nur Gebiet.
+- DEBUG: `/acc gatherlogprobe` (NotebookDivision / GatheringNotebookList Samples).
+
+
 ## Fischen (ilspycmd-verifiziert 2026-07-25, FFXIVClientStructs.dll + Lumina.Excel.dll)
 
 Ziel: Angeln barrierefrei. Erster Schritt „wo kann ich angeln" — Laufzeit-Sonde

@@ -38,6 +38,7 @@ public sealed class UIReaderService : IDisposable
     private readonly GearInfoService _gearInfo;
     private readonly BestiaryService _bestiary;
     private readonly HuntingLogService _huntingLog;
+    private readonly GatherLogService _gatherLog;
     private readonly MessageHistoryService _history;
     private readonly Configuration   _config;
     private readonly IDataManager    _data;
@@ -478,7 +479,7 @@ public sealed class UIReaderService : IDisposable
             $"focused=[{string.Join(", ", focused)}]");
     }
 
-    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, HuntingLogService huntingLog, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots)
+    public UIReaderService(IAddonLifecycle addonLifecycle, IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objectTable, InventoryService inventory, GearInfoService gearInfo, BestiaryService bestiary, HuntingLogService huntingLog, MessageHistoryService history, Configuration config, IDataManager data, TooltipService tooltips, CharaMakeReader charaMake, LootRollService lootRolls, ItemSlotService itemSlots, GatherLogService gatherLog)
     {
         _lootRolls      = lootRolls;
         _itemSlots      = itemSlots;
@@ -493,6 +494,7 @@ public sealed class UIReaderService : IDisposable
         _gearInfo       = gearInfo;
         _bestiary       = bestiary;
         _huntingLog     = huntingLog;
+        _gatherLog      = gatherLog;
         _history        = history;
         _config         = config;
         _data           = data;
@@ -2023,9 +2025,9 @@ public sealed class UIReaderService : IDisposable
     /// <summary>
     /// The gathering-log item row that contains the given focused node,
     /// formatted for speech, or null. The journal lists an item's name (the
-    /// window holds it as an item link, so it is read clean), its level and
-    /// whether it has ever been gathered - the last piece was invisible until
-    /// now, because the game draws it as a check mark over the item icon.
+    /// window holds it as an item link, so it is read clean), its level,
+    /// whether it has ever been gathered, and — from sheet lookup — place
+    /// and territory so the player knows where to go.
     /// </summary>
     private unsafe bool TryReadGatheringNoteFocusRow(AtkResNode* node, out string text)
     {
@@ -2060,7 +2062,7 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>Formats one row of the gathering journal for speech.</summary>
-    private static unsafe string DescribeGatheringNoteItem(AtkComponentBase* comp, string name)
+    private unsafe string DescribeGatheringNoteItem(AtkComponentBase* comp, string name)
     {
         var parts = new List<string> { name };
 
@@ -2075,6 +2077,13 @@ public sealed class UIReaderService : IDisposable
         parts.Add(IsVisibleFlag(FindChildNode(comp, GatheringNoteRowGatheredId))
             ? AccessibilityStrings.GatherNoteGathered
             : AccessibilityStrings.GatherNoteNew);
+
+        if (_gatherLog.TryDescribeLocation(name, out var place, out var area)
+            && !string.IsNullOrWhiteSpace(area))
+        {
+            var loc = AccessibilityStrings.GatherNoteLocation(place, area);
+            if (loc.Length > 0) parts.Add(loc);
+        }
 
         return string.Join(", ", parts);
     }
@@ -10104,9 +10113,122 @@ public sealed class UIReaderService : IDisposable
         // (Log 2026-09-15 21:48–49). Enter = Kategorie klicken bzw. RunSearch.
         if (TryActivateFocusedItemSearch()) return;
 
+        // Kontextmenü (z. B. "Gruppen suchen" aus der Inhaltssuche): Fokus allein
+        // lässt SelectedItemIndex bei -1 (Dump 2026-09-20 ListLen=3 Sel=-1);
+        // Spiel-OK öffnet dann LookingForGroup nicht (dalamud.log 22:23).
+        if (TryActivateFocusedContextMenu()) return;
+
         // Ok buttons in lobby / character creation (tribe screen, DC map,
         // name dialog, ...): dispatch the button's real click event.
         PressFocusedOk();
+    }
+
+    /// <summary>
+    /// If a visible <c>ContextMenu</c> has keyboard focus on a row but
+    /// <c>SelectedItemIndex</c> is unset, select that row so the game's OK
+    /// (Numpad0) can activate it. Does not swallow keys and does not click —
+    /// measured regression 2026-09-21: swallowing Numpad0 broke quest accept.
+    /// </summary>
+    public unsafe void EnsureFocusedContextMenuSelected()
+    {
+        if (!TryGetFocusedContextMenuRow(out var list, out var idx, out _))
+            return;
+        if (list->SelectedItemIndex == idx) return;
+        list->SelectItem(idx, false);
+        _log.Info($"[ContextMenu] Auswahl vorbereitet: Sel -> {idx} (für Spiel-OK).");
+    }
+
+    /// <summary>
+    /// Activates the focused <c>ContextMenu</c> list row via
+    /// <c>SelectItem(idx, dispatchEvent: true)</c> (and a click fallback).
+    /// Used from Enter (<see cref="HandleConfirmKey"/>) only — Numpad0 must
+    /// stay with the game (quest accept etc.).
+    /// </summary>
+    /// <returns>True when a ContextMenu row was activated.</returns>
+    public unsafe bool TryActivateFocusedContextMenu()
+    {
+        if (!TryGetFocusedContextMenuRow(out var list, out var idx, out var label))
+            return false;
+
+        var prevSel = list->SelectedItemIndex;
+        list->SelectItem(idx, true);
+
+        var stage = AtkStage.Instance();
+        var focus = stage != null && stage->AtkInputManager != null
+            ? stage->AtkInputManager->FocusedNode
+            : null;
+        AtkResNode* rowNode = focus;
+        var clicked = false;
+        for (var up = 0; up < 8 && rowNode != null; up++)
+        {
+            if ((int)rowNode->Type >= 1000)
+            {
+                var comp = ((AtkComponentNode*)rowNode)->Component;
+                if (comp != null && comp->GetComponentType() == ComponentType.ListItemRenderer)
+                {
+                    clicked = DispatchClick(rowNode);
+                    break;
+                }
+            }
+            rowNode = rowNode->ParentNode;
+        }
+
+        _log.Info(
+            $"[ContextMenu] SelectItem({idx}, true) '{label}' " +
+            $"(Sel {prevSel}->{list->SelectedItemIndex}, click={clicked}).");
+        return true;
+    }
+
+    /// <summary>
+    /// Focused ContextMenu list row index and label, or false when the focus
+    /// is not on a ContextMenu row (so Numpad0 must reach the game untouched).
+    /// </summary>
+    private unsafe bool TryGetFocusedContextMenuRow(
+        out AtkComponentList* list, out int idx, out string label)
+    {
+        list = null;
+        idx = -1;
+        label = string.Empty;
+
+        var ptr = _gameGui.GetAddonByName("ContextMenu");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (addon == null || !addon->IsVisible) return false;
+
+        var stage = AtkStage.Instance();
+        if (stage == null || stage->AtkInputManager == null) return false;
+        var focus = stage->AtkInputManager->FocusedNode;
+        if (focus == null) return false;
+
+        if (!string.Equals(FindAddonNameForNode(focus), "ContextMenu", StringComparison.Ordinal))
+            return false;
+
+        list = FindListInAddon(addon);
+        if (list == null) return false;
+
+        var renderer = ClimbToItemRenderer(focus);
+        if (renderer == null) return false;
+
+        var count = GetListEntryCount(list);
+        idx = renderer->ListItemIndex;
+        if (idx < 0 || (count > 0 && idx >= count))
+        {
+            idx = -1;
+            var slots = Math.Min(list->AllocatedItemRendererListLength, 64);
+            for (var i = 0; i < slots; i++)
+            {
+                if (list->ItemRendererList[i].AtkComponentListItemRenderer != renderer) continue;
+                idx = renderer->ListItemIndex >= 0 ? renderer->ListItemIndex : i;
+                break;
+            }
+        }
+
+        if (idx < 0 || (count > 0 && idx >= count)) return false;
+
+        label = ReadListItemText(list, idx);
+        if (string.IsNullOrWhiteSpace(label))
+            label = ReadRendererTextsClean(renderer);
+        return true;
     }
 
     /// <summary>

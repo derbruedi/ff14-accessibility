@@ -135,6 +135,16 @@ public sealed class PlacesService
     {
         var mapId = _clientState.MapId;
         if (mapId == 0) return null;
+        return MapPixelToWorldOnMap(mapId, pixelX, pixelY);
+    }
+
+    /// <summary>
+    /// Same as <see cref="MapPixelToWorld"/> but for an arbitrary map (cross-zone
+    /// fishing destinations that are not the player's current map).
+    /// </summary>
+    public Vector3? MapPixelToWorldOnMap(uint mapId, float pixelX, float pixelY)
+    {
+        if (mapId == 0) return null;
 
         if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map))
         {

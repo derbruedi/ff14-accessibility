@@ -24,7 +24,108 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **BossMod-Hotkeys Minus / Alt+Minus:** nur lokal (Temp-Backup beim
   Release-Push 2026-09-18). **Nie** committen/pushen. Details: PRIVAT.txt.
 
-## STAND JETZT (2026-09-20): RELEASE v6.08.30
+## STAND JETZT (2026-09-21): RELEASE v6.08.31
+
+>>> VERSION: gesprochen / Tag 6.08.31; Assembly/repo.json/Manifest 6.8.31.0
+    (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
+
+>>> INHALT:
+    - Zauber-Ansagen abschaltbar (Ansagen → „Zauber-Ansagen“): Gegner-Cast
+      und Kampflog-Aktionszeilen; Schaden/Heilung/Buffs unberührt
+    - Kontextmenü „Gruppen suchen“ per Enter; Numpad0 wieder Spiel-OK
+    - Sammel-Notizbuch: Ort/Gebiet in der Zeilenansage (GatherLogService)
+
+>>> NIE IM RELEASE: BossMod (Hotkeys Minus/Alt+Minus lokal), AutoDuty-Plugin,
+    AccessibleVendorSell, Craft-Kategorie.
+
+>>> UPDATE: Optionsmenü → Aktualisierung → Nach Aktualisierung suchen
+    (latest.zip / Custom-Repo).
+
+## STAND DAVOR (2026-09-21): ZAUBER-ANSAGEN ABSCHALTBAR
+
+>>> WUNSCH (User): Option an/aus — keine Spam-Ansagen, welche Skills Mitkämpfer
+    und Gegner zaubern.
+
+>>> FIX: Bestehender Schalter Ansagen → „Zauber-Ansagen“ (`AnnounceEnemyCast`):
+    Aus = Plugin-Gegner-Cast-Warnung (CombatService) UND Kampflog-Aktionszeilen
+    (XivChatType.Action) stumm. Archiv bleibt. Schaden/Heilung/Buffs unberührt.
+    Default weiterhin AN.
+
+>>> TEST: OK (User 2026-09-21).
+
+## STAND DAVOR (2026-09-21): NUMPAD0 WIEDER FREI (SPIEL-OK)
+
+>>> PROBLEM (User): Nach ContextMenu-Fix Quests annehmen etc. mit Numpad0 tot.
+
+>>> URSACHE: TryConfirmOpenContextMenu schluckte Numpad0 nach SelectItem —
+    Spiel-OK kam nicht mehr an.
+
+>>> FIX: Numpad0 nur noch Auswahl vorbereiten (SelectItem ohne schlucken).
+    Enter aktiviert ContextMenu weiter explizit. SpokenMenu/Skill-Menü schlucken
+    Numpad0 nur wenn DIESES Menü offen ist (unverändert).
+
+>>> TEST: Quest annehmen mit Numpad0. Gegenprobe: Kontextmenü „Gruppen suchen“
+    mit Numpad0.
+
+## STAND DAVOR (2026-09-20): KONTEXTMENÜ „GRUPPEN SUCHEN“ AKTIVIEREN
+
+>>> PROBLEM (User + Dump/Log): Inhaltssuche → Kontextmenü „Gruppen suchen“
+    wird angesagt, Bestätigen öffnet LookingForGroup nicht. Dump: ContextMenu
+    ListLen=3 Sel=-1.
+
+>>> URSACHE: Fokus allein setzt SelectedItemIndex nicht; Spiel-OK (Numpad0)
+    trifft dann nichts / ContentsFinder darunter.
+
+>>> FIX: TryActivateFocusedContextMenu — SelectItem(idx, true) + Click-Fallback.
+    Enter (HandleConfirmKey) und Numpad0 (schlucken, damit Inhaltssuche OK nicht
+    mitnimmt).
+
+>>> TEST: Inhaltssuche → Kontextmenü → „Gruppen suchen“ → Numpad0 oder Enter
+    → Gruppensuche (LookingForGroup) öffnet sich.
+
+## STAND DAVOR (2026-09-20): SAMMEL-NOTIZBUCH — ORT ENGER (PlaceName)
+
+>>> FIX: Miner/Gärtner sagen jetzt auch Ort aus `GatheringPoint.PlaceName`
+    (Karten-Unterort), nicht nur Territory-Gebiet. Ort==Gebiet → nur Gebiet.
+    Erreichbarer Spot (wenigste Hops) zuerst, sonst erster Sheet-Spot.
+
+>>> TEST: Notizbuch-Zeile → z.B. „Ort Hammerhügel, Gebiet Zentral-Thanalan“.
+
+## STAND DAVOR (2026-09-20): SAMMEL-NOTIZBUCH — ORT/GEBIET IN DER ANSAGE
+
+>>> ÄNDERUNG: SpokenMenu (Strg+Numpad2, `/acc gatherlog`, Auto-Lauf) entfernt.
+    Im Spiel-Notizbuch (`GatheringNote`): hinter Name/Stufe/Haken kommen
+    Ort (Fischer: FishingSpot) und Gebiet (Territory PlaceName). Miner/Gärtner
+    nur Gebiet. Lookup: GatherLogService per Item-Name, Hop-Graph wählt
+    erreichbares Gebiet wenn mehrere.
+
+>>> TEST: Notizbuch öffnen → Zeile fokussieren → Ansage mit Gebiet
+    (Fischer: Ort + Gebiet). Strg+Numpad2 öffnet kein Plugin-Menü mehr.
+
+## STAND DAVOR (2026-09-20): SAMMEL-NOTIZBUCH — GEBIETE WIE QUESTS
+
+>>> FIX: Map-ID kommt jetzt aus dem Hop-Graphen ab deiner aktuellen Karte
+    (wie Quest-Ziele / Sammelpunkte), nicht aus „erste Map-Zeile der Zone“.
+    Sonst: „kein Übergang dorthin“. Erreichbare Fundorte zuerst (wenigste Hops).
+
+>>> TEST: Eintrag in anderer Zone → Numpad0 → Lauf zum Übergang.
+    (überholt: Menü entfernt 2026-09-20)
+
+## STAND DAVOR (2026-09-20): SAMMEL-NOTIZBUCH-MENÜ
+
+>>> NEU: SpokenMenu Miner / Gärtner / Fischer → Stufe → Gegenstände
+    (ungesammelt zuerst). Numpad0 startet Auto-Lauf (kartenübergreifend wie
+    Quests). Taste **Strg+Numpad2** (schluckt Allianzliste) + `/acc gatherlog`.
+    Daten: Sheets + `IsGatheringItemGathered` / `IsFishCaught`.
+    DEBUG: `/acc gatherlogprobe`.
+
+>>> HINWEIS Taste: Strg+Numpad2 spielbelegt; bei diesem Spieler kamen früher
+    nur Strg+Numpad0/3/5 zuverlässig an — wenn 2 still bleibt: `/acc gatherlog`.
+
+>>> TEST: Strg+Numpad2 oder /acc gatherlog → Job → Stufe → Eintrag → Numpad0.
+    (überholt: Menü entfernt 2026-09-20)
+
+## STAND DAVOR (2026-09-20): RELEASE v6.08.30
 
 >>> VERSION: gesprochen / Tag 6.08.30; Assembly/repo.json/Manifest 6.8.30.0
     (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.

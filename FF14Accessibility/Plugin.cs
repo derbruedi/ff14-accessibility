@@ -78,6 +78,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly FateService        _fates;
     private readonly EventAreaService   _eventAreas;
     private readonly GatheringService   _gathering;
+    private readonly GatherLogService   _gatherLog;
     private readonly BestiaryService    _bestiary;
     private readonly HuntingLogService  _huntingLog;
     private readonly AreaRangeService   _areaRanges;
@@ -202,8 +203,8 @@ public sealed class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.30";
-    private const string PluginVersionTag = "Buddy Crossbar Dialog GC";
+    private const string PluginVersion    = "6.08.31";
+    private const string PluginVersionTag = "Zauber Gather Context";
 
     public Plugin()
     {
@@ -455,6 +456,7 @@ public sealed class Plugin : IDalamudPlugin
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
+        _gatherLog    = new GatherLogService(DataManager, ClientState, _places, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
@@ -527,7 +529,7 @@ public sealed class Plugin : IDalamudPlugin
         // und liefert dem Fokus-Leser an einer Stelle den Satz zur Kategorie bzw.
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots, _gatherLog);
         _synthesis   = new SynthesisService(GameGui, _tolk, Log);
         // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte
         // Rezept beantwortet: was ist mit dem Beutelinhalt jetzt herstellbar. Der
@@ -980,6 +982,11 @@ public sealed class Plugin : IDalamudPlugin
             case "gather":
                 _gathering.AnnounceSpotsInCurrentZone();
                 break;
+#if DEBUG
+            case "gatherlogprobe":
+                _tolk.SpeakInterrupt(_gatherLog.Probe());
+                break;
+#endif
             case "gathergo":
                 GatherWalkToNearest();
                 break;
@@ -1524,6 +1531,18 @@ public sealed class Plugin : IDalamudPlugin
         _navigation.StopWalkGuideQuiet();
         if (_autoWalk.IsActive) _autoWalk.StopQuiet();
         _autoWalk.ToggleToPosition(floor, name, 3f);
+    }
+
+    /// <summary>
+    /// When Numpad0 (game OK) is pressed and a ContextMenu row has focus but no
+    /// list selection, select that row so the game can confirm it. Never swallows
+    /// Numpad0 — quest accept and other OK actions must reach the game
+    /// (regression 2026-09-21 after swallowing).
+    /// </summary>
+    private void PrepareContextMenuForGameOk()
+    {
+        if (!IsJustPressed("Numpad0")) return;
+        _uiReader.EnsureFocusedContextMenuSelected();
     }
 
     /// <summary>
@@ -2365,6 +2384,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
         if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu(IsControllerMode());
+        // ContextMenu: nur Auswahl setzen, Numpad0 NICHT schlucken (Spiel-OK).
+        PrepareContextMenuForGameOk();
         // [Job-Anzeige] Zustand auf Nachfrage, ohne auf eine Flanke zu warten.
         if (IsJustPressed(_config.KeyJobGauge))      _jobGauge.AnnounceCurrent();
         HandleFaceWaypointKey();

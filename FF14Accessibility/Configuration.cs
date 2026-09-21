@@ -575,7 +575,10 @@ public sealed class Configuration : IPluginConfiguration
     // in sechs Sekunden). Abschaltbar, weil es auf einem Toetungs-Freibrief ein paar
     // Ansagen mehr sind.
     public bool FineTargetHpDuringLeve = true;
-    public bool AnnounceEnemyCast = true;       // Ansage wenn das Ziel eine Aktion wirkt
+    // Plugin-Gegner-Cast-Warnung (CombatService) UND Kampflog-Aktionszeilen
+    // (XivChatType.Action = 43, Mitkaempfer/Gegner/"Du wirkst …"). Aus = beides stumm;
+    // Schaden/Heilung/Buffs im Kampflog bleiben. Ein Schalter fuer beide Quellen.
+    public bool AnnounceEnemyCast = true;
     // Sonderaktionsleiste eines Auftrags. STANDARD AN, anders als die Flaechenwarnung:
     // hier wird nichts berechnet und nichts behauptet - die Leiste ist da oder nicht,
     // und ohne Ansage erfaehrt ein blinder Spieler ihr Auftauchen ueberhaupt nicht.

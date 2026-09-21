@@ -3868,6 +3868,23 @@ public static partial class AccessibilityStrings
         IsGerman ? "noch nie gesammelt, Bonus für die erste Ernte"
                  : "not gathered yet, first-time bonus";
 
+    /// <summary>
+    /// Appends fishing-spot place and territory after a journal row.
+    /// When place is empty or equals area, only the territory is spoken.
+    /// </summary>
+    public static string GatherNoteLocation(string? place, string area)
+    {
+        if (string.IsNullOrWhiteSpace(area)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(place)
+            || string.Equals(place, area, StringComparison.CurrentCultureIgnoreCase))
+        {
+            return IsGerman ? $"Gebiet {area}" : $"area {area}";
+        }
+        return IsGerman
+            ? $"Ort {place}, Gebiet {area}"
+            : $"place {place}, area {area}";
+    }
+
     //  Filter des Journals: ihr Zustand wird NICHT hier gesprochen, sondern am
     //  Bedienelement selbst - der Fokusleser liest das Ankreuzfeld des Fensters
     //  GatheringNoteSetting und nennt es mit denselben Worten wie jeden anderen
