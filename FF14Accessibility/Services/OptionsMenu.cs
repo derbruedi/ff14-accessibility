@@ -1253,6 +1253,9 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptVitalCues,        () => _config.AnnounceVitalCues,   v => _config.AnnounceVitalCues = v),
             Volume(AccessibilityStrings.OptVitalCueVolume,   () => _config.VitalCueVolume,      v => _config.VitalCueVolume = v),
 
+            Toggle(AccessibilityStrings.OptMovementCues,      () => _config.AnnounceMovementCues, v => _config.AnnounceMovementCues = v),
+            Volume(AccessibilityStrings.OptMovementCueVolume, () => _config.MovementCueVolume,    v => _config.MovementCueVolume = v),
+
             // LAUTSTAERKE UND KLANG DER FLAECHENWARNUNG SIND HIER, ihr SCHALTER
             // weiterhin nicht (Begruendung oben). Das ist kein Widerspruch: der
             // Schalter fehlt, weil der Ausloeser noch zu oft anschlaegt - und
@@ -1529,6 +1532,45 @@ public sealed class OptionsMenu
         return level;
     }
 
+    private MenuEntry NocturneWarpModeEntry() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptNocturneWarpMode,
+                      AccessibilityStrings.NocturneWarpModeName(_config.NocturneWarpMode)),
+        Submenu = BuildNocturneWarpModeChoices,
+    };
+
+    private MenuLevel BuildNocturneWarpModeChoices()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptNocturneWarpMode,
+            Rebuild = BuildNocturneWarpModeChoices,
+        };
+
+        foreach (var mode in new[]
+                 { NocturneWarpMode.Off, NocturneWarpMode.Manual, NocturneWarpMode.Auto })
+        {
+            var choice = mode;
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.NocturneWarpModeName(choice),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.NocturneWarpMode = choice;
+                    Persist();
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NocturneWarpModeName(choice));
+                    _log.Info($"[Einstellungen] Garuda-Event Warp -> {choice}");
+                },
+            });
+        }
+
+        level.Cursor = (int)_config.NocturneWarpMode;
+        if (level.Cursor < 0 || level.Cursor > 2) level.Cursor = 0;
+        return level;
+    }
+
     // ── Announcements ─────────────────────────────────────────────
 
     private MenuLevel BuildAnnouncements() => new()
@@ -1549,6 +1591,7 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptTargetHp,      () => _config.AnnounceTargetHp,      v => _config.AnnounceTargetHp = v),
             Toggle(AccessibilityStrings.OptEnemyMarkers,  () => _config.EnemyMarkersEnabled,  v => _config.EnemyMarkersEnabled = v),
             Toggle(AccessibilityStrings.OptEnemyCast,     () => _config.AnnounceEnemyCast,     v => _config.AnnounceEnemyCast = v),
+            NocturneWarpModeEntry(),
             // Feine HP-Stufen im Freibrief: gehoert hier hin, weil es auf einem
             // Toetungs-Auftrag ein paar Ansagen mehr sind und der Spieler das
             // abwaehlen koennen muss, ohne die Ziel-HP ganz auszuschalten.

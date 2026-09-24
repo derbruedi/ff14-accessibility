@@ -63,6 +63,12 @@ public sealed class AoeWarningService : IDisposable
         }
     }
 
+    /// <summary>Re-applies volume for window focus without changing alarm state.</summary>
+    public void ApplyFocusMute()
+    {
+        if (_provider != null) ApplySettings(_provider);
+    }
+
     /// <summary>
     /// Spielt einen Klang kurz zum Probehoeren an, ohne dass eine Gefahr besteht.
     ///
@@ -81,6 +87,7 @@ public sealed class AoeWarningService : IDisposable
     /// unquittiert.</returns>
     public bool PlayPreview(AoeWarnTone tone)
     {
+        if (!GameWindowFocus.IsActive) return false;
         EnsureStarted();
         if (_provider == null) return false;
         if (_config.AoeWarnVolume <= 0f) return false;
@@ -94,7 +101,9 @@ public sealed class AoeWarningService : IDisposable
 
     private void ApplySettings(AoeAlarmSampleProvider provider)
     {
-        provider.Volume = _config.AoeWarnVolume;
+        // Background window: hold the alarm state but emit silence so Alt-Tab
+        // does not leave the danger tone playing over another application.
+        provider.Volume = GameWindowFocus.IsActive ? _config.AoeWarnVolume : 0f;
         provider.Tone   = _config.AoeWarnSound;
     }
 

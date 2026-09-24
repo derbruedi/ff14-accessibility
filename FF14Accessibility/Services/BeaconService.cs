@@ -199,6 +199,13 @@ public sealed class BeaconService : IDisposable
         _lastTargetKey = 0;
     }
 
+    /// <summary>Silences the beacon immediately when the game window loses focus.</summary>
+    public void ApplyFocusMute()
+    {
+        if (_provider != null && !GameWindowFocus.IsActive)
+            _provider.Silent = true;
+    }
+
     /// <summary>
     /// Fuettert den Ton mit dem aktuellen Ziel - jeden Frame aufzurufen.
     /// </summary>
@@ -245,6 +252,15 @@ public sealed class BeaconService : IDisposable
         if (provider == null) return;
 
         provider.Volume = _config.BeaconVolume;
+
+        // Alt-Tab: keep the stream open but emit silence. Navigation keeps
+        // calling Update every frame while a walk is active, so this reacts
+        // immediately when the game window loses focus.
+        if (!GameWindowFocus.IsActive)
+        {
+            provider.Silent = true;
+            return;
+        }
 
         if (targetKey != _lastTargetKey)
         {

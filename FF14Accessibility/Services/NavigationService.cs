@@ -46,7 +46,7 @@ internal enum NavCategory
     QuestEnemies,
     GatheringNodes,
     Fates,
-    // Events: zeitliche Kollab-Events (Yo-kai-Zonen). Siehe EventAreaService.
+    // Events: Yo-kai-Zonen + Collab-Event-FATEs. Siehe EventAreaService.
     EventAreas,
     // Jagdziele: die noch offenen Monster des aktuellen Jagdtagebuch-Rangs.
     // Kommt weder aus der Objekttabelle noch aus der Zone - Quelle sind
@@ -68,6 +68,10 @@ internal enum NavCategory
     // AozSpellSourceService); wer ankommt, muss den Traeger selbst suchen -
     // dafuer ist die Kategorie "Gegner" einen Tastendruck entfernt.
     BlueMagic,
+    // Bestienbuch: fehlende Bestien mit Fundort (XBMPet PlaceName → Karte).
+    // Wie Blaumagie nur bei aktivem Bestienbändiger; Numpad3 läuft zum Gebiet
+    // bzw. zum lebenden Exemplar, wenn der Pet-Name in der Objekttabelle steht.
+    Beastmaster,
     FishingSpots,
     // Dungeonliste: JEDER Eingang zu Dungeon, Pruefung oder Raid im Spiel, nach
     // Stufe sortiert - nicht nur die Tuer in Sichtweite (das ist Duties). Quelle
@@ -126,6 +130,7 @@ public sealed class NavigationService
     // nur EIN Punkt davon, siehe AreaRangeService.
     private readonly AreaRangeService _areaRanges;
     private readonly AozSpellSourceService _aozSources;
+    private readonly XbmPetSourceService _xbmSources;
     private readonly DutyEntranceService _dutyEntrances;
     private readonly DungeonRouteService _dungeonRoute;
     private readonly LevequestEnemyService _leveEnemies;
@@ -162,6 +167,7 @@ public sealed class NavigationService
         HuntingLogService huntingLog,
         AreaRangeService areaRanges,
         AozSpellSourceService aozSources,
+        XbmPetSourceService xbmSources,
         DutyEntranceService dutyEntrances,
         DungeonRouteService dungeonRoute,
         LevequestEnemyService leveEnemies,
@@ -192,6 +198,7 @@ public sealed class NavigationService
         _huntingLog = huntingLog;
         _areaRanges = areaRanges;
         _aozSources = aozSources;
+        _xbmSources = xbmSources;
         _dutyEntrances = dutyEntrances;
         _dungeonRoute = dungeonRoute;
         _leveEnemies = leveEnemies;
@@ -264,6 +271,7 @@ public sealed class NavigationService
                 SelectedHuntTarget        = null;
 
                 SelectedBlueMagicTarget   = null;
+                SelectedBeastTarget       = null;
                 _log.Info($"[Nav] Kategoriensatz gewechselt: {(deepNow ? "Tiefes Gewoelbe" : "Welt")}.");
             }
             DeepDungeon.Poll(player);
@@ -289,6 +297,7 @@ public sealed class NavigationService
                 && (SelectedQuestDestination != null || SelectedPlaceDestination != null
                     || SelectedObjectDestination != null || SelectedHuntTarget != null
                     || SelectedBlueMagicTarget != null
+                    || SelectedBeastTarget != null
                     || SelectedDutyEntrance != null))
             {
                 _log.Info($"[Nav] Spiel-Ziel {hardTargetId:X} anvisiert - verwerfe Browser-Markerauswahl, Numpad3 läuft zum Ziel.");
@@ -297,6 +306,7 @@ public sealed class NavigationService
                 SelectedObjectDestination = null;
                 SelectedHuntTarget = null;
                 SelectedBlueMagicTarget = null;
+                SelectedBeastTarget = null;
                 SelectedDutyEntrance = null;
                 SelectedDungeonStep = null;
             }
@@ -652,7 +662,7 @@ public sealed class NavigationService
         // FATEs stehen NIE im Aufgaben-Journal - reine Welt-Ereignisse, die das Spiel
         // nur hier und auf der Karte fuehrt. Position speist den Numpad3-Auto-Lauf.
         (NavCategory.Fates,           null),
-        // Events: Yo-kai-Zonen (und spaeter weitere zeitliche Events).
+        // Events: Yo-kai-Zonen und Collab-Event-FATE-Spawns.
         (NavCategory.EventAreas,      null),
         // Jagdziele: was der aktuelle Rang des Jagdtagebuchs noch verlangt, mit
         // dem Gebiet, in dem das Monster lebt. Wie die Quest-Ziele auch dann,
@@ -669,6 +679,9 @@ public sealed class NavigationService
         // Grund: ein Zauber, dessen Ort drei Zonen weiter liegt, steht in keiner
         // Objektliste. Siehe AozSpellSourceService.
         (NavCategory.BlueMagic,       null),
+        // Bestien: fehlende Einträge des Bestienbuchs mit Fundort. Quelle
+        // XBMPet + XBMManager.IsPetUnlocked — siehe XbmPetSourceService.
+        (NavCategory.Beastmaster,     null),
         // Angelplätze kommen aus dem FishingSpot-Sheet (FishingService), nicht aus
         // der ObjectTable: das Sheet kennt ALLE Angelplätze der Zone (das Spiel
         // streamt Angel-Löcher als Objekt erst in ~100 m ein, als Suche nach "wo
@@ -889,6 +902,7 @@ public sealed class NavigationService
     private bool IsHuntingCategory         => Categories[_categoryIndex].Cat == NavCategory.HuntingTargets;
     private bool IsCompanyHuntCategory     => Categories[_categoryIndex].Cat == NavCategory.GrandCompanyHunt;
     private bool IsBlueMagicCategory       => Categories[_categoryIndex].Cat == NavCategory.BlueMagic;
+    private bool IsBeastmasterCategory     => Categories[_categoryIndex].Cat == NavCategory.Beastmaster;
     private bool IsWorldDutyCategory       => Categories[_categoryIndex].Cat == NavCategory.WorldDuties;
     private bool IsDungeonRouteCategory    => Categories[_categoryIndex].Cat == NavCategory.DungeonRoute;
     private bool IsGatheringSpotCategory   => Categories[_categoryIndex].Cat == NavCategory.GatheringNodes;
@@ -1056,13 +1070,18 @@ public sealed class NavigationService
     /// </summary>
     private void PollHuntTargetInRange(IGameObject player)
     {
-        var target = SelectedHuntTarget;
+        var hunt = SelectedHuntTarget;
+        var beast = SelectedBeastTarget;
+        if (hunt == null && beast == null) return;
         var search = _huntSearch;
-        if (target == null || search == null) return;
+        if (search == null) return;
         if (Environment.TickCount64 - _lastHuntPoll < 1000) return;
         _lastHuntPoll = Environment.TickCount64;
 
-        var live = _huntingLog.FindNearestLive(target.MonsterName);
+        var monsterName = hunt?.MonsterName ?? beast!.Name;
+        var live = hunt != null
+            ? _huntingLog.FindNearestLive(monsterName)
+            : _xbmSources.FindNearestLive(monsterName);
         if (live == null)
         {
             // Wieder ausser Sicht: die naechste Ankunft soll erneut melden und
@@ -1076,9 +1095,9 @@ public sealed class NavigationService
         if (!search.Announced)
         {
             search.Announced = true;
-            _log.Info($"[Jagd] '{target.MonsterName}' in Reichweite: {distance:F0} m.");
+            _log.Info($"[Jagd] '{monsterName}' in Reichweite: {distance:F0} m.");
             _tolk.SpeakInterrupt(AccessibilityStrings.HuntingTargetInRange(
-                target.MonsterName, FormatDistance(distance), CalculateDirection(player, live.Position)));
+                monsterName, FormatDistance(distance), CalculateDirection(player, live.Position)));
         }
 
         // Areal-Suche laeuft zu MapRange-Mittelpunkten (Bahnhof, Beschriftung),
@@ -1088,7 +1107,7 @@ public sealed class NavigationService
         if (search.RetargetedId == live.GameObjectId) return;
         search.RetargetedId = live.GameObjectId;
         TargetFromBrowser(live);
-        OnHuntSpecimenFound?.Invoke(live, target.MonsterName);
+        OnHuntSpecimenFound?.Invoke(live, monsterName);
     }
 
     private long _lastHuntPoll;
@@ -1099,6 +1118,24 @@ public sealed class NavigationService
     /// der Ort in einer anderen Zone liegt - dann fuehrt der Lauf zum Uebergang.
     /// </summary>
     public AozSpellTarget? SelectedBlueMagicTarget { get; private set; }
+
+    /// <summary>
+    /// Die im Browser gewählte Bestie, damit Numpad3 zu ihrem Fundort (oder
+    /// zum lebenden Exemplar) laufen kann — analog zu
+    /// <see cref="SelectedBlueMagicTarget"/>.
+    /// </summary>
+    public XbmPetTarget? SelectedBeastTarget
+    {
+        get => _selectedBeastTarget;
+        private set
+        {
+            _selectedBeastTarget = value;
+            // Suchlauf gehört zur Auswahl: ohne Bestie keinen Areal-Lauf.
+            if (value == null && _selectedHuntTarget == null) _huntSearch = null;
+        }
+    }
+
+    private XbmPetTarget? _selectedBeastTarget;
 
     /// <summary>
     /// Der Inhalts-Eingang, den der Browser in der Dungeonliste gewaehlt hat,
@@ -1195,6 +1232,7 @@ public sealed class NavigationService
         SelectedObjectDestination = null;
         SelectedHuntTarget = null;
         SelectedBlueMagicTarget = null;
+        SelectedBeastTarget = null;
         SelectedDutyEntrance = null;
         SelectedDungeonStep = null;
         _selectedGatherSpot = null;
@@ -1227,6 +1265,23 @@ public sealed class NavigationService
             // Enemies exist only while a leve is actually running - see
             // GetLevequestEnemies; outside that this is 0 and stays unspoken.
             var enemies = _objectTable.LocalPlayer is { } p ? GetLevequestEnemies(p).Count : 0;
+            if (givers == 0 && goals == 0 && enemies == 0)
+            {
+                var running = _leveEnemies.GetRunningLeve();
+                if (running != null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestRunningNoEnemies(
+                        running.LeveName, running.Objective));
+                    return;
+                }
+                var accepted = _leveEnemies.GetAcceptedLeveNames();
+                if (accepted.Count > 0)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestAcceptedOnly(
+                        string.Join(", ", accepted)));
+                    return;
+                }
+            }
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestCount(givers, goals, enemies));
             return;
         }
@@ -1312,6 +1367,14 @@ public sealed class NavigationService
             var missing = _aozSources.GetMissing();
             var here = missing.Count(t => t.Kind == AozSourceKind.World && t.MapId == _clientState.MapId);
             _tolk.SpeakInterrupt(AccessibilityStrings.CategoryBlueMagicCount(missing.Count, here));
+            return;
+        }
+
+        if (IsBeastmasterCategory)
+        {
+            var missing = _xbmSources.GetMissingInBookOrder();
+            var here = missing.Count(t => t.MapId != 0 && t.MapId == _clientState.MapId);
+            _tolk.SpeakInterrupt(AccessibilityStrings.CategoryBeastmasterCount(missing.Count, here));
             return;
         }
 
@@ -1446,6 +1509,12 @@ public sealed class NavigationService
         if (IsBlueMagicCategory)
         {
             CycleBlueMagicTarget(direction, player);
+            return;
+        }
+
+        if (IsBeastmasterCategory)
+        {
+            CycleBeastmasterTarget(direction, player);
             return;
         }
 
@@ -1829,7 +1898,7 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
-    // ── Events: zeitliche Kollab-Event-Zonen (Yo-kai u.a.) ──
+    // ── Events: Yo-kai-Zonen + Collab-Event-FATE-Spawns ──
     private void CycleEventAreaDestination(int direction, IGameObject player)
     {
         var areas = _eventAreas.GetAreasSorted();
@@ -1919,7 +1988,30 @@ public sealed class NavigationService
         var player = _objectTable.LocalPlayer;
         if (player == null) return new List<QuestDestination>();
 
-        var ordered = _questMarkers.GetLevequestDestinations()
+        // Live map markers first (GuildLeveAssignmentMarkers + LevequestMarkers).
+        // Drop objective markers for leves that are ready for turn-in or failed
+        // (LeveWork.Sequence 255 / 3) — same rule as the sheet fallback.
+        var fromMap = _questMarkers.GetLevequestDestinations()
+            .Where(m => m.Role != QuestMarkerRole.LeveObjective
+                        || _leveEnemies.IsLeveObjectiveActiveByName(m.QuestName))
+            .ToList();
+        var fromSheet = _leveEnemies.GetSheetDestinations(_clientState.TerritoryType);
+        var combined = new List<QuestDestination>(fromMap);
+        foreach (var sheetDest in fromSheet)
+        {
+            // Givers: same spot as a map Levemete marker → skip (map label wins,
+            // e.g. "Gildenfreibriefe"). Objectives: also match name so two leves
+            // that share a LevelStart stay separate.
+            var covered = fromMap.Any(m =>
+                m.Role == sheetDest.Role
+                && (int)MathF.Round(m.Position.X) == (int)MathF.Round(sheetDest.Position.X)
+                && (int)MathF.Round(m.Position.Z) == (int)MathF.Round(sheetDest.Position.Z)
+                && (sheetDest.Role == QuestMarkerRole.LeveGiver
+                    || string.Equals(m.QuestName, sheetDest.QuestName, StringComparison.Ordinal)));
+            if (!covered) combined.Add(sheetDest);
+        }
+
+        var ordered = combined
             .OrderByDescending(d => d.InCurrentZone)
             .ThenBy(d => d.Role == QuestMarkerRole.LeveGiver ? 0 : 1)
             .ThenBy(d => EffectiveWalkDistance(player.Position, d))
@@ -2083,7 +2175,17 @@ public sealed class NavigationService
         {
             SelectedQuestDestination = null;
             SelectedObjectDestination = null;
-            _tolk.SpeakInterrupt(AccessibilityStrings.NoLevequests);
+            var running = _leveEnemies.GetRunningLeve();
+            if (running != null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.CategoryLevequestRunningNoEnemies(
+                    running.LeveName, running.Objective));
+                return;
+            }
+            var accepted = _leveEnemies.GetAcceptedLeveNames();
+            _tolk.SpeakInterrupt(accepted.Count > 0
+                ? AccessibilityStrings.CategoryLevequestAcceptedOnly(string.Join(", ", accepted))
+                : AccessibilityStrings.NoLevequests);
             return;
         }
 
@@ -2495,6 +2597,124 @@ public sealed class NavigationService
         _log.Info($"[AozZiel] {_cycleIndex + 1}/{count}: Nr. {target.Number} '{target.SpellName}' " +
                   $"{target.Kind} '{target.PlaceName}' Map={target.MapId} Inhalt={target.InstanceContentId}");
         _tolk.SpeakInterrupt(AccessibilityStrings.MenuPosition(text, _cycleIndex + 1, count));
+    }
+
+    /// <summary>
+    /// Blaettert durch fehlende Bestien in Buchreihenfolge. Wie Blaumagie nach
+    /// Nummer; mit Untergebiet/Wegpunkt wenn das Jagdtagebuch in derselben Zone
+    /// einen Habitat nennt oder der Fundort selbst ein Marker ist.
+    /// </summary>
+    private void CycleBeastmasterTarget(int direction, IGameObject player)
+    {
+        var targets = _xbmSources.GetMissingInBookOrder();
+        if (targets.Count == 0)
+        {
+            SelectedBeastTarget = null;
+            _tolk.SpeakInterrupt(AccessibilityStrings.NoBeastmasterTargets);
+            return;
+        }
+
+        var count = targets.Count;
+        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        var target = targets[_cycleIndex];
+        SelectedBeastTarget = target;
+        BuildBeastSearch(target, player.Position);
+
+        var text = AccessibilityStrings.BeastmasterEntry(target.Name, target.Number);
+        var live = target.MapId == _clientState.MapId
+            ? _xbmSources.FindNearestLive(target.Name)
+            : null;
+        var inZone = target.MapId != 0 && target.MapId == _clientState.MapId;
+
+        if (live != null)
+        {
+            text += ", " + AccessibilityStrings.HuntingMonsterNearby + ", " +
+                    $"{FormatDistance(Distance2D(player.Position, live.Position))}, " +
+                    $"{CalculateDirection(player, live.Position)}.";
+            if (_huntSearch != null) _huntSearch.Announced = true;
+        }
+        else if (inZone && NextHuntSearchPart(player.Position) is { } part && part.Count > 1)
+        {
+            var habitat = AccessibilityStrings.BeastmasterArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) +
+                    AccessibilityStrings.HuntingSearchPart(
+                        part.Name, part.Index, part.Count,
+                        FormatDistance(Distance2D(player.Position, part.Position)),
+                        CalculateDirection(player, part.Position));
+        }
+        else if (inZone && target.Position is { } pos)
+        {
+            var habitat = AccessibilityStrings.BeastmasterArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) +
+                    $"{FormatDistance(Distance2D(player.Position, pos))}, " +
+                    $"{CalculateDirection(player, pos)}.";
+        }
+        else if (inZone)
+        {
+            text += ", " + AccessibilityStrings.BeastmasterHere;
+        }
+        else if (target.MapId != 0)
+        {
+            var hops = _places.GetHopDistances();
+            var zonePart = hops.TryGetValue(target.MapId, out var h)
+                ? AccessibilityStrings.InAreaWithHops(target.ZoneName, h)
+                : AccessibilityStrings.InArea(target.ZoneName);
+            var habitat = AccessibilityStrings.BeastmasterArea(target.AreaName);
+            text += ", " + (habitat.Length > 0 ? habitat + " " + zonePart : zonePart);
+        }
+        else
+        {
+            text += ", " + AccessibilityStrings.BeastmasterNoPlace;
+        }
+
+        _log.Info($"[XbmZiel] {_cycleIndex + 1}/{count}: Nr. {target.Number} '{target.Name}' " +
+                  $"zone='{target.ZoneName}' area='{target.AreaName}' Map={target.MapId} " +
+                  $"live={(live != null)}");
+        _tolk.SpeakInterrupt(AccessibilityStrings.MenuPosition(text, _cycleIndex + 1, count));
+    }
+
+    /// <summary>
+    /// Arealsuche für eine Bestie — gleiche Bauart wie
+    /// <see cref="BuildHuntSearch"/>, eigener Einstieg weil die Quelle
+    /// <see cref="XbmPetTarget"/> ist.
+    /// </summary>
+    private void BuildBeastSearch(XbmPetTarget target, Vector3 playerPosition)
+    {
+        _huntSearch = null;
+        if (target.MapId == 0 || target.MapId != _clientState.MapId || target.TerritoryId == 0)
+            return;
+        if (target.AreaPlaceNameId == 0 && target.Position == null)
+            return;
+
+        var sortFrom = target.Position ?? playerPosition;
+        var parts = target.AreaPlaceNameId != 0
+            ? _areaRanges.GetParts(target.TerritoryId, target.AreaPlaceNameId,
+                                   target.AreaName, sortFrom)
+            : [];
+
+        if (target.Position is { } marker
+            && !parts.Any(p => Distance2D(p.Centre, marker) <= HuntPartReached))
+        {
+            parts.Add(new AreaPart(marker, target.AreaName, 0f));
+            parts.Sort((a, b) =>
+            {
+                var an = a.SpotName.Length == 0 ? 1 : 0;
+                var bn = b.SpotName.Length == 0 ? 1 : 0;
+                if (an != bn) return an.CompareTo(bn);
+                return Distance2D(sortFrom, a.Centre).CompareTo(Distance2D(sortFrom, b.Centre));
+            });
+        }
+
+        if (parts.Count == 0) return;
+
+        _huntSearch = new HuntSearch
+        {
+            MonsterName = target.Name,
+            TerritoryId = target.TerritoryId,
+            Parts = parts,
+        };
+        _log.Info($"[XbmZiel] '{target.Name}' in '{target.AreaName}': {parts.Count} Teilstücke, " +
+                  $"nächstes '{parts[0].SpotName}' {Distance2D(playerPosition, parts[0].Centre):F0} m.");
     }
 
     /// <summary>
@@ -3089,9 +3309,15 @@ public sealed class NavigationService
         // A running leve also keeps the category available on its own: its
         // enemies are in it, and they must never become unreachable just because
         // the marker list happens to be empty at that moment.
+        //
+        // Accepted-but-not-running (QuestManager.LeveQuests) likewise: after a
+        // failed leve the map markers clear while the leve stays held (log
+        // 2026-09-21 Angenommen 661, 0 Marker) — without this check the
+        // category vanished entirely.
         if (Categories[index].Cat == NavCategory.Levequests)
             return _questMarkers.GetLevequestDestinations().Count > 0
-                || _leveEnemies.GetRunningLeve() != null;
+                || _leveEnemies.GetRunningLeve() != null
+                || _leveEnemies.HasAcceptedLeve();
 
         // FATEs only where the zone actually has an active/preparing one - no
         // empty "0 FATEs" category in zones without any (same rule as fishing
@@ -3132,6 +3358,11 @@ public sealed class NavigationService
         // Durchblaettern nur ein Tastendruck Rauschen.
         if (Categories[index].Cat == NavCategory.BlueMagic)
             return IsBlueMageActive() && _aozSources.GetMissing().Count > 0;
+
+        // Bestien nur bei aktivem Bestienbändiger und solange Einträge fehlen.
+        // Ohne Job-Filter gälte alles als „fehlt“ — Rauschen wie bei Blaumagie.
+        if (Categories[index].Cat == NavCategory.Beastmaster)
+            return IsBeastmasterActive() && _xbmSources.GetMissingInBookOrder().Count > 0;
 
         // Dungeon nur, wo fuer diese Zone ueberhaupt ein Weg hinterlegt ist. Das
         // ist die grosse Mehrheit der Zonen NICHT - in der offenen Welt waere die
@@ -3236,6 +3467,31 @@ public sealed class NavigationService
     // Zuletzt geloggte Klasse, damit die Zeile oben einmal pro Wechsel kommt und
     // nicht in jedem Frame (gleiche Bauart wie _lastLoggedClassJob daneben).
     private uint _lastLoggedBlueMageJob = uint.MaxValue;
+
+    /// <summary>
+    /// True, wenn der Spieler gerade Bestienbändiger spielt. Job-Id aus dem
+    /// ClassJob-Sheet (Abkürzung BST), nicht hartcodiert.
+    /// </summary>
+    private bool IsBeastmasterActive()
+    {
+        var job = _xbmSources.BeastmasterJobId;
+        if (job == 0) return false;
+
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return false;
+
+        var isBst = player.ClassJob.RowId == job;
+        if (player.ClassJob.RowId != _lastLoggedBeastJob)
+        {
+            _lastLoggedBeastJob = player.ClassJob.RowId;
+            _log.Info($"[XbmZiel] Klasse {player.ClassJob.RowId} " +
+                      $"('{player.ClassJob.ValueNullable?.Name.ExtractText()}') " +
+                      $"gegen Bestienbändiger {job} -> Kategorie {(isBst ? "sichtbar" : "verborgen")}.");
+        }
+        return isBst;
+    }
+
+    private uint _lastLoggedBeastJob = uint.MaxValue;
 
     /// <summary>Objects of the given kinds within browse range, distance-sorted.</summary>
     private List<IGameObject> GetObjectsOfKinds(ObjectKind[] kinds)

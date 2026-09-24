@@ -55,6 +55,7 @@ public sealed class UIReaderService : IDisposable
     /// Aktions-Tooltip, das das Spiel ausschliesslich zeichnet.</summary>
     private readonly ActionShapeService _actionShape;
     private readonly AozNotebookService _aozNotebook;
+    private readonly XbmNotebookService _xbmNotebook;
 
     /// <summary>
     /// Der Leser des Blaumagie-Zauberbuchs. Oeffentlich, damit die Debug-Sonde
@@ -500,6 +501,7 @@ public sealed class UIReaderService : IDisposable
         _data           = data;
         _actionShape    = new ActionShapeService(data, log);
         _aozNotebook    = new AozNotebookService(gameGui, data, log);
+        _xbmNotebook    = new XbmNotebookService(data, log);
         _gcRanks        = new GrandCompanyRankText(data, log);
         _dutySettings   = new ContentsFinderSettingText(log);
         _specialShops   = new SpecialShopService(data, log);
@@ -3295,6 +3297,12 @@ public sealed class UIReaderService : IDisposable
     private long      _aozDwellTick;      // Zeitstempel, seit wann der Fokus dort steht
     private bool      _aozDwellSpoken;    // Details fuer dieses Verweilen schon gesagt?
 
+    // Bestienbuch: Nummer/Name/Fundort sofort; Beschreibung beim Verweilen
+    // (wie AOZ — sonst ertraenkt die Beschreibung das Raster).
+    private byte _xbmDwellNumber;   // 0 = keines
+    private long _xbmDwellTick;
+    private bool _xbmDwellSpoken;
+
     // Item slots (bags, armoury, shop, hand-over): the name+count is spoken the
     // instant the focus lands; the tooltip DESCRIPTION is only queued after the
     // focus has dwelled on the SAME item for the same interval (user choice
@@ -3508,6 +3516,14 @@ public sealed class UIReaderService : IDisposable
             // Beschriftung fand und die Zahlenfelder ganz verschluckte.
             text = searchRow;
         }
+        else if (TryReadLookingForGroupConditionFocus(node, out var lfgRow))
+        {
+            // Rekrutieren (LookingForGroupCondition): dieselben Schalter wie in
+            // ContentsFinderSetting, aber der generische Leser sagte nur die
+            // Beschriftung ("Keine Beschränkungen") ohne an/aus — und die
+            // Sprach-Kästen waren STUMM (Log 2026-09-24 21:56–21:58).
+            text = lfgRow;
+        }
         else if (TryReadCurrencyFocusRow(node, out var currencyRow))
         {
             // Vermoegen: die Zeile sagt jetzt, WELCHE Waehrung sie ist. Vor dem
@@ -3599,6 +3615,12 @@ public sealed class UIReaderService : IDisposable
             // 2026-09-02) und ein Zauber-Symbol sonst als Inventar-Gegenstand
             // nachgeschlagen wuerde.
             text = aozRow;
+        }
+        else if (TryReadXbmNotebookFocusRow(node, out var xbmRow))
+        {
+            // Bestienbuch des Bestienbaendigers: Kacheln nur "Nr. 1" — Name aus
+            // XBMPet (Dump/Log 2026-09-24). Vor dem allgemeinen Zweig.
+            text = xbmRow;
         }
         else if (TryReadBuddySkillFocusRow(node, out var buddySkillRow))
         {
@@ -3715,6 +3737,7 @@ public sealed class UIReaderService : IDisposable
         // Dedup, damit die Uhr weiterlaeuft, waehrend der Fokus auf einer Kachel
         // parkt.
         HandleAozNotebookDwell(node);
+        HandleXbmNotebookDwell(node);
 
         // Deferred item description (same reason it runs before the dedup return):
         // after the name was spoken, add the tooltip text once the focus has
@@ -3842,6 +3865,12 @@ public sealed class UIReaderService : IDisposable
             if (!string.IsNullOrEmpty(_lastFocusedItemName)
                 && IsAddonVisible("JournalResult")
                 && FindAddonNameForNode(node) != "JournalRewardItem"
+                && !navKeyHeld) return;
+            // JournalAccept: game auto-focuses Annehmen/Ablehnen on open. Speaking
+            // them interrupts the quest summary (log 2026-09-23/24). Only announce
+            // when the player is actually arrowing between the buttons.
+            if (IsJournalAcceptConfirmButton(text)
+                && IsAddonVisible("JournalAccept")
                 && !navKeyHeld) return;
             // Zeichen-Zaehler eines Textfelds ("3/40"): der Fokus sitzt auf
             // dem Zaehler-Node und wuerde bei jedem Tastendruck sprechen -
@@ -4988,6 +5017,155 @@ public sealed class UIReaderService : IDisposable
     }
 
     /// <summary>
+    /// Recruit party conditions (<c>LookingForGroupCondition</c>): switches with
+    /// on/off, language boxes by row index, dropdowns with their setting name,
+    /// comment/password fields named. Dump + focus log 2026-09-24.
+    /// </summary>
+    private unsafe bool TryReadLookingForGroupConditionFocus(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!string.Equals(FindAddonNameForNode(node), "LookingForGroupCondition", StringComparison.Ordinal))
+            return false;
+        var addon = FindAddonForNode(node);
+        if (addon == null) return false;
+
+        AtkComponentBase* comp = null;
+        AtkResNode* compNode = null;
+        var cur = node;
+        for (var up = 0; up < 6 && cur != null; up++, cur = cur->ParentNode)
+        {
+            if ((int)cur->Type < 1000) continue;
+            var candidate = ((AtkComponentNode*)cur)->Component;
+            if (candidate == null) continue;
+            // Prefer DropDownList over its embedded CheckBox display field
+            // (same trap as ContentsFinderSetting loot rules).
+            if (candidate->GetComponentType() == ComponentType.CheckBox
+                && cur->ParentNode != null
+                && (int)cur->ParentNode->Type >= 1000)
+            {
+                var parentComp = ((AtkComponentNode*)cur->ParentNode)->Component;
+                if (parentComp != null && parentComp->GetComponentType() == ComponentType.DropDownList)
+                {
+                    comp = parentComp;
+                    compNode = cur->ParentNode;
+                    break;
+                }
+            }
+            comp = candidate;
+            compNode = cur;
+            break;
+        }
+        if (comp == null || compNode == null) return false;
+
+        switch (comp->GetComponentType())
+        {
+            case ComponentType.CheckBox:
+            {
+                var isChecked = ((AtkComponentButton*)comp)->IsChecked;
+                var label = GetTextFromNodeTree(compNode).Trim();
+                // Icon-only language boxes (dump: Comp 1042/1040/1039/1041 under
+                // "Sprache", Social.tex parts, no text — Log STUMM 21:56:55).
+                if (label.Length == 0)
+                {
+                    var boxes = RowSiblings(addon, compNode, ComponentType.CheckBox);
+                    // Only the language strip shares y≈413; filter to that row.
+                    boxes.RemoveAll(b =>
+                    {
+                        var n = (AtkResNode*)b.Ptr;
+                        return n == null || MathF.Abs(n->ScreenY - compNode->ScreenY) > 8f;
+                    });
+                    boxes.Sort((a, b) => a.X.CompareTo(b.X));
+                    var index = boxes.FindIndex(b => b.Ptr == (nint)compNode);
+                    var name = _dutySettings.LanguageAt(index, boxes.Count);
+                    var group = AccessibilityStrings.DutyLanguageGroup;
+                    label = name.Length > 0 ? $"{group} {name}" : $"{group} {index + 1}";
+                }
+
+                text = $"{label}, {AccessibilityStrings.SwitchControl}, "
+                     + (isChecked ? AccessibilityStrings.StateOn : AccessibilityStrings.StateOff);
+                if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+                    text = $"{text}, {AccessibilityStrings.StateDisabled}";
+                return true;
+            }
+
+            case ComponentType.DropDownList:
+            {
+                var value = ReadFocusedControlValue(compNode, node).Trim();
+                var name = ConfigLabelByGeometry(addon, compNode, out var how);
+                if (how != ConfigLabelSource.RowLeft || name.Length == 0)
+                {
+                    // Fallback labels from dump when geometry miss-fires.
+                    if (compNode->ScreenY is >= 340 and <= 370)
+                        name = AccessibilityStrings.LfgLootRulesLabel;
+                    else if (compNode->ScreenY is >= 190 and <= 220)
+                        name = AccessibilityStrings.LfgCompletionLabel;
+                    else
+                        return false;
+                }
+                text = value.Length > 0
+                    ? AccessibilityStrings.DropdownDesc(name, value)
+                    : name;
+                if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+                    text = $"{text}, {AccessibilityStrings.StateDisabled}";
+                return true;
+            }
+
+            case ComponentType.RadioButton:
+            {
+                var option = GetTextFromNodeTree(compNode).Trim();
+                if (option.Length == 0)
+                    option = ConfigLabelByGeometry(addon, compNode, out _) is { Length: > 0 } g
+                        ? g
+                        : AccessibilityStrings.LfgRoleSlot;
+                var selected = ((AtkComponentRadioButton*)comp)->IsSelected;
+                text = $"{option}, "
+                     + (selected
+                            ? AccessibilityStrings.RadioSelected
+                            : AccessibilityStrings.RadioNotSelected);
+                return true;
+            }
+
+            case ComponentType.TextInput:
+            {
+                var typed = AtkText.Read(((AtkComponentTextInput*)comp)->AtkTextNode).Trim();
+                // Counter node ("1/2") is sibling text — prefer actual input body.
+                if (typed.Length == 0 || (typed.Contains('/') && typed.Length <= 5))
+                {
+                    // Body is often a separate text child; counter was what focus found.
+                    typed = GetTextFromNodeTree(compNode).Trim();
+                    if (typed.Contains('/') && typed.Length <= 5)
+                        typed = string.Empty;
+                }
+                var label = ConfigLabelByGeometry(addon, compNode, out var how);
+                if (how != ConfigLabelSource.RowLeft || label.Length == 0)
+                {
+                    // Dump: "Kommentar" @210,263 above the big input; password @668,143.
+                    label = compNode->ScreenX < 500
+                        ? AccessibilityStrings.LfgCommentLabel
+                        : AccessibilityStrings.LfgPasswordLabel;
+                }
+                text = AccessibilityStrings.NamedInputFieldValue(label, typed);
+                return true;
+            }
+
+            case ComponentType.NumericInput:
+            {
+                var input = (AtkComponentNumericInput*)comp;
+                var label = ConfigLabelByGeometry(addon, compNode, out var how);
+                if (how != ConfigLabelSource.RowLeft || label.Length == 0)
+                    label = AccessibilityStrings.LfgItemLevelLabel;
+                text = AccessibilityStrings.NamedInputFieldValue(label, input->Value.ToString());
+                if (((ushort)compNode->NodeFlags & (ushort)NodeFlags.Enabled) == 0)
+                    text = $"{text}, {AccessibilityStrings.StateDisabled}";
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Der Name eines Ankreuzfeldes der Spielersuche, in drei Stufen - weil das
     /// Fenster drei verschiedene Sorten davon hat und nur die erste eine
     /// Beschriftung traegt.
@@ -5582,6 +5760,106 @@ public sealed class UIReaderService : IDisposable
         if (_aozNotebook.TryDescribeSpellTile(node, out var tile, out _)) { text = tile; return true; }
         if (_aozNotebook.TryDescribeActiveSlot(node, out var slot))       { text = slot; return true; }
         return false; // Reiter, Knoepfe und Suchfeld behalten ihre normale Lesung
+    }
+
+    /// <summary>
+    /// Bestienbuch: Fokus auf einer Raster-Kachel → Name + Nummer aus XBMPet.
+    /// Die Kachel traegt nur das Nummernschild (Dump 2026-09-24).
+    /// </summary>
+    private unsafe bool TryReadXbmNotebookFocusRow(AtkResNode* node, out string text)
+    {
+        text = string.Empty;
+        if (!IsAddonVisible(XbmNotebookService.AddonName) || node == null) return false;
+        if (!TryFindXbmTileNumber(node, out var number)) return false;
+        try
+        {
+            text = _xbmNotebook.DescribeTile(number);
+        }
+        catch (Exception ex)
+        {
+            // Sheet-Fehler duerfen den Fokus-Leser nicht totlegen (Log 2026-09-24).
+            _log.Warning(ex, $"[XBM] DescribeTile Nr. {number} fehlgeschlagen.");
+            text = AccessibilityStrings.XbmPetNumberOnly(number);
+        }
+        return text.Length > 0;
+    }
+
+    /// <summary>
+    /// Bestienbuch: Beschreibung nachreichen, sobald der Fokus kurz auf derselben
+    /// Kachel steht. Nummer/Name/Fundort liefen schon (TryReadXbmNotebookFocusRow).
+    /// </summary>
+    private unsafe void HandleXbmNotebookDwell(AtkResNode* node)
+    {
+        if (!IsAddonVisible(XbmNotebookService.AddonName) ||
+            node == null ||
+            !TryFindXbmTileNumber(node, out var number) ||
+            number == 0)
+        {
+            _xbmDwellNumber = 0;
+            return;
+        }
+
+        if (number != _xbmDwellNumber)
+        {
+            _xbmDwellNumber = number;
+            _xbmDwellTick   = System.Diagnostics.Stopwatch.GetTimestamp();
+            _xbmDwellSpoken = false;
+            return;
+        }
+
+        if (_xbmDwellSpoken) return;
+        var elapsed = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _xbmDwellTick)
+                      / System.Diagnostics.Stopwatch.Frequency;
+        if (elapsed < ActionDescDwellSeconds) return;
+
+        _xbmDwellSpoken = true;
+        try
+        {
+            var details = _xbmNotebook.DescribeDetails(number);
+            if (!string.IsNullOrEmpty(details)) _tolk.Speak(details);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, $"[XBM] Beschreibung Nr. {number} fehlgeschlagen.");
+        }
+    }
+
+    /// <summary>
+    /// Klettert vom Fokus zur Bestien-Kachel (Comp Base mit Text "Nr. N") und
+    /// liest die Nummer. Dump: Collision id=12 unter Comp(1024), Schild id=11.
+    /// </summary>
+    private static unsafe bool TryFindXbmTileNumber(AtkResNode* focus, out byte number)
+    {
+        number = 0;
+        for (var n = focus; n != null; n = n->ParentNode)
+        {
+            if (TryReadNumberInSubtree(n, out number)) return true;
+        }
+        return false;
+    }
+
+    private static unsafe bool TryReadNumberInSubtree(AtkResNode* root, out byte number)
+    {
+        number = 0;
+        if (root == null) return false;
+
+        if (root->Type == NodeType.Text)
+        {
+            var t = AtkText.ReadClean((AtkTextNode*)root).Trim();
+            return XbmNotebookService.TryParseNumberLabel(t, out number);
+        }
+
+        if ((int)root->Type < 1000) return false;
+        var comp = ((AtkComponentNode*)root)->Component;
+        if (comp == null) return false;
+        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+        {
+            var child = comp->UldManager.NodeList[i];
+            if (child == null || child->Type != NodeType.Text || !child->IsVisible()) continue;
+            var t = AtkText.ReadClean((AtkTextNode*)child).Trim();
+            if (XbmNotebookService.TryParseNumberLabel(t, out number)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -7859,9 +8137,12 @@ public sealed class UIReaderService : IDisposable
                 cache[n->NodeId] = t;
                 if (!isInit && hasKey)
                 {
-                    _log.Info($"[Scan] {addonName} id={n->NodeId}: '{(t.Length > 60 ? t[..60] + "..." : t)}'"
+                    var spoken = addonName == XbmNotebookService.AddonName
+                        ? _xbmNotebook.EnrichNumberLabel(t)
+                        : t;
+                    _log.Info($"[Scan] {addonName} id={n->NodeId}: '{(spoken.Length > 60 ? spoken[..60] + "..." : spoken)}'"
                               + (IsBareNumber(t) ? " (Zaehler, nicht gesprochen)" : string.Empty));
-                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(t);
+                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(spoken);
                 }
                 continue;
             }
@@ -7882,9 +8163,12 @@ public sealed class UIReaderService : IDisposable
                 cache[key] = t;
                 if (!isInit && hasKey)
                 {
-                    _log.Info($"[Scan] {addonName} key={key}: '{(t.Length > 60 ? t[..60] + "..." : t)}'"
+                    var spoken = addonName == XbmNotebookService.AddonName
+                        ? _xbmNotebook.EnrichNumberLabel(t)
+                        : t;
+                    _log.Info($"[Scan] {addonName} key={key}: '{(spoken.Length > 60 ? spoken[..60] + "..." : spoken)}'"
                               + (IsBareNumber(t) ? " (Zaehler, nicht gesprochen)" : string.Empty));
-                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(t);
+                    if (!IsBareNumber(t)) _tolk.SpeakInterrupt(spoken);
                 }
             }
         }
@@ -11033,6 +11317,9 @@ public sealed class UIReaderService : IDisposable
     {
         "Zusammenfassung", "Optionen", "Vergütung bei Erfolg", "Vergütung",
         "Bedingungen", "Information", "Tipps", "Ziel", "Belohnung",
+        // Label above the body; without this the first PostUpdate frames spoke
+        // only "Beschreibung" before the body text filled (log 2026-09-23 23:41).
+        "Beschreibung", "Description",
     };
 
     /// <summary>
@@ -11075,10 +11362,11 @@ public sealed class UIReaderService : IDisposable
         _lastQuestText[name] = text;
         _log.Info($"[Quest] {name}: '{text}'");
         _tolk.SpeakInterrupt(text);
-        // No dialog-open guard here any more: it existed solely to stop the
-        // auto-focused "Abschließen" button from cutting the reward summary off
-        // (log 2026-07-31 16:46:38.100 -> .104). With no summary to protect, that
-        // button announcement is now the wanted feedback that the window opened.
+        // JournalAccept auto-focuses "Annehmen" a few ms later; without a guard
+        // that SpeakInterrupt cuts the quest summary off (log 2026-09-23/24:
+        // [Quest] then [Focus] 'Annehmen' ~8 ms later). Same pattern as SelectYesno.
+        if (name == "JournalAccept")
+            _dialogOpenedAt = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -11086,10 +11374,12 @@ public sealed class UIReaderService : IDisposable
     /// JournalCanvas component. For JournalDetail the node ids are verified
     /// (9 level, 8 description; objective rows Multipurpose -> id=3; id=38 is an
     /// EXP "Bonus." badge, not the title, so it is skipped) and give a structured
-    /// readout. For JournalAccept/JournalResult the ids are not verified yet, so
-    /// if the known ids yield nothing we fall back to reading every visible text
-    /// node in the canvas in order. Each text node is logged ([Quest]) so the
-    /// structure can be turned into a precise reader later.
+    /// readout. For JournalAccept, root-level nodes (dump 2026-09-24) carry the
+    /// title and the "cannot accept" reason outside the canvas — those are
+    /// prepended when visible. For JournalResult the canvas ids are not verified
+    /// yet, so if the known ids yield nothing we fall back to reading every
+    /// visible text node in the canvas in order. Each text node is logged
+    /// ([Quest]) so the structure can be turned into a precise reader later.
     /// "" when the window is not visible, has no canvas, or carries no text.
     /// </summary>
     private unsafe string BuildQuestText(string addonName)
@@ -11099,12 +11389,20 @@ public sealed class UIReaderService : IDisposable
         var addon = (AtkUnitBase*)(nint)ptr;
         if (!addon->IsVisible) return string.Empty;
 
+        // JournalAccept: title + reject reason sit on the addon root (siblings of
+        // the canvas). Dump 2026-09-24: id=34 title, id=29 reject, id=30 condition.
+        // Only visible nodes — JournalDetail used to spam a hidden reject string.
+        var acceptHeader = addonName == "JournalAccept"
+            ? ReadJournalAcceptHeader(addon)
+            : string.Empty;
+
         var canvas = FindJournalCanvas(addon);
         if (canvas == null)
         {
             // No canvas: log the top-level component types once so we can build a
             // precise reader for this window, and fall back to top-level texts.
             ProbeQuestStructure(addonName, addon);
+            if (acceptHeader.Length > 0) return acceptHeader;
             return ReadAllTexts(addon);
         }
 
@@ -11158,8 +11456,8 @@ public sealed class UIReaderService : IDisposable
 
         // Structured output when the verified JournalDetail ids matched (objective
         // + description); else the generic canvas-text fallback for the not-yet-
-        // verified windows. The quest name is not read here - it is announced when
-        // the quest is selected in the journal list.
+        // verified windows. JournalAccept prepends title/reject from the root;
+        // JournalDetail still gets the name from the journal list selection.
         var sb = new StringBuilder();
         if (description.Length > 0 || objectives.Count > 0)
         {
@@ -11171,8 +11469,49 @@ public sealed class UIReaderService : IDisposable
         {
             sb.Append(string.Join(". ", allTexts));
         }
+
+        if (acceptHeader.Length > 0)
+        {
+            if (sb.Length > 0)
+                sb.Insert(0, acceptHeader + ". ");
+            else
+                sb.Append(acceptHeader);
+        }
         return sb.ToString().Trim();
     }
+
+    /// <summary>
+    /// JournalAccept root texts outside the JournalCanvas. Dump 2026-09-24:
+    /// id=34 title, id=8 level, id=29 "cannot accept" reason, id=30 condition.
+    /// Empty parts are skipped; only <see cref="AtkResNode.IsVisible"/> nodes.
+    /// </summary>
+    private static unsafe string ReadJournalAcceptHeader(AtkUnitBase* addon)
+    {
+        var parts = new List<string>(4);
+        AppendVisibleTopText(parts, addon, 34);
+        AppendVisibleTopText(parts, addon, 8);
+        AppendVisibleTopText(parts, addon, 29);
+        AppendVisibleTopText(parts, addon, 30);
+        return parts.Count == 0 ? string.Empty : string.Join(". ", parts);
+    }
+
+    /// <summary>
+    /// Appends the visible top-level text node with <paramref name="nodeId"/> if
+    /// it has non-empty content (AtkText.Read strips SeString markup).
+    /// </summary>
+    private static unsafe void AppendVisibleTopText(List<string> parts, AtkUnitBase* addon, uint nodeId)
+    {
+        var n = FindTopLevelNode(addon, nodeId);
+        if (n == null || n->Type != NodeType.Text || !n->IsVisible()) return;
+        var text = AtkText.Read((AtkTextNode*)n).Trim();
+        if (text.Length > 0) parts.Add(text);
+    }
+
+    /// <summary>
+    /// Confirm/cancel buttons on JournalAccept (DE/EN client labels).
+    /// </summary>
+    private static bool IsJournalAcceptConfirmButton(string text)
+        => text is "Annehmen" or "Ablehnen" or "Accept" or "Decline";
 
     /// <summary>
     /// Reads the reward summary of the quest-completion window (JournalResult).
@@ -14043,6 +14382,7 @@ public sealed class UIReaderService : IDisposable
                 }
 
                 _log.Info($"[Dump] Fokussierte Addons (alle im Dump): {string.Join(", ", names)}");
+
                 DumpAddons(names);
                 return true;
             }
@@ -14170,7 +14510,7 @@ public sealed class UIReaderService : IDisposable
 
         var output = sb.ToString();
 
-        // Log in Zeilen aufgeteilt (Dalamud-Log begrenzt Zeilenl�nge)
+        // Log in Zeilen aufgeteilt (Dalamud-Log begrenzt Zeilenlaenge)
         foreach (var line in output.Split('\n'))
         {
             var l = line.TrimEnd('\r');
@@ -14417,6 +14757,17 @@ public sealed class UIReaderService : IDisposable
             if (t.Length > 80) t = t[..80] + "�";
             extra = $" \"{t}\"";
         }
+        else if (typeNum == 2) // Image — PartId + texture path when available
+        {
+            var img = (AtkImageNode*)node;
+            extra = $" part={img->PartId}";
+            var tex = TryDumpImageTexturePath(img);
+            if (!string.IsNullOrEmpty(tex))
+            {
+                if (tex.Length > 56) tex = "…" + tex[^52..];
+                extra += $" tex='{tex}'";
+            }
+        }
         else if (typeNum >= 1000)
         {
             var comp = ((AtkComponentNode*)node)->Component;
@@ -14460,6 +14811,31 @@ public sealed class UIReaderService : IDisposable
         {
             var child = nodeComp->UldManager.NodeList[j];
             if (child != null) DumpNode(sb, child, depth + 1, j);
+        }
+    }
+
+    /// <summary>Texture path for an Image node, or null when not a resource texture.</summary>
+    private static unsafe string? TryDumpImageTexturePath(AtkImageNode* imageNode)
+    {
+        try
+        {
+            var partsList = imageNode->PartsList;
+            if (partsList == null) return null;
+            var partId = imageNode->PartId;
+            if (partId >= partsList->PartCount) return null;
+            var uldAsset = partsList->Parts[partId].UldAsset;
+            if (uldAsset == null) return null;
+            if (uldAsset->AtkTexture.TextureType != TextureType.Resource) return null;
+            var resource = uldAsset->AtkTexture.Resource;
+            if (resource == null) return null;
+            var texHandle = resource->TexFileResourceHandle;
+            if (texHandle == null) return null;
+            var path = texHandle->ResourceHandle.FileName.ToString();
+            return string.IsNullOrEmpty(path) ? null : path;
+        }
+        catch
+        {
+            return null;
         }
     }
 

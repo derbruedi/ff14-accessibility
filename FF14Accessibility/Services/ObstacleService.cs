@@ -87,9 +87,21 @@ public sealed unsafe class ObstacleService
     /// </summary>
     public string? DescribeBlocker(Vector3 from, Vector3 towards)
     {
+        return TryFindBlocker(from, towards, out var name) ? name : null;
+    }
+
+    /// <summary>
+    /// True when something solid sits on the step from <paramref name="from"/>
+    /// towards <paramref name="towards"/>. <paramref name="description"/> is the
+    /// speakable name when known (creature, barrier, scenery), or null when the
+    /// geometry could not be named - callers that only need a tone may ignore it.
+    /// </summary>
+    public bool TryFindBlocker(Vector3 from, Vector3 towards, out string? description)
+    {
+        description = null;
         var direction = towards - from;
         direction.Y = 0;
-        if (direction.LengthSquared() < 0.0001f) return null;
+        if (direction.LengthSquared() < 0.0001f) return false;
         direction = Vector3.Normalize(direction);
 
         // Living things first: they have a name, and they are the case that
@@ -100,10 +112,12 @@ public sealed unsafe class ObstacleService
             var name = _objectNames.Describe(creature);
             _log.Info($"[Hindernis] Wesen '{name}' (Art {creature.ObjectKind}, " +
                       $"Hitbox {creature.HitboxRadius:F1}) blockiert.");
-            return name;
+            description = name;
+            return true;
         }
 
-        return DescribeBlockingGeometry(from, direction);
+        description = DescribeBlockingGeometry(from, direction);
+        return description != null;
     }
 
     /// <summary>The nearest object whose hitbox overlaps the line of travel.</summary>

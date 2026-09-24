@@ -314,6 +314,53 @@ public sealed class PlacesService
     }
 
     /// <summary>
+    /// Karte, auf der <paramref name="placeNameRowId"/> als Zonenname ODER als
+    /// MapMarker-Untertext vorkommt. Bestienbuch-Fundorte sind oft Zonen
+    /// (FindMapByPlaceName), manchmal aber nur ein Wegpunkt-Name (offline
+    /// 2026-09-24: Brombeerlichtung, Spiegelsee-Steg) — der reine Zonenweg
+    /// liefert dann 0.
+    /// </summary>
+    public uint FindMapByPlaceNameOrMarker(uint placeNameRowId)
+    {
+        var asZone = FindMapByPlaceName(placeNameRowId);
+        if (asZone != 0) return asZone;
+        return FindMapByMarkerPlaceName(placeNameRowId);
+    }
+
+    /// <summary>
+    /// Erste Karte, deren Marker den PlaceName als Subtext tragen, oder 0.
+    /// </summary>
+    public uint FindMapByMarkerPlaceName(uint placeNameRowId)
+    {
+        if (placeNameRowId == 0) return 0;
+        if (_mapByMarkerPlace == null)
+        {
+            _mapByMarkerPlace = [];
+            var maps = _data.GetExcelSheet<Map>();
+            var markers = _data.GetSubrowExcelSheet<MapMarker>();
+            if (maps != null && markers != null)
+            {
+                foreach (var map in maps)
+                {
+                    if (map.RowId == 0) continue;
+                    if (!markers.TryGetRow(map.MapMarkerRange, out var range)) continue;
+                    foreach (var m in range)
+                    {
+                        var pn = m.PlaceNameSubtext.RowId;
+                        if (pn == 0) continue;
+                        _mapByMarkerPlace.TryAdd(pn, map.RowId);
+                    }
+                }
+            }
+            _log.Info($"[Orte] Marker-Namenstabelle: {_mapByMarkerPlace.Count} Einträge.");
+        }
+        return _mapByMarkerPlace.GetValueOrDefault(placeNameRowId);
+    }
+
+    // Marker PlaceName row -> first map that labels it. Sheet data, built once.
+    private Dictionary<uint, uint>? _mapByMarkerPlace;
+
+    /// <summary>
     /// World position of the named area's map marker on the GIVEN map, or null
     /// when that map has no marker for it. This is the centre of the area the
     /// game labels on its map - the same spot a sighted player aims for when

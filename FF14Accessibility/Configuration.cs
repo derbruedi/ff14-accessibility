@@ -567,6 +567,12 @@ public sealed class Configuration : IPluginConfiguration
     public bool AnnounceVitalCues = true;
     public float VitalCueVolume = 0.4f;         // 0 = stumm, 1 = volle Lautstärke
 
+    // Freilauf: Anstoß an NPCs/Spieler/Kulisse und Kantenhinweis (Sprung/Absturz).
+    // STANDARD AN: ohne Ton merkt ein blinder Spieler nichts von einem Block oder
+    // Absatz, bis die Figur steht oder fällt. Abschaltbar und lautstärkegeregelt.
+    public bool AnnounceMovementCues = true;
+    public float MovementCueVolume = 0.45f;     // 0 = stumm, 1 = volle Lautstärke
+
     // Kampf
     public bool AnnounceTargetHp = true;        // Ziel-HP in Stufen ansagen (im Kampf)
     // Feinere Ziel-HP-Stufen (alle 5 Prozent unter 30), solange ein FREIBRIEF laeuft.
@@ -584,6 +590,12 @@ public sealed class Configuration : IPluginConfiguration
     // und ohne Ansage erfaehrt ein blinder Spieler ihr Auftauchen ueberhaupt nicht.
     // Sie erscheint selten, die Ansage kann also nicht zur Dauerbeschallung werden.
     public bool AnnounceDutyActions = true;
+
+    /// <summary>
+    /// FF15-Kollab „Durch den Sturm und zurück“ (Territory 834 only): Warp-Hilfe.
+    /// Off / Manual (Ton) / Auto. See <see cref="NocturneWarpMode"/>.
+    /// </summary>
+    public NocturneWarpMode NocturneWarpMode = NocturneWarpMode.Auto;
 
     // AoE-Ausweich-Warnung (User-Wunsch 2026-07-26): ein Dauerton, solange der
     // Spieler in der Gefahrenflaeche eines gerade laufenden Gegner-Casts steht.

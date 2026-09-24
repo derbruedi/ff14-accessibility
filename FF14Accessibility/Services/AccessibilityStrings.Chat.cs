@@ -151,6 +151,14 @@ public static partial class AccessibilityStrings
         IsGerman ? "Lautstärke Leben und Mana" : "Health and mana tone volume";
     public static string OptRouteCues => IsGerman ? "Wegpunkt- und Ankunftston" : "Waypoint and arrival cues";
 
+    /// <summary>Schalter für Anstoß- und Kantentöne beim freien Laufen.</summary>
+    public static string OptMovementCues =>
+        IsGerman ? "Anstoß- und Kantentöne" : "Bump and ledge tones";
+
+    /// <summary>Lautstärke der Anstoß- und Kantentöne.</summary>
+    public static string OptMovementCueVolume =>
+        IsGerman ? "Lautstärke Anstoß und Kante" : "Bump and ledge tone volume";
+
     // AoE-Warnung: die Lautstärke gab es als Konfigurationswert schon lange, aber
     // in keinem Menü - sie war damit nicht erreichbar. Der Klang kam 2026-08-21
     // auf Wunsch des Spielers dazu.
@@ -311,6 +319,21 @@ public static partial class AccessibilityStrings
     public static string OptTargetHp => IsGerman ? "Ziel-Lebenspunkte" : "Target health";
     public static string OptEnemyMarkers => IsGerman ? "Gegnerfarben" : "Enemy colours";
     public static string OptEnemyCast => IsGerman ? "Zauber-Ansagen" : "Skill cast announcements";
+
+    /// <summary>Garuda-Event Warp: Off / Manual / Auto (duty Territory 834 only).</summary>
+    public static string OptNocturneWarpMode =>
+        IsGerman
+            ? "Garuda-Event Warp"
+            : "Garuda event Warp";
+
+    /// <summary>Spoken value for <see cref="NocturneWarpMode"/>.</summary>
+    public static string NocturneWarpModeName(NocturneWarpMode mode) => mode switch
+    {
+        NocturneWarpMode.Off => IsGerman ? "Aus" : "Off",
+        NocturneWarpMode.Manual => IsGerman ? "Manuell mit Ton" : "Manual with sound",
+        NocturneWarpMode.Auto => IsGerman ? "Automatisch" : "Automatic",
+        _ => mode.ToString(),
+    };
     public static string OptFineHpDuringLeve => IsGerman
         ? "Feine Ziel-Lebenspunkte im Freibrief"
         : "Fine target health during levequests";

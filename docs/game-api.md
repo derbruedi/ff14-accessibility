@@ -1204,27 +1204,36 @@ stehen NIE im Quest-Journal (reine Welt-Ereignisse).
   Preparing, Numpad3 läuft zur `Location` (als in-Zone-QuestDestination).
 
 ### Event-Gebiete / saisonale FATE-Spawns (offline + Code 2026-09-06)
-Cross-Zone-Katalog — **ab V6.08 nicht mehr die Browser-Kategorie „Events“**.
-Die Kategorie „Events“ listet seit V6.08 Yo-kai-Zonen (siehe unten).
+Cross-Zone-Katalog — Flags `AdventEvent` / `MoonFaireEvent` / `SpecialFate`
+sind **nicht** die FF15-Kollab-FATE (siehe unten). Historisch V6.07:
 
-Historisch (V6.07 Probe):
-- Lumina-Sheet `Fate` (ilspycmd Hooks/dev): Flags `AdventEvent`,
-  `MoonFaireEvent`, `SpecialFate` (packed bools @385); Feld `Location`
-  (uint @324) laut Lumina-Kommentar = **EventRange-Instance-ID**, kein
-  TerritoryType und kein Level-RowId.
-- Probe Location→`Level.TryGetRow`: für alle 15 named Event-Flag-Zeilen
-  **0 Treffer** (Hypothese verworfen).
-- Probe Location→`planevent.lgb` `LayerEntryType.EventRange` (49): **15/15
-  Treffer** mit Territory + World-Position (`Transform.Translation`).
-- Yo-kai setzt diese Flags NICHT.
+- Lumina-Sheet `Fate`: Flags `AdventEvent`, `MoonFaireEvent`, `SpecialFate`;
+  Feld `Location` = **EventRange-Instance-ID**.
+- Probe Location→`planevent.lgb` `LayerEntryType.EventRange` (49): **15/15**
+  mit Territory + World-Position. Yo-kai setzt diese Flags NICHT.
 
-### Events / Yo-kai-Zonen (V6.08)
-- Kategorie-Label: „Events“. Sichtbar nur mit Yo-kai-Uhr (Item 15222 oder
-  EventItem 2001948 KeyItem).
-- WORKAROUND: Territory-Ids der Medaillen-Zonen aus dem offiziellen 2026-
-  Event-Guide (kein Sheet-Join). Position = erster `Aetheryte.IsAetheryte`
-  mit Level-Koordinaten in der Zone.
-- In der Zone: Kategorie „FATEs“ für das live FATE; Uhr ausrüsten.
+### Events / Yo-kai + Collab-Event-FATEs (V6.08 + 2026-09-24)
+- Kategorie-Label: „Events“.
+- **Yo-kai:** nur mit Yo-kai-Uhr (Item 15222 / EventItem 2001948). WORKAROUND:
+  Territory-Ids aus dem Event-Guide; Position = Ätheryt.
+- **Collab Event-FATEs** (FFXV „A Nocturne for Heroes“): Fate **1409**
+  DE „Die mechanischen Krieger“ / EN „Like Clockwork“. Offline 2026-09-24:
+  `AdventEvent=MoonFaire=SpecialFate=false` — Flags greifen nicht.
+  WORKAROUND: Fate-RowId in `EventAreaService.CollabEventFateIds`; Name +
+  Spawn aus Sheet `Fate.Location` → `planevent.lgb` EventRange
+  (terr **141** Zentrales Thanalan, pos ≈ 292|-16|-20).
+- In der Zone: Kategorie „FATEs“ für das live FATE.
+
+### FF15-Kollab Garuda / Warp-Angriff (2026-09-24)
+- Duty: CFC 646 DE „Durch den Sturm und zurück“ / EN Messenger of the Winds,
+  Territory **834** („Das Tosende Auge“).
+- Duty Action: Action **14595** / **14597** „Warp-Angriff“ / Warp-strike.
+- Mechanik-Casts (Action-Sheet): **14611** Mistral-Schrei (Kreis EffectRange 30,
+  Cast100ms 70), **14619** Mikro-Explosion (Cast100ms 173), **14613** Tornado
+  der Bosheit. BNpcName Monolith **1649**, Garuda **7893**.
+- Plugin: `NocturneWarpService` — nur Territory 834 mit Warp auf der Leiste.
+  Modi: Off / Manual (Ton + Ziel, Umschalt+F10) / Auto (ExecuteDutyActionSlot).
+  Config `NocturneWarpMode`. WORKAROUND: Cast-Progress-Schwellen.
 
 ### Journal / JournalDetail (F5-Dumps 2026-07-10/11)
 - Journal (Taste J, „ARCHIV"): Quest-Liste = Comp CT=TreeList(12), Zeilen
@@ -1690,7 +1699,9 @@ Lumina.Excel.Sheets.Action dekompiliert):
 - Lumina `Action`-Sheet (Spalten dekompiliert 2026-07-17): `Name`,
   `ClassJobLevel` (byte; 0 = keine per-Stufe-gelernte Spieler-Action),
   `ClassJobCategory` (RowRef, bool-Spalte je Job wie beim Item-Sheet —
-  Spaltenwahl über engl. ClassJob-Abkürzung, s. GearInfoService.AllowsJob),
+  Spaltenwahl über engl. ClassJob-Abkürzung, s. GearInfoService.AllowsJob;
+  **BST 2026-09-24:** typed Lumina hat kein `BST`, nur `Unknown0` — Auflösung
+  über Kategorie-Zeile Name „BST“ → einzige true-Spalte),
   `ClassJob` (RowRef), `IsPvP`, `IsRoleAction`, `IsPlayerAction` (packed
   bools), `UnlockLink` (untypisierte RowRef, uint bei Offset+4; 0 = keine
   Quest-Freischaltung nötig).
@@ -2172,6 +2183,25 @@ Verifiziert per ilspycmd gegen FFXIVClientStructs.dll (2026-07-26).
   ueberspringt oder die Karten kompaktiert — davon haengt ab, ob die feste
   Slot-Nummer (aktuell) oder eine laufende Nummer die richtige Referenz ist.
 
+## Doman Mahjong (Gold Saucer) — Addon Emj / EmjL (UI-Dump 2026-09-24)
+
+Live-Dump am Tisch: Steine haben **keine Text-Nodes** — nur Image-PartId + Texture.
+WIP lokal (`_local_mahjong/`), **nicht** in Release v6.08.32.
+
+- Addon-Namen: `"Emj"` (normal), `"EmjL"` (Large).
+- Hand-Steine: Component-Type **1055**, NodeIds `134`, `1340001`..`N`, `135`
+  (`135` = gezogener Stein). Live-Dump hatte auch `1340013` mit Face und leere
+  Slots `1340014`–`1340016` ohne Texture. Face-Image = Button-Child-Index **4**.
+- Texture-Pfad unter `ui/icon/076000/`; Icon-IDs der Gesichter:
+  - `76041`–`76049` Zeichen 1–9
+  - `76050`–`76058` Kreise 1–9
+  - `76059`–`76067` Bambus 1–9
+  - `76068`–`76074` Ehren: Ost/Süd/West/Nord/Weiß/Grün/Rot
+  - `76075`–`76077` Rote 5 (Zeichen/Kreise/Bambus)
+- Ablage Comp 1057/1058/1059: Faces im Dump oft ohne Resource-Texture.
+- Melds 1021–1024, Dora Comp(1006), Spotlight id=148 — für späteren Status/Live.
+
+
 ## Quest-Gegenstaende im Kampf (ilspycmd + Sheet-Dump, 2026-08-09)
 
 Ausloeser: Spielerfrage „Quests, wo man mit Gegenstaenden im Kampf etwas
@@ -2283,6 +2313,12 @@ AtkComponentCheckBox and AtkComponentRadioButton"). Für diese Zeilen unbrauchba
 Die Sprach-Kästchen sind echte CheckBox-Komponenten, ihr `IsChecked` stimmt
 (im Test bestätigt: Japanisch aus, Englisch aus, Deutsch an auf deutschem
 Client) — die Zuordnung JA/EN/DE/FR von links ist damit belegt.
+
+- **Rekrutieren `LookingForGroupCondition` (Dump+Log 2026-09-24):** Schalter
+  sagten nur die Beschriftung ohne an/aus; Sprach-Kästen STUMM. Fix:
+  `TryReadLookingForGroupConditionFocus` — IsChecked + Sprachzeile wie
+  ContentsFinderSetting (JA/EN/DE/FR), Dropdowns mit Name, Kommentar/Passwort
+  benannt.
 
 ### Fensteraufbau `ContentsFinderSetting` (Dump 2026-08-19, 31 Knoten)
 
@@ -2729,6 +2765,34 @@ Anzeige (Sheet). Kein `GetActionStatus` / Cooldown-Gatter.
 
 Quellen: Dalamud `JobGauge.Types.*` (ilspycmd 2026-09-09); Gate-IDs v2.xivapi
 Action rows 2026-09-18.
+
+## Bestienbuch des Bestienbaendigers — XBMMonsterNotebook (Dump/Log 2026-09-24)
+
+**Addon:** `XBMMonsterNotebook` (Hauptmenue → Bestienbuch). Kind-Detail:
+`XBMMonsterBookDetail` (hier nicht ausgelesen — User-Wunsch nur Namen im Raster).
+
+**Raster:** 25 sichtbare Kacheln Comp(1024), Nummernschild Text id=11 `"Nr. N"`,
+kein Name auf der Kachel. Zaehler `"1/50"` / Label `"Bestien"`.
+
+**Name-Quelle:** Sheet `XBMPet` (RawRow): Col0 Int32 → Sheet `Pet` Name;
+Col7 UInt16 → `PlaceName` (Fundort, 0 = keiner); Col8 = Beschreibung.
+Nicht typisiertes `XBMPet` (ColumnHash-Mismatch Log 2026-09-24).
+Ansage: Nummer, Name, Fundort sofort; Beschreibung beim Verweilen.
+
+**Plugin:** `XbmNotebookService` + Fokus/Scan in `UIReaderService` (Muster wie
+AOZNotebook).
+
+**Nav-Kategorie „Bestien“** (`NavCategory.Beastmaster`, 2026-09-24): fehlende
+Pets über `XBMManager.IsPetUnlocked` (Pet-Id = XBMPet RowId); Fundort →
+`PlacesService.FindMapByPlaceNameOrMarker`; nur bei aktivem Bestienbändiger
+(ClassJob Abkürzung BST aus Sheet). Numpad3: Hop zur Zone, sonst lebendes
+Exemplar per Pet-Namen, sonst Arealsuche/Wegpunkt.
+
+**Untergebiet (2026-09-24):** XBMPet Location ist meist die Zone (40/50).
+Feinere Ortsangabe nur aus `MonsterNoteTarget.PlaceNameLocation`, wenn
+`PlaceNameZone` **dieselbe** PlaceName-Zeile ist wie der Buch-Fundort
+(sonst falsche Zone, z. B. Baumhörnchen: Buch Tiefer Wald, Jagd Nordwald).
+Ist der Fundort kein Zonenname, gilt er als MapMarker-Wegpunkt.
 
 ## Zauberbuch der Blaumagie — AddonAOZNotebook (ilspycmd + Sheet-Dump + UI-Dump, 2026-09-02)
 

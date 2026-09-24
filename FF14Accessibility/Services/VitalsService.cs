@@ -2,8 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using Dalamud.Plugin.Services;
 using NAudio.Wave;
-using ClientFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
-
 namespace FF14Accessibility.Services;
 
 /// <summary>
@@ -46,11 +44,6 @@ public sealed class VitalsService : IDisposable
     private int _hpLevel = -1;
     private int _mpLevel = -1;
 
-    // Set per frame from Framework.WindowInactive: while the game window is in
-    // the background the steps keep being TRACKED but no tone is played.
-    private bool _windowActive = true;
-    private bool _loggedWindowState;   // log the first reading, then only changes
-
     // Each bar is a distinct "instrument", told apart on TWO perceptual axes at
     // once so they can never be confused (user choice 2026-07-28):
     //  - pitch: HP high, MP low (HP the higher one, user choice 2026-07-20), and
@@ -88,31 +81,8 @@ public sealed class VitalsService : IDisposable
             return;
         }
 
-        UpdateWindowActive();
-
         TrackVital(player.CurrentHp, player.MaxHp, HpVoice, ref _hpLevel, "HP");
         TrackVital(player.CurrentMp, player.MaxMp, MpVoice, ref _mpLevel, "MP");
-    }
-
-    /// <summary>
-    /// Reads the game's own window-focus flag (Framework.WindowInactive,
-    /// ilspycmd-verified, FieldOffset 6104). Preferred over asking Windows for
-    /// the foreground window: the game already tracks this, so there is no
-    /// second source of truth that could drift.
-    /// If the struct is not available the tones stay ENABLED - a missing flag
-    /// must not silence the feature.
-    /// </summary>
-    private unsafe void UpdateWindowActive()
-    {
-        var framework = ClientFramework.Instance();
-        var active = framework == null || !framework->WindowInactive;
-
-        if (active != _windowActive || !_loggedWindowState)
-        {
-            _log.Debug($"[Vitals] Spielfenster {(active ? "aktiv" : "im Hintergrund")} - Toene {(active ? "an" : "aus")}.");
-            _loggedWindowState = true;
-        }
-        _windowActive = active;
     }
 
     /// <summary>
@@ -174,7 +144,8 @@ public sealed class VitalsService : IDisposable
         // Window in the background: the step is recorded but stays silent. The
         // bookkeeping MUST continue anyway - otherwise everything that happened
         // while tabbed out would be announced in one go on return.
-        if (!_windowActive)
+        // Focus gate: GameWindowFocus (shared with every other mod tone).
+        if (!GameWindowFocus.IsActive)
         {
             LogVital($"[Vitals] {label} {previous * 10}% -> {percent}% - Fenster im Hintergrund, kein Ton.");
             return;

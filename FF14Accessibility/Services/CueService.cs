@@ -38,6 +38,7 @@ public sealed class CueService : IDisposable
     /// </summary>
     public void PlayWaypointTone()
     {
+        if (!GameWindowFocus.IsActive) return;
         if (_config.RouteCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
         _provider!.Trigger(_config.RouteCueVolume, 1175f, 1175f);
@@ -49,6 +50,7 @@ public sealed class CueService : IDisposable
     /// </summary>
     public void PlayArrivalTone()
     {
+        if (!GameWindowFocus.IsActive) return;
         if (_config.RouteCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
         _provider!.Trigger(_config.RouteCueVolume, 988f, 659f);
@@ -61,6 +63,7 @@ public sealed class CueService : IDisposable
     /// </summary>
     public void PlaySkillReadyTone()
     {
+        if (!GameWindowFocus.IsActive) return;
         if (_config.SkillReadyCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
         _provider!.Trigger(_config.SkillReadyCueVolume, 784f, 1047f);
@@ -73,6 +76,7 @@ public sealed class CueService : IDisposable
     /// </summary>
     public void PlayGaugeReadyTone(GaugeReadyCueId cue)
     {
+        if (!GameWindowFocus.IsActive) return;
         if (_config.GaugeCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
         var (n1, n2) = GaugeReadyCues.Notes(cue);
@@ -87,6 +91,7 @@ public sealed class CueService : IDisposable
     /// </summary>
     public bool PlayGaugeReadyPreview(GaugeReadyCueId cue)
     {
+        if (!GameWindowFocus.IsActive) return false;
         if (!EnsureOutput()) return false;
         var vol = _config.GaugeCueVolume > 0f ? _config.GaugeCueVolume : 0.35f;
         var (n1, n2) = GaugeReadyCues.Notes(cue);
@@ -108,9 +113,46 @@ public sealed class CueService : IDisposable
     /// </summary>
     public void PlayAlignedTone()
     {
+        if (!GameWindowFocus.IsActive) return;
         if (_config.RouteCueVolume <= 0f) return;
         if (!EnsureOutput()) return;
         _provider!.Trigger(_config.RouteCueVolume, 880f, 880f);
+    }
+
+    /// <summary>
+    /// Free-walk bump: short dull thud when the character runs into an NPC,
+    /// player, or solid scenery. Frequencies sit below the AoE/beacon bands so
+    /// the hit is unmistakable as "solid contact", not navigation.
+    /// </summary>
+    public void PlayBumpTone()
+    {
+        if (!GameWindowFocus.IsActive) return;
+        if (_config.MovementCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.MovementCueVolume, 180f, 140f);
+    }
+
+    /// <summary>
+    /// Free-walk: rising cue when the ground ahead is a jump/climb step
+    /// (about 1.5 m higher or a mesh gap).
+    /// </summary>
+    public void PlayJumpAheadTone()
+    {
+        if (!GameWindowFocus.IsActive) return;
+        if (_config.MovementCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.MovementCueVolume, 520f, 700f);
+    }
+
+    /// <summary>
+    /// Free-walk: falling cue shortly before a drop of about 1.5 m or more.
+    /// </summary>
+    public void PlayDropAheadTone()
+    {
+        if (!GameWindowFocus.IsActive) return;
+        if (_config.MovementCueVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        _provider!.Trigger(_config.MovementCueVolume, 400f, 260f);
     }
 
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>

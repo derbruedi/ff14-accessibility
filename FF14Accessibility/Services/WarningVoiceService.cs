@@ -174,6 +174,9 @@ public sealed class WarningVoiceService : IDisposable
     {
         if (_synth == null || string.IsNullOrWhiteSpace(text)) return false;
         if (!_config.WarningVoiceEnabled) return false;
+        // Mod SAPI only while the game window is focused. Returning false lets
+        // the caller fall back to the screen reader (NVDA/Tolk stays allowed).
+        if (!GameWindowFocus.IsActive) return false;
 
         // Stumm geschaltet ist nicht dasselbe wie abgeschaltet: bei Lautstaerke 0
         // soll die Warnung wieder ueber den Screenreader kommen statt spurlos zu
@@ -234,6 +237,7 @@ public sealed class WarningVoiceService : IDisposable
     public bool PlayPreview(string voiceName)
     {
         if (_synth == null) return false;
+        if (!GameWindowFocus.IsActive) return false;
         if (_config.WarningVoiceVolume <= 0f) return false;
 
         try
@@ -270,6 +274,21 @@ public sealed class WarningVoiceService : IDisposable
             if (_synth == null) return string.Empty;
             try { return _synth.Voice.Name; }
             catch { return string.Empty; }
+        }
+    }
+
+    /// <summary>Stops any in-flight warning so Alt-Tab does not leave SAPI talking
+    /// over another application.</summary>
+    public void Silence()
+    {
+        if (_synth == null) return;
+        try
+        {
+            _synth.SpeakAsyncCancelAll();
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Warnstimme] Anhalten fehlgeschlagen ({ex.GetType().Name}: {ex.Message}).");
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
@@ -150,6 +151,200 @@ public sealed class LevequestEnemyService
         // in-game test into an answer instead of another round of guessing.
         LogDirectorMiss(seen, accepted);
         return null;
+    }
+
+    /// <summary>
+    /// Row ids of accepted levequests (<c>QuestManager.LeveQuests</c>), including
+    /// ones that are currently running, ready for turn-in, or failed.
+    /// </summary>
+    public unsafe IReadOnlyList<ushort> GetAcceptedLeveIds()
+    {
+        var ids = new List<ushort>();
+        var quests = QuestManager.Instance();
+        if (quests == null) return ids;
+        foreach (ref var work in quests->LeveQuests)
+            if (work.LeveId != 0) ids.Add(work.LeveId);
+        return ids;
+    }
+
+    /// <summary>
+    /// Whether this accepted leve still needs its objective area / enemies —
+    /// not ready for turn-in and not failed. Measured via LeveWork.Sequence
+    /// (HaselCommon LeveService): 255 = ready for turn-in, 3 = failed.
+    /// </summary>
+    public unsafe bool IsLeveObjectiveActive(ushort leveId)
+    {
+        var quests = QuestManager.Instance();
+        if (quests == null) return false;
+        foreach (ref var work in quests->LeveQuests)
+        {
+            if (work.LeveId != leveId) continue;
+            // Ready for turn-in or failed: no objective walk target.
+            if (work.Sequence is 255 or 3) return false;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Whether an accepted leve named <paramref name="leveName"/> still needs
+    /// its objective (sheet/map goal). False when ready for turn-in or failed.
+    /// </summary>
+    public bool IsLeveObjectiveActiveByName(string leveName)
+    {
+        if (string.IsNullOrWhiteSpace(leveName)) return false;
+        var sheet = _data.GetExcelSheet<Leve>();
+        foreach (var id in GetAcceptedLeveIds())
+        {
+            if (!sheet.TryGetRow(id, out var row)) continue;
+            var name = row.Name.ExtractText().Trim();
+            if (!string.Equals(name, leveName, StringComparison.Ordinal)) continue;
+            return IsLeveObjectiveActive(id);
+        }
+        // Not among accepted leves — map-only label (e.g. board name): keep.
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the player currently holds at least one accepted levequest
+    /// (<c>QuestManager.LeveQuests</c>), started or not. Used to keep the
+    /// Freibriefe category reachable after a failed run clears map markers
+    /// while the leve is still held (log 2026-09-21: Angenommen 661, Markers
+    /// leer → Kategorie fehlte).
+    /// </summary>
+    public unsafe bool HasAcceptedLeve() => GetAcceptedLeveIds().Count > 0;
+
+    /// <summary>
+    /// Names of accepted levequests from the Leve sheet, for speech when map
+    /// markers are empty (failed/retry state). Empty when none are held.
+    /// </summary>
+    public unsafe IReadOnlyList<string> GetAcceptedLeveNames()
+    {
+        var names = new List<string>();
+        var sheet = _data.GetExcelSheet<Leve>();
+        foreach (var id in GetAcceptedLeveIds())
+        {
+            if (sheet.TryGetRow(id, out var row))
+            {
+                var name = row.Name.ExtractText();
+                if (!string.IsNullOrWhiteSpace(name)) names.Add(name);
+                else names.Add(id.ToString());
+            }
+            else names.Add(id.ToString());
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// Giver NPC and objective area for each accepted leve, read from the Leve
+    /// sheet (<c>LevelLevemete</c> / <c>LevelStart</c>) when Map markers are
+    /// empty. Verified against live markers for leve 661 (2026-09-21): sheet
+    /// LevelStart (117.7, -10.8, -467.7) matches <c>Map.LevequestMarkers</c>
+    /// exactly. The game clears those markers while a leve runs and after a
+    /// fail — without this fallback the Freibriefe category had nothing to
+    /// walk to.
+    /// <para>
+    /// Giver destinations use the <em>NPC</em> name from
+    /// <c>LevelLevemete.Object</c> → ENpcResident — never the leve title
+    /// (user 2026-09-21: Geber = Abhol-NPC only). Many accepted leves share
+    /// one Levemete; that NPC is listed once.
+    /// </para>
+    /// </summary>
+    public List<QuestDestination> GetSheetDestinations(uint currentTerritory)
+    {
+        var result = new List<QuestDestination>();
+        var leveSheet = _data.GetExcelSheet<Leve>();
+        var levelSheet = _data.GetExcelSheet<Level>();
+        var seenGiverLevels = new HashSet<uint>();
+
+        foreach (var leveId in GetAcceptedLeveIds())
+        {
+            if (!leveSheet.TryGetRow(leveId, out var leve)) continue;
+            var leveName = leve.Name.ExtractText().Trim();
+            if (string.IsNullOrWhiteSpace(leveName)) continue;
+
+            var giverLevelId = leve.LevelLevemete.RowId;
+            if (giverLevelId != 0 && seenGiverLevels.Add(giverLevelId))
+            {
+                var npcName = ResolveLevemeteNpcName(giverLevelId, levelSheet);
+                if (!string.IsNullOrWhiteSpace(npcName))
+                {
+                    AddSheetLevelDest(result, giverLevelId, npcName, QuestMarkerRole.LeveGiver,
+                        currentTerritory, levelSheet);
+                }
+            }
+
+            // Objectives only while the task is still open — not after Sequence
+            // 255 (turn-in) or 3 (failed). Otherwise finished leves clutter the
+            // category (user 2026-09-21).
+            if (!IsLeveObjectiveActive(leveId)) continue;
+
+            AddSheetLevelDest(result, leve.LevelStart.RowId, leveName, QuestMarkerRole.LeveObjective,
+                currentTerritory, levelSheet);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Spoken name of the Levemete NPC at a <c>Level</c> row (Type 8 →
+    /// ENpcResident). Empty when the row is missing or not an NPC pin.
+    /// </summary>
+    private string ResolveLevemeteNpcName(uint levelRowId, Lumina.Excel.ExcelSheet<Level> levelSheet)
+    {
+        if (!levelSheet.TryGetRow(levelRowId, out var level)) return string.Empty;
+        // Level.Type 8 = ENpcBase (same as quest markers / ObjectKind map).
+        if (level.Type != 8 || level.Object.RowId == 0) return string.Empty;
+        if (!_data.GetExcelSheet<ENpcResident>().TryGetRow(level.Object.RowId, out var npc))
+            return string.Empty;
+        var name = npc.Singular.ExtractText().Trim();
+        return name;
+    }
+
+    private string _lastSheetDestTrace = string.Empty;
+
+    private void AddSheetLevelDest(
+        List<QuestDestination> result,
+        uint levelRowId,
+        string spokenName,
+        QuestMarkerRole role,
+        uint currentTerritory,
+        Lumina.Excel.ExcelSheet<Level> levelSheet)
+    {
+        if (levelRowId == 0) return;
+        if (!levelSheet.TryGetRow(levelRowId, out var level)) return;
+
+        var terr = (ushort)level.Territory.RowId;
+        if (terr == 0) return;
+
+        var targetBase = level.Object.RowId;
+        var targetType = level.Type;
+        // Area pins (Type 51) have Object 0 — pure position, like map goal markers.
+        if (targetBase == 0) targetType = 0;
+
+        result.Add(new QuestDestination(
+            spokenName,
+            spokenName,
+            new Vector3(level.X, level.Y, level.Z),
+            level.Radius,
+            terr,
+            level.Map.RowId,
+            terr == currentTerritory,
+            QuestKind.Unknown,
+            0,
+            role,
+            targetBase,
+            targetType));
+
+        var trace =
+            $"[Leve] Sheet-Fallback {role}: '{spokenName}' LevelId={levelRowId} " +
+            $"pos=({level.X:F1}|{level.Y:F1}|{level.Z:F1}) r={level.Radius:F1} " +
+            $"terr={terr} map={level.Map.RowId} obj={targetBase} type={level.Type}";
+        if (trace != _lastSheetDestTrace)
+        {
+            _lastSheetDestTrace = trace;
+            _log.Info(trace);
+        }
     }
 
     // Only one line per changed director set / leve - the caller runs on every

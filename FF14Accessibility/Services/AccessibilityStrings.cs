@@ -128,6 +128,32 @@ public static partial class AccessibilityStrings
     /// <summary>Spoken when the focus lands on the minion guide's search box.</summary>
     public static string MinionSearchField => IsGerman ? "Begleiter suchen, Eingabefeld." : "Minion search, text field.";
 
+    // ── Bestienbuch des Bestienbaendigers (XBMMonsterNotebook) ───────
+    /// <summary>
+    /// A beast tile in the Master's Bestiary grid: name plus its number.
+    /// The tile itself carries only the number ("Nr. 1") — without the name,
+    /// browsing told the player nothing (dump/log 2026-09-24).
+    /// </summary>
+    /// <summary>
+    /// Bestienbuch-Kachel: Nummer, Name, optional Fundort — wie ein Sehender
+    /// die Zeile liest. Beschreibung kommt spaeter beim Verweilen.
+    /// </summary>
+    public static string XbmPetTile(byte number, string name, string habitat)
+    {
+        var head = IsGerman
+            ? $"Nr. {number}, {name}"
+            : $"No. {number}, {name}";
+        if (string.IsNullOrWhiteSpace(habitat))
+            return head + ".";
+        return IsGerman
+            ? $"{head}, Fundort {habitat}."
+            : $"{head}, habitat {habitat}.";
+    }
+
+    /// <summary>Beast tile whose sheet row could not be resolved — number only.</summary>
+    public static string XbmPetNumberOnly(byte number) =>
+        IsGerman ? $"Nr. {number}." : $"no. {number}.";
+
     // ── Zauberbuch der Blaumagie (AOZNotebook) ───────────────────────
     /// <summary>
     /// A spell tile in the blue magic spellbook grid: name plus its number in
@@ -233,6 +259,17 @@ public static partial class AccessibilityStrings
     /// <summary>Heading of the language row, so a box is not heard as a loose
     /// switch ("Sprache Deutsch, Schalter, an").</summary>
     public static string DutyLanguageGroup => IsGerman ? "Sprache" : "Language";
+
+    /// <summary>LookingForGroupCondition — loot rules dropdown (dump 2026-09-24).</summary>
+    public static string LfgLootRulesLabel => IsGerman ? "Beuteregeln" : "Loot rules";
+    /// <summary>LookingForGroupCondition — completion filter dropdown.</summary>
+    public static string LfgCompletionLabel =>
+        IsGerman ? "Abgeschlossene Inhalte" : "Completed content";
+    public static string LfgCommentLabel => IsGerman ? "Kommentar" : "Comment";
+    public static string LfgPasswordLabel => IsGerman ? "Passwort" : "Password";
+    public static string LfgItemLevelLabel =>
+        IsGerman ? "Gegenstandsstufe" : "Item level";
+    public static string LfgRoleSlot => IsGerman ? "Rollenplatz" : "Role slot";
 
     /// <summary>The window's own help text for the option under the focus,
     /// spoken on its own after a short dwell - prefixed so the user knows what
@@ -496,6 +533,7 @@ public static partial class AccessibilityStrings
         // unterscheidet, gehört nach vorn und der Rest muss kurz bleiben.
         NavCategory.GrandCompanyHunt => IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets",
         NavCategory.BlueMagic        => IsGerman ? "Blaumagie"          : "Blue magic",
+        NavCategory.Beastmaster      => IsGerman ? "Bestien"            : "Beasts",
         NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
         // Bewusst NICHT "Dungeons", obwohl der Wunsch so formuliert war: die Liste
         // haelt auch Prüfungen und Raids. Und bewusst nicht noch einmal "Inhalte" -
@@ -609,7 +647,7 @@ public static partial class AccessibilityStrings
     public static string NoFatesInZone =>
         IsGerman ? "Keine FATEs in diesem Gebiet." : "No FATEs in this area.";
 
-    // ── Events: zeitliche Kollab-Events (Yo-kai-Zonen) ──
+    // ── Events: zeitliche Kollab-Events (Yo-kai-Zonen + Event-FATEs) ──
     public static string CategoryTimedEventCount(int total, int here) =>
         here > 0
             ? (IsGerman
@@ -631,10 +669,16 @@ public static partial class AccessibilityStrings
             ? "FATEs dort mit der Yo-kai-Uhr machen."
             : "Do FATEs there with the Yo-kai Watch on.";
 
+    /// <summary>Spoken after a collab Event-FATE spawn line.</summary>
+    public static string TimedEventFateHint =>
+        IsGerman
+            ? "Event-FATE dort machen, wenn es erscheint."
+            : "Do the event FATE there when it appears.";
+
     public static string NoTimedEvents =>
         IsGerman
-            ? "Keine zeitlichen Events. Yo-kai-Uhr fehlt — erst den Event-Auftrag machen."
-            : "No timed events. Yo-kai Watch missing — finish the event quest first.";
+            ? "Keine zeitlichen Events."
+            : "No timed events.";
 
     // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
     public static string CategoryHuntingCount(int rank, int total, int here) =>
@@ -797,6 +841,54 @@ public static partial class AccessibilityStrings
         IsGerman
             ? $"{spell} gibt es in {duty}. Zu diesem Eingang ist kein Ort hinterlegt."
             : $"{spell} is found in {duty}. No location is recorded for that entrance.";
+
+    // ── Bestienbuch: fehlende Bestien und ihr Fundort ──
+    public static string CategoryBeastmasterCount(int total, int here) =>
+        here > 0
+            ? (IsGerman
+                ? $"Bestien: {total} fehlen, {here} in diesem Gebiet."
+                : $"Beasts: {total} missing, {here} in this area.")
+            : (IsGerman
+                ? $"Bestien: {total} fehlen, keine in diesem Gebiet."
+                : $"Beasts: {total} missing, none in this area.");
+
+    /// <summary>One beast line: name and its number in the bestiary.</summary>
+    public static string BeastmasterEntry(string name, byte number) =>
+        IsGerman ? $"{name}, Nr. {number}" : $"{name}, no. {number}";
+
+    /// <summary>
+    /// Player is already in the beast's zone. Sheet names the place, not a
+    /// finer spawn; living specimen is sought by name when loaded.
+    /// </summary>
+    public static string BeastmasterHere =>
+        IsGerman
+            ? "hier in diesem Gebiet. Wenn kein Exemplar geladen ist, such über die Kategorie Gegner."
+            : "here in this area. If no specimen is loaded, look via the enemy category.";
+
+    /// <summary>Sub-area / waypoint inside the zone, when known.</summary>
+    public static string BeastmasterArea(string area) =>
+        area.Length == 0 ? string.Empty : (IsGerman ? $"Untergebiet {area}" : $"area {area}");
+
+    /// <summary>Quest/reward beast with no PlaceName in the sheet.</summary>
+    public static string BeastmasterNoPlace =>
+        IsGerman
+            ? "das Spiel nennt keinen Fundort."
+            : "the game names no habitat.";
+
+    public static string NoBeastmasterTargets =>
+        IsGerman
+            ? "Keine fehlenden Bestien."
+            : "No missing beasts.";
+
+    public static string BeastmasterNoRoute(string name, string zone) =>
+        IsGerman
+            ? $"{name} gibt es in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
+            : $"{name} is found in {zone}. No route there over zone transitions.";
+
+    public static string BeastmasterAreaUnknown(string name, string area) =>
+        IsGerman
+            ? $"{name}: Untergebiet {area} ist auf der Karte nicht verzeichnet."
+            : $"{name}: area {area} is not marked on the map.";
 
     // ── Alle Inhalte: die weltweite Dungeon-, Prüfungs- und Raid-Liste ──
 
@@ -963,6 +1055,30 @@ public static partial class AccessibilityStrings
             : enemies > 0
                 ? $"Levequests: {enemies} enemies, {givers} givers, {goals} goals."
                 : $"Levequests: {givers} givers, {goals} goals.";
+
+    /// <summary>
+    /// Accepted leve held, but map markers and running-director enemies are
+    /// gone (typical after a failed attempt, before Journal "Neuer Versuch").
+    /// Names come from the Leve sheet.
+    /// </summary>
+    public static string CategoryLevequestAcceptedOnly(string names) =>
+        IsGerman
+            ? $"Freibriefe: angenommen {names}. Kein Kartenmarker — im Tagebuch unter Freibriefe „Neuer Versuch“ und dann „Beginnen“."
+            : $"Levequests: accepted {names}. No map marker — in the journal under Levequests use Retry, then Start.";
+
+    /// <summary>
+    /// Leve is running (director active) but no leve-bound enemies are in the
+    /// object table yet — usually still away from the task area. Must not sound
+    /// like "go restart at the giver" (regression 2026-09-21 after fail-retry).
+    /// </summary>
+    public static string CategoryLevequestRunningNoEnemies(string name, string objective) =>
+        string.IsNullOrWhiteSpace(objective)
+            ? (IsGerman
+                ? $"Freibriefe: läuft {name}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet."
+                : $"Levequests: running {name}. No leve enemies nearby yet — go to the task area.")
+            : (IsGerman
+                ? $"Freibriefe: läuft {name}. {objective}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet."
+                : $"Levequests: running {name}. {objective}. No leve enemies nearby yet — go to the task area.");
 
     /// <summary>Spoken role prefix so the player knows whether a leve destination
     /// is the Levemete (accept/hand in), the objective (do the task) or one of
@@ -2334,8 +2450,8 @@ public static partial class AccessibilityStrings
     /// <summary>Spoken at the start of "/acc soundtest" (audition the cue sounds).</summary>
     public static string SoundTestRunning =>
         IsGerman
-            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft, dann HP- und Mana-Töne."
-            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival, then HP and mana tones.";
+            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft, Anstoß und Kante, dann HP- und Mana-Töne."
+            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival, bump and ledge, then HP and mana tones.";
 
     // Labels spoken before each HP/MP tone in the sound test, so the audition is
     // self-explaining.
@@ -2344,6 +2460,18 @@ public static partial class AccessibilityStrings
     public static string SoundTestHpCritical=> IsGerman ? "HP, kritisch"      : "HP, critical";
     public static string SoundTestMpGain    => IsGerman ? "Mana, Aufladung"   : "Mana, restored";
     public static string SoundTestMpSpend   => IsGerman ? "Mana, Verbrauch"   : "Mana, spent";
+
+    /// <summary>Spoken before the free-walk bump cue in "/acc soundtest".</summary>
+    public static string SoundTestBump =>
+        IsGerman ? "Anstoß" : "Bump";
+
+    /// <summary>Spoken before the jump-ahead cue in "/acc soundtest".</summary>
+    public static string SoundTestJumpAhead =>
+        IsGerman ? "Sprung voraus" : "Jump ahead";
+
+    /// <summary>Spoken before the drop-ahead cue in "/acc soundtest".</summary>
+    public static string SoundTestDropAhead =>
+        IsGerman ? "Absturz voraus" : "Drop ahead";
 
     // Gruppen-Heilmonitor: die Nummer sagt WER, die Tonhoehe sagt WIE SCHLIMM.
     /// <summary>Spoken before the heal-monitor audition in "/acc soundtest".</summary>
@@ -2471,6 +2599,7 @@ public static partial class AccessibilityStrings
           "Strg+F7, empfohlene Ausrüstung anlegen. " +
           "Strg+F8, zufälliges Aussehen in der Charaktererschaffung. " +
           "Strg+Nummernblock 0, Belegen-Menü öffnen: erst die Taste wählen, dann was darauf soll. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt, Nummernblock 4 und 6 wechseln die Liste, Nummernblock Komma zurück. " +
+          "Strg+Nummernblock 2, Sammel-Notizbuch: Miner, Gärtner, Fischer. Nummernblock 0 läuft zum Fundort. " +
           "Strg+Umschalt+F6, Spur aufzeichnen an oder aus: eine Stelle, die das Wegenetz nicht kennt, einmal selbst ablaufen. " +
           "Strg+Umschalt+F7, Aufgabenliste des laufenden Inhalts vorlesen: Freibrief, Dungeon oder FATE. " +
           "Strg+F4, Bestiarium vorlesen; im offenen Handwerker-Notizbuch stattdessen, was der Beutel jetzt hergibt, samt Bonus fürs erste Mal. " +
@@ -2512,6 +2641,7 @@ public static partial class AccessibilityStrings
           "Ctrl+F7, apply recommended equipment. " +
           "Ctrl+F8, random appearance in character creation. " +
           "Ctrl+Numpad 0, open the assignment menu: pick the key first, then what goes on it. Numpad 8 and 2 to browse, Numpad 0 selects, Numpad 4 and 6 switch the list, Numpad decimal to go back. " +
+          "Ctrl+Numpad 2, gathering notebook: Miner, Botanist, Fisher. Numpad 0 walks to the location. " +
           "Ctrl+Shift+F6, record a trail on or off: walk a stretch the navmesh does not know once yourself. " +
           "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
           "Ctrl+F4, read the bestiary out; while the crafting log is open instead what the bag can make right now, with the first-craft bonus named. " +

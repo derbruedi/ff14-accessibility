@@ -62,6 +62,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CooldownService    _cooldown;
     private readonly JobGaugeService    _jobGauge;
     private readonly DutyActionService  _dutyActions;
+    private readonly NocturneWarpService _nocturneWarp;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
     // Sagt, welcher Gegenstand WIRKLICH im Platz unter dem Cursor liegt -
@@ -83,6 +84,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HuntingLogService  _huntingLog;
     private readonly AreaRangeService   _areaRanges;
     private readonly AozSpellSourceService _aozSources;
+    private readonly XbmPetSourceService _xbmSources;
     private readonly DutyEntranceService _dutyEntrances;
     private readonly DungeonRouteService _dungeonRoute;
     // Fuellt den Ordner, aus dem der Dienst darueber liest. Getrennt, weil das
@@ -112,6 +114,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ShopNpcService     _shops;
     private readonly ObjectNameService  _objectNames;
     private readonly ObstacleService    _obstacles;
+    private readonly MovementAudioService _movementAudio;
     private readonly FlightService      _flight;
     private readonly ObjectMemoryService _objectMemory;
     private readonly EnemyMarkerService _enemyMarkers;
@@ -197,14 +200,14 @@ public sealed class Plugin : IDalamudPlugin
     // gemeint war die Tastenliste im Zuweisungsmenü.
     // 6.08.6: Skill-Belegen liest die ActionTransient-Beschreibung nach dem Namen
     // (Dwell + Speak ohne Interrupt, wie ActionMenu).
-    // 6.08: Events-Kategorie = Yo-kai-Zonen (Uhr), nicht Sheet-Flag-FATEs.
+    // 6.08: Events = Yo-kai-Zonen (+ Collab-Event-FATEs ab 2026-09-24).
     // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
     // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem öffentlichen Stand nicht enthalten.
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.31";
-    private const string PluginVersionTag = "Zauber Gather Context";
+    private const string PluginVersion    = "6.08.32";
+    private const string PluginVersionTag = "Events Warp LFG XBM";
 
     public Plugin()
     {
@@ -414,6 +417,8 @@ public sealed class Plugin : IDalamudPlugin
         // Blaumagie als Wegweiser: welche Zauber fehlen, und wo sie zu holen sind.
         // Braucht _places fuer die Karten-Aufloesung, sonst nur die Sheets.
         _aozSources   = new AozSpellSourceService(DataManager, _places, Log);
+        // Bestienbuch als Wegweiser: fehlende Bestien + Fundort (XBMPet/XBMManager).
+        _xbmSources   = new XbmPetSourceService(_places, ObjectTable, DataManager, Log);
 #if DEBUG
         // Misst am Aufzug, was ein Aufzug ueberhaupt ist - siehe LiftProbe.
         _liftProbe = new LiftProbe(ObjectTable, TargetManager, _tolk, Log);
@@ -455,7 +460,7 @@ public sealed class Plugin : IDalamudPlugin
         // Farb-Rufnamen fuer die Gegner im Kampf. VOR der Navigation, weil deren
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
-        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
+        _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _xbmSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         _gatherLog    = new GatherLogService(DataManager, ClientState, _places, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
@@ -480,6 +485,11 @@ public sealed class Plugin : IDalamudPlugin
         // Spieler tut: ein Spieler geht gleich weiter, eine Absperrung nie.
         _obstacles   = new ObstacleService(ObjectTable, _objectNames, Log);
         _autoWalk.Obstacles = _obstacles;
+        // Freilauf-Anstoß und Kantentöne (Sprung/Absturz). Nach ObstacleService und
+        // AutoWalk, weil er beide braucht; vor dem Framework-Tick verdrahtet.
+        _movementAudio = new MovementAudioService(
+            ObjectTable, Condition, _obstacles, _autoWalk.Navmesh, _cue, _config, Log,
+            () => _autoWalk.IsActive || _autoWalk.IsFollowing);
         // Fliegen (V5.96): kennt die Flugbedingungen des Spiels und ruft das
         // Reittier. Wie die beiden Nachbarn optional - fehlt er, laeuft jeder Lauf
         // am Boden, genau wie vorher.
@@ -612,6 +622,8 @@ public sealed class Plugin : IDalamudPlugin
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _warnVoice, _config, Log);
         _jobGauge   = new JobGaugeService(JobGauges, ObjectTable, DataManager, _warnVoice, _tolk, _cue, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
+        _nocturneWarp = new NocturneWarpService(
+            ClientState, ObjectTable, TargetManager, _cue, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         // Die Zahlwoerter des Heilmonitors liegen als fertige Klangdateien neben
         // der Plugin-DLL (assets\partymonitor), uebernommen aus Sku.
@@ -2153,6 +2165,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        // Window focus first: every mod tone / SAPI channel gates on this.
+        GameWindowFocus.Update(Log);
+        if (GameWindowFocus.JustBecameInactive)
+        {
+            _warnVoice.Silence();
+            _chatVoice.Silence();
+            _beacon.ApplyFocusMute();
+            _aoeWarn.ApplyFocusMute();
+        }
+
         UpdateKeyEdges();
         _hotbar.UpdateCrossHotbar(GameGui, IsControllerMode());
 #if DEBUG
@@ -2477,10 +2499,14 @@ public sealed class Plugin : IDalamudPlugin
         // Spiel bietet sie NUR per Mausklick an, ein blinder Spieler erfaehrt
         // sonst nie, dass sie da ist.
         _dutyActions.Update();
+        // FF15-Kollab Garuda: Warp-Angriff automatisch auf Monolith/Garuda.
+        _nocturneWarp.Update();
         // HP/MP tones on every 10 % step (pan = fill level). Independent of
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.
         _vitals.Update();
+        // Freilauf: Anstoß an Wesen/Kulisse und Kante (Sprung/Absturz) als Ton.
+        _movementAudio.Update();
         // Gruppen-Heilmonitor: spricht die Gruppenposition, der Lebensstand
         // steckt in der Tonhoehe. Braucht die Frame-Zeit fuer seine
         // Warteschlange und die Dauerueberwachung.
@@ -2876,6 +2902,90 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
+        // Bestie aus dem Bestienbuch-Browser. Wie Jagd: lebendes Exemplar zuerst,
+        // sonst Hop zur Zone, sonst Arealsuche / Wegpunkt des Untergebiets.
+        var beast = _navigation.SelectedBeastTarget;
+        if (beast != null)
+        {
+            var live = _xbmSources.FindNearestLive(beast.Name);
+            if (live != null)
+            {
+                var accepted = _navigation.TargetFromBrowser(live);
+                Log.Info($"[XbmZiel] Lebendes '{beast.Name}' in " +
+                         $"{Vector3.Distance(ObjectTable.LocalPlayer?.Position ?? live.Position, live.Position):F1} m, " +
+                         $"id={live.GameObjectId:X}, anvisiert={accepted}");
+                if (accepted) return MarkerResolve.None;
+
+                position = _autoWalk.ResolveFloorPoint(live.Position) ?? live.Position;
+                name = beast.Name;
+                stopRange = AutoWalkService.StopRange;
+                return MarkerResolve.Resolved;
+            }
+
+            if (beast.MapId != 0 && beast.MapId != ClientState.MapId)
+            {
+                var hop = _places.FindFirstHopToMap(beast.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(
+                        AccessibilityStrings.BeastmasterNoRoute(beast.Name, beast.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = _autoWalk.ResolveFloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position      = hopWalk.Value;
+                name          = hop.Name;
+                stopRange     = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            if (beast.MapId != 0 && beast.MapId == ClientState.MapId)
+            {
+                var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+                var searchPart = _navigation.NextHuntSearchPart(playerPos);
+                var area = searchPart?.Position ?? beast.Position;
+                if (area is not { } areaPos)
+                {
+                    if (beast.AreaName.Length > 0)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BeastmasterAreaUnknown(beast.Name, beast.AreaName));
+                        return MarkerResolve.Failed;
+                    }
+
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterHere);
+                    return MarkerResolve.Failed;
+                }
+
+                var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
+                var areaWalk = _autoWalk.ResolveFloorPoint(areaSeed);
+                if (areaWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(
+                        beast.AreaName.Length > 0 ? beast.AreaName : beast.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+
+                position = areaWalk.Value;
+                name = searchPart is { Name.Length: > 0 }
+                    ? searchPart.Value.Name
+                    : beast.AreaName.Length > 0 ? beast.AreaName : beast.Name;
+                stopRange     = _config.AutoWalkPlaceStopRange;
+                heightIsGuess = searchPart == null;
+                return MarkerResolve.Resolved;
+            }
+
+            _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterNoPlace);
+            return MarkerResolve.Failed;
+        }
+
         // Jagdziel aus dem Browser. Same routing as a quest goal, for the same
         // reason: the monster's home area is a place on the map, and in another
         // zone the only thing worth walking to is the transition that leads
@@ -3169,6 +3279,14 @@ public sealed class Plugin : IDalamudPlugin
         Framework.RunOnTick(() => _cue.PlayWaypointTone(), delayTicks: tick + 12);
         Framework.RunOnTick(() => _cue.PlayArrivalTone(),  delayTicks: tick + 52);
         tick += 90;
+
+        Framework.RunOnTick(() => _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestBump), delayTicks: tick);
+        Framework.RunOnTick(() => _cue.PlayBumpTone(), delayTicks: tick + 24);
+        Framework.RunOnTick(() => _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestJumpAhead), delayTicks: tick + 90);
+        Framework.RunOnTick(() => _cue.PlayJumpAheadTone(), delayTicks: tick + 114);
+        Framework.RunOnTick(() => _tolk.SpeakInterrupt(AccessibilityStrings.SoundTestDropAhead), delayTicks: tick + 180);
+        Framework.RunOnTick(() => _cue.PlayDropAheadTone(), delayTicks: tick + 204);
+        tick += 270;
 
         // HP/MP tones: each case is announced, then the tone plays ~0.4 s later so
         // the label does not step on it. ~90 ticks (~1.5 s) between cases. Percent

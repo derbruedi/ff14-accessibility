@@ -24,7 +24,201 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **BossMod-Hotkeys Minus / Alt+Minus:** nur lokal (Temp-Backup beim
   Release-Push 2026-09-18). **Nie** committen/pushen. Details: PRIVAT.txt.
 
-## STAND JETZT (2026-09-21): RELEASE v6.08.31
+## STAND JETZT (2026-09-24): RELEASE v6.08.32
+
+>>> VERSION: gesprochen / Tag 6.08.32; Assembly/repo.json/Manifest 6.8.32.0
+    (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
+
+>>> INHALT (ohne Mahjong — bleibt lokal in `_local_mahjong/`):
+    - Events: Collab-FATE 1409 „Like Clockwork“ / mechanische Krieger
+    - Garuda-Event-Warp: Aus / Manuell / Auto (Ansagen-Menü)
+    - BST: Skills unter Strg+Numpad0 (ClassJobCategory-Name)
+    - Rekrutieren: Schalter an/aus, Sprachkästen, Dropdown-Namen
+    - Bestienbuch (XBM): Fokus + Fundorte
+    - Freilauf-Töne + Stummschaltung bei inaktivem Spielfenster
+
+>>> NIE IM RELEASE: BossMod, AutoDuty-Plugin, AccessibleVendorSell,
+    Craft-Kategorie, Mahjong-WIP.
+
+>>> UPDATE: Optionsmenü → Aktualisierung → Nach Aktualisierung suchen.
+
+## STAND DAVOR (2026-09-24): REKRUTIEREN — SCHALTER AN/AUS
+
+>>> FIX: LookingForGroupCondition Fokus mit an/aus.
+
+## STAND DAVOR (2026-09-24): MAHJONG — LOKAL, NICHT IM RELEASE
+
+>>> User: Regeln später; Code in `_local_mahjong/` geparkt.
+
+## STAND DAVOR (2026-09-24): NOCTURNE — WARP-MODI AUS/MANUELL/AUTO
+
+>>> WUNSCH (User): Nur für den Garuda-Auftrag; an/aus; Manuell (Ton rechtzeitig)
+    oder Automatisch wechselbar. Auto hatte gepasst.
+
+>>> FIX: `NocturneWarpMode` Off / Manual / Auto. Nur Territory 834 + Warp auf
+    der Leiste. Manual: Ton + Ziel setzen, Spieler Umschalt+F10. Auto: Execute.
+    Menü Ansagen → „Garuda-Event Warp“.
+
+>>> TEST: Menü Modus wechseln. Im Auftrag Manual → Ton + Ziel, selbst warpen.
+    Auto → wie zuvor. Außerhalb des Auftrags: keine Wirkung.
+
+## STAND DAVOR (2026-09-24): EVENTS — FF15-COLLAB-FATE
+
+>>> WUNSCH (User): Event-FATEs finden (Quests selbst); FF15 „A Nocturne for
+    Heroes“ / Like Clockwork.
+
+>>> PROBE (offline sqpack DE/EN 2026-09-24):
+    - Fate **1409** EN „Like Clockwork“ / DE „Die mechanischen Krieger“.
+    - Flags AdventEvent/MoonFaire/SpecialFate = **false** (anders als die
+      15 Moon-Faire-/Advent-Zeilen).
+    - Location→planevent EventRange: terr **141** Zentrales Thanalan
+      pos (292|-16|-20).
+
+>>> FIX (WORKAROUND): `CollabEventFateIds` = {1409}; Name+Pos aus Sheet/LGB.
+    Yo-kai unverändert. Kategorie Events zeigt Collab-FATE auch ohne Uhr.
+
+>>> TEST:
+    1. Events → „Die mechanischen Krieger, Zentrales Thanalan“.
+    2. Numpad3 → Hop/Lauf dorthin.
+    3. In Zone Kategorie FATEs → wenn up, live ansteuern.
+
+## STAND DAVOR (2026-09-24): BST — SKILLS IN STRG+NUMPAD0
+
+>>> PROBLEM: Als Bestienbändiger Strg+Numpad0 → Skills → „keine gefunden“.
+
+>>> URSACHE: ClassJobCategory hat typed keine Spalte `BST` (nur `Unknown0`);
+    `GearInfoService.AllowsJob` → null → Hotbar filtert alle Actions weg.
+    Sheet: Kategorie 203 heißt "BST", 20 Player-Actions mit ClassJob 43.
+
+>>> FIX: Job-Spalte über Kategorie-Namen auflösen, wenn Abkürzungs-Property fehlt.
+
+>>> TEST: Als BST Strg+Numpad0 → Skills → Schmetteraxt, Anfreunden, Kampfhorn …
+>>> ERGEBNIS (User 2026-09-24): funktioniert.
+
+## STAND DAVOR (2026-09-24): BESTIEN — NAV-KATEGORIE + BUCH
+
+>>> WUNSCH (User): Bestienbuch benennen; Kategorie wie Blaumagie zum Hinlaufen
+    bevor getestet wird.
+
+>>> FIX:
+    - XbmNotebookService: XBMPet RawRow — Col0→Pet-Name, Col7→PlaceName
+      (Fundort), Col8=Beschreibung (nicht typed XBMPet — ColumnHash-Crash).
+    - Fokus: „Nr. 1, Cu Sith, Fundort ….“; Beschreibung beim Verweilen (wie AOZ).
+    - NavCategory.Beastmaster („Bestien“): fehlende Pets via XBMManager,
+      Fundort→Karte, Numpad3 Hop / lebendes Exemplar / Marker.
+    - Untergebiet: Jagdtagebuch-Habitat nur bei gleicher Zone wie Buch-Fundort;
+      sonst Wegpunkt wenn Fundort selbst Marker-Subtext. Arealsuche wie Jagd.
+
+>>> TEST: Als Bestienbändiger Kategorie „Bestien“; Buch-Namen; Numpad3 zu Zone.
+    Mit Untergebiet (z. B. Schaf → Zephyr-Schneise) Ansage + Lauf dorthin.
+
+## STAND DAVOR (2026-09-24): JOURNALACCEPT — TITEL + ABLEHNUNGSGRUND
+
+>>> WUNSCH (User): Beim Quest-Annehmen-Fenster (NPC) Infos vorlesen, inkl.
+    warum man nicht annehmen kann. Dump JournalAccept bestätigt.
+
+>>> FIX (UIReaderService BuildQuestText / Fokus):
+    - Root-Texte id=34 Titel, id=8 Stufe, id=29 Ablehnung, id=30 Bedingung
+      (sichtbar) vor Canvas-Beschreibung.
+    - Auto-Fokus „Annehmen“ schnitt Ansage ab (~8 ms) — Guard + nur noch
+      bei Pfeiltasten-Navigation ansagen.
+    - Panel-Header „Beschreibung“ aus frühem Fallback entfernt.
+
+>>> BESTÄTIGT (User 2026-09-24): funktioniert.
+
+## STAND DAVOR (2026-09-22): BUMP-, KANTEN- UND FOKUS-STUMMSCHALTUNG
+
+>>> WUNSCH (User): Anstoß-Ton gegen NPC/Spieler/Gegenstände; Ton wenn man
+    springen muss oder kurz bevor es runtergeht; alle Mod-Töne nur im
+    Spielfenster (Alt-Tab = stumm). Freilauf immer an, Bump einmalig.
+
+>>> UMSETZUNG:
+    - GameWindowFocus (Framework.WindowInactive) zentral; Beacon/Cue/AoE/
+      Vitals/Party/Warn-/Chat-SAPI stumm ohne Fokus; Tolk bleibt.
+    - MovementAudioService: Stall+ObstacleService → Bump; Navmesh-Probe
+      voraus → Jump (steigend) / Drop (fallend); Schwelle 1,5 m.
+    - Menü Töne: Schalter + Lautstärke; /acc soundtest erweitert.
+
+>>> TEST:
+    1. Gegen NPC/Spieler → ein Bump, kein Dauerfeuer.
+    2. Gegen Wand/Kiste → Bump.
+    3. Vor Absatz → tiefer Ton.
+    4. Vor Sprung/Stufe hoch → hoher Ton.
+    5. Alt-Tab → Peil/Vitals/AoE/neue Töne/SAPI stumm; zurück hörbar.
+    6. Menü Lautstärke 0 / Schalter aus → stumm.
+    7. Im Flug → keine Bump-/Kantentöne.
+
+>>> BESTÄTIGT (User 2026-09-22): Sounds funktionieren.
+
+## STAND DAVOR (2026-09-21): ERLEDIGTE FREIBRIEF-ZIELE WEG
+
+>>> WUNSCH (User): Erledigte Freibriefe nicht mehr in der Kategorie.
+
+>>> FIX: Ziele nur wenn LeveWork.Sequence weder 255 (abgabebereit) noch 3
+    (fehlgeschlagen) — wie HaselCommon LeveService. Geber-NPCs bleiben.
+    Map- und Sheet-Ziele gefiltert.
+
+>>> TEST: Abgabebereiten Freibrief → kein Ziel mehr, Geber noch da.
+
+## STAND DAVOR (2026-09-21): FREIBRIEF-GEBER = NPC, NICHT LEVENAME
+
+>>> PROBLEM (User + Log): Sheet-Fallback sagte „Freibrief-Geber: Steckbrief:
+    Pannixia“ — Freibrief-Titel als Geber. Geber ist nur der Abhol-NPC.
+
+>>> FIX: LevelLevemete → ENpcResident.Singular; ein Levemete einmal (viele
+    angenommene Freibriefe teilen ihn). Ziele weiter Freibrief-Name.
+    Map-Marker am selben Spot gewinnen (z. B. „Gildenfreibriefe“).
+
+>>> TEST: Freibriefe → Geber mit NPC-Namen; Ziele mit Freibrief-Namen.
+
+## STAND DAVOR (2026-09-21): FREIBRIEFE GEBER+ZIEL AUS SHEET
+
+>>> PROBLEM (User): Freibriefe-Kategorie zeigte sonst Geber-NPCs und Ziele
+    zum Auto-Lauf; jetzt leer trotz laufendem/angenommenem Freibrief.
+
+>>> URSACHE (Log): Map.LevequestMarkers / GuildLeveAssignmentMarkers sind
+    leer sobald der Freibrief läuft oder nach Fail. Vor Start (18:05) waren
+    Ziele da; danach 0. Sheet LevelStart = exakt dieselbe Position wie der
+    Marker (661: 117.7|-10.8|-467.7).
+
+>>> FIX: Bei angenommenen Freibriefen Sheet-Fallback LevelLevemete (Geber)
+    + LevelStart (Ziel), wenn Marker fehlen. Auto-Lauf wieder möglich.
+
+>>> TEST: Freibriefe → Geber und/oder Ziel → Numpad3 zum Aufgabengebiet.
+
+## STAND DAVOR (2026-09-21): FREIBRIEF LÄUFT — FALSCHE „GEBER“-ANSAGE
+
+>>> PROBLEM (User + Log): Nach Fail Einweisungsquest „Freibriefe des Sankt
+    Coinach…“ / Leve „Auf Krötenfang“. User: nicht neu annehmbar, nicht in
+    Quest-Ziele. Log: Journal „Neuer Versuch“+„Beginnen“ → läuft; Plugin sagte
+    trotzdem „am Geber erneut starten“ (0 Gegner am Camp).
+
+>>> KLÄRUNG: Quest steckt im Tagebuch/_ToDoList, nicht in Quest-Ziele-Markern
+    (Ziel = Freibrief erledigen). Neustart: Journal → Freibriefe → Neuer
+    Versuch (Vollmacht) → Beginnen — nicht am Brett neu annehmen.
+
+>>> FIX: Laufender Director + 0 Gegner → „läuft … zum Aufgabengebiet“ statt
+    Geber-Hinweis. Angenommen ohne Lauf → Tagebuch-Hinweis.
+
+>>> TEST: Freibrief gestartet am Camp → Ansage „läuft“. Am Zielkreis → Gegner.
+
+## STAND DAVOR (2026-09-21): FREIBRIEFE-KATEGORIE NACH FEHLSCHLAG
+
+>>> PROBLEM (User + Log): Nach Abbruch „Auf Krötenfang“ fehlt Kategorie
+    Freibriefe beim Durchblättern. Log: Angenommen 661, 0 Marker, kein
+    laufender Director; Zyklus springt Quest-Gegner → FATEs.
+
+>>> URSACHE: IsCategoryAvailable prüfte nur Marker ODER laufenden Freibrief.
+    Kommentar versprach auch angenommene — Code nicht. Nach Fail löscht das
+    Spiel LevequestMarkers, LeveQuests behält die Id.
+
+>>> FIX: HasAcceptedLeve / GetAcceptedLeveNames (QuestManager.LeveQuests).
+    Kategorie bleibt; Ansage „angenommen … Kein Kartenmarker — am Geber
+    erneut starten.“
+
+>>> TEST: Angenommenen Freibrief nach Fail → Kategorie wieder da, nennt Name.
+
+## STAND DAVOR (2026-09-21): RELEASE v6.08.31
 
 >>> VERSION: gesprochen / Tag 6.08.31; Assembly/repo.json/Manifest 6.8.31.0
     (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.

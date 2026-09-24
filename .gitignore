@@ -42,3 +42,7 @@ _local_craft_backup/
 AccessibleVendorSell/
 tools/enable-vendorsell/
 
+
+# Lokale Mahjong-WIP (nicht im Release)
+_local_mahjong/
+

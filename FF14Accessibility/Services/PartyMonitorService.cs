@@ -9,7 +9,6 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using Lumina.Excel.Sheets;
 using NAudio.Wave;
-using ClientFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace FF14Accessibility.Services;
 
@@ -82,8 +81,6 @@ public sealed class PartyMonitorService : IDisposable
     private double _slotCooldown;
     private double _continuousTimer;
 
-    private bool _windowActive = true;
-
     // Which roster the order was last logged for, so the log gets one line per
     // party rather than one per frame.
     private string _loggedOrderSignature = string.Empty;
@@ -118,8 +115,6 @@ public sealed class PartyMonitorService : IDisposable
             _bank.BeginLoad();
             return;
         }
-
-        UpdateWindowActive();
 
         var party = OrderedParty();
         if (party.Count == 0)
@@ -556,7 +551,7 @@ public sealed class PartyMonitorService : IDisposable
 
         // The window can be in the background: the queue keeps flowing so it does
         // not pile up, but nothing is played. Same rule as the HP/MP tones.
-        if (_windowActive) Speak(call, number);
+        if (GameWindowFocus.IsActive) Speak(call, number);
     }
 
     /// <summary>Plays one call: the pitched number, plus Sku's extra marker at the extremes.</summary>
@@ -603,16 +598,6 @@ public sealed class PartyMonitorService : IDisposable
     /// <summary>Reads a per-role setting, falling back when the array is short or unset.</summary>
     private static T Setting<T>(T[]? values, int role, T fallback) =>
         values != null && role >= 0 && role < values.Length ? values[role] : fallback;
-
-    /// <summary>
-    /// Reads the game's own window-focus flag, exactly as VitalsService does, so
-    /// there is one source of truth for "is the player actually looking at this".
-    /// </summary>
-    private unsafe void UpdateWindowActive()
-    {
-        var framework = ClientFramework.Instance();
-        _windowActive = framework == null || !framework->WindowInactive;
-    }
 
     /// <summary>
     /// Plays one number at one health level on demand, for the sound-test

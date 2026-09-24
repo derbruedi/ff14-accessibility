@@ -241,6 +241,9 @@ public sealed class ChatVoiceService : IDisposable
     {
         if (_synth == null || string.IsNullOrWhiteSpace(text)) return false;
         if (_config.ChatVoiceVolume <= 0f) return false;
+        // Mod SAPI only while the game window is focused. Returning false lets
+        // the caller fall back to the screen reader.
+        if (!GameWindowFocus.IsActive) return false;
 
         text = TolkService.Sanitize(text);
         if (text.Length == 0) return false;
@@ -335,6 +338,7 @@ public sealed class ChatVoiceService : IDisposable
     public bool PlayPreview(string? voiceName, string text)
     {
         if (_synth == null || _config.ChatVoiceVolume <= 0f) return false;
+        if (!GameWindowFocus.IsActive) return false;
 
         voiceName ??= _config.ChatVoice.Values.FirstOrDefault(v => v.Length > 0);
         var voice = voiceName != null ? FindVoice(voiceName) : null;

@@ -285,6 +285,14 @@ public sealed class GearInfoService
     /// English job abbreviation (ADV, GLA, ... PCT - ilspycmd-verified). The
     /// current job's column is found via the English ClassJob sheet instead of
     /// assuming column order; a miss is logged and reported as unknown.
+    ///
+    /// <para>
+    /// Neue Jobs können hinterherhinken: Bestienbändiger (BST, ClassJob 43)
+    /// hat im typed Sheet keine Spalte <c>BST</c>, sondern <c>Unknown0</c>
+    /// (offline sqpack 2026-09-24: Kategorie-Zeile 203 heißt "BST" und setzt
+    /// nur Unknown0). Dann wird die Spalte über die Kategorie-Zeile gleichen
+    /// Namens aufgelöst — nicht hartcodiert.
+    /// </para>
     /// </summary>
     private PropertyInfo? ResolveJobColumn(byte jobId)
     {
@@ -295,13 +303,57 @@ public sealed class GearInfoService
         }
         var abbr = job.Abbreviation.ExtractText().Trim();
         var prop = typeof(ClassJobCategory).GetProperty(abbr, BindingFlags.Public | BindingFlags.Instance);
-        if (prop == null || prop.PropertyType != typeof(bool))
+        if (prop != null && prop.PropertyType == typeof(bool))
         {
-            _log.Warning($"[Gear] Keine Job-Spalte '{abbr}' (Job {jobId}) im ClassJobCategory-Sheet.");
-            return null;
+            _log.Info($"[Gear] Job {jobId} -> Spalte {abbr}.");
+            return prop;
         }
-        _log.Info($"[Gear] Job {jobId} -> Spalte {abbr}.");
-        return prop;
+
+        prop = ResolveJobColumnViaCategoryName(abbr);
+        if (prop != null)
+        {
+            _log.Info($"[Gear] Job {jobId} '{abbr}' -> Spalte {prop.Name} " +
+                      $"(typed Sheet hat kein {abbr}; über Kategorie-Name aufgelöst).");
+            return prop;
+        }
+
+        _log.Warning($"[Gear] Keine Job-Spalte '{abbr}' (Job {jobId}) im ClassJobCategory-Sheet.");
+        return null;
+    }
+
+    /// <summary>
+    /// Findet die bool-Spalte über die ClassJobCategory-Zeile, deren Name die
+    /// Job-Abkürzung ist und die genau eine true-Spalte hat (BST → Unknown0).
+    /// </summary>
+    private PropertyInfo? ResolveJobColumnViaCategoryName(string abbr)
+    {
+        if (abbr.Length == 0) return null;
+        var sheet = _data.GetExcelSheet<ClassJobCategory>(ClientLanguage.English);
+        if (sheet == null) return null;
+
+        ClassJobCategory? match = null;
+        foreach (var row in sheet)
+        {
+            var name = row.Name.ExtractText()?.Trim() ?? string.Empty;
+            if (!string.Equals(name, abbr, StringComparison.OrdinalIgnoreCase)) continue;
+            match = row;
+            break;
+        }
+        if (match is not { } cat) return null;
+
+        PropertyInfo? exclusive = null;
+        foreach (var p in typeof(ClassJobCategory).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (p.PropertyType != typeof(bool)) continue;
+            bool on;
+            try { on = (bool)p.GetValue(cat)!; }
+            catch { continue; }
+            if (!on) continue;
+            // Mehr als eine true-Spalte: nicht eindeutig, nichts behaupten.
+            if (exclusive != null) return null;
+            exclusive = p;
+        }
+        return exclusive;
     }
 
     /// <summary>
