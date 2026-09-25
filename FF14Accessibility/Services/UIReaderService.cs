@@ -11518,15 +11518,31 @@ public sealed class UIReaderService : IDisposable
     /// <summary>
     /// JournalAccept root texts outside the JournalCanvas. Dump 2026-09-24:
     /// id=34 title, id=8 level, id=29 "cannot accept" reason, id=30 condition.
-    /// Empty parts are skipped; only <see cref="AtkResNode.IsVisible"/> nodes.
+    /// Title/level always (when visible). Reject lines only when the game has
+    /// disabled <see cref="AddonJournalAccept.AcceptButton"/> — id=29/30 keep
+    /// the Visible flag even when accept is allowed (Log 2026-09-25: every
+    /// accept window spoke "Du kannst den Auftrag nicht annehmen…", then focus
+    /// landed on Annehmen). Empty until AcceptButton exists so the first
+    /// PostUpdate frame does not speak reject alone before the title arrives.
     /// </summary>
     private static unsafe string ReadJournalAcceptHeader(AtkUnitBase* addon)
     {
+        var ja = (AddonJournalAccept*)addon;
+        if (ja->AcceptButton == null) return string.Empty;
+
+        // Same Enabled bit as other greyed-out controls (Gathering / settings).
+        var owner = ja->AcceptButton->OwnerNode;
+        var canAccept = owner != null
+            && (((ushort)owner->NodeFlags & (ushort)NodeFlags.Enabled) != 0);
+
         var parts = new List<string>(4);
         AppendVisibleTopText(parts, addon, 34);
         AppendVisibleTopText(parts, addon, 8);
-        AppendVisibleTopText(parts, addon, 29);
-        AppendVisibleTopText(parts, addon, 30);
+        if (!canAccept)
+        {
+            AppendVisibleTopText(parts, addon, 29);
+            AppendVisibleTopText(parts, addon, 30);
+        }
         return parts.Count == 0 ? string.Empty : string.Join(". ", parts);
     }
 

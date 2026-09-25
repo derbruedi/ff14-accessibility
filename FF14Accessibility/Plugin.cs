@@ -207,8 +207,8 @@ public sealed class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.33";
-    private const string PluginVersionTag = "XBM Tutorial";
+    private const string PluginVersion    = "6.08.34";
+    private const string PluginVersionTag = "Quest Accept";
 
     public Plugin()
     {

@@ -24,7 +24,37 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **BossMod-Hotkeys Minus / Alt+Minus:** nur lokal (Temp-Backup beim
   Release-Push 2026-09-18). **Nie** committen/pushen. Details: PRIVAT.txt.
 
-## STAND JETZT (2026-09-25): RELEASE v6.08.33
+## STAND JETZT (2026-09-25): RELEASE v6.08.34
+
+>>> VERSION: gesprochen / Tag 6.08.34; Assembly/repo.json/Manifest 6.8.34.0
+    (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
+
+>>> INHALT:
+    - JournalAccept: Ablehnungsgrund nur wenn Annehmen ausgegraut
+      (nicht mehr bei annehmbaren Quests)
+
+>>> NIE IM RELEASE: BossMod, AutoDuty-Plugin, AccessibleVendorSell,
+    Craft-Kategorie, Mahjong-WIP, BossMod Minus/Alt+Minus.
+
+>>> UPDATE: Optionsmenü → Aktualisierung → Nach Aktualisierung suchen.
+
+## STAND DAVOR (2026-09-25): JOURNALACCEPT — ABLEHNUNG NUR WENN WIRKLICH
+
+>>> PROBLEM (User + Log 19:44–20:49): Beim Annehmen hörte man immer
+    „Du kannst den Auftrag nicht annehmen…“, auch wenn Annehmen ging.
+
+>>> URSACHE: Root id=29/30 behalten Visible, obwohl AcceptButton enabled ist.
+    IsVisible allein reichte nicht (Log: Ablehnungstext, dann Fokus Annehmen).
+
+>>> FIX: `ReadJournalAcceptHeader` — Ablehnung/Bedingung nur wenn
+    `AddonJournalAccept.AcceptButton` Disable (NodeFlags.Enabled weg). Titel/
+    Stufe weiter immer. Warten bis AcceptButton da ist (kein Solo-Ablehnungs-
+    Frame vor dem Titel).
+
+>>> TEST: Quest annehmbar → Titel, Stufe, Beschreibung, kein Ablehnungssatz.
+    Quest gesperrt → Ablehnungsgrund + Bedingung wie zuvor.
+
+## STAND DAVOR (2026-09-25): RELEASE v6.08.33
 
 >>> VERSION: gesprochen / Tag 6.08.33; Assembly/repo.json/Manifest 6.8.33.0
     (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
