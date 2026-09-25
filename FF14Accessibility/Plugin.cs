@@ -106,6 +106,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ActionSignalProbe _actionProbe;
     private readonly FlightProbe _flightProbe;
     private readonly AozNotebookProbe _aozProbe;
+    private readonly BeastmasterGaugeProbe _bstGaugeProbe;
 #endif
     private readonly ZoneBorderService _zoneBorders;
     private readonly LevequestEnemyService _leveEnemies;
@@ -206,8 +207,8 @@ public sealed class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.32";
-    private const string PluginVersionTag = "Events Warp LFG XBM";
+    private const string PluginVersion    = "6.08.33";
+    private const string PluginVersionTag = "XBM Tutorial";
 
     public Plugin()
     {
@@ -431,6 +432,9 @@ public sealed class Plugin : IDalamudPlugin
         // Misst, welches Spiel-Signal ehrlich sagt, ob eine Aktion einsetzbar ist -
         // Grundlage fuer die Job-Anzeigen UND die Kombo-Ansage, siehe ActionSignalProbe.
         _actionProbe = new ActionSignalProbe(DataManager, TargetManager, JobGauges, _tolk, Log);
+        // Bestienbaendiger: wo liegt TP / Instinkt? Kein BSTGauge in Dalamud —
+        // siehe BeastmasterGaugeProbe.
+        _bstGaugeProbe = new BeastmasterGaugeProbe(ObjectTable, _tolk, Log);
 #endif
         // Echte Zonengrenzen statt Kartensymbol - nur als Zielgeber, siehe ZoneBorderService.
         _zoneBorders = new ZoneBorderService(DataManager, ClientState, Log);
@@ -1092,6 +1096,12 @@ public sealed class Plugin : IDalamudPlugin
             case "aoz":
             case "aozprobe":
                 _aozProbe.Dump();
+                break;
+            // Bestienbaendiger-Jobanzeige: Rohbytes + Addon-Kandidaten + Status.
+            // Collect erst nach Messung — siehe BeastmasterGaugeProbe.
+            case "bst":
+            case "bstprobe":
+                _bstGaugeProbe.Dump();
                 break;
 #endif
             case "cooldowns":

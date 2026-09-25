@@ -177,6 +177,9 @@ public sealed class UIReaderService : IDisposable
         // bleibt leer" (Log 2026-09-02 07:11:04 und 07:11:05). Angesagt wurde
         // dabei nur der Fenstertitel.
         "AOZNotebook",
+        // Bestienbuch-Detail: Oeffnung sagte nur „SEITE AN SEITE“ (Log 2026-09-25).
+        // Raster bleibt in OnAnyAddonOpen (Titel einmal); Kacheln = GlobalFocus.
+        "XBMMonsterBookDetail",
         // Mitstreiter (Begleit-Chocobo): eigener Handler (OnBuddyUpdate). Der
         // generische Pfad sagte nur den Titel und scrapte nacktes "Rang:" ohne
         // Wert/Name (STATUS + Dump/Log 2026-09-10). Timer-Knoten (Zeit) wuerde
@@ -290,6 +293,14 @@ public sealed class UIReaderService : IDisposable
         // Rangfenster: eigener Handler (OnGrandCompanyRankUpdate). Generischer
         // Scanner + Fokus auf „Schließen“ deckten Inhalt zu (Dump 2026-09-20).
         "GrandCompanyRank",
+        // Bestienbuch: generischer Update/Receive spamte im Wechsel „BESTIENBUCH“
+        // (FindFocusedText Key=52012 = Rahmen) und nacktes „Nr. 1“ (Event-Target
+        // ohne Enrich) — MouseOut→Titel, MouseOver→Kachel, ~8 ms Takt
+        // (Log 2026-09-25 11:12:14). Kacheln liest UpdateGlobalFocus +
+        // TryReadXbmNotebookFocusRow (einmal „Nr. 1, Cu Sith.“ korrekt).
+        XbmNotebookService.AddonName,
+        // Detail-Kind: nur „SEITE AN SEITE“; User will Namen im Raster, nicht hier.
+        "XBMMonsterBookDetail",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -1551,7 +1562,10 @@ public sealed class UIReaderService : IDisposable
     // 64/65/66 = TimerTick/TimerEnd/TimerStart, 74 = TimelineActiveLabelChanged
     // (AtkEventType, ilspycmd): pure animation/timer noise - _LimitBreak alone
     // fired 74 three times per frame in-game and flooded the log (2026-07-10).
-    private static readonly HashSet<byte> IgnoredEventTypes = [3, 4, 5, 12, 14, 15, 16, 17, 23, 24, 64, 65, 66, 74];
+    // 7 = MouseOut: leaving a tile must not fall through to FindFocusedText
+    // (XBMMonsterNotebook Log 2026-09-25: MouseOut → „BESTIENBUCH“, MouseOver →
+    // „Nr. 1“, Spam). Next MouseOver / global focus announces the new target.
+    private static readonly HashSet<byte> IgnoredEventTypes = [3, 4, 5, 7, 12, 14, 15, 16, 17, 23, 24, 64, 65, 66, 74];
 
     private unsafe void OnAnyAddonReceive(AddonEvent type, AddonArgs args)
     {
@@ -1641,6 +1655,11 @@ public sealed class UIReaderService : IDisposable
                 return false;
             }
         }
+
+        // Bestienbuch: Kachel-Text ist nur „Nr. N“ — Name aus XBMPet nachziehen
+        // (Log 2026-09-25: Event-Target sprach nacktes „Nr. 1“ neben dem Spam).
+        if (addonName == XbmNotebookService.AddonName)
+            text = _xbmNotebook.EnrichNumberLabel(text);
 
         if (_lastFocusByAddon.TryGetValue(addonName, out var last) && key == last.Key && text == last.Text)
             return true; // correctly identified, just unchanged - do not fall back
@@ -3600,7 +3619,7 @@ public sealed class UIReaderService : IDisposable
             // gesprochen - hier steht er dort, wo der Fokus steht.
             text = filterSwitch;
         }
-        else if (TryReadEventTutorialFocusRow(node, out var tutorialRow))
+        else if (TryReadEventTutorialFocusRow(node, navKeyHeld, out var tutorialRow))
         {
             // Tutorial-Fenster: seine beiden Blaetterknoepfe sind reine Bilder
             // ohne Textknoten, der Fokus stand dort vollstaendig stumm (Log
@@ -8724,6 +8743,7 @@ public sealed class UIReaderService : IDisposable
         if (addon == null || !addon->IsVisible)
         {
             _lastEventTutorialText = string.Empty; // naechstes Oeffnen liest wieder
+            _eventTutorialGuardUntil = DateTime.MinValue;
             return;
         }
 
@@ -8762,9 +8782,10 @@ public sealed class UIReaderService : IDisposable
         _lastEventTutorialText = text;
         // Sperrfrist fuer die Knopf-Ansagen STARTEN, bevor gesprochen wird:
         // das Spiel setzt direkt nach einem Seitenwechsel den Fokus um, und die
-        // Fokus-Ansage wuerde den Text sofort abschneiden. Siehe
-        // InEventTutorialTextGuard.
-        _eventTutorialSpokenAt = DateTime.UtcNow;
+        // Fokus-Ansage wuerde den Text sofort abschneiden. Dauer nach Textlaenge,
+        // siehe InEventTutorialTextGuard / EstimateEventTutorialGuardMs.
+        _eventTutorialGuardUntil = DateTime.UtcNow.AddMilliseconds(
+            EstimateEventTutorialGuardMs(text.Length));
         _log.Info($"[EventTutorial] Seite {page}: '{text}'");
         _tolk.SpeakInterrupt(text);
         _history.Add(MessageHistoryService.SystemKey, text);
@@ -8815,7 +8836,12 @@ public sealed class UIReaderService : IDisposable
     /// der Fokus sonst stumm steht, und sagt dazu, ob sie gerade ueberhaupt
     /// etwas tun ("Zurueck" ist auf der ersten Seite deaktiviert).
     /// </summary>
-    private unsafe bool TryReadEventTutorialFocusRow(AtkResNode* node, out string text)
+    /// <param name="navKeyHeld">
+    /// True while the player holds a menu-navigation key. Breaks the text
+    /// guard so deliberate browsing still names the button (and may cut the
+    /// page text - that is the player's choice).
+    /// </param>
+    private unsafe bool TryReadEventTutorialFocusRow(AtkResNode* node, bool navKeyHeld, out string text)
     {
         text = string.Empty;
         if (!IsAddonVisible("EventTutorial")) return false;
@@ -8823,6 +8849,21 @@ public sealed class UIReaderService : IDisposable
         var ptr = _gameGui.GetAddonByName("EventTutorial");
         if (ptr.IsNull) return false;
         var addon = (AtkUnitBase*)(nint)ptr;
+
+        // Der Text der Seite hat Vorrang. Feste 700 ms reichten nur fuer kurze
+        // Seiten (Log 2026-09-02, 12 ms Abstand). Lange Erklaerungen - Bestien-
+        // baendiger-Arena, 389 Zeichen, Log 2026-09-25 08:53:04 - liefen noch,
+        // als die Frist ablief und "Zurück, nicht verfügbar" sie abschnitt.
+        // Waehrend der Sperre schweigt JEDER Fokus in diesem Fenster (auch
+        // "Schließen"), ausser der Spieler blaettert selbst (navKeyHeld).
+        if (InEventTutorialTextGuard && !navKeyHeld
+            && FindAddonNameForNode(node) == "EventTutorial")
+        {
+            // Leerer Text bei true: Fokus erkannt, bewusst stumm. Mit false
+            // liefe die Kette weiter und ein Ersatzleser schnitt den Text ab.
+            text = string.Empty;
+            return true;
+        }
 
         var back = FindTopLevelNode(addon, EventTutorialBack);
         var next = FindTopLevelNode(addon, EventTutorialNext);
@@ -8832,22 +8873,6 @@ public sealed class UIReaderService : IDisposable
         if (IsFocusInside(node, back))      { hit = back; label = AccessibilityStrings.Back; }
         else if (IsFocusInside(node, next)) { hit = next; label = AccessibilityStrings.NextPage; }
         else return false; // Schliessen-Knopf traegt eigenen Text, der reicht
-
-        // Der Text der Seite hat Vorrang. Direkt nach einem Seitenwechsel setzt
-        // das Spiel den Fokus selbst um, und diese Ansage schnitt den gerade
-        // begonnenen Tutorialtext ab (Log 2026-09-02: 12 ms Abstand). Der
-        // Knopfname geht dabei nicht verloren - der Fokus steht weiter auf ihm,
-        // und die naechste eigene Bewegung sagt ihn an.
-        if (InEventTutorialTextGuard)
-        {
-            // Leerer Text bei true: der Knopf IST erkannt, es wird nur bewusst
-            // geschwiegen. Mit false liefe die Fokus-Kette weiter und ein
-            // Ersatzleser (Tooltip, Position) koennte den Text doch noch
-            // abschneiden.
-            _log.Info($"[EventTutorial] Knopf '{label}' unterdrueckt - Text laeuft noch.");
-            text = string.Empty;
-            return true;
-        }
 
         // Ein deaktivierter Knopf sieht fuer den Fokus aus wie jeder andere -
         // ohne den Zusatz drueckt der Spieler ins Leere und erfaehrt nie, warum
@@ -8869,39 +8894,49 @@ public sealed class UIReaderService : IDisposable
     private const uint EventTutorialNext    = 10; // Weiter
 
     private string _lastEventTutorialText = string.Empty;
-    private DateTime _eventTutorialSpokenAt = DateTime.MinValue;
+    private DateTime _eventTutorialGuardUntil = DateTime.MinValue;
 
     /// <summary>
-    /// Kurze Sperrfrist direkt nach der Tutorial-Ansage, in der die
-    /// Knopf-Ansagen schweigen.
+    /// Sperrfrist nach der Tutorial-Ansage, in der Knopf-Ansagen schweigen
+    /// (solange der Spieler nicht selbst navigiert).
     ///
     /// <para>
-    /// WARUM SIE NOETIG IST, gemessen im Log vom 2026-09-02: nach jedem
-    /// Seitenwechsel setzt das SPIEL den Fokus um - der eben gedrueckte Knopf
-    /// ist auf der neuen Seite gesperrt, also wandert der Fokus. Die
-    /// Fokus-Ansage kam dadurch 12 ms nach dem Tutorialtext (20:32:12.032 der
-    /// Text, .044 "Zurück, nicht verfügbar") und schnitt ihn als unterbrechende
-    /// Ansage sofort ab. Der Spieler hoerte nur noch den Schalter - genau seine
-    /// Meldung: "es sollen nicht nur die schalter vorgelesen werden sondern auch
-    /// der text der da steht".
+    /// WARUM, Log 2026-09-02: nach jedem Seitenwechsel setzt das SPIEL den
+    /// Fokus um. Die Fokus-Ansage kam 12 ms nach dem Tutorialtext und schnitt
+    /// ihn ab ("Zurück, nicht verfügbar"). Fix damals: 700 ms Mindestfrist.
     /// </para>
     ///
     /// <para>
-    /// 700 ms, und das ist keine gegriffene Zahl: der automatische Fokuswechsel
-    /// kam im Log binnen 12 ms, waehrend zwei ECHTE Tastendruecke des Spielers
-    /// mindestens 400 ms auseinander lagen (20:32:07.443 und .961, .733 und
-    /// 10.010). Die Frist trennt beides sicher - der vom Spiel ausgeloeste
-    /// Wechsel faellt hinein, eigenes Weiterblaettern nicht.
+    /// WARUM DIE DAUER JETZT VON DER TEXTLAENGE ABHAENGT, Log 2026-09-25
+    /// 08:53:04–05: Bestienbaendiger-Arena, Seite 1/4 mit 389 Zeichen. Die
+    /// feste 700-ms-Frist lief ab, waehrend die Sprachausgabe den Absatz noch
+    /// las; danach sprach der Fokus "Zurück, nicht verfügbar" und schnitt ab.
+    /// <see cref="EstimateEventTutorialGuardMs"/> bemisst die Frist an der
+    /// Zeichenzahl (Untergrenze weiter 700 ms fuer kurze Seiten).
     /// </para>
     ///
     /// <para>
-    /// Gleiches Muster wie <see cref="InDialogOpenGuard"/> und
-    /// <c>IsSocialAnnouncementInFlight</c>, die dasselbe Problem an anderen
-    /// Fenstern loesen.
+    /// Eigenes Blaettern (navKeyHeld) durchbricht die Sperre - dann ist das
+    /// Abschneiden die Entscheidung des Spielers. Gleiches Muster wie
+    /// <see cref="InDialogOpenGuard"/> und <c>IsSocialAnnouncementInFlight</c>.
     /// </para>
     /// </summary>
     private bool InEventTutorialTextGuard =>
-        (DateTime.UtcNow - _eventTutorialSpokenAt).TotalMilliseconds < 700;
+        DateTime.UtcNow < _eventTutorialGuardUntil;
+
+    /// <summary>
+    /// Guard duration from spoken page length. ~50 ms/char ≈ 20 chars/s screen-
+    /// reader pace; clamp keeps short pages at the original 700 ms floor and
+    /// caps runaway mute if a huge string ever appears.
+    /// </summary>
+    private static int EstimateEventTutorialGuardMs(int charCount)
+    {
+        const int msPerChar = 50;
+        const int minMs = 700;
+        const int maxMs = 25_000;
+        if (charCount <= 0) return minMs;
+        return Math.Clamp(charCount * msPerChar, minMs, maxMs);
+    }
 
     private unsafe void OnHowToUpdate(AddonEvent type, AddonArgs args)
     {

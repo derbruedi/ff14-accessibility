@@ -24,7 +24,74 @@ Dalamud-Plugin für FF14 das blinden Spielern via NVDA/TOLK ermöglicht das Spie
 - **BossMod-Hotkeys Minus / Alt+Minus:** nur lokal (Temp-Backup beim
   Release-Push 2026-09-18). **Nie** committen/pushen. Details: PRIVAT.txt.
 
-## STAND JETZT (2026-09-24): RELEASE v6.08.32
+## STAND JETZT (2026-09-25): RELEASE v6.08.33
+
+>>> VERSION: gesprochen / Tag 6.08.33; Assembly/repo.json/Manifest 6.8.33.0
+    (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.
+
+>>> INHALT (ohne BossMod-Hotkeys — bleiben lokal):
+    - Bestienbuch: kein Titel/Nr.-Spam mehr (SpecialUpdate + MouseOut + Enrich)
+    - EventTutorial: Sperre nach Textlänge (lange Arena-Seiten nicht abschneiden)
+    - Docs: BST-Jobanzeige Status; JobHudXBM Laufzeit-Hinweis; Debug-Sonde
+      BeastmasterGaugeProbe (nur DEBUG-Build)
+
+>>> NIE IM RELEASE: BossMod, AutoDuty-Plugin, AccessibleVendorSell,
+    Craft-Kategorie, Mahjong-WIP, BossMod Minus/Alt+Minus.
+
+>>> UPDATE: Optionsmenü → Aktualisierung → Nach Aktualisierung suchen.
+
+## STAND DAVOR (2026-09-25): BESTIENBUCH — TITEL/NR.-SPAM
+
+>>> PROBLEM (Log 11:12:14): Bestienbuch sagt einmal „Nr. 1, Cu Sith.“, dann
+    Dauerloop „BESTIENBUCH“ ↔ „Nr. 1“ (~8 ms), Sprache unbrauchbar.
+
+>>> URSACHE: Generischer ReceiveEvent: MouseOut (Typ 7) fiel auf
+    FindFocusedText → Fensterrahmen Key=52012 = „BESTIENBUCH“; MouseOver
+    Event-Target sprach nacktes „Nr. 1“ ohne XBMPet-Enrich.
+
+>>> FIX: XBMMonsterNotebook + XBMMonsterBookDetail in SpecialUpdateAddons
+    (Detail auch SpecialSetup); MouseOut ignorieren; Enrich in Event-Target.
+    Kacheln weiter über UpdateGlobalFocus / TryReadXbmNotebookFocusRow.
+
+>>> NEBENBEI (Log 11:06:16): Addons JobHudXBM / JobHudXBM0 / JobHudXBM1
+    existieren — BST-Anzeige im Spiel; Dalamud-Typed-Gauge fehlt weiter.
+
+>>> TEST: Bestienbuch öffnen, Kacheln blättern — einmal Name+Nummer, kein
+    Titel-Spam; Beschreibung beim Verweilen.
+
+## STAND DAVOR (2026-09-25): BST-JOBBALKEN — STATUS + SONDE, KEIN COLLECT
+
+>>> FRAGE (User): Sind die Jobbalken für den Bestienbändiger schon eingebaut?
+
+>>> ANTWORT: Nein. `JobGaugeService` endet bei Pictomancer (ClassJob 42);
+    BST ist ClassJob 43. Dalamud/ClientStructs haben kein `BSTGauge` und
+    kein `JobHudBST*`. Sehend existieren TP + Vertrauten-TP (je 250),
+    Instinkt-Stapel (je 3), Innerer Kompass — dokumentiert in game-api.md.
+
+>>> GEMACHT: Debug-Sonde `/acc bstprobe` (`BeastmasterGaugeProbe`, nur DEBUG)
+    für JobGaugeManager-Rohbytes, Addon-Kandidaten, Statusliste.
+    Collect/Announce bewusst nicht — ohne gemessene Quelle Fact Discipline.
+
+>>> TEST (User, als BST im Kampf): `/acc bstprobe` → Log `[BstGaugeProbe]`;
+    Log schicken. Danach erst Collect planen.
+
+## STAND DAVOR (2026-09-25): EVENTTUTORIAL — LANGE SEITEN NICHT MEHR ABGESCHNITTEN
+
+>>> PROBLEM (User, Bestienbändiger-Arena): Hilfetext wird angesagt, sofort
+    danach der nächste Knopf — Text bricht ab.
+
+>>> URSACHE (Log 08:53:04–05): feste 700-ms-Knopf-Sperre nach EventTutorial-
+    Ansage. Seite 1/4 hatte 389 Zeichen; nach 700 ms sprach Fokus
+    „Zurück, nicht verfügbar“ und schnitt ab.
+
+>>> FIX: Sperrdauer nach Textlänge (~50 ms/Zeichen, min 700, max 25 s).
+    Währenddessen schweigt jeder Fokus im Fenster; eigene Navigation
+    (Numpad/Pfeile gehalten) durchbricht die Sperre.
+
+>>> TEST: Arena-Tutorial öffnen — ganzer Absatz, Knöpfe erst danach oder
+    beim eigenen Blättern.
+
+## STAND DAVOR (2026-09-24): RELEASE v6.08.32
 
 >>> VERSION: gesprochen / Tag 6.08.32; Assembly/repo.json/Manifest 6.8.32.0
     (.NET streicht führende Nullen). Installer unverändert 1.2.2.0.

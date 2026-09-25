@@ -2766,6 +2766,52 @@ Anzeige (Sheet). Kein `GetActionStatus` / Cooldown-Gatter.
 Quellen: Dalamud `JobGauge.Types.*` (ilspycmd 2026-09-09); Gate-IDs v2.xivapi
 Action rows 2026-09-18.
 
+### Bestienbaendiger-Jobanzeige (ClassJob 43) — NICHT implementiert (2026-09-25)
+
+**Sehende HUD-Elemente** (offizieller Job Guide + Icy Veins, nicht aus Speicher gelesen):
+
+- **TP** (gelb): eigene Ressource, Cap **250**; Instinkt-Waffenfertigkeiten ab
+  mind. 100 TP, Schaden skaliert mit Fuellstand.
+- **Familiar TP / Vertrauten-TP** (blau): Cap **250**; Trick des Vertrauten
+  ab mind. 100.
+- **Mastered Instinct / Gemeisterter Instinkt** (gelb, bis 3): bei Kombo-Abschluss
+  mit eigener Instinkt-Aktion; Rally verbraucht alle Stapel fuer TP.
+- **Natural Instinct / Natuerlicher Instinkt** (blau, bis 3): Kombo-Abschluss mit
+  Vertrauten-Aktion; Rallying Cheer fuellt Vertrauten-TP.
+- **Inner Compass / Innerer Kompass**: vier Affinitaeten Volant / Rampant /
+  Durant / Eldritch (Uhrzeigersinn = Intentional Combo); Moonstalker/Sunstrider-
+  Haelften; Kettenzaehler darunter.
+
+**Typed API fehlt** (gemessen an installiertem Dalamud + FFXIVClientStructs.dll
+und `tools/_tmp_decompile/.../FFXIVClientStructs.decompiled.cs`, 2026-09-25):
+
+- Kein `BSTGauge` / `BeastmasterGauge` / `XBMGauge` in Dalamud `JobGauge.Types`.
+- `JobGaugeManager`-Union endet bei den bestehenden Jobs; kein BST-Member.
+- ClientStructs-Dump kannte kein `JobHudBST*` / `JobHudXBM*` — **Laufzeit-Log
+  2026-09-25 11:06:16** zeigt aber Addon **`JobHudXBM`**, `JobHudXBM0`,
+  `JobHudXBM1` (HUD geladen). Lesepfad = Addon/Rohbytes, nicht typed Gauge.
+- `ActionManager.BeastmasterPets` (3 Bytes) = Battlehorn-Pet-Slots, **nicht**
+  die Jobanzeige.
+- `JobGaugeService` deckt ClassJobs **19–42** ab; ClassJob **43** faellt durch.
+
+**Plugin-Stand:** kein `CollectBeastmaster` / `AnnounceBeastmaster`. BST hat
+Skills (Strg+Numpad0), Bestienbuch und Nav-Kategorie „Bestien“ — keine
+Jobbalken-Ansage.
+
+**Naechste Messung:** Debug-Sonde `/acc bstprobe` (`BeastmasterGaugeProbe`,
+nur DEBUG). Als BST im Kampf mit gefuellter Anzeige: loggt
+`JobGaugeManager`-Rohbytes, `BeastmasterPets`, Addons mit JobHud/XBM/BST/Gauge
+im Namen (+ sichtbare Texte; gezielt `JobHudXBM`/`0`/`1`), Spieler-Statusliste.
+Collect erst nach Offset-/Addon-Zuordnung aus dem Log — nicht raten.
+
+### Bestienbuch — Fokus-Spam (Log 2026-09-25, Fix gleicher Tag)
+
+Symptom: nach korrektem „Nr. 1, Cu Sith.“ Dauerloop „BESTIENBUCH“ ↔ „Nr. 1“.
+Ursache: generischer `PostReceiveEvent`/`PostUpdate` — MouseOut→FindFocusedText
+Rahmen Key=52012; MouseOver→Event-Target ohne Enrich. Fix: Addon in
+`SpecialUpdateAddons` (+ Detail in SpecialSetup); MouseOut ignorieren; Enrich
+im Event-Target. Kacheln: `UpdateGlobalFocus` + `TryReadXbmNotebookFocusRow`.
+
 ## Bestienbuch des Bestienbaendigers — XBMMonsterNotebook (Dump/Log 2026-09-24)
 
 **Addon:** `XBMMonsterNotebook` (Hauptmenue → Bestienbuch). Kind-Detail:
