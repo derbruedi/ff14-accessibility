@@ -41,6 +41,7 @@ static void Run(string sqpack, string output, string vnavDir, string cacheDir)
     var entrances = new InteriorEntranceService(data, log);
     var checks = 0;
     var recorded = new List<object>();
+    var questApproaches = new List<object>();
     var coverage = new List<object>();
     void Check(bool ok, string label) { checks++; if (!ok) throw new Exception(label); }
     var territory = data.GetExcelSheet<TerritoryType>().GetRow(130);
@@ -142,6 +143,29 @@ static void Run(string sqpack, string output, string vnavDir, string cacheDir)
                 : (Vector3)(p.GetType().GetProperty("Position")?.GetValue(p) ?? p.GetType().GetField("Position")!.GetValue(p))!).ToList();
         }
         var layout = travel.ForTerritory(id);
+        if (id == 128)
+        {
+            var level = data.GetExcelSheet<Level>().GetRow(1673081);
+            Check(level.Object.RowId == 1000972 && level.Type == 8 && level.Map.RowId == 11,
+                "Call of the Sea must retain its exact NPC, kind and upper-deck map.");
+            var marker = new Vector3(level.X, level.Y, level.Z);
+            Vector3? Reachable(Vector3 p, float xz, float y) => (Vector3?)nearestMethod.Invoke(query, [p, xz, y, true]);
+            var approach = SelectionObjectResolver.Approach(marker, Reachable);
+            Check(approach.HasValue, $"Call of the Sea approach rejected in {Path.GetFileName(cache)}.");
+            var horizontal = Vector2.Distance(new(marker.X, marker.Z), new(approach!.Value.X, approach.Value.Z));
+            Check(horizontal <= 3f && MathF.Abs(approach.Value.Y - marker.Y) <= 2f,
+                "NPC approach left its bounded distance or floor.");
+            // Player position observed at 14:03:24 in the reported log, not an
+            // arbitrary point chosen from a different floor of this territory.
+            var from = new Vector3(-82f, 35.5f, 115.3f);
+            var path = QueryPath(from, approach.Value, AutoWalkService.StopRange);
+            Check(NavigationPathCheck.Reaches(path, approach.Value, AutoWalkService.StopRange),
+                $"Recorded upper-deck position has no complete path to the NPC approach in {Path.GetFileName(cache)}.");
+            questApproaches.Add(new { Cache = Path.GetFileName(cache), level.RowId, BaseId = level.Object.RowId,
+                Target = marker, Approach = approach, HorizontalGap = horizontal, OldDistanceLimitRejected = horizontal > 2.5f,
+                From = from, Path = path, Reaches = true });
+            Console.WriteLine($"PASS {Path.GetFileName(cache)}: exact quest NPC approach at {horizontal:F3} m, full path from recorded upper-deck position.");
+        }
         var routes = new List<object>();
         var queries = 0;
         var complete = 0;
@@ -179,7 +203,8 @@ static void Run(string sqpack, string output, string vnavDir, string cacheDir)
             SHA256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(cache))) });
         Console.WriteLine($"AUDIT {Path.GetFileName(cache)}: territory {id}, {queries} queries, {complete}/{routes.Count} complete routes; diagnostics include inactive/isolated layers.");
     }
-    File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = true, Checks = checks, Recorded = recorded, Coverage = coverage,
+    Check(questApproaches.Count > 0, "Limsa saved mesh missing; reported quest approach cannot be checked.");
+    File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = true, Checks = checks, Recorded = recorded, QuestApproaches = questApproaches, Coverage = coverage,
         InstalledVnavmeshSHA256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(vnavDir, "vnavmesh.dll")))),
         ActualInstalledMeshQueryChecked = true, NativeFfxivChecked = false, InGameVerified = false },
         new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));

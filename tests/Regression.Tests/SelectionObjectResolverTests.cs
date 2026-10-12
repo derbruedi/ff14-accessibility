@@ -173,6 +173,31 @@ public sealed class SelectionObjectResolverTests
     }
 
     [Fact]
+    public void CallOfTheSeaAllowsTheRecordedApproachBesideTheCounter()
+    {
+        var marker = new Vector3(20.2978f, 40.1999f, -6.1024f);
+        var floor = new Vector3(17.75f, 40.25f, -4.75f);
+        Assert.InRange(Vector3.Distance(marker, floor), 2.8f, 3f);
+        Assert.Equal(floor, SelectionObjectResolver.Approach(marker,
+            (_, xz, y) => xz >= 2.5f && y == 2f ? floor : null));
+    }
+
+    [Theory]
+    [InlineData(3.01f, 0f)]
+    [InlineData(2.6f, 2.01f)]
+    [InlineData(2.6f, float.NaN)]
+    public void CounterApproachStillRejectsDistantOrDifferentFloorPoints(float distance, float height)
+        => Assert.Null(SelectionObjectResolver.Approach(Vector3.Zero, (_, _, _) => new(distance, height, 0)));
+
+    [Fact]
+    public void RejectedFirstApproachDoesNotHideAValidSecondApproach()
+    {
+        var floor = new Vector3(2.9f, 0.05f, 0);
+        Assert.Equal(floor, SelectionObjectResolver.Approach(Vector3.Zero,
+            (_, xz, _) => xz == 1f ? new(0, 8, 0) : floor));
+    }
+
+    [Fact]
     public void SharedMovementResolverDoesNotProjectTwoDifferentNpcsToTheSameDistantPoint()
     {
         var (plugin, nav) = PluginWithObjects([Object(11, new(1, 40, 2)), Object(12, new(30, 40, 20))]);

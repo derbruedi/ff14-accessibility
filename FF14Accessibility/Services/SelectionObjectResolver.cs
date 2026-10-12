@@ -59,8 +59,12 @@ internal static class SelectionObjectResolver
         foreach (var radius in new[] { 1f, 2.5f })
         {
             var floor = probe(position, radius, 2f);
+            // The mesh query searches a box. A valid approach near the corner
+            // can be slightly farther than 2.5 m diagonally (2.885 m beside
+            // Baderon's counter in the saved festival mesh). Keep a bounded
+            // 3 m approach, with the same strict floor and query extents.
             if (floor is { } point && TravelLayout.Finite(point) && MathF.Abs(point.Y - position.Y) <= 2f
-                && Vector2.Distance(new(point.X, point.Z), new(position.X, position.Z)) <= 2.5f) return point;
+                && Vector2.Distance(new(point.X, point.Z), new(position.X, position.Z)) <= 3f) return point;
         }
         return null;
     }

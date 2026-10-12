@@ -165,9 +165,13 @@ public sealed partial class Plugin
                 }
                 isZoneTransition = false;
             }
-            var floor = liveObject != null || plan.Entrance != null || plan.NextMapId == 0 && quest.TargetLevelType is 8 or 9 or 45
+            var actorApproach = plan.Entrance != null || plan.NextMapId == 0 && quest.TargetLevelType is 8 or 9 or 45;
+            var floor = actorApproach
                 ? SelectionObjectResolver.Approach(point, _autoWalk.ProbeReachable)
                 : ResolveQuestGroundPoint(quest, plan, point, ref stopRange);
+            if (actorApproach)
+                Log.Info($"[QuestRoute] Approach quest={quest.QuestId}, marker={quest.NativeMarkerId}, level={quest.ObjectiveLevelId}, "
+                    + $"map={ClientState.MapId}, target={point}, floor={floor?.ToString() ?? "unresolved"}");
             if (floor == null)
             {
                 _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(name));
