@@ -35,6 +35,25 @@
   скриптов внутри нет. Все записи совпали с подготовленной папкой по SHA-256.
   ZIP SHA-256 5544B1AC57E927945F286CBEC7EF68946627CC0CC0F3FBF87753DCF1803D9F31;
   DLL SHA-256 D5F8911975A648B90075C2D1DBB9A824204A6A7E6AD95BB034764EF37C785858.
+- Коммит ee59452d9b222a8f5e94b82a2d33df412cf3bae5 отправлен в
+  origin/feature/russian-accessibility-recovery. Publish-Release -CheckOnly
+  прошла перед публикацией; [v6.08.117](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.117)
+  опубликован как Latest, draft=false/prerelease=false. Метка указывает
+  на этот коммит; описание совпало с docs/releases/6.08.117.md.
+- Все четыре файла скачаны обратно: архив плагина, EXE установщика,
+  архив его исходников и SHA256SUMS. Размеры, SHA-256 и digest GitHub
+  совпали с подготовленными файлами. Все четыре строки SHA256SUMS,
+  включая DLL, проверены. Все 141 запись игрового ZIP и 36 записей
+  исходников установщика сверены по SHA-256; неожиданных записей нет.
+- Первая обычная проверка ReleaseClient.Latest получила HTTP403:
+  GitHub исчерпал анонимную квоту этого исходящего адреса (0 из 60).
+  Повтор вызвал настоящий ReleaseClient.Latest с действующим входом gh
+  через настоящий HTTP-запрос к GitHub. Сохранённый ответ не подставлялся;
+  выбраны 6.08.117, нужный ZIP и его проверенная контрольная сумма.
+  Обычный анонимный запрос после снятия ограничения не проверен.
+  Отчёт: artifacts/publication-verified/608117-20261012-180948-969/verified-assets.json;
+  ActualReleaseClientVerified=true, AuthorizedReleaseClientVerified=true,
+  AnonymousReleaseClientRateLimited=true, InGameVerified=false.
 - Ошибки Penumbra и отсутствующего начального файла настроек vnavmesh
   также видны в журнале. Позже сетка готова и движение к переходам работает;
   эти ошибки не установлены как причина отказа выбора подхода.
