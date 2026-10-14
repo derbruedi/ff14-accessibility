@@ -88,7 +88,7 @@ internal sealed unsafe class NativeGameDisplayText(IDataManager data, Func<bool>
             || sheet->Language != FFXIVClientStructs.FFXIV.Common.Component.Excel.ExcelLanguage.English
             || sheet->ColumnCount != columns.Count) return false;
         for (var i = 0; i < columns.Count; i++)
-            if (sheet->ColumnDefinitions[i].Type != (ushort)columns[i].Type
+            if ((ushort)sheet->ColumnDefinitions[i].ColumnType != (ushort)columns[i].Type
                 || sheet->ColumnDefinitions[i].Offset != columns[i].Offset) return false;
         return true;
     }

@@ -6,6 +6,7 @@ using Lumina.Text.ReadOnly;
 using NativeSheet = FFXIVClientStructs.FFXIV.Common.Component.Excel.ExcelSheet;
 using NativeLanguage = FFXIVClientStructs.FFXIV.Common.Component.Excel.ExcelLanguage;
 using NativeVariant = FFXIVClientStructs.FFXIV.Common.Component.Excel.ExcelVariant;
+using NativeColumnType = FFXIVClientStructs.FFXIV.Common.Component.Excel.ExcelColumnType;
 
 namespace Regression.Tests;
 
@@ -125,8 +126,8 @@ public sealed unsafe class GameDisplayTextTests : IDisposable
     public void NativeLayoutRequiresSameTypesOffsetsLanguageAndRowVariant()
     {
         var definitions = stackalloc NativeSheet.ColumnInfo[2];
-        definitions[0] = new() { Type = 0, Offset = 0 };
-        definitions[1] = new() { Type = 3, Offset = 4 };
+        definitions[0] = new() { ColumnType = NativeColumnType.String, Offset = 0 };
+        definitions[1] = new() { ColumnType = NativeColumnType.UInt8, Offset = 4 };
         var columns = new ExcelColumnDefinition[] {
             new() { Type = ExcelColumnDataType.String, Offset = 0 },
             new() { Type = (ExcelColumnDataType)3, Offset = 4 } };
@@ -136,9 +137,9 @@ public sealed unsafe class GameDisplayTextTests : IDisposable
         sheet.ColumnDefinitions[0].Offset = 2;
         Assert.False(NativeGameDisplayText.LayoutMatches(&sheet, columns));
         sheet.ColumnDefinitions[0].Offset = 0;
-        sheet.ColumnDefinitions[1].Type = 4;
+        sheet.ColumnDefinitions[1].ColumnType = NativeColumnType.Int16;
         Assert.False(NativeGameDisplayText.LayoutMatches(&sheet, columns));
-        sheet.ColumnDefinitions[1].Type = 3;
+        sheet.ColumnDefinitions[1].ColumnType = NativeColumnType.UInt8;
         sheet.Language = NativeLanguage.German;
         Assert.False(NativeGameDisplayText.LayoutMatches(&sheet, columns));
         sheet.Language = NativeLanguage.English;
