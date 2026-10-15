@@ -14,7 +14,7 @@ public sealed partial class UIReaderService
     }
 
     public unsafe bool CanConfirmYesNo => TrySelectYesNo(out _, out _);
-    public unsafe bool OwnsEnterButton => CanConfirmYesNo || FindFocusedButton() != null;
+    public unsafe bool OwnsEnterButton => CanConfirmYesNo || FindFocusedButton() != null || OwnsContentsTutorialConfirm;
 
     private unsafe bool TrySelectYesNo(out nint address, out NativeDialogButtons.Choice choice)
     {

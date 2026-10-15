@@ -1007,6 +1007,8 @@ public sealed partial class UIReaderService : IDisposable
     private void OnAnyAddonClose(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
+        if (name == ContentsTutorialText.AddonName)
+            _tutorialAnnouncement.Update(string.Empty, false, Environment.TickCount64);
         if (name == "SelectOk") _selectOkAnnouncement.Update(string.Empty, false, Environment.TickCount64);
         if (name == "_CharaMakeHelp" || name == _lastCharaMakeHelpOwner)
         {
@@ -3610,7 +3612,11 @@ public sealed partial class UIReaderService : IDisposable
         // on a duty-finder setting, so leaving that window ends the help dwell by
         // itself instead of leaving a stale control behind.
         _settingHelpOwner = 0;
-        if (TryReadArmouryFilterFocus(node, out var armouryFilter))
+        if (TryReadContentsTutorialFocus(node, out var tutorialControl))
+        {
+            text = tutorialControl;
+        }
+        else if (TryReadArmouryFilterFocus(node, out var armouryFilter))
         {
             text = armouryFilter;
         }
@@ -3952,7 +3958,7 @@ public sealed partial class UIReaderService : IDisposable
         // announcing it here would interrupt the opening question. Stay silent
         // during the guard window (state is already updated, so the user's next
         // navigation is still detected and announced).
-        if (InDialogOpenGuard) return;
+        if (InDialogOpenGuard && !(navKeyHeld && tutorialControl.Length > 0)) return;
 
         // Online window: the tab announcement is the context for everything the
         // player is about to hear. This frame-driven focus path is NOT covered
@@ -9240,107 +9246,12 @@ public sealed partial class UIReaderService : IDisposable
         _tolk.SpeakInterrupt(text);
     }
 
-    // -- ContentsTutorial ("Inhaltsführer": Freischaltungs-/Tutorial-Popup) --
-    //
-    // Struktur (Dump 2026-07-23, Freischaltung "Anfänger-Arena"):
-    //   id=2  Text   = Überschrift ("Anfänger-Arena")
-    //   id=5  Text   = Fließtext ("Die Anfänger-Arena wurde freigeschaltet! ...")
-    //   id=7  Text   = Seitenzähler ("1/1")
-    //   id=11 Button "Schließen" = der EINZIGE Weg raus - das Spiel ignoriert
-    //         hier Escape, weshalb ein blinder Nutzer feststeckte (Report
-    //         2026-07-23: "kann die Meldung nicht wegmachen").
-    // Das Fenster ist im generischen Pfad stumm (SpecialSetup/UpdateAddons) und
-    // läuft NICHT mehr über OnNotification (das nur den ersten Text las). Dieser
-    // dedizierte Leser sagt Überschrift + Text bei Öffnen/Refresh an (deduped
-    // wie der Quest-Leser); HandleConfirmKey (Enter) klickt "Schließen".
-    private string _lastTutorialText = string.Empty;
-
-    private unsafe void OnContentsTutorialUpdate(AddonEvent type, AddonArgs args)
-    {
-        var addon = (AtkUnitBase*)(nint)args.Addon;
-        if (addon == null || !addon->IsVisible)
-        {
-            _lastTutorialText = string.Empty; // reset so it re-reads on reopen
-            return;
-        }
-
-        var heading = ReadTutorialNode(addon, 2);
-        var body    = ReadTutorialNode(addon, 5);
-        if (string.IsNullOrWhiteSpace(heading) && string.IsNullOrWhiteSpace(body)) return;
-
-        var sb = new StringBuilder();
-        if (heading.Length > 0) sb.Append(heading).Append(". ");
-        if (body.Length > 0)    sb.Append(body);
-
-        // Seitenzähler "X/Y" nur ansagen, wenn es mehr als eine Seite gibt.
-        var page  = ReadTutorialNode(addon, 7);
-        var slash = page.IndexOf('/');
-        int cur = 0, total = 0;
-        var multiPage = slash > 0
-                        && int.TryParse(page[..slash], out cur)
-                        && int.TryParse(page[(slash + 1)..], out total)
-                        && total > 1;
-        if (multiPage)
-            sb.Append(AccessibilityStrings.PageOf(cur, total));
-
-        // The "Schließen" button (id=11) is only visible on the LAST page;
-        // before that Enter pages forward. Announce the correct action.
-        var closeBtn = addon->GetNodeById(11);
-        var canClose = closeBtn != null && closeBtn->IsVisible();
-        sb.Append(canClose ? AccessibilityStrings.EnterCloses : AccessibilityStrings.EnterPagesOn);
-        var text = sb.ToString().Trim();
-        if (text == _lastTutorialText) return;
-
-        _lastTutorialText = text;
-        _log.Info($"[Tutorial] ContentsTutorial: '{text}'");
-        _tolk.SpeakInterrupt(text);
-    }
-
     /// <summary>Reads a text node of the tutorial addon by id (sanitized), or "".</summary>
     private unsafe string ReadTutorialNode(AtkUnitBase* addon, uint id)
     {
         var node = addon->GetNodeById(id);
         if (node == null || node->Type != NodeType.Text) return string.Empty;
         return AtkText.Read((AtkTextNode*)node).Trim();
-    }
-
-    /// <summary>
-    /// Enter inside the "Inhaltsführer" popup. On the last page - where the
-    /// "Schließen" button (id=11) becomes visible - it closes the window; before
-    /// that it pages forward via the "next" arrow. So single-page unlock popups
-    /// close on the first Enter, while multi-page ones (e.g. "Dungeon-Inhalte",
-    /// 1/8) walk through every page (each spoken by OnContentsTutorialUpdate) and
-    /// close at the end.
-    /// The forward arrow is id=8 (ButtonClick param=1, from the [Focus] event log
-    /// 2026-07-23); id=9 (param=2) is back. If paging turns out reversed, the
-    /// [Tutorial] log shows the page counter not advancing - then swap the ids.
-    /// </summary>
-    private unsafe void AdvanceOrCloseContentsTutorial(AtkUnitBase* addon)
-    {
-        var closeBtn = addon->GetNodeById(11);
-        if (closeBtn != null && closeBtn->IsVisible())
-        {
-            // "Schließen" is a game-UI button match (stays client-language, Teil 2).
-            if (TryClickButton(addon, "Schließen"))
-            {
-                _lastTutorialText = string.Empty;
-                _tolk.SpeakInterrupt(AccessibilityStrings.Closed);
-            }
-            else
-            {
-                _tolk.SpeakInterrupt(AccessibilityStrings.CloseButtonNotResponding);
-            }
-            return;
-        }
-
-        // Not on the last page yet: page forward. Log the page counter so a
-        // wrong arrow guess is diagnosable (the page would not advance).
-        var before = ReadTutorialNode(addon, 7);
-        var next   = addon->GetNodeById(8);
-        if (next != null && DispatchClick(next))
-            _log.Info($"[Tutorial] Weiter (id=8) geklickt. Seite vorher='{before}'");
-        else
-            _tolk.SpeakInterrupt(AccessibilityStrings.NextButtonNotResponding);
     }
 
     // -- HowTo (Tutorial-Text zum Thema aus der Themenliste) ----------
@@ -10974,6 +10885,11 @@ public sealed partial class UIReaderService : IDisposable
     {
         if (IsAddonVisible("SelectYesno")) { _tolk.SpeakInterrupt(AccessibilityStrings.DialogHelp); return; }
         if (IsAddonVisible("SystemMenu")) { _tolk.SpeakInterrupt(AccessibilityStrings.SystemMenuHelp); return; }
+        if (IsAddonVisible(ContentsTutorialText.AddonName))
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.ContentsTutorialHelp(AccessibilityStrings.SpokenKeyLabel(_config.KeyReadUI)));
+            return;
+        }
         if (IsSystemVolumeEditing)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.SystemVolumeEditInstructions);
@@ -11906,6 +11822,7 @@ public sealed partial class UIReaderService : IDisposable
 
     public unsafe void ReadCurrentFocus()
     {
+        if (TryReadContentsTutorial()) return;
         if (TryReadYesNoDialog()) return;
         if (TryReadSelectOk()) return;
         if (_charaMake.TryReadClass()) return;

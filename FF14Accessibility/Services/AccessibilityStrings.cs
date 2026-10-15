@@ -1546,8 +1546,6 @@ public static partial class AccessibilityStrings
     public static string NotificationNotResponding => L("Benachrichtigung reagiert nicht.", "Notification not responding.", "Уведомление не отвечает.");
 
     // ── ContentsTutorial-Popup (Freischaltungen) ─────────────────────
-    // NOTE: The actual close-button match ("Schließen") lives in the service and
-    // stays in the game-client language (Teil 2), these are the spoken frames.
     public static string PageOf(int current, int total) =>
         L($" Seite {current} von {total}.", $" Page {current} of {total}.", $" Страница {current} из {total}.");
 
@@ -1560,6 +1558,13 @@ public static partial class AccessibilityStrings
 
     /// <summary>Next page, for windows whose paging button carries no text.</summary>
     public static string NextPage => L("Weiter", "Next", "Дальше");
+    public static string PreviousPage => L("Vorherige Seite", "Previous page", "Предыдущая страница");
+    public static string TutorialUnderstood => L("Ich weiß, was zu tun ist.", "I understand what to do.", "Я понимаю, что нужно делать.");
+    public static string ContentsTutorialHelp(string repeatKey) =>
+        L($"Mit den Spieltasten eine Schaltfläche wählen, Enter betätigt die gewählte Schaltfläche. {repeatKey} liest diese Seite erneut.",
+          $"Use the game's navigation keys to choose a button; Enter activates the selected button. {repeatKey} reads this page again.",
+          $"Клавишами навигации игры выберите кнопку; Enter нажимает выбранную кнопку. {repeatKey} повторяет эту страницу.");
+    public static string TutorialLoading => L("Die Seite wird geladen.", "The page is loading.", "Страница загружается.");
 
     /// <summary>
     /// A control that exists but is switched off right now - a paging button on
