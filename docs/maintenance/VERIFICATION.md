@@ -30,8 +30,16 @@
   52987A02AA996C1D7BCE96CA327A7E5CAFBCD736A3207C03F72FB6FFD6DF25BB.
   DLL 6.8.119.0:
   1D22ADB8D8E619570D648734C820646EAB6608DB21F0107E9D976078F6342F73.
-- Implemented=true, AutomatedTestsPassed=true, CompiledWithGameLibraries=true.
-  LocalPluginInstalled=false на момент подготовки; InGameVerified=false,
+- Исправление сохранено коммитом 437704b и отправлено обычным продвижением
+  в origin/feature/russian-accessibility-recovery. После отправки,
+  в 20:10:55 (+07:00), при закрытых FFXIV и XIVLauncher установлена
+  DLL 6.8.119.0. Все 138 файлов нового комплекта совпали по SHA-256;
+  все 192 прежних файла сохранены и сверены. 54 дополнительных файла
+  и обе конфигурации до/после установки имеют одинаковые суммы.
+  Резервная копия и отчёт:
+  artifacts/installation-backups/20261015-201054-664/installation.json.
+- Implemented=true, AutomatedTestsPassed=true, CompiledWithGameLibraries=true,
+  LocalPluginInstalled=true; InGameVerified=false,
   BlindUserAccepted=false для новой версии. Снимок исходной ошибки
   не является проверкой исправления. Нужны фактические NVDA/Tolk,
   обе стрелки, все восемь страниц, Ctrl+F10, отметка ознакомления и закрытие.
