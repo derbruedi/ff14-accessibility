@@ -56,8 +56,56 @@ public sealed class GearInfoService
 
         if (briefWhenWearable) return head;
 
+        // Slots now follow the item name. Class restrictions must also be heard
+        // when the item is wearable, or the level check failed before the job check.
+        if (Loc.IsRussian && row.ClassJobCategory.ValueNullable is { } jobs)
+        {
+            var classes = EquipmentSpeech.ClassCategory(_data, jobs);
+            if (classes.Length > 0 && !reason.Contains(classes, StringComparison.Ordinal))
+                head += ", " + AccessibilityStrings.EquipmentClasses(classes);
+        }
         var stats = DescribeStats(row);
         return stats.Length > 0 ? $"{head}, {stats}" : head;
+    }
+
+    private static string MultiSlotNote(LuminaItem row)
+    {
+        var names = OccupiedSlotNames(row);
+        if (names.Count < 2) return string.Empty;
+        var note = AccessibilityStrings.OccupiedSlots(string.Join(", ", names));
+        if (row.EquipSlotCategory.ValueNullable is { } category && category.Legs > 0 && category.Feet > 0)
+            note += ", " + AccessibilityStrings.FeetBlocked;
+        return note;
+    }
+
+    public string DescribeAlsoSlots(uint baseItemId, string ownSlotLabel)
+    {
+        if (baseItemId == 0 || !_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row))
+            return string.Empty;
+        var names = OccupiedSlotNames(row);
+        if (names.Count < 2) return string.Empty;
+        names.RemoveAll(name => string.Equals(name, ownSlotLabel, StringComparison.Ordinal));
+        return names.Count > 0 ? AccessibilityStrings.OccupiesAlso(string.Join(", ", names)) : string.Empty;
+    }
+
+    private static List<string> OccupiedSlotNames(LuminaItem row)
+    {
+        var names = new List<string>();
+        if (row.EquipSlotCategory.ValueNullable is not { } category) return names;
+        if (category.MainHand > 0) names.Add(AccessibilityStrings.SlotWeapon);
+        if (category.OffHand > 0) names.Add(AccessibilityStrings.SlotOffHand);
+        if (category.Head > 0) names.Add(AccessibilityStrings.SlotHead);
+        if (category.Body > 0) names.Add(AccessibilityStrings.SlotBody);
+        if (category.Gloves > 0) names.Add(AccessibilityStrings.SlotHands);
+        if (category.Waist > 0) names.Add(AccessibilityStrings.SlotWaist);
+        if (category.Legs > 0) names.Add(AccessibilityStrings.SlotLegs);
+        if (category.Feet > 0) names.Add(AccessibilityStrings.SlotFeet);
+        if (category.Ears > 0) names.Add(AccessibilityStrings.SlotEars);
+        if (category.Neck > 0) names.Add(AccessibilityStrings.SlotNeck);
+        if (category.Wrists > 0) names.Add(AccessibilityStrings.SlotWrists);
+        if (category.FingerL > 0 || category.FingerR > 0) names.Add(AccessibilityStrings.SlotRing);
+        if (category.SoulCrystal > 0) names.Add(AccessibilityStrings.SlotSoulCrystal);
+        return names;
     }
 
     /// <summary>
@@ -105,7 +153,11 @@ public sealed class GearInfoService
             var value = row.BaseParamValue[i];
             if (param.RowId == 0 || value == 0) continue;
 
-            var name = param.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            // Russisch zuerst, wie bei den Jobnamen: BaseParam kommt hier
+            // englisch ("Strength"), das Spiel zeigt "Сила".
+            var name = param.ValueNullable is { } parameter
+                ? RussianGameText.Name(_data, parameter, x => x.Name).Trim()
+                : string.Empty;
             if (name.Length == 0) continue; // unnamed attribute: stay silent rather than say "Attribut 12"
             parts.Add(AccessibilityStrings.AttributeValue(name, value));
         }
@@ -143,10 +195,15 @@ public sealed class GearInfoService
 
         var parts = new List<string>();
 
-        var category = row.ItemUICategory.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+        // Auch die Gattung kommt aus einem Blatt und ist hier englisch; im
+        // Spiel steht die uebersetzte ("Arznei"/"Лекарство"). Unbekannte Id ->
+        // Blattname, nie stumm.
+        var category = row.ItemUICategory.ValueNullable is { } categoryRow
+            ? RussianGameText.Name(_data, categoryRow, x => x.Name).Trim()
+            : string.Empty;
         // Some items ARE their category ("Leder" in category "Leder") - saying
         // the same word twice in a row sounds like a stutter, so it is dropped.
-        var itemName = row.Name.ExtractText().Trim();
+        var itemName = RussianGameText.Name(_data, row, x => x.Name).Trim();
         if (category.Length > 0 && !category.Equals(itemName, StringComparison.OrdinalIgnoreCase))
             parts.Add(category);
 
@@ -165,10 +222,20 @@ public sealed class GearInfoService
     public string DescribeByName(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        _gearNames ??= BuildGearNameCache();
+        RefreshGearNames();
         return _gearNames.TryGetValue(text.Trim().ToLowerInvariant(), out var id)
             ? DescribeGear(id)
             : string.Empty;
+    }
+
+    /// <summary>Known equipment label with slots, resolved before translating.</summary>
+    public string ItemLabelByName(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text;
+        RefreshGearNames();
+        return _gearNames.TryGetValue(text.Trim().ToLowerInvariant(), out var id)
+               && _data.GetExcelSheet<LuminaItem>().TryGetRow(id, out var row)
+            ? EquipmentSpeech.Name(_data, row) : text;
     }
 
     // ── Tragbarkeits-Prüfung ──
@@ -191,8 +258,10 @@ public sealed class GearInfoService
             if (jobOk == null) return (null, string.Empty);
             if (jobOk == false)
             {
-                var forWho = cat.Name.ExtractText().Trim();
-                return (false, forWho.Length > 0 ? AccessibilityStrings.OnlyForClass(forWho) : AccessibilityStrings.DifferentClassNeeded);
+                var forWho = RequiredJobNames(cat);
+                if (forWho.Length > 0) return (false, AccessibilityStrings.OnlyForJobs(forWho));
+                var categoryName = cat.Name.ExtractText().Trim();
+                return (false, categoryName.Length > 0 ? AccessibilityStrings.OnlyForClass(categoryName) : AccessibilityStrings.DifferentClassNeeded);
             }
         }
 
@@ -204,6 +273,21 @@ public sealed class GearInfoService
         }
 
         return (true, string.Empty);
+    }
+
+    private string RequiredJobNames(ClassJobCategory category)
+    {
+        if (Loc.IsRussian) return EquipmentSpeech.ClassCategory(_data, category);
+        var names = new List<string>();
+        foreach (var job in _data.GetExcelSheet<ClassJob>())
+        {
+            if (job.RowId == 0 || AllowsJob(category, (byte)job.RowId) != true) continue;
+            var name = RussianGameText.Name(_data, job, x => x.Name).Trim();
+            if (string.IsNullOrEmpty(name)) continue;
+            names.Add(name);
+            if (names.Count > 3) return string.Empty;
+        }
+        return string.Join(", ", names);
     }
 
     /// <summary>
@@ -243,7 +327,10 @@ public sealed class GearInfoService
             if (levels[index] <= 0) continue;                   // not one of the player's
             if (AllowsJob(cat, (byte)job.RowId) != true) continue;
 
-            var name = job.Name.ExtractText().Trim();
+            // Russisch zuerst: das ClassJob-Blatt liefert hier Englisch, das
+            // Spiel zeigt aber den uebersetzten Namen - gemeldet am 2026-09-14
+            // ("gladiator" statt "Гладиатор"). Unbekannte Id -> Blattname.
+            var name = RussianGameText.Name(_data, job, x => x.Name).Trim();
             if (name.Length > 0) names.Add(name);
         }
 
@@ -322,6 +409,34 @@ public sealed class GearInfoService
     }
 
     /// <summary>
+    /// True, when the category is a name list of OTHER jobs and does not
+    /// mention this one. Used by the skill browser, where an unresolved job
+    /// column must not silently swallow craft-class skills: the game's
+    /// category for a craft skill lists several classes ("CRP WVR ..."), so
+    /// the row stays offerable to whoever is standing on one of them. False
+    /// on any doubt - a wrong True costs a dead entry, a wrong False costs a
+    /// missing skill the player cannot assign at all.
+    /// </summary>
+    public bool NamesOnlyOtherJobs(ClassJobCategory cat, byte jobId)
+    {
+        var own = EnglishAbbreviation(jobId);
+        if (own.Length == 0) return false;
+
+        var names = (cat.Name.ExtractText() ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return names.Length > 0 && !names.Contains(own, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>English abbreviation of a job ("CRP", "GLA") from the sheet -
+    /// the same naming the ClassJobCategory columns and the category name
+    /// lists use. "" when the job is unknown. Public because the skill browser
+    /// also needs it to pick the matching column of the CraftAction sheet.</summary>
+    public string EnglishAbbreviation(byte jobId)
+        => _data.GetExcelSheet<ClassJob>(ClientLanguage.English).TryGetRow(jobId, out var job)
+            ? job.Abbreviation.ExtractText().Trim()
+            : string.Empty;
+
+    /// <summary>
     /// Findet die bool-Spalte über die ClassJobCategory-Zeile, deren Name die
     /// Job-Abkürzung ist und die genau eine true-Spalte hat (BST → Unknown0).
     /// </summary>
@@ -394,19 +509,52 @@ public sealed class GearInfoService
     // ── Name → Item (für Laden-Zeilen, die nur Name + Preis zeigen) ──
 
     private Dictionary<string, uint>? _gearNames;
+    private (LanguageMode Mode, ClientLanguage Language, int Display)? _gearNamesKey;
+
+    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(_gearNames))]
+    private void RefreshGearNames()
+    {
+        var key = (Loc.Mode, _data.Language, GameDisplayText.Revision);
+        if (_gearNames != null && _gearNamesKey == key) return;
+        _gearNames = BuildGearNameCache();
+        _gearNamesKey = key;
+    }
+
+    private Dictionary<string, string>? _classLabels;
+    private ClientLanguage _classLabelLanguage;
+
+    /// <summary>Translate a complete class label in a tooltip/comparison, never arbitrary prose.</summary>
+    public string TranslateClassLabel(string text)
+    {
+        if (!Loc.IsRussian || string.IsNullOrWhiteSpace(text)) return text;
+        if (_classLabels == null || _classLabelLanguage != _data.Language)
+        {
+            var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // The same abbreviation may name different jobs in different
+            // languages (English SCH = scholar, German SCH = rogue).
+            foreach (var category in _data.GetExcelSheet<ClassJobCategory>())
+            {
+                var source = category.Name.ExtractText().Trim();
+                if (source.Length == 0) continue;
+                var translated = EquipmentSpeech.ClassCategory(_data, category);
+                if (labels.TryGetValue(source, out var existing) && existing != translated) ambiguous.Add(source);
+                else labels[source] = translated;
+            }
+            foreach (var label in ambiguous) labels.Remove(label);
+            _classLabels = labels;
+            _classLabelLanguage = _data.Language;
+        }
+        return _classLabels.TryGetValue(text.Trim(), out var result) ? result : text;
+    }
 
     /// <summary>Lowercased equipment names only - consumables in a list can then
     /// never be mis-matched, and the map stays small. Built once, lazily.</summary>
     private Dictionary<string, uint> BuildGearNameCache()
     {
-        var map = new Dictionary<string, uint>();
-        foreach (var row in _data.GetExcelSheet<LuminaItem>())
-        {
-            if (row.EquipSlotCategory.RowId == 0) continue;
-            var name = row.Name.ExtractText();
-            if (!string.IsNullOrWhiteSpace(name))
-                map.TryAdd(name.Trim().ToLowerInvariant(), row.RowId);
-        }
+        var map = GameNameIndex.Build(_data.GetExcelSheet<LuminaItem>()
+            .Where(row => row.EquipSlotCategory.RowId != 0).Select(row =>
+                (row.RowId, row.Name.ExtractText(), GameDisplayText.Find(_data, row, x => x.Name)?.ExtractText())));
         _log.Info($"[Gear] Namens-Cache gebaut: {map.Count} Ausrüstungs-Namen.");
         return map;
     }

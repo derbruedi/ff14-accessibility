@@ -117,7 +117,7 @@ public static class CharaMakeIconText
     /// <summary>The description for an icon id, or null when none is written yet.</summary>
     public static string? Describe(uint iconId)
         => iconId != NotAnIcon && Text.TryGetValue(iconId, out var t)
-            ? (Loc.IsGerman ? t.De : t.En)
+            ? AccessibilityStrings.LocText(t.De, t.En)
             : null;
 
     /// <summary>
@@ -136,8 +136,8 @@ public static class CharaMakeIconText
     {
         if (iconId == NotAnIcon) return null;                  // see NotAnIcon
         if (!Text.TryGetValue(iconId, out var t)) return null;
-        var brief = Loc.IsGerman ? t.BriefDe : t.BriefEn;
-        return brief.Length > 0 ? brief : (Loc.IsGerman ? t.De : t.En);
+        var brief = AccessibilityStrings.LocText(t.BriefDe, t.BriefEn);
+        return brief.Length > 0 ? brief : AccessibilityStrings.LocText(t.De, t.En);
     }
 
     /// <summary>True when this icon has an authored description.</summary>

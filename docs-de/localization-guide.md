@@ -1,3 +1,7 @@
+> **Справка для разработчиков из исходного проекта.** Примеры могут относиться
+> к другим играм, движкам и инструментам. Для текущей русской версии используйте
+> [оглавление документации](../docs/README.md); порядок работы задают AGENTS.md и docs/maintenance.
+
 # Lokalisierung für Accessibility-Mods - Anleitung
 
 Diese Anleitung beschreibt, wie du eine Mehrsprachen-Lokalisierung für Accessibility-Mods implementierst. Die Methode wurde erfolgreich im Pet Idle Accessibility Mod getestet und kann für verschiedene Spiel-Engines angepasst werden.

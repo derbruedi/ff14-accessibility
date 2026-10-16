@@ -83,6 +83,7 @@ public sealed class EventAreaService
 
     // Resolved collab FATE destinations, built once from sheet + EventRange lookup.
     private List<TimedEventDestination>? _collabFateDestinations;
+    private (bool Russian, bool German) _collabLanguage;
 
     public EventAreaService(
         IClientState clientState,
@@ -195,7 +196,8 @@ public sealed class EventAreaService
         foreach (var tid in YokaiTerritoryIds)
         {
             if (!terrSheet.TryGetRow(tid, out var terr)) continue;
-            var zone = terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty;
+            var zone = RussianAuthorText.PlaceName(terr.PlaceName.RowId,
+                terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty);
             if (string.IsNullOrWhiteSpace(zone)) continue;
 
             Vector3 pos;
@@ -220,7 +222,9 @@ public sealed class EventAreaService
 
     private List<TimedEventDestination> EnsureCollabFateDestinations()
     {
-        if (_collabFateDestinations != null) return _collabFateDestinations;
+        var language = (Loc.IsRussian, Loc.IsGerman);
+        if (_collabFateDestinations != null && _collabLanguage == language) return _collabFateDestinations;
+        _collabLanguage = language;
         _collabFateDestinations = BuildCollabFateDestinations();
         return _collabFateDestinations;
     }
@@ -244,6 +248,15 @@ public sealed class EventAreaService
             }
 
             var name = fate.Name.ExtractText().Trim();
+            if (Loc.IsRussian)
+            {
+                try
+                {
+                    var english = _data.GetExcelSheet<Fate>(Dalamud.Game.ClientLanguage.English).GetRow(fateId);
+                    name = RussianAuthorText.Translate("FateName", fateId, english.Name.Data.Span, name);
+                }
+                catch { /* A missing source keeps the actual game name. */ }
+            }
             if (string.IsNullOrEmpty(name))
             {
                 _log.Info($"[Events] Collab-FATE id={fateId} hat keinen Namen.");
@@ -265,7 +278,8 @@ public sealed class EventAreaService
                 continue;
             }
 
-            var zone = terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty;
+            var zone = RussianAuthorText.PlaceName(terr.PlaceName.RowId,
+                terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty);
             if (string.IsNullOrWhiteSpace(zone)) continue;
 
             var mapId = terr.Map.RowId;

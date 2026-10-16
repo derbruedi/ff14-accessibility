@@ -1,3 +1,7 @@
+> **Справка для разработчиков из исходного проекта.** Примеры могут относиться
+> к другим играм, движкам и инструментам. Для текущей русской версии используйте
+> [оглавление документации](README.md); порядок работы задают AGENTS.md и docs/maintenance.
+
 # Unity Reflection Guide for Modding
 
 This guide describes patterns and best practices for accessing private fields in Unity games via Reflection - a central topic in accessibility mod development.

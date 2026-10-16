@@ -225,7 +225,8 @@ public sealed class GatheringService
             var typeId = gpBase.GatheringType.RowId;
             if (allowedTypes != null && !allowedTypes.Contains(typeId)) continue;
 
-            var typeName = gpBase.GatheringType.ValueNullable?.Name.ExtractText() ?? "";
+            var typeName = gpBase.GatheringType.ValueNullable is { } gatherType
+                ? RussianGameText.Name(_data, gatherType, x => x.Name) : "";
             result.Add(new GatherSpotInfo(
                 typeName,
                 gpBase.GatheringLevel,
@@ -248,8 +249,14 @@ public sealed class GatheringService
     /// filter is applied by the caller, not here, so the same cache serves
     /// every class and survives a class change without re-reading.
     /// </summary>
+    private bool _catalogNamesRussian;
     private List<GatherSpotInfo> GetAllSpotsInZone(uint territoryId)
     {
+        if (_catalogNamesRussian != Loc.IsRussian)
+        {
+            _byTerritory.Clear();
+            _catalogNamesRussian = Loc.IsRussian;
+        }
         if (_byTerritory.TryGetValue(territoryId, out var cached)) return cached;
 
         var result = new List<GatherSpotInfo>();
@@ -279,7 +286,8 @@ public sealed class GatheringService
             if (baseRef is not { } gpBase) continue;
 
             var typeId   = gpBase.GatheringType.RowId;
-            var typeName = gpBase.GatheringType.ValueNullable?.Name.ExtractText() ?? "";
+            var typeName = gpBase.GatheringType.ValueNullable is { } gatherType
+                ? RussianGameText.Name(_data, gatherType, x => x.Name) : "";
             // ExportedGatheringPoint.X/Y = raw world X/Z (not map pixels). Y height
             // is absent - same 2D pattern as FishingSpot; navmesh fills it on walk.
             var pos = new Vector3(exp.X, 0f, exp.Y);

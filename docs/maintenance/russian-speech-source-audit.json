@@ -1,0 +1,7 @@
+{
+  "scope": "L argument presence and direct spoken literals in Release and DEBUG; not all dynamic game text or translation quality",
+  "source_files": 159,
+  "localization_calls": 1366,
+  "missing_russian_arguments": [],
+  "direct_unlocalized_speech": []
+}

@@ -115,11 +115,11 @@ public static class GaugeReadyCues
         // players already know from the job list.
         return new (string, GaugeReadyCueId[])[]
         {
-            (Job("Paladin", "Paladin"), new[]
+            (Job("Paladin", "Paladin", "Паладин"), new[]
             {
                 GaugeReadyCueId.Oath,
             }),
-            (Job("Mönch", "Monk"), new[]
+            (Job("Mönch", "Monk", "Монах"), new[]
             {
                 GaugeReadyCueId.Chakra,
                 GaugeReadyCueId.BeastChakra,
@@ -128,17 +128,17 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.NadiSolar,
                 GaugeReadyCueId.NadiBoth,
             }),
-            (Job("Krieger", "Warrior"), new[]
+            (Job("Krieger", "Warrior", "Воин"), new[]
             {
                 GaugeReadyCueId.Beast,
             }),
-            (Job("Dragoon", "Dragoon"), new[]
+            (Job("Dragoon", "Dragoon", "Драгун"), new[]
             {
                 GaugeReadyCueId.Eyes,
                 GaugeReadyCueId.Firstminds,
                 GaugeReadyCueId.Lotd,
             }),
-            (Job("Barde", "Bard"), new[]
+            (Job("Barde", "Bard", "Бард"), new[]
             {
                 GaugeReadyCueId.SoulVoice,
                 GaugeReadyCueId.Repertoire,
@@ -146,12 +146,12 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.CodaArmy,
                 GaugeReadyCueId.CodaWanderer,
             }),
-            (Job("Weißmagier", "White Mage"), new[]
+            (Job("Weißmagier", "White Mage", "Белый маг"), new[]
             {
                 GaugeReadyCueId.Lily,
                 GaugeReadyCueId.BloodLily,
             }),
-            (Job("Schwarzmagier", "Black Mage"), new[]
+            (Job("Schwarzmagier", "Black Mage", "Чёрный маг"), new[]
             {
                 GaugeReadyCueId.Polyglot,
                 GaugeReadyCueId.Paradox,
@@ -159,7 +159,7 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.UmbralHearts,
             }),
             // Hermetiker und Beschwörer teilen denselben SMNGauge-Pfad.
-            (Job("Hermetiker", "Arcanist"), new[]
+            (Job("Hermetiker", "Arcanist", "Арканист"), new[]
             {
                 GaugeReadyCueId.Ruby,
                 GaugeReadyCueId.Topaz,
@@ -167,7 +167,7 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.AllGems,
                 GaugeReadyCueId.Aetherflow,
             }),
-            (Job("Beschwörer", "Summoner"), new[]
+            (Job("Beschwörer", "Summoner", "Призыватель"), new[]
             {
                 GaugeReadyCueId.Ruby,
                 GaugeReadyCueId.Topaz,
@@ -175,35 +175,35 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.AllGems,
                 GaugeReadyCueId.Aetherflow,
             }),
-            (Job("Gelehrter", "Scholar"), new[]
+            (Job("Gelehrter", "Scholar", "Учёный"), new[]
             {
                 GaugeReadyCueId.Aetherflow,
                 GaugeReadyCueId.Fairy,
             }),
             // Schurke (29) hat keine eigene Anzeige — erst Ninja.
-            (Job("Ninja", "Ninja"), new[]
+            (Job("Ninja", "Ninja", "Ниндзя"), new[]
             {
                 GaugeReadyCueId.Ninki,
                 GaugeReadyCueId.Kazematoi,
             }),
-            (Job("Maschinist", "Machinist"), new[]
+            (Job("Maschinist", "Machinist", "Механик"), new[]
             {
                 GaugeReadyCueId.Heat,
                 GaugeReadyCueId.Battery,
                 GaugeReadyCueId.Overheat,
                 GaugeReadyCueId.Robot,
             }),
-            (Job("Dunkelritter", "Dark Knight"), new[]
+            (Job("Dunkelritter", "Dark Knight", "Тёмный рыцарь"), new[]
             {
                 GaugeReadyCueId.Blood,
                 GaugeReadyCueId.DarkArts,
             }),
-            (Job("Astrologe", "Astrologian"), new[]
+            (Job("Astrologe", "Astrologian", "Астролог"), new[]
             {
                 GaugeReadyCueId.Card,
                 GaugeReadyCueId.CrownCard,
             }),
-            (Job("Samurai", "Samurai"), new[]
+            (Job("Samurai", "Samurai", "Самурай"), new[]
             {
                 GaugeReadyCueId.Getsu,
                 GaugeReadyCueId.Ka,
@@ -213,41 +213,41 @@ public static class GaugeReadyCues
                 GaugeReadyCueId.Meditation,
                 GaugeReadyCueId.Tsubame,
             }),
-            (Job("Rotmagier", "Red Mage"), new[]
+            (Job("Rotmagier", "Red Mage", "Красный маг"), new[]
             {
                 GaugeReadyCueId.WhiteMana,
                 GaugeReadyCueId.BlackMana,
                 GaugeReadyCueId.ManaStacks,
             }),
-            (Job("Revolverheld", "Gunbreaker"), new[]
+            (Job("Revolverheld", "Gunbreaker", "Ганбрейкер"), new[]
             {
                 GaugeReadyCueId.Ammo,
             }),
-            (Job("Tänzer", "Dancer"), new[]
+            (Job("Tänzer", "Dancer", "Танцор"), new[]
             {
                 GaugeReadyCueId.Feathers,
                 GaugeReadyCueId.Esprit,
             }),
-            (Job("Schnitter", "Reaper"), new[]
+            (Job("Schnitter", "Reaper", "Жнец"), new[]
             {
                 GaugeReadyCueId.Soul,
                 GaugeReadyCueId.Shroud,
                 GaugeReadyCueId.Enshroud,
                 GaugeReadyCueId.VoidShroud,
             }),
-            (Job("Weiser", "Sage"), new[]
+            (Job("Weiser", "Sage", "Мудрец"), new[]
             {
                 GaugeReadyCueId.Addersgall,
                 GaugeReadyCueId.Addersting,
                 GaugeReadyCueId.Eukrasia,
             }),
-            (Job("Viper", "Viper"), new[]
+            (Job("Viper", "Viper", "Вайпер"), new[]
             {
                 GaugeReadyCueId.RattlingCoil,
                 GaugeReadyCueId.SerpentOffering,
                 GaugeReadyCueId.SerpentFollowUp,
             }),
-            (Job("Pictomancer", "Pictomancer"), new[]
+            (Job("Pictomancer", "Pictomancer", "Пиктомант"), new[]
             {
                 GaugeReadyCueId.Palette,
                 GaugeReadyCueId.Paint,
@@ -260,7 +260,11 @@ public static class GaugeReadyCues
         };
     }
 
-    private static string Job(string de, string en) => Loc.IsGerman ? de : en;
+    // Russisch ueber denselben Helfer wie alle anderen Texte: die Namen
+    // stehen dort ausgeschrieben, weil die Tabelle oben ohnehin je Job
+    // ein Paar aus deutscher und englischer Schreibweise traegt.
+    private static string Job(string de, string en, string ru) =>
+        AccessibilityStrings.L(de, en, ru);
 
     /// <summary>Localized short name for menus and logs (no "ready"/"full").</summary>
     public static string Name(GaugeReadyCueId id) => id switch
@@ -281,13 +285,13 @@ public static class GaugeReadyCues
         GaugeReadyCueId.Lotd => AccessibilityStrings.GaugeNameLotd,
         GaugeReadyCueId.Ninki => AccessibilityStrings.GaugeNameNinki,
         GaugeReadyCueId.Kazematoi => AccessibilityStrings.GaugeNameKazematoi,
-        GaugeReadyCueId.Getsu => "Getsu",
-        GaugeReadyCueId.Ka => "Ka",
-        GaugeReadyCueId.Setsu => "Setsu",
-        GaugeReadyCueId.ThreeSen => Loc.IsGerman ? "drei Sen" : "three Sen",
-        GaugeReadyCueId.Kenki => "Kenki",
-        GaugeReadyCueId.Meditation => Loc.IsGerman ? "Meditation" : "Meditation",
-        GaugeReadyCueId.Tsubame => "Tsubame",
+        GaugeReadyCueId.Getsu => AccessibilityStrings.L("Getsu", "Getsu", "Гэцу"),
+        GaugeReadyCueId.Ka => AccessibilityStrings.L("Ka", "Ka", "Ка"),
+        GaugeReadyCueId.Setsu => AccessibilityStrings.L("Setsu", "Setsu", "Сэцу"),
+        GaugeReadyCueId.ThreeSen => AccessibilityStrings.L("drei Sen", "three Sen", "три сэн"),
+        GaugeReadyCueId.Kenki => AccessibilityStrings.L("Kenki", "Kenki", "Кэнки"),
+        GaugeReadyCueId.Meditation => AccessibilityStrings.L("Meditation", "Meditation", "Медитация"),
+        GaugeReadyCueId.Tsubame => AccessibilityStrings.L("Tsubame", "Tsubame", "Цубамэ"),
         GaugeReadyCueId.Soul => AccessibilityStrings.GaugeNameSoul,
         GaugeReadyCueId.Shroud => AccessibilityStrings.GaugeNameShroud,
         GaugeReadyCueId.Enshroud => AccessibilityStrings.GaugeNameEnshroud,
@@ -329,10 +333,10 @@ public static class GaugeReadyCues
         GaugeReadyCueId.Eukrasia => AccessibilityStrings.GaugeNameEukrasia,
         GaugeReadyCueId.Card => AccessibilityStrings.GaugeNameCard,
         GaugeReadyCueId.CrownCard => AccessibilityStrings.GaugeNameCrownCard,
-        GaugeReadyCueId.Ruby => Loc.IsGerman ? "Rubin" : "Ruby",
-        GaugeReadyCueId.Topaz => Loc.IsGerman ? "Topas" : "Topaz",
-        GaugeReadyCueId.Emerald => Loc.IsGerman ? "Smaragd" : "Emerald",
-        GaugeReadyCueId.AllGems => Loc.IsGerman ? "alle drei bereit" : "all three ready",
+        GaugeReadyCueId.Ruby => AccessibilityStrings.L("Rubin", "Ruby", "Рубин"),
+        GaugeReadyCueId.Topaz => AccessibilityStrings.L("Topas", "Topaz", "Топаз"),
+        GaugeReadyCueId.Emerald => AccessibilityStrings.L("Smaragd", "Emerald", "Изумруд"),
+        GaugeReadyCueId.AllGems => AccessibilityStrings.L("alle drei bereit", "all three ready", "все три готовы"),
         _ => id.ToString(),
     };
 

@@ -1,0 +1,48 @@
+{
+  "Item": {
+    "6945": {
+      "source": "When sung, invokes the hand of Halone, turning back time and resetting any PvP actions learned.",
+      "translation": "При исполнении призывает длань Халоне, поворачивая время вспять и сбрасывая все изученные действия PvP."
+    }
+  },
+  "CraftAction": {
+    "100005": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100019": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100035": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100049": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100065": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100079": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100094": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."},
+    "100110": {"source": "Restores item durability by 60.", "translation": "Восстанавливает прочность предмета на 60."}
+  },
+  "GeneralAction": {
+    "1": {"source": "Automatically attack your current target at a set interval determined by your weapon.", "translation": "Автоматически атаковать текущую цель с интервалом, который определяется оружием."},
+    "2": {"source": "Make a spring from the ground or other base by flexion and sudden muscular extension of the legs.", "translation": "Оттолкнуться ногами от земли или другой опоры и подпрыгнуть."},
+    "5": {"source": "Break down an item into one or more of its original materials.", "translation": "Разобрать предмет, получив один или несколько исходных материалов."},
+    "9": {"source": "Summon a mount at random.", "translation": "Призвать случайный транспорт."},
+    "10": {"source": "Summon a minion at random.", "translation": "Призвать случайного миньона."},
+    "12": {"source": "Affix materia onto weapons and armor.", "translation": "Вставить материю в оружие и снаряжение."},
+    "13": {"source": "Affix materia onto weapons and armor. Can also affix materia to items with no slots remaining, but success is not guaranteed.", "translation": "Вставить материю в оружие и снаряжение. Позволяет вставлять материю даже при отсутствии свободных ячеек, но успех не гарантирован."},
+    "15": {"source": "Use dye to color gear.", "translation": "Изменить цвет снаряжения с помощью краски."},
+    "16": {"source": "Toggle forward through nearby enemies.", "translation": "Выбрать следующего ближайшего противника."},
+    "17": {"source": "Toggle back through nearby enemies.", "translation": "Выбрать предыдущего ближайшего противника."},
+    "19": {"source": "Remove a timeworn map from its glass prison and unlock its mysteries.", "translation": "Извлечь старую карту из стеклянного сосуда и расшифровать её."},
+    "20": {"source": "Locate a buried treasure coffer within a 30-yalm radius and extract it from the ground.", "translation": "Найти закопанный сундук с сокровищами в радиусе 30 ялмов и выкопать его."},
+    "21": {"source": "Break down an item to its aetherial components.", "translation": "Разобрать предмет на эфирные составляющие."},
+    "22": {"source": "Use a glamour prism to cast an optical illusion upon a piece of equipment, thus altering its appearance.", "translation": "Изменить внешний вид предмета снаряжения, наложив иллюзию с помощью призмы гламура."},
+    "23": {"source": "Dismount your current mount.", "translation": "Спешиться с текущего транспорта."},
+    "24": {"source": "Summon a random flying mount.", "translation": "Призвать случайный летающий транспорт."},
+    "25": {"source": "Create a set of multiple glamours to apply at once.", "translation": "Создать набор из нескольких гламуров для одновременного применения."},
+    "26": {"source": "Execute a duty-specific action.", "translation": "Выполнить особое действие текущей миссии."},
+    "27": {"source": "Execute a duty-specific action.", "translation": "Выполнить особое действие текущей миссии."},
+    "30": {"source": "Change the order of hotbar-assigned actions.", "translation": "Изменить порядок действий на панели питомца."}
+  },
+  "MainCommand": {
+    "1": {"source": "Sheathe/unsheathe your main arm.", "translation": "Обнажить или убрать основное оружие."},
+    "8": {"source": "Displays a list of hunting objectives for Disciples of War and Magic. Information on monster habitat, kills recorded, and experience earned is also available.", "translation": "Открыть список целей охоты для боевых и магических классов. Содержит сведения о местах обитания монстров, количестве убийств и получаемом опыте."},
+    "38": {"source": "（ヘルプ無し）", "translation": "Описание отсутствует."},
+    "39": {"source": "（ヘルプ無し）", "translation": "Описание отсутствует."},
+    "40": {"source": "（ヘルプ無し）", "translation": "Описание отсутствует."},
+    "43": {"source": "（ヘルプ無し）", "translation": "Описание отсутствует."}
+  }
+}

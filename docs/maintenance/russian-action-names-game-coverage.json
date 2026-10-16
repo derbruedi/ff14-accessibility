@@ -1,0 +1,12 @@
+{
+  "game_version": "2026.09.15.0000.0000",
+  "rows": {
+    "CraftActionName": 433,
+    "BuddyActionName": 6,
+    "GeneralActionName": 43,
+    "ActionName": 56
+  },
+  "catalog_checked": true,
+  "missing_or_changed": [],
+  "snapshot_sha256": "8C2BEA7720C5B8CC638AE2DD39735445E1B56DD1D2855ED6A267DF625C54658F"
+}

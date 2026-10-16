@@ -544,6 +544,11 @@ public sealed class AutoWalkService : IDisposable
         _log.Info($"[Nav] Auto-Lauf: umgebogen auf lebendes '{name}' (id={obj.GameObjectId:X}).");
     }
 
+    // A newly loaded actor can be bound after an author's measured crossing,
+    // but must not replace the intermediate bridge or under-ledge destination.
+    public bool IsTrackingObject => _targetId != 0;
+    public bool CanRetargetObject => _phase == Phase.Walking && _pendingCrossing == null && _ceilingDestination == null;
+
     public AutoWalkService(
         IDalamudPluginInterface pluginInterface,
         IObjectTable objectTable,
@@ -816,7 +821,7 @@ public sealed class AutoWalkService : IDisposable
     /// tighter still for zone transitions so they trigger. The position should
     /// already be snapped onto the walkable mesh.
     /// </summary>
-    public void ToggleToPosition(Vector3 position, string name, float stopRange, bool isZoneTransition = false)
+    public void ToggleToPosition(Vector3 position, string name, float stopRange, bool isZoneTransition = false, ulong targetId = 0)
     {
         _destinationIsTransition = isZoneTransition;
         StopFollowQuiet();
@@ -828,7 +833,7 @@ public sealed class AutoWalkService : IDisposable
         }
 
         _flightDeclined = false;   // neuer Auftrag, neuer Flugversuch - siehe Toggle
-        Begin(position, name, stopRange, 0);
+        Begin(position, name, stopRange, targetId);
     }
 
     /// <summary>
@@ -2099,8 +2104,9 @@ public sealed class AutoWalkService : IDisposable
             return;
         }
 
-        // Queued, not interrupting, so it follows "Laufe zu ...".
-        _tolk.Speak(_routes.DescribeRoute(_targetName, waypoints, playerPosition));
+        // Automatic progress and Num5 report distance to the destination.
+        // Summing the whole path here announced a different, larger number.
+        // Route descriptions remain available through the explicit preview key.
     }
 
     /// <summary>

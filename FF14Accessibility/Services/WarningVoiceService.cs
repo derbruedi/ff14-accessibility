@@ -149,7 +149,7 @@ public sealed class WarningVoiceService : IDisposable
         if (!string.IsNullOrEmpty(chosen) && InstalledVoices.Contains(chosen))
             return chosen;
 
-        var want = Loc.IsGerman ? "de" : "en";
+        var want = Loc.IsRussian ? "ru" : Loc.IsGerman ? "de" : "en";
         foreach (var voice in _synth.GetInstalledVoices())
         {
             if (!voice.Enabled) continue;

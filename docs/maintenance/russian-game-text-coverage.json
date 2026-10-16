@@ -1,0 +1,519 @@
+{
+  "game_version": "2026.09.15.0000.0000",
+  "catalog_sha256": "96ffd77baa075994879dc6b6ac3ad4d8ce03cebef222fafeb50806672ce4240e",
+  "scope": "Named source rows of the captured game tables; server keys lack offline text; no machine drafts included",
+  "tables": {
+    "ItemName": {
+      "source_rows": 50880,
+      "translated_rows": 50880,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "exact_item_template_or_manual": 50596,
+        "manual_name": 284
+      }
+    },
+    "EventItemName": {
+      "source_rows": 3531,
+      "translated_rows": 3531,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_event_name": 2461,
+        "xiv_rus_source_matched": 970,
+        "xiv_rus_identical_source": 90,
+        "manual_name": 10
+      }
+    },
+    "ActionName": {
+      "source_rows": 45518,
+      "translated_rows": 45400,
+      "missing_rows": 0,
+      "unresolved_server_keys": 118,
+      "origins": {
+        "manual_name": 45397,
+        "manual_row": 3
+      }
+    },
+    "CraftActionName": {
+      "source_rows": 433,
+      "translated_rows": 433,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 433
+      }
+    },
+    "GeneralActionName": {
+      "source_rows": 43,
+      "translated_rows": 43,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 43
+      }
+    },
+    "BuddyActionName": {
+      "source_rows": 6,
+      "translated_rows": 6,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 6
+      }
+    },
+    "TraitName": {
+      "source_rows": 682,
+      "translated_rows": 682,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 682
+      }
+    },
+    "PetActionName": {
+      "source_rows": 41,
+      "translated_rows": 41,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 41
+      }
+    },
+    "MountName": {
+      "source_rows": 369,
+      "translated_rows": 369,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 369
+      }
+    },
+    "CompanionName": {
+      "source_rows": 590,
+      "translated_rows": 590,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 590
+      }
+    },
+    "StatusName": {
+      "source_rows": 4791,
+      "translated_rows": 4780,
+      "missing_rows": 0,
+      "unresolved_server_keys": 11,
+      "origins": {
+        "manual_name": 4778,
+        "manual_row": 2
+      }
+    },
+    "StatusDescription": {
+      "source_rows": 4771,
+      "translated_rows": 4760,
+      "missing_rows": 0,
+      "unresolved_server_keys": 11,
+      "origins": {
+        "xiv_rus_source_matched": 4669,
+        "manual_row": 91
+      }
+    },
+    "EmoteName": {
+      "source_rows": 305,
+      "translated_rows": 305,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 247,
+        "manual_name": 58
+      }
+    },
+    "BaseParamName": {
+      "source_rows": 73,
+      "translated_rows": 73,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 61,
+        "manual_name": 12
+      }
+    },
+    "ClassJobName": {
+      "source_rows": 43,
+      "translated_rows": 43,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 43
+      }
+    },
+    "ItemUICategoryName": {
+      "source_rows": 113,
+      "translated_rows": 113,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 109,
+        "manual_name": 4
+      }
+    },
+    "GrandCompanyName": {
+      "source_rows": 4,
+      "translated_rows": 4,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 3,
+        "manual_name": 1
+      }
+    },
+    "MainCommandName": {
+      "source_rows": 99,
+      "translated_rows": 99,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 93,
+        "manual_name": 2,
+        "manual_row": 4
+      }
+    },
+    "GatheringTypeName": {
+      "source_rows": 6,
+      "translated_rows": 6,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_row": 6
+      }
+    },
+    "LogFilterName": {
+      "source_rows": 235,
+      "translated_rows": 235,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 116,
+        "manual_name": 1,
+        "manual_row": 118
+      }
+    },
+    "DeepDungeonItemName": {
+      "source_rows": 38,
+      "translated_rows": 38,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_name": 21,
+        "manual_row": 17
+      }
+    },
+    "DeepDungeonItemTooltip": {
+      "source_rows": 38,
+      "translated_rows": 38,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 23,
+        "xiv_rus_identical_source": 12,
+        "manual_row": 3
+      }
+    },
+    "DeepDungeonMagicStoneName": {
+      "source_rows": 5,
+      "translated_rows": 5,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 4,
+        "manual_row": 1
+      }
+    },
+    "DeepDungeonMagicStoneTooltip": {
+      "source_rows": 5,
+      "translated_rows": 5,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 4,
+        "manual_row": 1
+      }
+    },
+    "DeepDungeonEquipmentName": {
+      "source_rows": 8,
+      "translated_rows": 8,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 6,
+        "manual_row": 2
+      }
+    },
+    "DeepDungeonEquipmentDescription": {
+      "source_rows": 8,
+      "translated_rows": 8,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 6,
+        "xiv_rus_identical_source": 2
+      }
+    },
+    "DeepDungeonFloorEffectUIName": {
+      "source_rows": 15,
+      "translated_rows": 15,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 15
+      }
+    },
+    "DeepDungeonFloorEffectUIDescription": {
+      "source_rows": 15,
+      "translated_rows": 15,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "xiv_rus_source_matched": 15
+      }
+    },
+    "DeepDungeon4GimmickEffectTransientName": {
+      "source_rows": 10,
+      "translated_rows": 10,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_row": 8,
+        "manual_name": 2
+      }
+    },
+    "DeepDungeon4GimmickEffectTransientDescription": {
+      "source_rows": 10,
+      "translated_rows": 10,
+      "missing_rows": 0,
+      "unresolved_server_keys": 0,
+      "origins": {
+        "manual_row": 10
+      }
+    }
+  },
+  "remaining": {
+    "ItemName": {},
+    "EventItemName": {},
+    "ActionName": {},
+    "CraftActionName": {},
+    "GeneralActionName": {},
+    "BuddyActionName": {},
+    "TraitName": {},
+    "PetActionName": {},
+    "MountName": {},
+    "CompanionName": {},
+    "StatusName": {},
+    "StatusDescription": {},
+    "EmoteName": {},
+    "BaseParamName": {},
+    "ClassJobName": {},
+    "ItemUICategoryName": {},
+    "GrandCompanyName": {},
+    "MainCommandName": {},
+    "GatheringTypeName": {},
+    "LogFilterName": {},
+    "DeepDungeonItemName": {},
+    "DeepDungeonItemTooltip": {},
+    "DeepDungeonMagicStoneName": {},
+    "DeepDungeonMagicStoneTooltip": {},
+    "DeepDungeonEquipmentName": {},
+    "DeepDungeonEquipmentDescription": {},
+    "DeepDungeonFloorEffectUIName": {},
+    "DeepDungeonFloorEffectUIDescription": {},
+    "DeepDungeon4GimmickEffectTransientName": {},
+    "DeepDungeon4GimmickEffectTransientDescription": {}
+  },
+  "unresolved_server_keys": {
+    "ItemName": {},
+    "EventItemName": {},
+    "ActionName": {
+      "47842": "_rsv_47842_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47843": "_rsv_47843_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47844": "_rsv_47844_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47845": "_rsv_47845_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47846": "_rsv_47846_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47847": "_rsv_47847_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47848": "_rsv_47848_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47849": "_rsv_47849_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47850": "_rsv_47850_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47851": "_rsv_47851_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47852": "_rsv_47852_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47853": "_rsv_47853_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47854": "_rsv_47854_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47855": "_rsv_47855_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47856": "_rsv_47856_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47857": "_rsv_47857_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47858": "_rsv_47858_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47859": "_rsv_47859_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47860": "_rsv_47860_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47861": "_rsv_47861_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47862": "_rsv_47862_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47863": "_rsv_47863_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47864": "_rsv_47864_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47865": "_rsv_47865_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47866": "_rsv_47866_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47867": "_rsv_47867_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47868": "_rsv_47868_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47869": "_rsv_47869_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47870": "_rsv_47870_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47871": "_rsv_47871_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47872": "_rsv_47872_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47873": "_rsv_47873_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47874": "_rsv_47874_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47875": "_rsv_47875_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47877": "_rsv_47877_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47878": "_rsv_47878_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47881": "_rsv_47881_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47883": "_rsv_47883_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47884": "_rsv_47884_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47885": "_rsv_47885_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47886": "_rsv_47886_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47887": "_rsv_47887_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47888": "_rsv_47888_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47889": "_rsv_47889_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47890": "_rsv_47890_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47891": "_rsv_47891_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47892": "_rsv_47892_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47893": "_rsv_47893_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47894": "_rsv_47894_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47895": "_rsv_47895_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47896": "_rsv_47896_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47897": "_rsv_47897_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47898": "_rsv_47898_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47899": "_rsv_47899_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47900": "_rsv_47900_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47901": "_rsv_47901_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47902": "_rsv_47902_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47903": "_rsv_47903_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47904": "_rsv_47904_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47905": "_rsv_47905_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47906": "_rsv_47906_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47907": "_rsv_47907_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47908": "_rsv_47908_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47909": "_rsv_47909_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47925": "_rsv_47925_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47926": "_rsv_47926_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47927": "_rsv_47927_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47928": "_rsv_47928_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47929": "_rsv_47929_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47930": "_rsv_47930_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47931": "_rsv_47931_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47932": "_rsv_47932_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47933": "_rsv_47933_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47934": "_rsv_47934_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47935": "_rsv_47935_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47936": "_rsv_47936_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47937": "_rsv_47937_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47938": "_rsv_47938_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47939": "_rsv_47939_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47940": "_rsv_47940_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47941": "_rsv_47941_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47942": "_rsv_47942_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47943": "_rsv_47943_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47944": "_rsv_47944_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47946": "_rsv_47946_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47947": "_rsv_47947_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47951": "_rsv_47951_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47952": "_rsv_47952_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47953": "_rsv_47953_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47954": "_rsv_47954_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47955": "_rsv_47955_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47956": "_rsv_47956_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47957": "_rsv_47957_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "47958": "_rsv_47958_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "48333": "_rsv_48333_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "48486": "_rsv_48486_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49742": "_rsv_49742_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49743": "_rsv_49743_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49752": "_rsv_49752_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49753": "_rsv_49753_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49769": "_rsv_49769_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49878": "_rsv_49878_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49884": "_rsv_49884_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49890": "_rsv_49890_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49891": "_rsv_49891_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49892": "_rsv_49892_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "49893": "_rsv_49893_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50066": "_rsv_50066_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50067": "_rsv_50067_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50068": "_rsv_50068_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50069": "_rsv_50069_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50070": "_rsv_50070_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50081": "_rsv_50081_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50082": "_rsv_50082_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50545": "_rsv_50545_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50546": "_rsv_50546_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50718": "_rsv_50718_-1_1_0_0_SE2DC5B04_EE2DC5B04",
+      "50719": "_rsv_50719_-1_1_0_0_SE2DC5B04_EE2DC5B04"
+    },
+    "CraftActionName": {},
+    "GeneralActionName": {},
+    "BuddyActionName": {},
+    "TraitName": {},
+    "PetActionName": {},
+    "MountName": {},
+    "CompanionName": {},
+    "StatusName": {
+      "4887": "_rsv_4887_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "4888": "_rsv_4888_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5078": "_rsv_5078_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5083": "_rsv_5083_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5144": "_rsv_5144_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5350": "_rsv_5350_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5351": "_rsv_5351_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5452": "_rsv_5452_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5453": "_rsv_5453_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5454": "_rsv_5454_-1_1_0_0_S74CFC3B0_E74CFC3B0",
+      "5464": "_rsv_5464_-1_1_0_0_S74CFC3B0_E74CFC3B0"
+    },
+    "StatusDescription": {
+      "4887": "_rsv_4887_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "4888": "_rsv_4888_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5078": "_rsv_5078_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5083": "_rsv_5083_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5144": "_rsv_5144_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5350": "_rsv_5350_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5351": "_rsv_5351_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5452": "_rsv_5452_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5453": "_rsv_5453_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5454": "_rsv_5454_-1_1_1_0_S74CFC3B0_E74CFC3B0",
+      "5464": "_rsv_5464_-1_1_1_0_S74CFC3B0_E74CFC3B0"
+    },
+    "EmoteName": {},
+    "BaseParamName": {},
+    "ClassJobName": {},
+    "ItemUICategoryName": {},
+    "GrandCompanyName": {},
+    "MainCommandName": {},
+    "GatheringTypeName": {},
+    "LogFilterName": {},
+    "DeepDungeonItemName": {},
+    "DeepDungeonItemTooltip": {},
+    "DeepDungeonMagicStoneName": {},
+    "DeepDungeonMagicStoneTooltip": {},
+    "DeepDungeonEquipmentName": {},
+    "DeepDungeonEquipmentDescription": {},
+    "DeepDungeonFloorEffectUIName": {},
+    "DeepDungeonFloorEffectUIDescription": {},
+    "DeepDungeon4GimmickEffectTransientName": {},
+    "DeepDungeon4GimmickEffectTransientDescription": {}
+  },
+  "player_and_job_actions": {
+    "player_action_ids": {
+      "source_rows": 1373,
+      "translated_rows": 1373,
+      "missing": {}
+    },
+    "job_action_ids": {
+      "source_rows": 2587,
+      "translated_rows": 2587,
+      "missing": {}
+    }
+  }
+}

@@ -309,7 +309,7 @@ public sealed class LootRollService
     {
         if (_data.GetExcelSheet<LuminaItem>().TryGetRow(itemId, out var row))
         {
-            var name = row.Name.ExtractText();
+            var name = EquipmentSpeech.Name(_data, row);
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
         return AccessibilityStrings.ItemFallback(itemId);

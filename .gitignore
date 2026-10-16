@@ -46,3 +46,15 @@ tools/enable-vendorsell/
 # Lokale Mahjong-WIP (nicht im Release)
 _local_mahjong/
 
+# Local recovery material, packages and logs (never source)
+/.recovery/
+/.local/
+/artifacts/
+/archive/
+/plugin/
+/install-log.txt
+*.log
+*.bak
+*.trx
+__pycache__/
+*.pyc

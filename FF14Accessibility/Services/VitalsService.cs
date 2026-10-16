@@ -123,7 +123,7 @@ public sealed class VitalsService : IDisposable
             return;
         }
 
-        var percent = (int)(current * 100u / max);
+        var percent = VitalPercent.Floor(current, max);
         var level   = StepFor(percent, lastLevel);
 
         if (lastLevel < 0)

@@ -43,12 +43,18 @@ public sealed class PlacesService
     private readonly IDataManager _data;
     private readonly IClientState _clientState;
     private readonly IPluginLog   _log;
+    private readonly InteriorEntranceService _interiorEntrances;
+    private readonly TravelMapIdentity _mapIdentity;
+    private readonly TravelLayout _travelLayout;
 
     public PlacesService(IDataManager data, IClientState clientState, IPluginLog log)
     {
         _data        = data;
         _clientState = clientState;
         _log         = log;
+        _interiorEntrances = new(data, log);
+        _mapIdentity = new(data);
+        _travelLayout = new(data, log);
     }
 
     /// <summary>
@@ -60,6 +66,17 @@ public sealed class PlacesService
     /// </summary>
     private static float PixelToWorld(float pixel, ushort sizeFactor, short offset)
         => (pixel - 1024f) * 100f / sizeFactor - offset;
+
+    /// <summary>The name to speak for a PlaceName row: Russian when the row is
+    /// translated, otherwise the sheet name.
+    ///
+    /// Die Blaetter liefern in dieser Installation ENGLISCH - das Rusik
+    /// uebersetzt nur, was gezeichnet wird. Ohne diesen Rueckweg hoert die
+    /// Spielerin "Eastern Thanalan", waehrend auf ihrer Karte "Восточный
+    /// Таналан" steht. Die Zeilen-Id kennt keine Sprache, der Name schon.
+    /// Ohne Uebersetzung bleibt es beim Blattnamen, nie bei Schweigen.</summary>
+    private static string PlaceNameText(uint rowId, string? sheetName)
+        => RussianAuthorText.PlaceName(rowId, sheetName?.Trim() ?? string.Empty);
 
     /// <summary>Inverse of <see cref="PixelToWorld"/>: world coordinate back to
     /// map pixel (0..2048). Solving world = (pixel-1024)*100/scale - offset for
@@ -192,15 +209,22 @@ public sealed class PlacesService
     }
 
     /// <summary>All named waypoints of the current map. Read fresh per call.</summary>
-    public List<PlaceDestination> GetPlaces()
+    public List<PlaceDestination> GetPlaces() => GetPlaces(includeFlag: true);
+
+    // Routing needs only static entrances, never the native player flag.
+    private List<PlaceDestination> GetPlaces(bool includeFlag)
     {
         var result = new List<PlaceDestination>();
-        var mapId = _clientState.MapId;
+        // The route graph uses the canonical row of the physical map. Read
+        // its markers here as well: a native alternate row can omit the exit
+        // glyph, even though both rows describe the same floor and resource.
+        // The ordinary place browser continues to use the displayed map.
+        var mapId = includeFlag ? _clientState.MapId : CanonicalMap(_clientState.MapId);
         if (mapId == 0) return result;
 
         // The flag is a waypoint like any other, so it flows into the browser,
         // the walk guide and the auto-walk through the existing path.
-        var flag = GetFlagMarker();
+        var flag = includeFlag ? GetFlagMarker() : null;
         if (flag != null) result.Add(flag);
 
         var mapSheet = _data.GetExcelSheet<Map>();
@@ -224,7 +248,11 @@ public sealed class PlacesService
             var isTransition = false;
             var targetMapId = 0u;
 
-            var subtext = m.PlaceNameSubtext.ValueNullable?.Name.ExtractText() ?? string.Empty;
+            // Russisch zuerst: das Blatt liefert in dieser Installation Englisch,
+            // die Karte der Spielerin traegt den uebersetzten Namen (dieselbe
+            // Ursache wie bei Monstern und Quests). Ohne Uebersetzung bleibt es
+            // beim Blattnamen.
+            var subtext = PlaceNameText(m.PlaceNameSubtext.RowId, m.PlaceNameSubtext.ValueNullable?.Name.ExtractText());
 
             switch (m.DataType)
             {
@@ -234,7 +262,7 @@ public sealed class PlacesService
                     if (m.DataKey.TryGetValue<Map>(out var targetMap))
                     {
                         targetMapId = targetMap.RowId;
-                        name = targetMap.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty;
+                        name = PlaceNameText(targetMap.PlaceName.RowId, targetMap.PlaceName.ValueNullable?.Name.ExtractText());
                     }
                     if (string.IsNullOrWhiteSpace(name)) name = subtext;
                     if (string.IsNullOrWhiteSpace(name)) continue;
@@ -245,7 +273,7 @@ public sealed class PlacesService
 
                 case 3: // Ätheryt (DataKey = Aetheryte-Zeile)
                     name = m.DataKey.TryGetValue<Aetheryte>(out var aetheryte)
-                        ? aetheryte.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty
+                        ? PlaceNameText(aetheryte.PlaceName.RowId, aetheryte.PlaceName.ValueNullable?.Name.ExtractText())
                         : string.Empty;
                     if (string.IsNullOrWhiteSpace(name)) name = subtext;
                     if (string.IsNullOrWhiteSpace(name)) name = AccessibilityStrings.AetheryteFallbackName;
@@ -254,7 +282,7 @@ public sealed class PlacesService
 
                 case 4: // Aethernet-Scherbe (DataKey = PlaceName)
                     name = m.DataKey.TryGetValue<PlaceName>(out var placeName)
-                        ? placeName.Name.ExtractText()
+                        ? PlaceNameText(placeName.RowId, placeName.Name.ExtractText())
                         : subtext;
                     if (string.IsNullOrWhiteSpace(name)) continue;
                     type = "Aethernet";
@@ -419,12 +447,17 @@ public sealed class PlacesService
     // Static transition graph (map id -> reachable map ids), built lazily
     // from the same MapMarker data. Sheet data never changes at runtime.
     private readonly Dictionary<uint, List<uint>> _transitionCache = [];
+    private readonly Dictionary<uint, HashSet<uint>> _markerTransitionTargets = [];
+    private Dictionary<(uint Start, uint Target), (uint Hop, int Count)>? _firstHopCache;
 
     private List<uint> GetTransitionTargets(uint mapId)
     {
+        mapId = CanonicalMap(mapId);
         if (_transitionCache.TryGetValue(mapId, out var cached)) return cached;
 
         var targets = new List<uint>();
+        var markerTargets = new HashSet<uint>();
+        var borders = _travelLayout.WalkingBorders(mapId);
         var mapSheet = _data.GetExcelSheet<Map>();
         if (mapSheet.TryGetRow(mapId, out var map)
             && _data.GetSubrowExcelSheet<MapMarker>().TryGetRow(map.MapMarkerRange, out var markers))
@@ -433,18 +466,83 @@ public sealed class PlacesService
             {
                 if (m.DataType is not (1 or 2)) continue;
                 if (m.DataKey.TryGetValue<Map>(out var target) && target.RowId != 0)
-                    targets.Add(target.RowId);
+                {
+                    var canonical = CanonicalMap(target.RowId);
+                    // A glyph may name the upper floor while the actual exit
+                    // arrives downstairs. That glyph cannot authorize walking
+                    // to the upper floor; keep the exact lift/NPC edge instead.
+                    if (borders.Any(b => GetTerritoryOfMap(b.TargetMap) == target.TerritoryType.RowId)
+                        && !borders.Any(b => b.TargetMap == canonical)) continue;
+                    targets.Add(canonical);
+                    markerTargets.Add(canonical);
+                }
             }
         }
         _transitionCache[mapId] = targets;
+        _markerTransitionTargets[mapId] = markerTargets;
+        foreach (var border in borders)
+            if (!targets.Contains(border.TargetMap)) targets.Add(border.TargetMap);
+        foreach (var entrance in _interiorEntrances.ForMap(mapId))
+            if (entrance.SourceMapId == mapId && !targets.Contains(entrance.TargetMapId))
+                targets.Add(entrance.TargetMapId);
         return targets;
+    }
+
+    /// <summary>Only a verified interaction entrance on the current map.</summary>
+    public InteriorEntrance? FindLocalEntranceToMap(uint targetMapId)
+        => _interiorEntrances.ForMap(CanonicalMap(_clientState.MapId)).Where(e => e.SourceMapId == CanonicalMap(_clientState.MapId)
+            && e.TargetMapId == CanonicalMap(targetMapId)).OrderByDescending(e => e.LevelType == 45).FirstOrDefault();
+
+    /// <summary>The interaction object for the FIRST leg, even when the final
+    /// destination is several maps away (e.g. leave an inn before a city gate).</summary>
+    public InteriorEntrance? FindLocalEntranceOnRoute(uint targetMapId)
+    {
+        var hop = FindFirstHopMap(targetMapId, out _);
+        if (hop == 0) return null;
+        var entrance = FindLocalEntranceToMap(hop);
+        return PreferInteraction(entrance) || !_markerTransitionTargets.GetValueOrDefault(CanonicalMap(_clientState.MapId), []).Contains(hop)
+            ? entrance : null;
+    }
+
+    private bool PreferInteraction(InteriorEntrance? entrance)
+    {
+        if (entrance == null) return false;
+        if (entrance.LevelType == 45) return true;
+        if (_data == null) return false;
+        // A transport symbol is not a walking border. Only a real ExitRange
+        // on this source map can take priority over a verified NPC entrance.
+        return !_interiorEntrances.HasWalkingBorder(entrance.SourceMapId, entrance.TargetMapId);
+    }
+
+    public uint CanonicalMap(uint id) => _data == null ? id : _mapIdentity.Canonical(id);
+    public bool AreSameMap(uint first, uint second) => CanonicalMap(first) == CanonicalMap(second);
+
+    internal IReadOnlyList<LocalTransfer> LocalTransfers()
+        => _interiorEntrances.LocalTransfers(_clientState.MapId);
+
+    // Reject a confirmed different floor or ambiguous overlapping map ranges.
+    // If the layout supplies no containing range, retain the marker's map.
+    internal bool MatchesKnownMap(Vector3 point, uint map)
+        => _data == null || AreSameMap(_travelLayout.ForTerritory(GetTerritoryOfMap(map))
+            .ResolveMap(point, CanonicalMap(map)), map);
+
+    private PlaceDestination? EntranceDestination(uint targetMapId)
+    {
+        var entrance = FindLocalEntranceToMap(targetMapId);
+        if (entrance == null) return null;
+        var name = GetMapName(targetMapId);
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        // IsZoneTransition=false: this requires interaction, never a movement
+        // push into a border. Quest routing already walks to the returned point.
+        return new(AccessibilityStrings.InteriorEntranceName(name), "Entrance", entrance.Position,
+            IsZoneTransition: false, TargetMapId: targetMapId);
     }
 
     /// <summary>Zone name for announcements ("im Gebiet X"), from the map's PlaceName.</summary>
     public string GetMapName(uint mapId)
     {
         return _data.GetExcelSheet<Map>().TryGetRow(mapId, out var map)
-            ? map.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty
+            ? PlaceNameText(map.PlaceName.RowId, map.PlaceName.ValueNullable?.Name.ExtractText())
             : string.Empty;
     }
 
@@ -472,15 +570,15 @@ public sealed class PlacesService
     public Dictionary<uint, int> GetHopDistances()
     {
         var distance = new Dictionary<uint, int>();
-        var start = _clientState.MapId;
+        var start = CanonicalMap(_clientState.MapId);
         if (start == 0) return distance;
 
         distance[start] = 0;
         var queue = new Queue<uint>();
         queue.Enqueue(start);
-        // Dieselbe Schranke wie in FindFirstHopToMap: der Kartengraph ist klein,
-        // und eine Obergrenze haelt einen kaputten Sheet-Zyklus aus dem Frame.
-        while (queue.Count > 0 && distance.Count < 500)
+        // The visited dictionary terminates cycles; do not stop after 500 maps
+        // now that interaction travel can connect more of the world.
+        while (queue.Count > 0)
         {
             var current = queue.Dequeue();
             foreach (var next in GetTransitionTargets(current))
@@ -493,6 +591,29 @@ public sealed class PlacesService
         return distance;
     }
 
+    private readonly Dictionary<uint, Dictionary<uint, int>> _distancesTo = [];
+    public IReadOnlyDictionary<uint, int> GetHopDistancesTo(uint target)
+    {
+        target = CanonicalMap(target);
+        if (target == 0 || !_data.GetExcelSheet<Map>().TryGetRow(target, out _)) return new Dictionary<uint, int>();
+        if (_distancesTo.TryGetValue(target, out var cached)) return cached;
+        var reverse = new Dictionary<uint, List<uint>>();
+        foreach (var map in _data.GetExcelSheet<Map>())
+            if (map.RowId != 0 && map.TerritoryType.RowId != 0)
+                foreach (var next in GetTransitionTargets(map.RowId))
+                {
+                    if (!reverse.TryGetValue(next, out var list)) reverse[next] = list = [];
+                    list.Add(CanonicalMap(map.RowId));
+                }
+        var distances = new Dictionary<uint, int> { [target] = 0 };
+        var queue = new Queue<uint>(); queue.Enqueue(target);
+        while (queue.TryDequeue(out var current))
+            foreach (var next in reverse.GetValueOrDefault(current, []))
+                if (distances.TryAdd(next, distances[current] + 1)) queue.Enqueue(next);
+        _distancesTo[target] = distances;
+        return distances;
+    }
+
     /// <summary>
     /// Finds the transition IN THE CURRENT MAP that is the first hop of the
     /// shortest transition route to the target map (BFS over the static
@@ -502,16 +623,38 @@ public sealed class PlacesService
     /// </summary>
     public PlaceDestination? FindFirstHopToMap(uint targetMapId, out int hops)
     {
-        hops = 0;
-        var start = _clientState.MapId;
-        if (start == 0 || targetMapId == 0 || start == targetMapId) return null;
+        var hop = FindFirstHopMap(targetMapId, out hops);
+        if (hop == 0) return null;
+        var entrance = FindLocalEntranceToMap(hop);
+        var marker = GetPlaces(includeFlag: false).FirstOrDefault(p => p.IsZoneTransition && AreSameMap(p.TargetMapId, hop));
+        var border = _data == null ? default : _travelLayout.WalkingBorders(CanonicalMap(_clientState.MapId)).FirstOrDefault(b => b.TargetMap == hop);
+        if (border.Border != null && marker == null)
+            marker = new(AccessibilityStrings.TransitionToName(GetMapName(hop)), "Übergang", border.Border.Centre, true, hop);
+        // Doors are exact interaction targets even when a decorative map glyph
+        // exists. Ordinary walking borders win over optional NPC transport.
+        var transition = PreferInteraction(entrance) ? EntranceDestination(hop)
+            : marker ?? EntranceDestination(hop);
+        _log.Info($"[Orte] Route Map {_clientState.MapId} -> {targetMapId}: {hops} Übergänge, erster: " +
+                  (transition?.Name ?? $"KEIN Marker für Ziel-Map {hop} gefunden"));
+        return transition;
+    }
 
-        // BFS with parent tracking, depth-limited (map graph is small).
+    private uint FindFirstHopMap(uint targetMapId, out int hops)
+    {
+        hops = 0;
+        var start = CanonicalMap(_clientState.MapId);
+        targetMapId = CanonicalMap(targetMapId);
+        if (start == 0 || targetMapId == 0 || start == targetMapId) return 0;
+        _firstHopCache ??= [];
+        if (_firstHopCache.TryGetValue((start, targetMapId), out var cached))
+        { hops = cached.Count; return cached.Hop; }
+
+        // BFS with parent tracking. Each checked map is visited at most once.
         var parent  = new Dictionary<uint, uint> { [start] = start };
         var queue   = new Queue<uint>();
         queue.Enqueue(start);
         var found = false;
-        while (queue.Count > 0 && parent.Count < 500)
+        while (queue.Count > 0)
         {
             var current = queue.Dequeue();
             if (current == targetMapId) { found = true; break; }
@@ -525,7 +668,8 @@ public sealed class PlacesService
         if (!found)
         {
             _log.Info($"[Orte] Keine Übergangs-Route von Map {start} nach Map {targetMapId}.");
-            return null;
+            _firstHopCache[(start, targetMapId)] = (0, 0);
+            return 0;
         }
 
         // Walk back from the target to the map whose parent is the start:
@@ -538,10 +682,8 @@ public sealed class PlacesService
             hops++;
         }
 
-        var transition = GetPlaces().FirstOrDefault(p => p.IsZoneTransition && p.TargetMapId == hop);
-        _log.Info($"[Orte] Route Map {start} -> {targetMapId}: {hops} Übergänge, erster: " +
-                  (transition?.Name ?? $"KEIN Marker für Ziel-Map {hop} gefunden"));
-        return transition;
+        _firstHopCache[(start, targetMapId)] = (hop, hops);
+        return hop;
     }
 
     /// <summary>

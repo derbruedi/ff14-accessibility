@@ -147,7 +147,11 @@ public sealed unsafe class ItemCompareService
         if (selectedName.Length == 0) return null;
 
         var equippedName = ReadString(values, EquippedBlock + RelItemName);
-        var slotName     = ReadString(values, IdxSlotName);
+        var slotName     = EquipmentSpeech.ComparisonSlot(ReadString(values, IdxSlotName));
+
+        var spokenSelected = _gearInfo.ItemLabelByName(selectedName);
+        selectedName = spokenSelected;
+        equippedName = _gearInfo.ItemLabelByName(equippedName);
 
         var rows = new List<string>();
 
@@ -182,7 +186,7 @@ public sealed unsafe class ItemCompareService
         if (values[IdxShowRingSlotToggle].Type == AtkValueType.Int && values[IdxShowRingSlotToggle].Int != 0)
         {
             var otherRing = ReadString(values, LeftRingBlock + RelItemName);
-            if (otherRing.Length > 0) rows.Add(AccessibilityStrings.CompareOtherRing(otherRing));
+            if (otherRing.Length > 0) rows.Add(AccessibilityStrings.CompareOtherRing(_gearInfo.ItemLabelByName(otherRing)));
         }
 
         var level = new MenuLevel { Title = Verdict(better, worse, compared, selectedName, slotName) };
@@ -429,8 +433,8 @@ public sealed unsafe class ItemCompareService
     /// </summary>
     private void AddClassRows(List<string> rows, Span<AtkValue> values)
     {
-        var mine   = ReadString(values, SelectedBlock + RelEquippableBy);
-        var theirs = ReadString(values, EquippedBlock + RelEquippableBy);
+        var mine   = _gearInfo.TranslateClassLabel(ReadString(values, SelectedBlock + RelEquippableBy));
+        var theirs = _gearInfo.TranslateClassLabel(ReadString(values, EquippedBlock + RelEquippableBy));
         if (mine.Length > 0 || theirs.Length > 0)
             rows.Add(Row(AccessibilityStrings.CompareRowClasses, mine, theirs));
 

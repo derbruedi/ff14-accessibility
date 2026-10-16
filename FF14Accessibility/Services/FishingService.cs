@@ -339,7 +339,7 @@ public sealed class FishingService
                       $"Name='{name}' Welt=({obj.Position.X:F1}|{obj.Position.Z:F1})");
         }
 
-        _tolk.SpeakInterrupt($"{hits.Count} Objekte in 50 Metern im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.FishingProbeSaved(hits.Count));
     }
 
     /// <summary>

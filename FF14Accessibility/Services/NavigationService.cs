@@ -102,9 +102,10 @@ internal enum NavCategory
 /// not depend on the game accepting it as a target.</summary>
 /// <param name="ObjectId">GameObjectId, to refresh the position before walking.</param>
 /// <param name="Name">Spoken name, for the "walking to X" announcement.</param>
-/// <param name="Position">World position at selection time (fallback once the
-/// object has left the object table, e.g. after a zone reload).</param>
-public sealed record ObjectDestination(ulong ObjectId, string Name, Vector3 Position);
+/// <param name="Position">Snapshot at selection time. A live object must be
+/// re-read by exact identity; the snapshot never authorizes stale movement.</param>
+public sealed record ObjectDestination(ulong ObjectId, string Name, Vector3 Position,
+    ObjectKind Kind = ObjectKind.None, uint BaseId = 0);
 
 public sealed class NavigationService
 {
@@ -339,7 +340,7 @@ public sealed class NavigationService
                            $"{DescribeObject(target)}, " +
                            $"{FormatDistance(distance)}, {CalculateDirection(player, target.Position)}" +
                            $"{DescribeTargetHp(target)}{DescribeTamed(target)}" +
-                           $"{DescribePartyPosition(target)}.";
+                           $"{DescribePartyPosition(target)}." + AccessibilityStrings.TargetHeight(target.Position.Y - player.Position.Y);
                 _log.Info($"[Nav] Zielwechsel: {text} (id={target.GameObjectId:X}, kind={target.ObjectKind})");
                 _tolk.SpeakInterrupt(text);
             }
@@ -909,6 +910,49 @@ public sealed class NavigationService
 
     /// <summary>The quest destination selected via the browser, or null.</summary>
     public QuestDestination? SelectedQuestDestination { get; private set; }
+    private bool _questObjectiveAvailable = true;
+    private QuestDestination? _lastQuestTravelSource;
+    private QuestDestination? _lastQuestTravelGoal;
+    private uint _lastQuestTravelMap;
+
+    public QuestDestination? GetSelectedQuestTravelGoal()
+    {
+        var quest = SelectedQuestDestination;
+        if (quest == null || _data == null) return quest;
+        if (_lastQuestTravelSource == quest && _lastQuestTravelMap == _clientState.MapId) return _lastQuestTravelGoal;
+        var duty = quest.TerritoryTypeId == _clientState.TerritoryType || _places.FindFirstHopToMap(quest.MapId, out _) != null
+            ? null : QuestTravelHints.FindDuty(_data, _dutyEntrances, _places, quest, _clientState.MapId);
+        _lastQuestTravelSource = quest; _lastQuestTravelMap = _clientState.MapId;
+        return _lastQuestTravelGoal = duty == null ? quest : QuestTravelHints.DutyGoal(quest, duty, _clientState.MapId);
+    }
+
+    // Refresh only real quest selections: FATEs, leves and other synthetic
+    // destinations share this property but have their own live providers.
+    public bool RefreshSelectedQuest()
+    {
+        var previous = SelectedQuestDestination;
+        if (previous == null || previous.QuestId == 0 && previous.NativeMarkerId == 0) return true;
+        var player = _objectTable.LocalPlayer;
+        if (player == null) { _questObjectiveAvailable = false; return false; }
+        var current = IsUnacceptedQuestCategory ? _questMarkers.GetUnacceptedDestinations(log: false) : _questMarkers.GetDestinations(log: false);
+        var next = QuestNavigationPlan.Refresh(previous, current, _clientState.TerritoryType,
+            _clientState.MapId, player.Position);
+        // Accepting the selected quest moves it from the nearby offer list to
+        // active objectives. Continue the same identity through that boundary.
+        if (next == null && IsUnacceptedQuestCategory && previous.QuestId != 0)
+            next = QuestNavigationPlan.Refresh(previous, _questMarkers.GetDestinations(log: false),
+                _clientState.TerritoryType, _clientState.MapId, player.Position);
+        _questObjectiveAvailable = next != null;
+        if (next == null) return false; // Loading/missing marker must not reuse old coordinates.
+        SelectedQuestDestination = next;
+        if (previous.ObjectiveLevelId != next.ObjectiveLevelId || previous.MapId != next.MapId
+            || previous.Position != next.Position)
+        {
+            _aimedAtId = 0;
+            _log.Info($"[QuestRoute] Current objective {next.QuestId}/{next.ObjectiveLevelId}, territory {next.TerritoryTypeId}, map {next.MapId}.");
+        }
+        return true;
+    }
 
     /// <summary>
     /// The map waypoint selected via the browser (Wegpunkte category), or
@@ -995,12 +1039,13 @@ public sealed class NavigationService
     /// der Spieler am aktuellen Teilstueck war - so fuehrt wiederholtes Numpad3
     /// durch das Gebiet, statt immer wieder an dieselbe Stelle.
     /// </summary>
-    public (Vector3 Position, string Name, int Index, int Count)? NextHuntSearchPart(Vector3 playerPosition)
+    public (Vector3 Position, string Name, int Index, int Count)? NextHuntSearchPart(Vector3 playerPosition,
+                                                                                 bool advance = true)
     {
         var search = _huntSearch;
         if (search == null || search.Parts.Count == 0) return null;
 
-        if (search.Index < search.Parts.Count
+        if (advance && search.Index < search.Parts.Count
             && Distance2D(playerPosition, search.Parts[search.Index].Centre) <= HuntPartReached)
         {
             search.Index++;
@@ -1010,10 +1055,11 @@ public sealed class NavigationService
         // Alles abgefahren: von vorn. Ein Monster kann in der Zwischenzeit an
         // einer Stelle stehen, an der eben keines stand - Stillstand waere hier
         // die schlechteste Auskunft.
-        if (search.Index >= search.Parts.Count) search.Index = 0;
+        var index = search.Index < search.Parts.Count ? search.Index : 0;
+        if (advance) search.Index = index;
 
-        var part = search.Parts[search.Index];
-        return (part.Centre, part.SpotName, search.Index + 1, search.Parts.Count);
+        var part = search.Parts[index];
+        return (part.Centre, part.SpotName, index + 1, search.Parts.Count);
     }
 
     /// <summary>
@@ -1203,6 +1249,7 @@ public sealed class NavigationService
     /// for the current selection; 0 while it has not (yet) aimed. Kept so the
     /// aim happens once per arrival instead of every frame - see there.</summary>
     private ulong _aimedAtId;
+    private long _nextSelectionAimTick;
 
     private int _categoryIndex;
     private int _cycleIndex = -1;
@@ -1544,12 +1591,11 @@ public sealed class NavigationService
         }
 
         var count = objects.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = SelectionObjectResolver.NextIndex(objects, SelectedObjectDestination?.ObjectId ?? 0, _cycleIndex, direction);
         var obj = objects[_cycleIndex];
 
         // Suppress the target-change announcer: we announce with position info here.
-        _ownSelectionId = obj.GameObjectId;
-        _targetManager.Target = obj;
+        _ownSelectionId = BrowserTargetSelection.Select(_targetManager, obj) ? obj.GameObjectId : 0;
 
         // Remember the pick independently of the game target. Objects the game
         // will not target (quest props) are still listed and announced here, and
@@ -1564,7 +1610,7 @@ public sealed class NavigationService
             obj.ObjectKind == ObjectKind.GatheringPoint
                 ? DescribeGatheringPoint(obj)
                 : _objectNames.Describe(obj),
-            obj.Position);
+            obj.Position, obj.ObjectKind, obj.BaseId);
 
         // Audit probe: the game may REFUSE the change (SetHardTarget returns
         // bool, Dalamud discards it; rejections seen in log 2026-07-10 16:39
@@ -1630,6 +1676,7 @@ public sealed class NavigationService
                    $"{CalculateDirection(player, obj.Position)}" +
                    $"{stats}, " +
                    $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
+                   AccessibilityStrings.TargetHeight(obj.Position.Y - player.Position.Y) +
                    (rejected ? AccessibilityStrings.NotTargetedSuffix : "");
         _log.Info($"[Nav] Auswahl: {text} (id={obj.GameObjectId:X})");
         _tolk.SpeakInterrupt(text);
@@ -1656,7 +1703,7 @@ public sealed class NavigationService
         }
 
         var count = rows.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var row = rows[_cycleIndex];
 
         // Ein Raum, in dem der Spieler schon war, IST ein Laufziel: die Tuer, durch die
@@ -1719,7 +1766,7 @@ public sealed class NavigationService
         }
 
         var count = entries.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var pick = entries[_cycleIndex];
 
         if (pick.IsRange)
@@ -1744,12 +1791,11 @@ public sealed class NavigationService
         // Live object — same announcement path as the ordinary object browser.
         SelectedQuestDestination = null;
         var obj = live[pick.Index];
-        _ownSelectionId = obj.GameObjectId;
-        _targetManager.Target = obj;
+        _ownSelectionId = BrowserTargetSelection.Select(_targetManager, obj) ? obj.GameObjectId : 0;
         SelectedObjectDestination = new ObjectDestination(
             obj.GameObjectId,
             _objectNames.Describe(obj),
-            obj.Position);
+            obj.Position, obj.ObjectKind, obj.BaseId);
 
         var actualId = _targetManager.Target?.GameObjectId ?? 0;
         var rejected = actualId != obj.GameObjectId;
@@ -1781,9 +1827,13 @@ public sealed class NavigationService
         }
 
         var count = dests.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var dest = dests[_cycleIndex];
         SelectedQuestDestination = dest;
+        _questObjectiveAvailable = true;
+        _linkedObjectKey = null;
+        _linkedObjectId = 0;
+        dest = GetSelectedQuestTravelGoal() ?? dest;
 
         // Marker tooltip often carries the objective ("Mit X sprechen") -
         // append it when it adds information beyond the quest name.
@@ -1791,9 +1841,8 @@ public sealed class NavigationService
             ? $" {dest.Detail}."
             : string.Empty;
 
-        // The kind of quest is flagged so a blind player can tell story, job and
-        // beast tribe quests apart from side quests (a sighted player sees a
-        // distinct marker). Side quests stay unprefixed - see QuestKind.
+        // Speak every known kind, including side quests, so the marker conveys
+        // the journal category that a sighted player can see.
         var story = AccessibilityStrings.QuestKindPrefix(dest.Kind);
 
         // The list is level-ordered, so the level has to be audible - otherwise
@@ -1816,7 +1865,7 @@ public sealed class NavigationService
             : string.Empty;
 
         string text;
-        if (dest.InCurrentZone)
+        if (dest.TerritoryTypeId == _clientState.TerritoryType && (dest.MapId == 0 || _places.AreSameMap(dest.MapId, _clientState.MapId)))
         {
             text = $"{level}{story}{dest.QuestName}{unlock}{todo}, " +
                    $"{FormatDistance(Vector3.Distance(player.Position, dest.Position))}, " +
@@ -1839,6 +1888,8 @@ public sealed class NavigationService
                     CalculateDirection(player, hop.Position),
                     hops - 1);
                 text += AccessibilityStrings.NumpadWalksToTransition;
+                if (_places.FindLocalEntranceOnRoute(dest.MapId) != null)
+                    text += AccessibilityStrings.QuestTravelConfirm(_places.GetMapName(hop.TargetMapId));
             }
             text += detail;
         }
@@ -1867,7 +1918,7 @@ public sealed class NavigationService
         }
 
         var count = fates.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var fate = fates[_cycleIndex];
 
         // Reuse the quest destination path: the FATE is in the current zone with a
@@ -1910,7 +1961,7 @@ public sealed class NavigationService
         }
 
         var count = areas.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var (dest, inCurrentZone) = areas[_cycleIndex];
 
         SelectedQuestDestination = new QuestDestination(
@@ -2189,7 +2240,7 @@ public sealed class NavigationService
             return;
         }
 
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         if (_cycleIndex < enemies.Count)
         {
             AnnounceLevequestEnemy(enemies[_cycleIndex], player, count);
@@ -2285,11 +2336,10 @@ public sealed class NavigationService
 
         SelectedQuestDestination = null;
 
-        _ownSelectionId = obj.GameObjectId;
-        _targetManager.Target = obj;
+        _ownSelectionId = BrowserTargetSelection.Select(_targetManager, obj) ? obj.GameObjectId : 0;
 
         SelectedObjectDestination = new ObjectDestination(
-            obj.GameObjectId, _objectNames.Describe(obj), obj.Position);
+            obj.GameObjectId, _objectNames.Describe(obj), obj.Position, obj.ObjectKind, obj.BaseId);
 
         var actualId = _targetManager.Target?.GameObjectId ?? 0;
         var rejected = actualId != obj.GameObjectId;
@@ -2379,7 +2429,7 @@ public sealed class NavigationService
         }
 
         var count = places.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var place = places[_cycleIndex];
         SelectedPlaceDestination = place;
 
@@ -2389,7 +2439,7 @@ public sealed class NavigationService
         // Standing at it? Then take it as the game target too, so it can be used.
         var targeted = TryTargetMarkerObject(place);
 
-        var text = $"{place.Name}, {place.TypeLabel}, " +
+        var text = $"{place.Name}, {AccessibilityStrings.PlaceKindLabel(place.TypeLabel)}, " +
                    $"{FormatDistance(Distance2D(player.Position, place.Position))}, " +
                    $"{CalculateDirection(player, place.Position)}, " +
                    $"{AccessibilityStrings.Counter(_cycleIndex + 1, count)}." +
@@ -2416,7 +2466,7 @@ public sealed class NavigationService
         }
 
         var count = spots.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var spot = spots[_cycleIndex];
 
         // Reuse PlaceDestination so the existing walk guide picks it up unchanged.
@@ -2457,7 +2507,7 @@ public sealed class NavigationService
         }
 
         var count = spots.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var (spot, territoryId, mapId, inCurrentZone) = spots[_cycleIndex];
 
         SelectedQuestDestination = new QuestDestination(
@@ -2548,7 +2598,7 @@ public sealed class NavigationService
         }
 
         var count = targets.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var target = targets[_cycleIndex];
         SelectedBlueMagicTarget = target;
 
@@ -2615,7 +2665,7 @@ public sealed class NavigationService
         }
 
         var count = targets.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var target = targets[_cycleIndex];
         SelectedBeastTarget = target;
         BuildBeastSearch(target, player.Position);
@@ -2751,7 +2801,7 @@ public sealed class NavigationService
         }
 
         var count = targets.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var (target, live) = targets[_cycleIndex];
         SelectedHuntTarget = target;
         // Der Suchlauf gehoert zum gewaehlten Ziel: bei jedem Wechsel neu, sonst
@@ -2845,7 +2895,7 @@ public sealed class NavigationService
         }
 
         var count = entries.Count;
-        _cycleIndex = ((_cycleIndex + direction) % count + count) % count;
+        _cycleIndex = BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
         var entry = entries[_cycleIndex];
         SelectedDutyEntrance = entry;
 
@@ -2923,7 +2973,7 @@ public sealed class NavigationService
         // stur der Reihe nach, weil nur das eine Reihenfolge ist.
         _cycleIndex = _cycleIndex < 0
             ? NextDungeonStepIndex(steps, player)
-            : ((_cycleIndex + direction) % count + count) % count;
+            : BrowserTargetSelection.NextIndex(_cycleIndex, direction, count);
 
         var step = steps[_cycleIndex];
         SelectedDungeonStep = step;
@@ -3061,17 +3111,12 @@ public sealed class NavigationService
     {
         if (!IsAetherytePlace(place)) return false;
 
-        var match = _objectTable
-            .Where(o => o.ObjectKind == ObjectKind.Aetheryte)
-            .Select(o => (Obj: o, Gap: Distance2D(o.Position, place.Position)))
-            .Where(x => x.Gap <= MarkerObjectMatchRange)
-            .OrderBy(x => x.Gap)
-            .FirstOrDefault();
-        if (match.Obj == null) return false;
+        var actor = ResolveAetheryteMarker(place);
+        if (actor == null) return false;
 
-        var accepted = TargetFromBrowser(match.Obj);
-        _log.Info($"[Orte] Objekt zum Marker '{place.Name}': id={match.Obj.GameObjectId:X}, " +
-                  $"{match.Gap:F1} m vom Marker, anvisiert={accepted}");
+        var accepted = TargetFromBrowser(actor);
+        _log.Info($"[Orte] Objekt zum Marker '{place.Name}': id={actor.GameObjectId:X}, " +
+                  $"{Distance2D(actor.Position, place.Position):F1} m vom Marker, anvisiert={accepted}");
         return accepted;
     }
 
@@ -3118,6 +3163,9 @@ public sealed class NavigationService
         }
 
         if (_aimedAtId == candidate.GameObjectId) return;
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (now < _nextSelectionAimTick) return;
+        _nextSelectionAimTick = now + System.Diagnostics.Stopwatch.Frequency / 4;
 
         // Whatever the player picked themselves stays picked - but only while it
         // matters. Out of combat the browser selection IS the player's pick: the
@@ -3130,7 +3178,7 @@ public sealed class NavigationService
         if (current != null && !IsWorldProp(current) && IsInCombat()) return;
 
         var accepted = TargetFromBrowser(candidate);
-        _aimedAtId = candidate.GameObjectId;
+        _aimedAtId = accepted ? candidate.GameObjectId : 0;
         _log.Info($"[Nav] Ziel zur Auswahl: id={candidate.GameObjectId:X} " +
                   $"({candidate.Name.TextValue}), anvisiert={accepted}");
         // Only when the game took it: a refused target is not something the
@@ -3139,7 +3187,10 @@ public sealed class NavigationService
             _tolk.Speak(AccessibilityStrings.AimedAt(
                 candidate.ObjectKind == ObjectKind.GatheringPoint
                     ? DescribeGatheringPoint(candidate)
-                    : _objectNames.Describe(candidate)));
+                    : _objectNames.Describe(candidate))
+                + (GetSelectedQuestTravelGoal() is { } away && (away.TerritoryTypeId != _clientState.TerritoryType || away.MapId != _clientState.MapId)
+                    && _places.FindLocalEntranceOnRoute(away.MapId) != null
+                    ? AccessibilityStrings.QuestTravelConfirm(_places.GetMapName(_places.FindFirstHopToMap(away.MapId, out _)?.TargetMapId ?? 0)) : string.Empty));
     }
 
     /// <summary>
@@ -3148,8 +3199,69 @@ public sealed class NavigationService
     /// area (<c>TargetBaseId</c> 0), a dungeon station that is nothing to
     /// interact with (waypoint, boss arena, jump).
     /// </summary>
+    public IGameObject? GetSelectedNavigationObject() => ResolveSelectionObject();
+
+    private (uint Map, uint Objective, uint Base, byte Type, Vector3 Position)? _linkedObjectKey;
+    private (uint Map, PlaceDestination Place)? _placeObjectKey;
+    private ulong _placeObjectId;
+
+    private IGameObject? ResolveAetheryteMarker(PlaceDestination place)
+    {
+        var key = (_clientState.MapId, place);
+        if (_placeObjectKey != key) { _placeObjectKey = key; _placeObjectId = 0; }
+        var live = SelectionObjectResolver.AetheryteMarker(_objectTable, place.Position, _placeObjectId);
+        if (live != null) _placeObjectId = live.GameObjectId;
+        return live;
+    }
+    private ulong _linkedObjectId;
+    private LocalTransfer? _localTransfer;
+    private QuestDestination? _transferQuest;
+    private ObjectDestination? _transferObject;
+    private PlaceDestination? _transferPlace;
+
+    internal void SetLocalTransfer(LocalTransfer? transfer)
+    {
+        _localTransfer = transfer;
+        _transferQuest = SelectedQuestDestination;
+        _transferObject = SelectedObjectDestination;
+        _transferPlace = SelectedPlaceDestination;
+    }
+
+    private IGameObject? ResolveLinkedSelection(uint objective, uint baseId, byte type, Vector3 position)
+    {
+        var key = (_clientState.MapId, objective, baseId, type, position);
+        if (_linkedObjectKey != key) { _linkedObjectKey = key; _linkedObjectId = 0; }
+        var live = SelectionObjectResolver.Linked(_objectTable, baseId, type, position, _linkedObjectId);
+        if (live != null) _linkedObjectId = live.GameObjectId;
+        return live;
+    }
+
     private IGameObject? ResolveSelectionObject()
     {
+        if (SelectedQuestDestination is { } pendingQuest && (pendingQuest.QuestId != 0 || pendingQuest.NativeMarkerId != 0)
+            && !_questObjectiveAvailable) return null;
+        if (_localTransfer is { } transfer)
+        {
+            var arrived = _objectTable.LocalPlayer is { } player
+                && transfer.HasArrived(player.Position);
+            if (_transferQuest != SelectedQuestDestination || _transferObject != SelectedObjectDestination
+                || _transferPlace != SelectedPlaceDestination || !_places.AreSameMap(transfer.MapId, _clientState.MapId) || arrived)
+                _localTransfer = null;
+            else return ResolveLinkedSelection(transfer.WarpId, transfer.BaseId, transfer.LevelType, transfer.Position);
+        }
+        var questTravelGoal = GetSelectedQuestTravelGoal();
+        // Retain the exact live browser pick; do not substitute a nearby enemy
+        // or another nest with the same name.
+        if (SelectedObjectDestination is { } selected)
+            return SelectionObjectResolver.Exact(_objectTable, selected);
+
+        if (SelectedPlaceDestination is { IsZoneTransition: false } marker && IsAetherytePlace(marker))
+            return ResolveAetheryteMarker(marker);
+
+        if (SelectedPlaceDestination is { IsZoneTransition: true } place
+            && _places.FindLocalEntranceOnRoute(place.TargetMapId) is { } placeEntrance)
+            return ResolveLinkedSelection(0, placeEntrance.BaseId, placeEntrance.LevelType, placeEntrance.Position);
+
         // Sammelstelle: exakt ueber die Basis-Id des Knotens plus Naehe - eine
         // Basis-Id deckt einen kleinen Schwarm einzelner Knoten ab.
         if (_selectedGatherSpot is { } spot)
@@ -3183,15 +3295,19 @@ public sealed class NavigationService
                 prefer: o => o.IsTargetable);
         }
 
+        // A quest inside an interaction-only interior first targets its exact
+        // local entrance. The destination's foreign coordinates are meaningless
+        // here; retain the quest selection so a new press after entering uses it.
+        if (questTravelGoal is { } away && (away.TerritoryTypeId != _clientState.TerritoryType || !_places.AreSameMap(away.MapId, _clientState.MapId))
+            && _places.FindLocalEntranceOnRoute(away.MapId) is { } entrance)
+            return ResolveLinkedSelection(away.ObjectiveLevelId, entrance.BaseId, entrance.LevelType, entrance.Position);
+
         // Quest-Ziel: ueber den Spiel-Link Marker -> Level.Object (TargetBaseId),
         // eingegrenzt auf die Objektart, die Level.Type nennt.
-        if (SelectedQuestDestination is { InCurrentZone: true, TargetBaseId: > 0 } dest)
+        if (questTravelGoal is { TargetBaseId: > 0 } dest && dest.TerritoryTypeId == _clientState.TerritoryType
+            && (dest.MapId == 0 || _places.AreSameMap(dest.MapId, _clientState.MapId)))
         {
-            var expected = ExpectedObjectKind(dest.TargetLevelType);
-            return NearestObject(dest.Position, MarkerObjectMatchRange,
-                obj => obj.BaseId == dest.TargetBaseId
-                       && (expected == null || obj.ObjectKind == expected.Value),
-                prefer: o => o.IsTargetable);
+            return ResolveLinkedSelection(dest.ObjectiveLevelId, dest.TargetBaseId, dest.TargetLevelType, dest.Position);
         }
 
         return null;
@@ -3231,7 +3347,7 @@ public sealed class NavigationService
             if (obj == null || !match(obj)) continue;
 
             var gap = Distance2D(obj.Position, position);
-            if (gap > bestGap) continue;
+            if (gap > range) continue;
 
             var preferred = prefer?.Invoke(obj) ?? false;
             if (best != null && (preferred != bestPreferred ? !preferred : gap >= bestGap))
@@ -3275,9 +3391,83 @@ public sealed class NavigationService
     /// </summary>
     public bool TargetFromBrowser(IGameObject obj)
     {
-        _ownSelectionId = obj.GameObjectId;
-        _targetManager.Target = obj;
+        _ownSelectionId = BrowserTargetSelection.Select(_targetManager, obj) ? obj.GameObjectId : 0;
         return (_targetManager.Target?.GameObjectId ?? 0) == obj.GameObjectId;
+    }
+
+    public bool HasWorldObjectConfirmSelection()
+    {
+        // A fresh explicit prop choice owns Confirm even in combat or after a
+        // rejected target set. Letting generic Confirm through could attack the
+        // enemy still left in the target window instead of the chosen nest.
+        if (SelectedObjectDestination?.Kind is ObjectKind.EventObj or ObjectKind.Treasure
+            or ObjectKind.GatheringPoint or ObjectKind.Aetheryte) return true;
+        if (IsInCombat() && _targetManager.Target is { } combatTarget
+            && !BrowserTargetSelection.IsWorldObject(combatTarget)) return false;
+        if (GetSelectedQuestTravelGoal() is { } quest && !IsInCombat()
+            && (quest.TerritoryTypeId != _clientState.TerritoryType || quest.MapId != 0 && !_places.AreSameMap(quest.MapId, _clientState.MapId)))
+            return true;
+        if (GetSelectedQuestTravelGoal() is { TargetLevelType: 8 or 45 } && !IsInCombat()) return true;
+        var candidate = ResolveSelectionObject() ?? _targetManager.Target ?? _targetManager.SoftTarget;
+        return BrowserTargetSelection.IsWorldObject(candidate)
+            || !IsInCombat() && (SelectedQuestDestination is { TargetLevelType: 45 }
+                || _selectedGatherSpot != null);
+    }
+
+    public unsafe void ConfirmSelectedWorldObject()
+    {
+        if (!RefreshSelectedQuest())
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.QuestGoalUpdating);
+            return;
+        }
+        if (GetSelectedQuestTravelGoal() is { } away && (away.TerritoryTypeId != _clientState.TerritoryType
+            || away.MapId != 0 && !_places.AreSameMap(away.MapId, _clientState.MapId))
+            && _places.FindLocalEntranceOnRoute(away.MapId) == null)
+        {
+            var hop = _places.FindFirstHopToMap(away.MapId, out _);
+            _tolk.SpeakInterrupt(hop is { IsZoneTransition: true }
+                ? AccessibilityStrings.WalkingTransitionConfirm(hop.Name)
+                : AccessibilityStrings.QuestTravelUnavailable(away.QuestName, _places.GetMapName(away.MapId)));
+            return;
+        }
+        var candidate = ResolveSelectionObject() ?? _targetManager.Target ?? _targetManager.SoftTarget;
+        // Missing explicit selections cannot fall back to the game's target.
+        if (SelectedObjectDestination is { } selected && _localTransfer == null)
+            candidate = SelectionObjectResolver.Exact(_objectTable, selected);
+        else if (SelectedQuestDestination != null || _selectedGatherSpot != null
+            || SelectedPlaceDestination is { IsZoneTransition: true } || _localTransfer != null)
+            candidate = ResolveSelectionObject();
+        var system = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
+        var hardBefore = _targetManager.Target?.GameObjectId ?? 0;
+        var request = system != null && candidate != null
+            ? BrowserTargetSelection.ConfirmQuestOrWorldObject(_targetManager, candidate,
+                SelectedQuestDestination != null,
+                obj => system->InteractWithObject((CSGameObject*)obj.Address, checkLineOfSight: true))
+            : default;
+        var hardAfter = _targetManager.Target?.GameObjectId ?? 0;
+        var distance = candidate != null && _objectTable.LocalPlayer is { } player
+            ? Vector3.Distance(player.Position, candidate.Position) : float.NaN;
+        _log.Info($"[Nav] World-object Confirm: object={candidate?.GameObjectId ?? 0:X}, " +
+                  $"kind={candidate?.ObjectKind}, targetable={candidate?.IsTargetable}, distance={distance:F1}, " +
+                  $"targetAccepted={request.TargetAccepted}, interactionRequested={request.Requested}, " +
+                  $"nativeResult={request.NativeResult:X}, hardBefore={hardBefore:X}, hardAfter={hardAfter:X}");
+        if (candidate == null && GetSelectedQuestTravelGoal() is { } missing)
+            _log.Info($"[Nav] Missing quest object: quest={missing.QuestId}, level={missing.ObjectiveLevelId}, " +
+                $"base={missing.TargetBaseId}, type={missing.TargetLevelType}, targetMap={missing.MapId}, " +
+                $"currentMap={_clientState.MapId}, retained={_linkedObjectId:X}, player={_objectTable.LocalPlayer?.Position}");
+        if (request.Requested)
+        {
+            if (hardAfter == candidate!.GameObjectId) _ownSelectionId = hardAfter;
+            return;
+        }
+        var name = SelectedObjectDestination?.Name ?? SelectedQuestDestination?.QuestName
+            ?? (candidate == null ? CurrentCategoryLabel : _objectNames.Describe(candidate));
+        _tolk.SpeakInterrupt(candidate == null
+            ? AccessibilityStrings.SelectedObjectMissing(name)
+            : !candidate.IsTargetable
+                ? AccessibilityStrings.SelectedObjectUnavailable(name)
+                : AccessibilityStrings.WorldObjectInteractionUnavailable);
     }
 
     /// <summary>
@@ -3510,17 +3700,22 @@ public sealed class NavigationService
 
         var listed = inRange.Where(IsWorthBrowsing).ToList();
 
-        // One line per key press, and only when something was actually dropped:
-        // it shows in the log how much the filter takes off the list - and would
-        // show at once if it ever took too much. Two rules drop things here:
-        // nameless-and-untargetable extras, and gathering nodes the game does not
-        // currently raise (see IsWorthBrowsing).
-        if (listed.Count != inRange.Count)
-            _log.Info($"[Nav] Browser: {listed.Count} von {inRange.Count} Objekten " +
-                      $"({inRange.Count - listed.Count} nicht nutzbar ausgeblendet).");
+        // Record identities, not just a count: the old log could not tell which
+        // three objects disappeared. Only changed snapshots are logged.
+        var listedIds = listed.Select(o => o.GameObjectId).ToHashSet();
+        var snapshot = string.Join("; ", inRange.Select(o =>
+            $"id={o.GameObjectId:X} base={o.BaseId} kind={o.ObjectKind} targetable={o.IsTargetable} "
+            + $"listed={listedIds.Contains(o.GameObjectId)} name='{_objectNames.Resolve(o)}'"));
+        if (snapshot != _lastBrowserFilterSnapshot)
+        {
+            _lastBrowserFilterSnapshot = snapshot;
+            _log.Info($"[BrowserFilter] listed={listed.Count}/{inRange.Count}; {snapshot}");
+        }
 
         return listed;
     }
+
+    private string _lastBrowserFilterSnapshot = string.Empty;
 
     /// <summary>
     /// Whether an object belongs in the browser list at all.
@@ -3536,7 +3731,8 @@ public sealed class NavigationService
     /// What stays:
     ///  - gathering nodes the game lets you TARGET (their type and level ARE the
     ///    description, see DescribeGatheringPoint),
-    ///  - anything with a speakable name, the object's own or the sheets' one,
+    ///  - targetable event props, including quest objects,
+    ///  - other objects with a speakable name, the object's own or the sheets' one,
     ///  - nameless things the game lets you TARGET: the game marks those as
     ///    interactive, so hiding them could hide something usable. They are
     ///    announced as "Objekt ohne Namen" rather than as a blank.
@@ -3575,7 +3771,10 @@ public sealed class NavigationService
     /// </summary>
     private bool IsWorthBrowsing(IGameObject o)
         => !IsEmptiedTreasure(o)
-           && (o.ObjectKind == ObjectKind.GatheringPoint
+           // Targetability describes interaction, not presence. Named event
+           // objects include doors and mechanisms which are temporarily locked.
+           // Only gathering placements require the measured availability rule.
+           && (o.ObjectKind is ObjectKind.GatheringPoint
                ? o.IsTargetable
                : _objectNames.Resolve(o) != null || o.IsTargetable);
 
@@ -3646,7 +3845,7 @@ public sealed class NavigationService
         var player = _objectTable.LocalPlayer;
         if (player == null)
         {
-            _tolk.SpeakInterrupt("Objekt-Sonde: kein Spieler.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ObjectProbeNoPlayer);
             return;
         }
 
@@ -3673,7 +3872,7 @@ public sealed class NavigationService
                 $"pos={o.Position} id={o.GameObjectId:X}");
         }
 
-        _tolk.SpeakInterrupt($"Objekt-Sonde: {near.Count} Objekte im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.ObjectProbeSaved(near.Count));
 
         DumpHousingPlot();
         DumpMapMarkers();
@@ -3788,7 +3987,7 @@ public sealed class NavigationService
             _log.Info($"[MarkerProbe] Ort '{p.Name}' ({p.TypeLabel}) " +
                       $"welt=({p.Position.X:F1}|{p.Position.Z:F1})");
 
-        _tolk.SpeakInterrupt($"Marker-Sonde: {eventCount} Event, {miniCount} Minimap, {places.Count} Orte im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.MarkerProbeSaved(eventCount, miniCount, places.Count));
     }
 
     // ── Sammelpunkte (Minenarbeiter / Gärtner) ──────────────────────
@@ -3802,6 +4001,7 @@ public sealed class NavigationService
     // The type name is READ, never derived from an id we made up: GatheringType
     // has no class column, so any "0 = miner" table would be our invention.
     private readonly Dictionary<uint, (string Type, int Level)> _gatheringCache = [];
+    private bool _gatheringNamesRussian;
 
     /// <summary>
     /// Type and required level of a gathering node, or null when the id is not
@@ -3809,6 +4009,11 @@ public sealed class NavigationService
     /// </summary>
     private (string Type, int Level)? GetGatheringInfo(uint dataId)
     {
+        if (_gatheringNamesRussian != Loc.IsRussian)
+        {
+            _gatheringCache.Clear();
+            _gatheringNamesRussian = Loc.IsRussian;
+        }
         if (_gatheringCache.TryGetValue(dataId, out var hit))
             return hit.Type.Length == 0 ? null : hit;
 
@@ -3826,7 +4031,8 @@ public sealed class NavigationService
             return null;
         }
 
-        var typeName = baseRow.Value.GatheringType.ValueNullable?.Name.ExtractText() ?? string.Empty;
+        var typeName = baseRow.Value.GatheringType.ValueNullable is { } gatherType
+            ? RussianGameText.Name(_data, gatherType, x => x.Name) : string.Empty;
         var level    = baseRow.Value.GatheringLevel;
         var info     = (Type: typeName, Level: (int)level);
         _gatheringCache[dataId] = info;
@@ -3996,6 +4202,9 @@ public sealed class NavigationService
         var label = name == null
             ? $"{NpcPrefix(obj)}{AccessibilityStrings.UnnamedOfKind(obj.ObjectKind)}"
             : $"{NpcPrefix(obj)}{name}{_objectNames.Qualifier(obj)}";
+
+        if (obj.ObjectKind == ObjectKind.EventObj && !obj.IsTargetable)
+            label = AccessibilityStrings.ControlUnavailable(label);
 
         // The kind word stays omitted for nameless objects - the stand-in names
         // the kind already, and "Objekt ohne Namen 2, Objekt" reads twice.
@@ -4330,6 +4539,21 @@ public sealed class NavigationService
         StartWalkGuide(0, name, position, MathF.Max(ArrivalDistance, arrivalRange));
     }
 
+    public void StartWalkGuideToObject(IGameObject obj, string name)
+    {
+        _walkBeaconKind = BeaconKindForObject(obj);
+        StartWalkGuide(obj.GameObjectId, name, obj.Position, ArrivalDistance);
+    }
+
+    public void RetargetWalkGuideToObject(IGameObject obj)
+    {
+        if (!_walkGuideActive) return;
+        _walkTargetId = obj.GameObjectId;
+        _walkDestPosition = obj.Position;
+        ClearRoute();
+        RequestRoute(_objectTable.LocalPlayer?.Position ?? obj.Position, isReroute: true);
+    }
+
     /// <summary>Die Stimme der aktuellen Browser-Auswahl, ohne Zonen- oder Positionspruefung.</summary>
     private BeaconKind BeaconKindForSelection()
     {
@@ -4572,8 +4796,9 @@ public sealed class NavigationService
             // CheckMeshEnd tells the truth as soon as the player actually walks.
             if (RouteIsOnlyAppendedDestination(Vector3.Distance(player.Position, _walkDestPosition)))
                 _log.Info("[Nav] Gehhilfe: Route besteht nur aus dem angehängten Ziel - keine Routen-Vorschau.");
-            else
-                _tolk.Speak(_routes.DescribeRoute(_walkTargetName, waypoints));
+            // A route description is available on the explicit preview key.
+            // Starting guidance must not announce its summed length as though
+            // it were Num5's distance to the destination.
         }
         else if (_route != null && _routeCursor < _route.Count)
         {
@@ -4728,6 +4953,8 @@ public sealed class NavigationService
 
     /// <summary>
     /// Turns the player to where the walk guide is steering, once per press.
+    /// Without a walk guide, only reads the current game target's position;
+    /// neither the character nor the camera is turned in that case.
     /// Built for MANUAL walking: the guide says "24 Meter, leicht rechts", but
     /// finding that heading by ear costs time at every corner.
     /// <para>
@@ -4756,7 +4983,8 @@ public sealed class NavigationService
         var guidePoint = CurrentGuidePoint;
         if (guidePoint == null)
         {
-            _tolk.SpeakInterrupt(AccessibilityStrings.FaceNoRoute);
+            // Reading a target needs no route and must never change facing.
+            AnnounceSelectedTargetDirection();
             return;
         }
 
@@ -4791,6 +5019,41 @@ public sealed class NavigationService
                   $"dirH={(gameCam != null ? gameCam->DirH : float.NaN):F3}");
 
         _tolk.SpeakInterrupt(AccessibilityStrings.FaceAligned(FormatDistance(distance)));
+    }
+
+    /// <summary>Reads the current hard/soft target without tracking, routing or turning.</summary>
+    private void AnnounceSelectedTargetDirection()
+    {
+        var target = _targetManager.Target ?? _targetManager.SoftTarget;
+        if (target == null)
+        {
+            _log.Info("[Nav] Numpad5: no guide, browser destination, game target or active walk");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FaceNoRoute);
+            return;
+        }
+
+        var name = _enemyMarkers.SpokenPrefix(target) + _objectNames.Describe(target);
+        AnnounceDestinationDirection(name, target.Position);
+        _log.Info($"[Nav] Numpad5 game target: id={target.GameObjectId:X}, no turn");
+    }
+
+    /// <summary>Reads a destination without moving, targeting or starting navigation.
+    /// Map markers have no reliable altitude, so read their horizontal distance only.</summary>
+    public void AnnounceDestinationDirection(string name, Vector3 position, bool heightIsGuess = false)
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null) return;
+        var distance = heightIsGuess
+            ? Distance2D(player.Position, position)
+            : Vector3.Distance(player.Position, position);
+        var sameHorizontalPosition = Distance2D(player.Position, position) < 1f;
+        var direction = sameHorizontalPosition
+            ? AccessibilityStrings.TargetSameHorizontalPosition
+            : CalculateDirection(player, position);
+        _tolk.SpeakInterrupt(AccessibilityStrings.TargetDirection(
+            name, FormatDistance(distance), direction) +
+            (heightIsGuess ? "" : AccessibilityStrings.TargetHeight(position.Y - player.Position.Y)));
+        _log.Info($"[Nav] Numpad5 destination read: '{name}', dist={distance:F1}, heightIsGuess={heightIsGuess}, no turn");
     }
 
     /// <summary>
@@ -5465,6 +5728,8 @@ public sealed class NavigationService
     private string CalculateDirection(IGameObject player, Vector3 targetPos,
                                       [CallerMemberName] string caller = "")
     {
+        if (Distance2D(player.Position, targetPos) < 1f)
+            return AccessibilityStrings.TargetSameHorizontalPosition;
         var word = RouteService.CompassAdjective(player.Position, targetPos);
         // Weiter berechnet, aber nur noch fuer die Sonde: sie misst die Seite,
         // an der der PEIL-TON haengt, und der bleibt relativ.

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Inventory;
@@ -28,6 +28,7 @@ public sealed class InventoryService
     private readonly Configuration _config;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
+    private readonly GameDescriptionService _descriptions;
 
     // The four 35-slot pages that make up the normal carried inventory.
     private static readonly GameInventoryType[] BagPages =
@@ -37,7 +38,7 @@ public sealed class InventoryService
     };
 
     public InventoryService(IGameInventory inventory, IDataManager data, IClientState clientState,
-                            Configuration config, TolkService tolk, IPluginLog log)
+                            Configuration config, TolkService tolk, IPluginLog log, GameDescriptionService descriptions)
     {
         _inventory = inventory;
         _data = data;
@@ -45,6 +46,7 @@ public sealed class InventoryService
         _config = config;
         _tolk = tolk;
         _log = log;
+        _descriptions = descriptions;
     }
 
     /// <summary>
@@ -119,7 +121,7 @@ public sealed class InventoryService
             {
                 if (item.IsEmpty || item.ItemId == 0) continue;
 
-                var name = ResolveItemName(item.BaseItemId);
+                var name = ResolveItemLabel(item.BaseItemId);
                 var hq = item.IsHq ? AccessibilityStrings.HighQuality : string.Empty;
                 var set = IsRegisteredToGearset(item) ? AccessibilityStrings.InGearsetShort : string.Empty;
                 _log.Info($"[Inventory] {page} slot={item.InventorySlot} id={item.ItemId} " +
@@ -172,8 +174,8 @@ public sealed class InventoryService
 
     /// <summary>
     /// How many of an item the player holds, or -1 when the inventory is not
-    /// readable yet. Counts NQ only (<c>isHq: false</c> default) â€” for crafting
-    /// materials that accept either quality use <see cref="CountOfNqAndHq"/>.
+    /// readable yet. Counts NQ by default, or HQ when highQuality is true.
+    /// For both qualities together use <see cref="CountOfNqAndHq"/>.
     ///
     /// Uses the GAME'S OWN count (<c>InventoryManager.GetInventoryItemCount</c>),
     /// not a sum over containers: a currency like an achievement certificate
@@ -182,7 +184,7 @@ public sealed class InventoryService
     /// pieces are included for the same reason the game includes them when it
     /// decides whether a trade is affordable.
     /// </summary>
-    public unsafe int CountOf(uint itemId)
+    public unsafe int CountOf(uint itemId, bool highQuality = false)
     {
         if (itemId == 0) return -1;
 
@@ -191,11 +193,11 @@ public sealed class InventoryService
 
         try
         {
-            return manager->GetInventoryItemCount(itemId);
+            return manager->GetInventoryItemCount(itemId, isHq: highQuality);
         }
         catch (Exception ex)
         {
-            _log.Error($"[Inventory] Bestandsabfrage fÃ¼r Item {itemId} fehlgeschlagen: {ex.Message}");
+            _log.Error($"[Inventory] Bestandsabfrage für Item {itemId} fehlgeschlagen: {ex.Message}");
             return -1;
         }
     }
@@ -223,7 +225,7 @@ public sealed class InventoryService
         }
         catch (Exception ex)
         {
-            _log.Error($"[Inventory] NQ+HQ-Bestand fÃ¼r Item {itemId} fehlgeschlagen: {ex.Message}");
+            _log.Error($"[Inventory] NQ+HQ-Bestand für Item {itemId} fehlgeschlagen: {ex.Message}");
             return -1;
         }
     }
@@ -254,7 +256,7 @@ public sealed class InventoryService
         // than a broken check (RaptureGearsetModule.NumGearsets).
         if (module->NumGearsets == 0)
         {
-            _log.Info("[Inventory] Keine AusrÃ¼stungssets angelegt - keine Markierung mÃ¶glich.");
+            _log.Info("[Inventory] Keine Ausrüstungssets angelegt - keine Markierung möglich.");
             return false;
         }
 
@@ -473,7 +475,7 @@ public sealed class InventoryService
         return result;
     }
 
-    // â”€â”€ Neue Quest-Gegenstaende melden â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Neue Quest-Gegenstaende melden ───────────────────────────────
     // A quest hands the player an item that a fight depends on, and nothing
     // tells a blind player that it is usable. The loot channel already says
     // "Du hast X erhalten"; this announcement carries the part the chat does
@@ -559,7 +561,7 @@ public sealed class InventoryService
         if (!_data.GetExcelSheet<LuminaEventItem>().TryGetRow(itemId, out var row)) return false;
         if (row.Action.RowId == 0) return false;
 
-        name = row.Name.ExtractText();
+        name = RussianGameText.Name(_data, row, x => x.Name);
         castTime = row.CastTime;
         return !string.IsNullOrWhiteSpace(name);
     }
@@ -596,7 +598,6 @@ public sealed class InventoryService
         GameInventoryType.ArmorySoulCrystal,
     };
 
-
     /// <summary>
     /// Maps item icon ids to names for everything the player currently owns.
     /// Hand-over grids (Request/InventoryEventGrid) show icon-only slots with
@@ -609,7 +610,7 @@ public sealed class InventoryService
     {
         var map = new Dictionary<uint, string>();
         foreach (var (icon, entry) in BuildOwnedIconMap())
-            map[icon] = entry.Name;
+            map[icon] = entry.ItemId == 0 ? entry.Name : ResolveItemLabel(entry.ItemId);
         return map;
     }
 
@@ -629,7 +630,7 @@ public sealed class InventoryService
             if (item.IsEmpty || item.ItemId == 0) continue;
             if (_data.GetExcelSheet<LuminaEventItem>().TryGetRow(item.ItemId, out var row))
             {
-                var name = row.Name.ExtractText();
+                var name = RussianGameText.Name(_data, row, x => x.Name);
                 if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, 0);
             }
         }
@@ -644,13 +645,15 @@ public sealed class InventoryService
             if (item.IsEmpty || item.ItemId == 0) continue;
             if (_data.GetExcelSheet<LuminaItem>().TryGetRow(item.BaseItemId, out var row))
             {
-                var name = row.Name.ExtractText();
+                var name = RussianGameText.Name(_data, row, x => x.Name);
                 if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, item.BaseItemId);
             }
         }
     }
 
     private Dictionary<uint, (string Name, uint ItemId)>? _iconSheetCache;
+    private bool _iconSheetRussian;
+    private int _iconDisplayRevision;
 
     /// <summary>
     /// Resolves an item icon id to a name for the focus auto-announce. Prefers
@@ -666,10 +669,19 @@ public sealed class InventoryService
     {
         if (iconId == 0) return (string.Empty, 0);
 
-        if (BuildOwnedIconMap().TryGetValue(iconId, out var owned)) return owned;
+        if (BuildOwnedIconMap().TryGetValue(iconId, out var owned))
+            return (owned.ItemId == 0 ? owned.Name : ResolveItemLabel(owned.ItemId), owned.ItemId);
 
-        _iconSheetCache ??= BuildIconSheetCache();
-        return _iconSheetCache.TryGetValue(iconId, out var sheet) ? sheet : (string.Empty, 0);
+        if (_iconSheetCache == null || _iconSheetRussian != Loc.IsRussianItemActionText
+            || _iconDisplayRevision != GameDisplayText.Revision)
+        {
+            _iconSheetCache = BuildIconSheetCache();
+            _iconSheetRussian = Loc.IsRussianItemActionText;
+            _iconDisplayRevision = GameDisplayText.Revision;
+        }
+        return _iconSheetCache.TryGetValue(iconId, out var sheet)
+            ? (sheet.ItemId == 0 ? sheet.Name : ResolveItemLabel(sheet.ItemId), sheet.ItemId)
+            : (string.Empty, 0);
     }
 
     // Name -> Item row, over the WHOLE sheet. GearInfoService has a name map too,
@@ -677,6 +689,7 @@ public sealed class InventoryService
     // hairstyle book resolves to nothing there - which is exactly why shop rows
     // for those stayed a bare name (log 2026-08-16 00:30).
     private Dictionary<string, uint>? _itemNames;
+    private (LanguageMode Mode, Dalamud.Game.ClientLanguage Language, int Display)? _itemNamesKey;
 
     /// <summary>The item row a display name belongs to, or 0. Names that occur on
     /// more than one row are dropped from the map: an ambiguous name must not
@@ -684,40 +697,40 @@ public sealed class InventoryService
     public uint ResolveItemIdByName(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return 0;
-        _itemNames ??= BuildItemNameCache();
+        var key = (Loc.Mode, _data.Language, GameDisplayText.Revision);
+        if (_itemNames == null || _itemNamesKey != key)
+        {
+            _itemNames = BuildItemNameCache();
+            _itemNamesKey = key;
+        }
         return _itemNames.TryGetValue(name.Trim().ToLowerInvariant(), out var id) ? id : 0;
     }
 
+    /// <summary>Translate a known item label after the UI lookup, never its search key.</summary>
+    public string TranslateItemLabel(string name)
+    {
+        var id = ResolveItemIdByName(name);
+        return id == 0 ? name : ResolveItemLabel(id);
+    }
+
+    /// <summary>Spoken name and equipment positions; the plain name stays available for matching.</summary>
+    public string ResolveItemLabel(uint baseItemId)
+        => _data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)
+            ? EquipmentSpeech.WithSlots(row, ResolveItemName(baseItemId)) : ResolveItemName(baseItemId);
+
     private Dictionary<string, uint> BuildItemNameCache()
     {
-        var map       = new Dictionary<string, uint>();
-        var duplicate = new HashSet<string>();
-        foreach (var row in _data.GetExcelSheet<LuminaItem>())
-        {
-            var name = row.Name.ExtractText();
-            if (string.IsNullOrWhiteSpace(name)) continue;
-            var key = name.Trim().ToLowerInvariant();
-            if (!map.TryAdd(key, row.RowId)) duplicate.Add(key);
-        }
-        foreach (var key in duplicate) map.Remove(key);
-
-        _log.Info($"[Item] Namens-Cache gebaut: {map.Count} Namen, {duplicate.Count} mehrdeutig verworfen.");
+        var map = GameNameIndex.Build(_data.GetExcelSheet<LuminaItem>().Select(row =>
+            (row.RowId, row.Name.ExtractText(), GameDisplayText.Find(_data, row, x => x.Name)?.ExtractText())));
+        _log.Info($"[Item] Namens-Cache gebaut: {map.Count} eindeutige Namen.");
         return map;
     }
 
     /// <summary>The tooltip description of an Item sheet row, or "" when there is
     /// none (itemId 0, key items, or a row without a description). Raw sheet text -
-    /// the caller flattens line breaks for speech.</summary>
-    public string ResolveItemDescription(uint itemId)
-    {
-        if (itemId == 0) return string.Empty;
-        if (_data.GetExcelSheet<LuminaItem>().TryGetRow(itemId, out var row))
-        {
-            var desc = row.Description.ExtractText();
-            if (!string.IsNullOrWhiteSpace(desc)) return desc;
-        }
-        return string.Empty;
-    }
+    /// the caller flattens line breaks for speech. Russian descriptions use the
+    /// version-checked offline catalog; other languages keep the game text.</summary>
+    public string ResolveItemDescription(uint itemId) => _descriptions.Item(itemId);
 
     private Dictionary<uint, (string Name, uint ItemId)> BuildIconSheetCache()
     {
@@ -725,16 +738,16 @@ public sealed class InventoryService
         foreach (var row in _data.GetExcelSheet<LuminaItem>())
         {
             if (row.Icon == 0) continue;
-            var name = row.Name.ExtractText();
+            var name = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(name)) map[row.Icon] = (name, row.RowId);
         }
         foreach (var row in _data.GetExcelSheet<LuminaEventItem>())
         {
             if (row.Icon == 0) continue;
-            var name = row.Name.ExtractText();
+            var name = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(name)) map.TryAdd(row.Icon, (name, 0));
         }
-        _log.Info($"[Inventory] Icon-Sheet-Cache gebaut: {map.Count} EintrÃ¤ge.");
+        _log.Info($"[Inventory] Icon-Sheet-Cache gebaut: {map.Count} Einträge.");
         return map;
     }
 
@@ -746,7 +759,7 @@ public sealed class InventoryService
     {
         if (_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row))
         {
-            var name = row.Name.ExtractText();
+            var name = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
         return AccessibilityStrings.ItemFallback(baseItemId);
@@ -756,7 +769,7 @@ public sealed class InventoryService
     {
         if (_data.GetExcelSheet<LuminaEventItem>().TryGetRow(id, out var row))
         {
-            var name = row.Name.ExtractText();
+            var name = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
         return AccessibilityStrings.KeyItemFallback(id);

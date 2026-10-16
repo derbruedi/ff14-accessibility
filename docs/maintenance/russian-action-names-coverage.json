@@ -1,0 +1,13 @@
+{
+  "game_version": "2026.09.15.0000.0000",
+  "catalog_sha256": "e3fef3cb6a2092ee61da5801b9dc9afeced5d0c12d6822dbd6f1a1ddbd470dca",
+  "source_sha256": "8c2bea7720c5b8cc638ae2dd39735445e1b56dd1d2855ed6a267df625c54658f",
+  "glossary_sha256": "3dfa4a3455b950dc47fab5f865fec5a9309202aad7fcecb762b490a047c71c4b",
+  "unique_names": 124,
+  "rows": {
+    "CraftActionName": 433,
+    "BuddyActionName": 6,
+    "GeneralActionName": 43,
+    "ActionName": 56
+  }
+}

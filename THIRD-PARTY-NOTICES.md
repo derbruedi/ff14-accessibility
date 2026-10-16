@@ -11,6 +11,36 @@ If you redistribute FF14Accessibility, this file must travel with it.
 
 ## Shipped inside the plugin archive
 
+### XIV Rus game descriptions
+
+- Embedded resource: `FF14Accessibility.Resources.RussianDescriptions.json.gz`
+- Source: <https://github.com/xivrus/xiv_ru_weblate>, revision
+  `6a2733af6df0f86b133bcbf61c553dfacf80ec2d`.
+- Contains FINAL FANTASY XIV text and community Russian translations.
+  (C) SQUARE ENIX CO., LTD. All Rights Reserved. The source project identifies
+  this material as used under the FINAL FANTASY XIV Material Usage License;
+  it is not relicensed as AGPL by inclusion in this plugin.
+- Local translation additions and corrections are documented in
+  `tools/russian-descriptions/local-game-overrides.json` and `overrides.json`.
+  These additions have not been represented as approved by the XIV Rus team.
+- Generation instructions and source hashes:
+  `tools/russian-descriptions/README.md` and
+  `docs/maintenance/russian-descriptions-coverage.json`.
+
+- `RussianActionNames.json.gz` also contains source-matched names of items,
+  actions, traits, status effects, mounts, companions and supported interface
+  tables, plus status and deep-dungeon descriptions. Its XIV Rus contributions
+  use the same pinned revision. Local translations are kept in
+  `tools/russian-localization`; their coverage and provenance are recorded in
+  `docs/maintenance/russian-game-text-coverage.json`.
+- `RussianDescriptionTerms.json.gz` contains the accepted name glossary used
+  inside translated descriptions after the game's conditional text is evaluated.
+- `RussianCharacterText.json.gz` contains local translations of this project's
+  authored appearance descriptions. The original icon and shape tables remain
+  the source of the descriptions and their associations.
+- Translation model weights and unreviewed machine drafts are not included in
+  these resources or the plugin archive.
+
 These files are contained in `latest.zip` / `FF14Accessibility-vX.Y.Z.zip` and
 are installed next to the plugin.
 
@@ -178,6 +208,14 @@ install .NET themselves.
 
 ## Referenced at build time, not redistributed
 
+The separate Russian installer also ships **Microsoft.Data.Sqlite.Core 9.0.9**
+(MIT, <https://github.com/dotnet/efcore>), **SQLitePCLRaw 2.1.11**
+(Apache-2.0, <https://github.com/ericsink/SQLitePCL.raw>) and **LiteDB 5.0.21**
+(MIT, <https://github.com/litedb-org/LiteDB>) for selective removal of stored
+settings. SQLitePCLRaw uses Windows' system `winsqlite3.dll`; these libraries
+are not shipped in the game plugin. Their full licence texts are included in
+the installer source distribution under `Installer/Russian/licenses`.
+
 The plugin compiles against these assemblies but does **not** ship them. They
 come from the user's own XIVLauncher/Dalamud installation, which is installed
 separately.
@@ -197,6 +235,6 @@ IPC. No code of that plugin is linked or redistributed here.
 
 FINAL FANTASY XIV © SQUARE ENIX CO., LTD. All rights reserved. FINAL FANTASY is
 a registered trademark of Square Enix Holdings Co., Ltd. This project is not
-affiliated with, endorsed by, or sponsored by Square Enix. No game assets are
-contained in this repository; German strings quoted in the documentation are
-short observations used as evidence for technical findings.
+affiliated with, endorsed by, or sponsored by Square Enix. The localization
+catalogs contain game text and source strings for version matching as described
+above. Game archives, executables, textures and models are not redistributed.

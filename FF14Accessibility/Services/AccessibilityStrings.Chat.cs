@@ -26,9 +26,9 @@ public static partial class AccessibilityStrings
     public static string MenuEntry(string label, int index, int count) =>
         RowWithPosition(label, index, count);
 
-    public static string MenuClosed => IsGerman ? "Menü geschlossen." : "Menu closed.";
+    public static string MenuClosed => L("Menü geschlossen.", "Menu closed.", "Меню закрыто.");
 
-    public static string MenuEmpty => IsGerman ? "Keine Einträge." : "No entries.";
+    public static string MenuEmpty => L("Keine Einträge.", "No entries.", "Записей нет.");
 
     // ── Umsortieren: Zeile aufnehmen, schieben, ablegen ───────────
     //
@@ -40,24 +40,20 @@ public static partial class AccessibilityStrings
 
     /// <summary>Beim Aufnehmen einer Zeile: "Gegner aufgenommen, 4 von 21".</summary>
     public static string MenuGrabbed(string label, int index, int count) =>
-        IsGerman ? $"{label} aufgenommen, {index} von {count}."
-                 : $"{label} picked up, {index} of {count}.";
+        L($"{label} aufgenommen, {index} von {count}.", $"{label} picked up, {index} of {count}.", $"{label}: взято, {index} из {count}.");
 
     /// <summary>Nach jedem Schritt: "Gegner, jetzt 3 von 21".</summary>
     public static string MenuMovedTo(string label, int index, int count) =>
-        IsGerman ? $"{label}, jetzt {index} von {count}."
-                 : $"{label}, now {index} of {count}.";
+        L($"{label}, jetzt {index} von {count}.", $"{label}, now {index} of {count}.", $"{label}, теперь {index} из {count}.");
 
     /// <summary>Wenn es in diese Richtung nicht weitergeht. Sagt die Position
     /// erneut, damit ein Druck ins Leere nicht wie ein verschluckter klingt.</summary>
     public static string MenuMoveEnd(string label, int index, int count) =>
-        IsGerman ? $"{label} bleibt auf {index} von {count}."
-                 : $"{label} stays at {index} of {count}.";
+        L($"{label} bleibt auf {index} von {count}.", $"{label} stays at {index} of {count}.", $"{label}: дальше некуда, {index} из {count}.");
 
     /// <summary>Beim Ablegen: "Gegner abgelegt auf Platz 2".</summary>
     public static string MenuDropped(string label, int index) =>
-        IsGerman ? $"{label} abgelegt auf Platz {index}."
-                 : $"{label} dropped at position {index}.";
+        L($"{label} abgelegt auf Platz {index}.", $"{label} dropped at position {index}.", $"{label}: положено на место {index}.");
 
     /// <summary>
     /// Wird an jede Verschiebe-Ansage angehängt und sagt, WOZWISCHEN die
@@ -84,49 +80,48 @@ public static partial class AccessibilityStrings
         var hasAfter  = after.Length > 0;
 
         if (hasBefore && hasAfter)
-            return IsGerman ? $" Zwischen {before} und {after}." : $" Between {before} and {after}.";
+            return L($" Zwischen {before} und {after}.", $" Between {before} and {after}.", $" Между {before} и {after}.");
         if (hasBefore)
-            return IsGerman ? $" Hinter {before}." : $" After {before}.";
+            return L($" Hinter {before}.", $" After {before}.", $" После {before}.");
         if (hasAfter)
-            return IsGerman ? $" Vor {after}." : $" Before {after}.";
+            return L($" Vor {after}.", $" Before {after}.", $" Перед {after}.");
         return string.Empty;
     }
 
     // ── Einstellungsmenü ──────────────────────────────────────────
 
-    public static string OptionsTitle => IsGerman ? "Einstellungen" : "Settings";
-    public static string OptionsSounds => IsGerman ? "Töne" : "Sounds";
-    public static string OptionsAnnouncements => IsGerman ? "Ansagen" : "Announcements";
+    public static string OptionsTitle => L("Einstellungen", "Settings", "Настройки");
+    public static string OptionsSounds => L("Töne", "Sounds", "Звуки");
+    public static string OptionsAnnouncements => L("Ansagen", "Announcements", "Оповещения");
 
     /// <summary>Eine An/Aus-Zeile: "Kartenmarkierung, an".</summary>
     public static string OptionToggle(string name, bool on) =>
-        IsGerman ? $"{name}, {(on ? "an" : "aus")}" : $"{name}, {(on ? "on" : "off")}";
+        L($"{name}, {(on ? "an" : "aus")}", $"{name}, {(on ? "on" : "off")}",
+          $"{name}, {(on ? "вкл" : "выкл")}");
 
     /// <summary>Wird im Moment des Umschaltens gesprochen. <c>Rebuild</c> frischt nur
     /// die Beschriftung auf und liest die Zeile bewusst nicht erneut vor - ohne diese
     /// Ansage wäre das Umschalten also stumm.</summary>
     public static string OptionToggled(string name, bool on) =>
-        IsGerman ? $"{name} {(on ? "an" : "aus")}." : $"{name} {(on ? "on" : "off")}.";
+        L($"{name} {(on ? "an" : "aus")}.", $"{name} {(on ? "on" : "off")}.",
+          $"{name} {(on ? "вкл" : "выкл")}.");
 
     /// <summary>Eine Lautstärke-Zeile: "Beacon, 35 Prozent" oder "Beacon, aus".</summary>
     public static string OptionVolume(string name, float volume) =>
         volume <= 0f
-            ? (IsGerman ? $"{name}, aus" : $"{name}, off")
-            : (IsGerman ? $"{name}, {(int)MathF.Round(volume * 100)} Prozent"
-                        : $"{name}, {(int)MathF.Round(volume * 100)} percent");
+            ? (L($"{name}, aus", $"{name}, off", $"{name}, выкл"))
+            : (L($"{name}, {(int)MathF.Round(volume * 100)} Prozent", $"{name}, {(int)MathF.Round(volume * 100)} percent", $"{name}, {(int)MathF.Round(volume * 100)} процентов"));
 
     /// <summary>Eine einzelne Stufe im Lautstärke-Untermenü.</summary>
     public static string VolumeStep(float volume) =>
         volume <= 0f
-            ? (IsGerman ? "Aus" : "Off")
-            : (IsGerman ? $"{(int)MathF.Round(volume * 100)} Prozent"
-                        : $"{(int)MathF.Round(volume * 100)} percent");
+            ? (L("Aus", "Off", "Выкл"))
+            : (L($"{(int)MathF.Round(volume * 100)} Prozent", $"{(int)MathF.Round(volume * 100)} percent", $"{(int)MathF.Round(volume * 100)} процентов"));
 
     public static string VolumeSet(string name, float volume) =>
         volume <= 0f
-            ? (IsGerman ? $"{name} aus." : $"{name} off.")
-            : (IsGerman ? $"{name} auf {(int)MathF.Round(volume * 100)} Prozent."
-                        : $"{name} at {(int)MathF.Round(volume * 100)} percent.");
+            ? (L($"{name} aus.", $"{name} off.", $"{name} выкл."))
+            : (L($"{name} auf {(int)MathF.Round(volume * 100)} Prozent.", $"{name} at {(int)MathF.Round(volume * 100)} percent.", $"{name}: {(int)MathF.Round(volume * 100)} процентов."));
 
     // Namen der einzelnen Einstellungen. Jede Zeile hier hat ein Feld in
     // Configuration und einen Dienst dahinter, der es liest - eine Beschriftung ohne
@@ -138,99 +133,83 @@ public static partial class AccessibilityStrings
     // 2026-08-23 laeuft er nur waehrend eines Laufs, und die Beschriftung muss
     // das sagen, sonst sucht der Spieler den Fehler beim Ton statt beim Lauf.
     /// <summary>Schalter für den Peil-Ton, der während eines Laufs die Richtung hält.</summary>
-    public static string OptTargetBeacon => IsGerman ? "Peil-Ton beim Laufen" : "Navigation beacon";
+    public static string OptTargetBeacon => L("Peil-Ton beim Laufen", "Navigation beacon", "Навигационный маяк при беге");
 
     // Heisst weiterhin so, weil es die LAUTSTAERKE desselben Tons ist.
-    public static string OptBeacon => IsGerman ? "Lautstärke Peil-Ton" : "Navigation beacon volume";
+    public static string OptBeacon => L("Lautstärke Peil-Ton", "Navigation beacon volume", "Громкость навигационного маяка");
 
     /// <summary>Schalter für die HP- und MP-Töne (jede 10-Prozent-Stufe).</summary>
-    public static string OptVitalCues => IsGerman ? "Töne für Leben und Mana" : "Health and mana tones";
+    public static string OptVitalCues => L("Töne für Leben und Mana", "Health and mana tones", "Звуки жизни и маны");
 
     /// <summary>Lautstärke der HP- und MP-Töne.</summary>
     public static string OptVitalCueVolume =>
-        IsGerman ? "Lautstärke Leben und Mana" : "Health and mana tone volume";
-    public static string OptRouteCues => IsGerman ? "Wegpunkt- und Ankunftston" : "Waypoint and arrival cues";
+        L("Lautstärke Leben und Mana", "Health and mana tone volume", "Громкость жизни и маны");
+    public static string OptRouteCues => L("Wegpunkt- und Ankunftston", "Waypoint and arrival cues", "Звуки путевой точки и прибытия");
 
     /// <summary>Schalter für Anstoß- und Kantentöne beim freien Laufen.</summary>
     public static string OptMovementCues =>
-        IsGerman ? "Anstoß- und Kantentöne" : "Bump and ledge tones";
+        L("Anstoß- und Kantentöne", "Bump and ledge tones", "Звуки толчков и краёв");
 
     /// <summary>Lautstärke der Anstoß- und Kantentöne.</summary>
     public static string OptMovementCueVolume =>
-        IsGerman ? "Lautstärke Anstoß und Kante" : "Bump and ledge tone volume";
+        L("Lautstärke Anstoß und Kante", "Bump and ledge tone volume", "Громкость звуков толчков и краёв");
 
     // AoE-Warnung: die Lautstärke gab es als Konfigurationswert schon lange, aber
     // in keinem Menü - sie war damit nicht erreichbar. Der Klang kam 2026-08-21
     // auf Wunsch des Spielers dazu.
-    public static string OptAoeWarnVolume => IsGerman
-        ? "Lautstärke AoE-Warnung"
-        : "AoE warning volume";
+    public static string OptAoeWarnVolume => L("Lautstärke AoE-Warnung", "AoE warning volume", "Громкость предупреждения об AoE");
 
-    public static string OptAoeWarnTone => IsGerman
-        ? "Klang AoE-Warnung"
-        : "AoE warning sound";
+    public static string OptAoeWarnTone => L("Klang AoE-Warnung", "AoE warning sound", "Звук предупреждения об AoE");
 
     /// <summary>Name einer Warnton-Stimme, wie ihn die Auswahl vorliest.
     /// Beschreibend statt technisch: "300 Hertz mit Obertönen" sagt niemandem,
     /// wie etwas klingt.</summary>
     public static string AoeToneName(AoeWarnTone tone) => tone switch
     {
-        AoeWarnTone.Bright => IsGerman ? "Hell (bisheriger Klang)" : "Bright (previous sound)",
-        AoeWarnTone.Soft   => IsGerman ? "Weich" : "Soft",
-        AoeWarnTone.Deep   => IsGerman ? "Tiefes Brummen" : "Deep hum",
-        AoeWarnTone.Wave   => IsGerman ? "An- und abschwellend" : "Swelling",
-        _                  => IsGerman ? "Unbekannt" : "Unknown",
+        AoeWarnTone.Bright => L("Hell (bisheriger Klang)", "Bright (previous sound)", "Яркий (прежний звук)"),
+        AoeWarnTone.Soft   => L("Weich", "Soft", "Мягкий"),
+        AoeWarnTone.Deep   => L("Tiefes Brummen", "Deep hum", "Низкий гул"),
+        AoeWarnTone.Wave   => L("An- und abschwellend", "Swelling", "Нарастающий и затухающий"),
+        _                  => L("Unbekannt", "Unknown", "Неизвестный"),
     };
 
     /// <summary>Die Zeile, die das Untermenü öffnet: "Klang AoE-Warnung, Weich".</summary>
     public static string OptionChoice(string name, string value) =>
-        IsGerman ? $"{name}, {value}" : $"{name}, {value}";
+        L($"{name}, {value}", $"{name}, {value}", $"{name}, {value}");
 
     /// <summary>Bestätigung nach der Wahl eines Klangs.</summary>
     public static string AoeToneSet(string value) =>
-        IsGerman ? $"Warnton {value}." : $"Warning sound {value}.";
+        L($"Warnton {value}.", $"Warning sound {value}.", $"Звук предупреждения: {value}.");
 
     // ── Warnstimme (zweiter Sprachkanal) ──────────────────────────────────────
     // Sie heißt im Menü nicht "SAPI": für den Spieler zählt, WAS sie tut - dass
     // die Kampfwarnungen an der Sprachausgabe vorbeigehen und dort nicht mehr
     // abgeschnitten werden können.
-    public static string OptWarningVoice => IsGerman
-        ? "Eigene Stimme für Kampfwarnungen"
-        : "Separate voice for combat warnings";
+    public static string OptWarningVoice => L("Eigene Stimme für Kampfwarnungen", "Separate voice for combat warnings", "Отдельный голос для боевых предупреждений");
 
-    public static string OptWarningVoiceVolume => IsGerman
-        ? "Lautstärke Warnstimme"
-        : "Warning voice volume";
+    public static string OptWarningVoiceVolume => L("Lautstärke Warnstimme", "Warning voice volume", "Громкость голоса предупреждений");
 
-    public static string OptWarningVoiceRate => IsGerman
-        ? "Tempo Warnstimme"
-        : "Warning voice speed";
+    public static string OptWarningVoiceRate => L("Tempo Warnstimme", "Warning voice speed", "Темп голоса предупреждений");
 
-    public static string OptWarningVoiceName => IsGerman
-        ? "Stimme für Kampfwarnungen"
-        : "Voice for combat warnings";
+    public static string OptWarningVoiceName => L("Stimme für Kampfwarnungen", "Voice for combat warnings", "Голос для боевых предупреждений");
 
     /// <summary>Der Satz, den eine Stimme zur Probe spricht. Eine echte Warnung
     /// und kein "Test eins zwei": beurteilt werden soll, ob man SIE im Kampf
     /// versteht.</summary>
-    public static string WarningVoiceSample => IsGerman
-        ? "Kegel von vorne. Nach rechts ausweichen, sieben Meter."
-        : "Cone from the front. Dodge right, seven metres.";
+    public static string WarningVoiceSample => L("Kegel von vorne. Nach rechts ausweichen, sieben Meter.", "Cone from the front. Dodge right, seven metres.", "Конус спереди. Уходи вправо, семь метров.");
 
     /// <summary>Steht in der Stimmenauswahl, wenn keine eigene gewählt ist.</summary>
-    public static string WarningVoiceAutomatic => IsGerman ? "Automatisch" : "Automatic";
+    public static string WarningVoiceAutomatic => L("Automatisch", "Automatic", "Автоматически");
 
     /// <summary>Bestätigung nach der Wahl einer Stimme - nur nötig, wenn die
     /// Probe stumm blieb.</summary>
     public static string WarningVoiceSet(string value) =>
-        IsGerman ? $"Warnstimme {value}." : $"Warning voice {value}.";
+        L($"Warnstimme {value}.", $"Warning voice {value}.", $"Голос предупреждений: {value}.");
 
     /// <summary>Steht statt der Auswahl, wenn das System gar keine Sprachausgabe
     /// anbietet. Eine leere Liste ohne Erklärung wäre von einem Fehler des
     /// Plugins nicht zu unterscheiden.</summary>
-    public static string WarningVoiceUnavailable => IsGerman
-        ? "Keine Sprachausgabe des Systems verfügbar. Die Kampfwarnungen kommen über den Screenreader."
-        : "No system speech available. Combat warnings go through the screen reader.";
+    public static string WarningVoiceUnavailable => L("Keine Sprachausgabe des Systems verfügbar. Die Kampfwarnungen kommen über den Screenreader.", "No system speech available. Combat warnings go through the screen reader.", "Системный синтез речи недоступен. Боевые предупреждения идут через скринридер.");
 
     /// <summary>
     /// Die wählbaren Tempostufen der Warnstimme. SAPI kennt -10 bis 10; die
@@ -245,14 +224,14 @@ public static partial class AccessibilityStrings
     /// sagt niemandem, wie schnell das ist.</summary>
     public static string VoiceRateName(int rate) => rate switch
     {
-        <= -4 => IsGerman ? "Sehr langsam" : "Very slow",
-        -3 or -2 => IsGerman ? "Langsam" : "Slow",
-        -1 or 0 => IsGerman ? "Normal" : "Normal",
-        1 or 2 => IsGerman ? "Etwas schneller" : "Slightly faster",
-        3 or 4 => IsGerman ? "Schnell" : "Fast",
-        5 or 6 => IsGerman ? "Sehr schnell" : "Very fast",
-        7 or 8 => IsGerman ? "Am schnellsten" : "Fastest",
-        _ => IsGerman ? "Höchstes Tempo" : "Maximum speed",
+        <= -4 => L("Sehr langsam", "Very slow", "Очень медленно"),
+        -3 or -2 => L("Langsam", "Slow", "Медленно"),
+        -1 or 0 => L("Normal", "Normal", "Обычно"),
+        1 or 2 => L("Etwas schneller", "Slightly faster", "Чуть быстрее"),
+        3 or 4 => L("Schnell", "Fast", "Быстро"),
+        5 or 6 => L("Sehr schnell", "Very fast", "Очень быстро"),
+        7 or 8 => L("Am schnellsten", "Fastest", "Быстрее всего"),
+        _ => L("Höchstes Tempo", "Maximum speed", "Максимальная скорость"),
     };
 
     /// <summary>
@@ -269,7 +248,7 @@ public static partial class AccessibilityStrings
     /// <summary>Bestätigung nach der Wahl einer Tempostufe - nur nötig, wenn die
     /// Probe stumm blieb.</summary>
     public static string VoiceRateSet(string value) =>
-        IsGerman ? $"Tempo {value}." : $"Speed {value}.";
+        L($"Tempo {value}.", $"Speed {value}.", $"Темп: {value}.");
 
     // ── [Chatstimme] ──────────────────────────────────────────────
     //
@@ -282,7 +261,7 @@ public static partial class AccessibilityStrings
     // BuildOutputModeNode.
 
     /// <summary>Skus "Inactive" / "Stumm".</summary>
-    public static string ChatOutputMuted => IsGerman ? "Stumm" : "Inactive";
+    public static string ChatOutputMuted => L("Stumm", "Inactive", "Без звука");
 
     /// <summary>Skus "Text": über den Screenreader.</summary>
     public static string ChatOutputText => "Text";
@@ -299,47 +278,41 @@ public static partial class AccessibilityStrings
     /// <summary>Quittung nach der Wahl.</summary>
     public static string ChatOutputSet(string name, string state) => $"{name}: {state}.";
 
-    public static string OptChatVoiceRate => IsGerman ? "TTS Geschwindigkeit" : "TTS speed";
-    public static string OptChatVoiceVolume => IsGerman ? "TTS Lautstärke" : "TTS volume";
-    public static string OptChatVoiceName => IsGerman ? "TTS Stimme" : "TTS voice";
+    public static string OptChatVoiceRate => L("TTS Geschwindigkeit", "TTS speed", "Скорость TTS");
+    public static string OptChatVoiceVolume => L("TTS Lautstärke", "TTS volume", "Громкость TTS");
+    public static string OptChatVoiceName => L("TTS Stimme", "TTS voice", "Голос TTS");
 
     /// <summary>Statt einer leeren Stimmenliste - eine leere Auswahl ohne Grund
     /// wäre von einem Fehler des Plugins nicht zu unterscheiden.</summary>
-    public static string ChatVoiceUnavailable => IsGerman
-        ? "Keine Sprachausgabe des Systems verfügbar. Der Chat wird über den Screenreader vorgelesen."
-        : "No system speech available. Chat is read through the screen reader.";
+    public static string ChatVoiceUnavailable => L("Keine Sprachausgabe des Systems verfügbar. Der Chat wird über den Screenreader vorgelesen.", "No system speech available. Chat is read through the screen reader.", "Системной речи нет. Чат читает экранный диктор.");
 
-    public static string OptSkillReady => IsGerman ? "Fähigkeit bereit" : "Ability ready";
-    public static string OptSkillReadyVolume => IsGerman ? "Fähigkeit bereit Lautstärke" : "Ability ready volume";
-    public static string OptJobGauge => IsGerman ? "Job-Anzeige wieder verfügbar" : "Job gauge back up";
-    public static string OptGaugeCueVolume => IsGerman ? "Job-Anzeige Ton Lautstärke" : "Job gauge tone volume";
-    public static string OptGaugeCuePreview => IsGerman ? "Job-Anzeige Töne nachhören" : "Preview job gauge tones";
-    public static string OptHeading => IsGerman ? "Himmelsrichtung" : "Compass heading";
-    public static string OptTargetChanges => IsGerman ? "Zielwechsel" : "Target changes";
-    public static string OptTargetHp => IsGerman ? "Ziel-Lebenspunkte" : "Target health";
-    public static string OptEnemyMarkers => IsGerman ? "Gegnerfarben" : "Enemy colours";
-    public static string OptEnemyCast => IsGerman ? "Zauber-Ansagen" : "Skill cast announcements";
+    public static string OptSkillReady => L("Fähigkeit bereit und Effekte", "Ability ready and effects", "Готовность умений и эффекты");
+    public static string OptSkillReadyVolume => L("Fähigkeit bereit Lautstärke", "Ability ready volume", "Громкость готовности умений");
+    public static string OptJobGauge => L("Job-Anzeige wieder verfügbar", "Job gauge back up", "Индикатор профессии снова доступен");
+    public static string OptGaugeCueVolume => L("Job-Anzeige Ton Lautstärke", "Job gauge tone volume", "Громкость звука индикатора профессии");
+    public static string OptGaugeCuePreview => L("Job-Anzeige Töne nachhören", "Preview job gauge tones", "Прослушать звуки индикатора профессии");
+    public static string OptHeading => L("Himmelsrichtung", "Compass heading", "Стороны света");
+    public static string OptTargetChanges => L("Zielwechsel", "Target changes", "Смена цели");
+    public static string OptTargetHp => L("Ziel-Lebenspunkte", "Target health", "Жизнь цели");
+    public static string OptEnemyMarkers => L("Gegnerfarben", "Enemy colours", "Цвета противников");
+    public static string OptEnemyCast => L("Zauber-Ansagen", "Skill cast announcements", "Объявления способностей");
 
     /// <summary>Garuda-Event Warp: Off / Manual / Auto (duty Territory 834 only).</summary>
     public static string OptNocturneWarpMode =>
-        IsGerman
-            ? "Garuda-Event Warp"
-            : "Garuda event Warp";
+        L("Teleport beim Garuda-Ereignis", "Garuda event Warp", "Переход на событие Гаруды");
 
     /// <summary>Spoken value for <see cref="NocturneWarpMode"/>.</summary>
     public static string NocturneWarpModeName(NocturneWarpMode mode) => mode switch
     {
-        NocturneWarpMode.Off => IsGerman ? "Aus" : "Off",
-        NocturneWarpMode.Manual => IsGerman ? "Manuell mit Ton" : "Manual with sound",
-        NocturneWarpMode.Auto => IsGerman ? "Automatisch" : "Automatic",
+        NocturneWarpMode.Off => L("Aus", "Off", "Выкл"),
+        NocturneWarpMode.Manual => L("Manuell mit Ton", "Manual with sound", "Вручную со звуком"),
+        NocturneWarpMode.Auto => L("Automatisch", "Automatic", "Автоматически"),
         _ => mode.ToString(),
     };
-    public static string OptFineHpDuringLeve => IsGerman
-        ? "Feine Ziel-Lebenspunkte im Freibrief"
-        : "Fine target health during levequests";
-    public static string OptMapFlag => IsGerman ? "Kartenmarkierung" : "Map flag";
-    public static string OptErrorToasts => IsGerman ? "Fehlermeldungen" : "Error messages";
-    public static string OptInfoToasts => IsGerman ? "Hinweismeldungen" : "Notice messages";
+    public static string OptFineHpDuringLeve => L("Feine Ziel-Lebenspunkte im Freibrief", "Fine target health during levequests", "Точная жизнь цели в лицензиях");
+    public static string OptMapFlag => L("Kartenmarkierung", "Map flag", "Метка на карте");
+    public static string OptErrorToasts => L("Fehlermeldungen", "Error messages", "Сообщения об ошибках");
+    public static string OptInfoToasts => L("Hinweismeldungen", "Notice messages", "Информационные сообщения");
 
     // ── Namen der Puffer ──────────────────────────────────────────
     //
@@ -354,17 +327,17 @@ public static partial class AccessibilityStrings
     /// Spieler weitergeklickt hat, ein aus dem Chat gefüllter Dialogpuffer hinkte dem
     /// Bildschirm also immer einen Schritt hinterher. Gefüllt wird er statt dessen von
     /// den Talk- und _BattleTalk-Lesern.</summary>
-    public static string BufferDialogue => IsGerman ? "Dialoge" : "Dialogue";
+    public static string BufferDialogue => L("Dialoge", "Dialogue", "Диалоги");
 
     /// <summary>Die eigenen Meldungen des Plugins - Toasts, Abmelde-Countdown,
     /// Fensteransagen. Die liefen nie über den Chatlog, also hält sie kein
     /// Register.</summary>
-    public static string BufferSystem => IsGerman ? "Meldungen" : "Notices";
+    public static string BufferSystem => L("Meldungen", "Notices", "Сообщения");
 
     /// <summary>Der einzelne Sammelpuffer, der nur benutzt wird, solange die
     /// Chatfilter des Spiels nicht lesbar sind. Siehe
     /// <see cref="ChatFiltersUnavailable"/>.</summary>
-    public static string BufferChat => IsGerman ? "Chat" : "Chat";
+    public static string BufferChat => L("Chat", "Chat", "Чат");
 
     /// <summary>
     /// Ein ganzes Chat-Register in Ankunftsreihenfolge - das, was ein sehender Spieler
@@ -382,7 +355,7 @@ public static partial class AccessibilityStrings
     /// GRUPPIERUNG vom Plugin kommt. Der INHALT nicht: eine Zeile liegt genau dann
     /// hier, wenn die Filterdaten des Spiels sagen, dass dieses Register sie zeigt.
     /// </summary>
-    public static string BufferTabAll => IsGerman ? "Alles" : "All";
+    public static string BufferTabAll => L("Alles", "All", "Всё");
 
     /// <summary>
     /// Derselbe Puffer, aber mit dem Register davor: "Allgemein, alles".
@@ -393,7 +366,7 @@ public static partial class AccessibilityStrings
     /// gleich heißen und Verschiedenes bedeuten.
     /// </summary>
     public static string BufferTabAllOf(string tabName) =>
-        IsGerman ? $"{tabName}, alles" : $"{tabName}, all";
+        L($"{tabName}, alles", $"{tabName}, all", $"{tabName}, всё");
 
     /// <summary>
     /// Wird EINMAL gesagt, wenn der Filterzustand des Spiels nicht gelesen werden kann.
@@ -403,8 +376,7 @@ public static partial class AccessibilityStrings
     /// nicht still.
     /// </summary>
     public static string ChatFiltersUnavailable =>
-        IsGerman ? "Die Chat-Einstellungen des Spiels sind nicht lesbar. Der Chat läuft in einem Puffer."
-                 : "The game's chat settings cannot be read. Chat is going to one buffer.";
+        L("Die Chat-Einstellungen des Spiels sind nicht lesbar. Der Chat läuft in einem Puffer.", "The game's chat settings cannot be read. Chat is going to one buffer.", "Настройки чата в игре не читаются. Чат идёт в один буфер.");
 
     // ── Register wechseln, und was im neuen Register liegt ────────
 
@@ -420,21 +392,19 @@ public static partial class AccessibilityStrings
     /// zwei Puffern; "vierzig" würde eine Filterliste beschreiben und keinen Verlauf.
     /// </summary>
     public static string ChatTabEntered(string tab, int buffers, string first, int count) =>
-        IsGerman ? $"{tab}, {buffers} Puffer. {first}, {count}."
-                 : $"{tab}, {buffers} buffers. {first}, {count}.";
+        L($"{tab}, {buffers} Puffer. {first}, {count}.", $"{tab}, {buffers} buffers. {first}, {count}.", $"{tab}, буферов: {buffers}. {first}, {count}.");
 
     /// <summary>Wird gesagt, wenn die Registertaste den Chatlog des Spiels gar nicht
     /// erreicht. Nie Stille: der Spieler hätte sonst keine Möglichkeit, ein fehlendes
     /// Fenster von einer kaputten Taste zu unterscheiden.</summary>
     public static string ChatTabUnavailable =>
-        IsGerman ? "Das Chatfenster ist nicht erreichbar."
-                 : "The chat window cannot be reached.";
+        L("Das Chatfenster ist nicht erreichbar.", "The chat window cannot be reached.", "Окно чата недоступно.");
 
     // ── Einstellungen: eine Sprachschaltung je Chat-Register ──────
 
     /// <summary>Benannt nach dem, was das Spiel hat, denn genau das sind die Zeilen
     /// darunter: eine je Chat-Register, unter dem Namen des Registers selbst.</summary>
-    public static string OptionsChatTabs => IsGerman ? "Chat-Register" : "Chat tabs";
+    public static string OptionsChatTabs => L("Chat-Register", "Chat tabs", "Вкладки чата");
 
     /// <summary>
     /// Die oberste Zeile im Untermenü eines Registers: wird dieses Register vorgelesen.
@@ -449,13 +419,13 @@ public static partial class AccessibilityStrings
     /// was verstummt, und das ist genau die Zweideutigkeit, die hier zu vermeiden ist.
     /// </summary>
     public static string OptChatTabMaster =>
-        IsGerman ? "Register vorlesen" : "Read tab aloud";
+        L("Register vorlesen", "Read tab aloud", "Читать вкладку вслух");
 
     /// <summary>Die Gruppenzeile im Untermenü eines Kanals - die ganze Akteursgruppe
     /// auf einmal, über den Kästchen, in die das Spiel sie aufteilt. Gleiche
     /// Wortregel wie bei <see cref="OptChatTabMaster"/>.</summary>
     public static string OptChatChannelAll =>
-        IsGerman ? "Ganze Gruppe vorlesen" : "Read whole group aloud";
+        L("Ganze Gruppe vorlesen", "Read whole group aloud", "Читать всю группу вслух");
 
     /// <summary>
     /// Die eine Schaltung für Zeilen, für die die Filterliste des Spiels gar kein
@@ -467,14 +437,14 @@ public static partial class AccessibilityStrings
     /// unten in der Registerliste, weil sie zu keinem Register gehört.
     /// </summary>
     public static string OptChatUnfiltered =>
-        IsGerman ? "Meldungen ohne Spielfilter vorlesen" : "Read lines the game cannot filter";
+        L("Meldungen ohne Spielfilter vorlesen", "Read lines the game cannot filter", "Читать вслух строки вне фильтров игры");
 
     /// <summary>Die Zeile, wenn die Register nicht lesbar sind - eine Schaltung für den
     /// einen Sammelpuffer. Ein Abschnitt, der seinen Namen nennt und dann nichts
     /// anbietet, liest sich wie ein Fehler; also sagt er statt dessen, in welchem
     /// Zustand er ist.</summary>
     public static string OptChatFallback =>
-        IsGerman ? "Chat vorlesen (Register nicht lesbar)" : "Read chat aloud (tabs unreadable)";
+        L("Chat vorlesen (Register nicht lesbar)", "Read chat aloud (tabs unreadable)", "Читать чат вслух (вкладки не читаются)");
 
     // ── Einstellungen: eigene Reihenfolge der Kategorien ──────────
     //
@@ -485,7 +455,7 @@ public static partial class AccessibilityStrings
     // in keinem Menü der Mod gibt. So bleibt Numpad0 überall das, was es überall
     // ist - in der einen Ebene nimmt es auf, in der anderen schaltet es um.
 
-    public static string OptionsOrder => IsGerman ? "Reihenfolge" : "Order";
+    public static string OptionsOrder => L("Reihenfolge", "Order", "Порядок");
 
     // ── Einstellungen: Wegdateien für die Kategorie "Dungeon" ──────────
     //
@@ -497,55 +467,53 @@ public static partial class AccessibilityStrings
     /// müsste man den Abschnitt öffnen, um die einzige Frage zu beantworten, die
     /// er beantwortet.</summary>
     public static string OptionsDungeonPaths(int files) =>
-        IsGerman ? $"Dungeon-Wege, {files} geladen" : $"Dungeon routes, {files} loaded";
+        L($"Dungeon-Wege, {files} geladen", $"Dungeon routes, {files} loaded", $"Маршруты подземелий, загружено: {files}");
 
     public static string DungeonPathsTitle =>
-        IsGerman ? "Dungeon-Wege" : "Dungeon routes";
+        L("Dungeon-Wege", "Dungeon routes", "Маршруты подземелий");
 
     /// <summary>Die Zeile, die das Laden auslöst.</summary>
     public static string DungeonPathsFetchNow =>
-        IsGerman ? "Jetzt herunterladen" : "Download now";
+        L("Jetzt herunterladen", "Download now", "Скачать сейчас");
 
     public static string DungeonPathsAutoName =>
-        IsGerman ? "Automatisch herunterladen" : "Download automatically";
+        L("Automatisch herunterladen", "Download automatically", "Скачивать автоматически");
 
     /// <summary>Quittung beim Start des Ladens. Sie muss sein: der Download
     /// dauert Sekunden, und ein Menü, das auf einen Tastendruck schweigt, ist von
     /// einem, das den Druck verschluckt hat, nicht zu unterscheiden.</summary>
     public static string DungeonPathsFetching =>
-        IsGerman ? "Dungeon-Wege werden geladen." : "Downloading dungeon routes.";
+        L("Dungeon-Wege werden geladen.", "Downloading dungeon routes.", "Маршруты подземелий загружаются.");
 
     public static string DungeonPathsFetched(int files) =>
-        IsGerman ? $"{files} Dungeon-Wege geladen." : $"{files} dungeon routes loaded.";
+        L($"{files} Dungeon-Wege geladen.", $"{files} dungeon routes loaded.", $"Загружено маршрутов подземелий: {files}.");
 
     /// <summary>Fehlschlag. Nennt den Ordner NICHT - der Pfad ist als Ansage
     /// unbrauchbar lang; er steht im Log und in der Anleitung.</summary>
     public static string DungeonPathsFailed =>
-        IsGerman
-            ? "Dungeon-Wege konnten nicht geladen werden. Sieh ins Log."
-            : "Dungeon routes could not be downloaded. Check the log.";
+        L("Dungeon-Wege konnten nicht geladen werden. Sieh ins Log.", "Dungeon routes could not be downloaded. Check the log.", "Маршруты подземелий не загрузились. Смотри лог.");
 
     /// <summary>Wann zuletzt geladen wurde, oder dass es das noch nie gab.</summary>
     public static string DungeonPathsLast(string date) =>
         string.IsNullOrEmpty(date)
-            ? (IsGerman ? "Zuletzt geladen: nie" : "Last downloaded: never")
-            : (IsGerman ? $"Zuletzt geladen: {date}" : $"Last downloaded: {date}");
+            ? (L("Zuletzt geladen: nie", "Last downloaded: never", "Последняя загрузка: никогда"))
+            : (L($"Zuletzt geladen: {date}", $"Last downloaded: {date}", $"Последняя загрузка: {date}"));
 
     /// <summary>Der Abschnitt für die Objekt-Browser-Kategorien. "Objekte
     /// durchblättern" und nicht "Kategorien", weil der Spieler die Liste über die
     /// Bild-Tasten kennt und nicht über ihren internen Namen.</summary>
     public static string OptionsOrderObjects =>
-        IsGerman ? "Reihenfolge beim Objekte-Durchblättern" : "Order when browsing objects";
+        L("Reihenfolge beim Objekte-Durchblättern", "Order when browsing objects", "Порядок перелистывания объектов");
 
     /// <summary>Derselbe Abschnitt für die Nachlese-Kategorien.</summary>
     public static string OptionsOrderChat =>
-        IsGerman ? "Reihenfolge der Nachlese-Kategorien" : "Order of chat history categories";
+        L("Reihenfolge der Nachlese-Kategorien", "Order of chat history categories", "Порядок категорий истории чата");
 
     public static string OptionsShowObjects =>
-        IsGerman ? "Objekt-Kategorien ein- und ausschalten" : "Switch object categories on and off";
+        L("Objekt-Kategorien ein- und ausschalten", "Switch object categories on and off", "Включать и выключать категории объектов");
 
     public static string OptionsShowChat =>
-        IsGerman ? "Nachlese-Kategorien ein- und ausschalten" : "Switch chat history categories on and off";
+        L("Nachlese-Kategorien ein- und ausschalten", "Switch chat history categories on and off", "Включать и выключать категории истории чата");
 
     /// <summary>
     /// Der Titel der Sortier-Ebene. Sagt den Kategoriensatz mit, weil es zwei
@@ -553,11 +521,11 @@ public static partial class AccessibilityStrings
     /// umsortiert: in einem Tiefen Gewölbe gilt ein eigener, kürzerer Satz.
     /// </summary>
     public static string OrderTitle(string set) =>
-        IsGerman ? $"Reihenfolge: {set}" : $"Order: {set}";
+        L($"Reihenfolge: {set}", $"Order: {set}", $"Порядок: {set}");
 
-    public static string OrderSetWorld => IsGerman ? "Welt" : "World";
-    public static string OrderSetDeepDungeon => IsGerman ? "Tiefes Gewölbe" : "Deep dungeon";
-    public static string OrderSetChat => IsGerman ? "Nachlese" : "Chat history";
+    public static string OrderSetWorld => L("Welt", "World", "Мир");
+    public static string OrderSetDeepDungeon => L("Tiefes Gewölbe", "Deep dungeon", "Глубокое подземелье");
+    public static string OrderSetChat => L("Nachlese", "Chat history", "История чата");
 
     /// <summary>
     /// Eine Zeile in der Sortier-Ebene. Sagt "aus" mit, wenn die Kategorie
@@ -567,7 +535,7 @@ public static partial class AccessibilityStrings
     /// zwanzig von einundzwanzig Zeilen ist nur Lärm.
     /// </summary>
     public static string OrderRow(string name, bool visible) =>
-        visible ? name : (IsGerman ? $"{name}, aus" : $"{name}, off");
+        visible ? name : (L($"{name}, aus", $"{name}, off", $"{name}, выкл"));
 
     /// <summary>
     /// Die Ansage beim Öffnen einer Sortier-Ebene: sie muss die Bedienung
@@ -575,9 +543,7 @@ public static partial class AccessibilityStrings
     /// Bestätigungstaste etwas anderes tut als sonst.
     /// </summary>
     public static string OrderHint =>
-        IsGerman
-            ? "Bestätigen nimmt eine Zeile auf, hoch und runter verschiebt sie, Bestätigen legt sie wieder ab."
-            : "Confirm picks a row up, up and down move it, confirm puts it down again.";
+        L("Bestätigen nimmt eine Zeile auf, hoch und runter verschiebt sie, Bestätigen legt sie wieder ab.", "Confirm picks a row up, up and down move it, confirm puts it down again.", "Подтверждение поднимает строку, вверх и вниз двигают её, подтверждение кладёт её обратно.");
 
     /// <summary>
     /// Wenn der Spieler die letzte eingeschaltete Kategorie abschalten will.
@@ -588,9 +554,7 @@ public static partial class AccessibilityStrings
     /// deshalb den Grund und nicht nur, dass es nicht ging.
     /// </summary>
     public static string OrderLastOneStays(string name) =>
-        IsGerman
-            ? $"{name} bleibt an - es ist die letzte eingeschaltete Kategorie."
-            : $"{name} stays on - it is the last category left switched on.";
+        L($"{name} bleibt an - es ist die letzte eingeschaltete Kategorie.", $"{name} stays on - it is the last category left switched on.", $"{name} нельзя выключить: это последняя включённая категория.");
 
     // ── Einstellungen: die Kanäle des GEWOHNTEN Chatsystems ───────
 
@@ -598,13 +562,13 @@ public static partial class AccessibilityStrings
     /// der im neuen <see cref="OptionsChatTabs"/> steht. "Kanäle" und nicht
     /// "Register", weil das alte System keine Register kennt: seine Einteilung ist
     /// die feste Kategorienliste, die der Spieler auch beim Nachlesen hört.</summary>
-    public static string OptionsChatChannels => IsGerman ? "Chat-Kanäle" : "Chat channels";
+    public static string OptionsChatChannels => L("Chat-Kanäle", "Chat channels", "Каналы чата");
 
     /// <summary>Die Sammel-Rückmeldungen beim Abbauen (XivChatType.Gathering). Sie
     /// haben einen eigenen Schalter, landen in der Nachlese aber unter "System" -
     /// deshalb ist dies der einzige Kanalname dieses Abschnitts, der nicht aus
     /// <see cref="AccessibilityStrings.LegacyChatCategoryName"/> kommen kann.</summary>
-    public static string OptChatGathering => IsGerman ? "Sammeln" : "Gathering";
+    public static string OptChatGathering => L("Sammeln", "Gathering", "Сбор");
 
     /// <summary>
     /// Hängt sich an die Bestätigung, wenn ein Kanal ABGESCHALTET wird ("Gruppe aus.
@@ -616,6 +580,5 @@ public static partial class AccessibilityStrings
     /// im Weg.
     /// </summary>
     public static string ChatChannelStillArchived =>
-        IsGerman ? "Steht weiter zum Nachlesen bereit."
-                 : "Still available in the history.";
+        L("Steht weiter zum Nachlesen bereit.", "Still available in the history.", "Остаётся в истории.");
 }

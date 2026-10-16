@@ -125,6 +125,8 @@ public sealed class OptionsMenu
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsSounds,        Submenu = BuildSounds });
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsAnnouncements, Submenu = BuildAnnouncements });
         level.Entries.Add(new MenuEntry { Label = AccessibilityStrings.OptionsOrder,         Submenu = BuildOrder });
+        level.Entries.Add(Toggle(AccessibilityStrings.OptAoeAutoTurn,
+            () => _config.AutoTurnAoe, v => _config.AutoTurnAoe = v));
 
         // [Dungeon-Wege] Steht im HAUPTMENUE und nicht unter "Ansagen", weil es
         // keine Ansage ist, die man abstellt, sondern die Datengrundlage einer
@@ -1591,6 +1593,10 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptTargetHp,      () => _config.AnnounceTargetHp,      v => _config.AnnounceTargetHp = v),
             Toggle(AccessibilityStrings.OptEnemyMarkers,  () => _config.EnemyMarkersEnabled,  v => _config.EnemyMarkersEnabled = v),
             Toggle(AccessibilityStrings.OptEnemyCast,     () => _config.AnnounceEnemyCast,     v => _config.AnnounceEnemyCast = v),
+            Toggle(AccessibilityStrings.OptAttacker,      () => _config.AnnounceAttacker,      v => _config.AnnounceAttacker = v),
+            Toggle(AccessibilityStrings.OptStrongerEnemy, () => _config.WarnStrongerEnemies,  v => _config.WarnStrongerEnemies = v),
+            Toggle(AccessibilityStrings.OptQuestObjective, () => _config.AnnounceQuestObjectiveChanges,
+                v => _config.AnnounceQuestObjectiveChanges = v),
             NocturneWarpModeEntry(),
             // Feine HP-Stufen im Freibrief: gehoert hier hin, weil es auf einem
             // Toetungs-Auftrag ein paar Ansagen mehr sind und der Spieler das

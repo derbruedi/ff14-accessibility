@@ -20,6 +20,9 @@ namespace FF14Accessibility.Services;
 /// ItemName and nine craft-effect slots with name and remaining steps. Nothing
 /// is recomputed - every number is the one the game itself displays; in
 /// particular the HQ chance is the game's own figure, never a formula of ours.
+/// CP comes from the local character's CurrentCp/MaxCp, because the Synthesis
+/// addon does not contain that resource. The current step and changed effects
+/// are included after actions; a manual read also repeats the condition.
 ///
 /// The user's dump of the window (msg 9367/9365, 2026-09-12) is the proof that
 /// these are the numbers on the bars: quality 63 of 80 with 64% HQ, then a fresh
@@ -49,6 +52,7 @@ public sealed class SynthesisService
     private readonly IGameGui _gameGui;
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
+    private readonly IObjectTable _objects;
 
     /// <summary>The state last spoken, as a signature string. A change against
     /// it is what earns the next line.</summary>
@@ -59,20 +63,22 @@ public sealed class SynthesisService
     /// <summary>The condition spoken last, so a change of it is audible while a
     /// repeated "Normal" is not repeated at every step.</summary>
     private string _lastCondition = string.Empty;
+    private string _lastEffects = string.Empty;
 
     /// <summary>False until the first line of this craft was spoken: the opening
     /// line is the full one (it names the item), the ones after it are short.</summary>
     private bool _spokeOnce;
 
-    public SynthesisService(IGameGui gameGui, TolkService tolk, IPluginLog log)
+    public SynthesisService(IGameGui gameGui, TolkService tolk, IPluginLog log, IObjectTable objects)
     {
         _gameGui = gameGui;
         _tolk = tolk;
         _log = log;
+        _objects = objects;
     }
 
     /// <summary>Everything the window shows about the running craft.</summary>
-    private struct CraftState
+    internal struct CraftState
     {
         public bool Read;
         public string Item;
@@ -83,22 +89,38 @@ public sealed class SynthesisService
         public string Durability, MaxDurability;
         public string Step;
         public List<string> Effects;
+        public uint? Cp, MaxCp;
 
         /// <summary>Every readable number, in one string. Comparing it is how a
         /// change is detected - the individual values are what gets spoken.</summary>
         public string Signature =>
-            $"{Quality}/{MaxQuality}|{HqPercent}|{Progress}/{MaxProgress}|"
+            $"{Item}|{Cp}/{MaxCp}|{Quality}/{MaxQuality}|{HqPercent}|{Progress}/{MaxProgress}|"
             + $"{Durability}/{MaxDurability}|{Step}|{Condition}|{string.Join(",", Effects)}";
 
         /// <summary>The line spoken after every action.</summary>
-        public string Short => AccessibilityStrings.SynthesisProgress(
-            Quality, MaxQuality, HqPercent, Progress, MaxProgress, Durability, MaxDurability);
+        public string Short => AccessibilityStrings.CraftingPoints(Cp, MaxCp) + " "
+            + AccessibilityStrings.SynthesisProgress(
+                Quality, MaxQuality, HqPercent, Progress, MaxProgress, Durability, MaxDurability)
+            + " " + AccessibilityStrings.CraftingStep(Step);
 
         /// <summary>The line spoken when the window opens and on demand: it also
         /// names the item, the step and the running effects.</summary>
-        public string Full => AccessibilityStrings.SynthesisOpened(
+        public string Full => AccessibilityStrings.CraftingPoints(Cp, MaxCp) + " " + AccessibilityStrings.SynthesisOpened(
             Item, Quality, MaxQuality, HqPercent, Progress, MaxProgress, Durability, MaxDurability,
-            Step, string.Join(", ", Effects));
+            Step, string.Join(", ", Effects))
+            + (Condition.Length > 0 ? " " + AccessibilityStrings.SynthesisCondition(Condition) : string.Empty);
+
+        internal string Announcement(bool alreadySpoken, string previousCondition, string previousEffects)
+        {
+            if (!alreadySpoken) return Full;
+            var line = Short;
+            if (Condition.Length > 0 && Condition != previousCondition)
+                line += " " + AccessibilityStrings.SynthesisCondition(Condition);
+            var effects = string.Join(", ", Effects);
+            if (effects != previousEffects)
+                line += " " + AccessibilityStrings.CraftingEffects(effects);
+            return line;
+        }
     }
 
     public unsafe bool IsWindowOpen()
@@ -121,6 +143,7 @@ public sealed class SynthesisService
             _spoken = string.Empty;
             _pending = string.Empty;
             _lastCondition = string.Empty;
+            _lastEffects = string.Empty;
             _spokeOnce = false;
             return;
         }
@@ -143,7 +166,7 @@ public sealed class SynthesisService
 
         _spoken = signature;
         _pending = string.Empty;
-        var line = _spokeOnce ? state.Short : state.Full;
+        var line = state.Announcement(_spokeOnce, _lastCondition, _lastEffects);
         _spokeOnce = true;
 
         // The condition is spoken only when it CHANGES, not on every line: it is
@@ -151,9 +174,8 @@ public sealed class SynthesisService
         // that is a decision the player makes, so the change has to be audible.
         // Comparing the previous value (instead of the word "Normal") keeps this
         // independent of the client language.
-        if (state.Condition.Length > 0 && state.Condition != _lastCondition)
-            line += " " + AccessibilityStrings.SynthesisCondition(state.Condition);
         _lastCondition = state.Condition;
+        _lastEffects = string.Join(", ", state.Effects);
 
         _log.Info($"[Synthese] {line}");
         _tolk.Speak(line);
@@ -175,7 +197,7 @@ public sealed class SynthesisService
         return state.Full;
     }
 
-    private static unsafe CraftState Read(AddonSynthesis* addon)
+    internal unsafe CraftState Read(AddonSynthesis* addon)
     {
         var state = new CraftState { Read = true };
         state.Item = AtkText.ReadClean(addon->ItemName).Trim();
@@ -188,6 +210,9 @@ public sealed class SynthesisService
         state.Durability = AtkText.ReadClean(addon->CurrentDurability).Trim();
         state.MaxDurability = AtkText.ReadClean(addon->StartingDurability).Trim();
         state.Step = AtkText.ReadClean(addon->StepNumber).Trim();
+        var player = _objects.LocalPlayer;
+        state.Cp = player?.CurrentCp;
+        state.MaxCp = player?.MaxCp;
 
         state.Effects = new List<string>();
         AddEffect(state.Effects, addon->CraftEffect1.Name, addon->CraftEffect1.StepsRemaining);
@@ -215,6 +240,6 @@ public sealed class SynthesisService
         var label = AtkText.ReadClean(name).Trim();
         if (label.Length == 0) return;
         var rest = AtkText.ReadClean(steps).Trim();
-        into.Add(rest.Length == 0 || rest == "0" ? label : $"{label} {rest}");
+        into.Add(AccessibilityStrings.CraftingEffect(label, rest));
     }
 }

@@ -374,16 +374,21 @@ public sealed unsafe class CharaMakeReader
             _lastSample = -1;
             _sampleGroupLogged = false;
         }
-        if (!classStep) _haveClass = false;
+        if (!classStep) ResetClass();
         if (!appearance && !classStep) return;
 
         TrackWindows(); // must run before any announcement decides how to speak
 
-        var model = FindPreviewModel();
-        if (model == null) return;
-
-        if (classStep) UpdateClass(model);
+        if (classStep) UpdateClass();
         if (!appearance) return;
+
+        var model = FindPreviewModel();
+        if (model == null)
+        {
+            ResetClass();
+            return;
+        }
+
 
         Span<byte> now = stackalloc byte[CustomizeBytes];
         var src = LiveCustomize(model);
@@ -1125,52 +1130,102 @@ public sealed unsafe class CharaMakeReader
 
     private ulong _lastWeapon;
     private bool _haveClass;
+    private LanguageMode _classLanguage;
+    private Dalamud.Game.ClientLanguage _classClientLanguage;
+    private long _classReadAt;
+    private CharaMakeClassText.Entry? _classSelection;
+    private readonly CharaMakeClassSpeech _classSpeech = new();
+    private string _classFocusLabel = string.Empty;
+    private CharaMakeClassText.Entry? _classFocusSelection;
+    private LanguageMode _classFocusLanguage;
+    private Dalamud.Game.ClientLanguage _classFocusClientLanguage;
 
-    /// <summary>
-    /// Names the class the preview model is currently showing.
-    /// WHY THE WEAPON: the class icons carry no text (which is what made the step
-    /// silent - see UIReaderService.IsCharaMakeIconList), but the game equips the
-    /// starting gear of the highlighted class onto the preview model, and
-    /// <c>CharaMakeClassEquip</c> is the sheet that says which weapon belongs to
-    /// which class. Its eight rows carry eight DISTINCT packed model ids with zero
-    /// in the stain bytes (verified 2026-08-08: Gladiator 0x0001000A00C9, Marauder
-    /// 0x000100070191, and so on), so a match identifies the class exactly.
-    /// It is match-or-silence by construction. If the model has no weapon, or the
-    /// game only equips it on confirm rather than on highlight, nothing is spoken
-    /// and the log says what the field actually held - the position announcement
-    /// from the list reader still covers movement. Nothing here can name the wrong
-    /// class.
-    /// </summary>
-    private void UpdateClass(CsCharacter* model)
+    private void ResetClass()
     {
-        // Low 48 bits only: Id/Type/Variant identify the weapon, the top two bytes
-        // are dye stains and are zero in the sheet.
-        const ulong ModelMask = 0x0000_FFFF_FFFF_FFFFul;
-        var weapon = model->DrawData.Weapon(CsDrawData.WeaponSlot.MainHand).ModelId.Value & ModelMask;
-
-        if (_haveClass && weapon == _lastWeapon) return;
-        _lastWeapon = weapon;
-        _haveClass = true;
-
-        var name = string.Empty;
-        foreach (var row in _data.GetExcelSheet<CharaMakeClassEquip>())
-        {
-            if ((row.Weapon & ModelMask) != weapon) continue;
-            name = row.Class.ValueNullable?.Name.ExtractText() ?? string.Empty;
-            break;
-        }
-
-        _log.Info($"[CharaMake] class step: main-hand model 0x{weapon:X12} -> " +
-                  $"{(name.Length > 0 ? name : "no CharaMakeClassEquip match")}");
-        if (name.Length == 0) return;
-
-        _tolk.SpeakInterrupt(AccessibilityStrings.CharaMakeClass(Capitalise(name)));
+        _haveClass = false;
+        _classSelection = null;
+        _classFocusLabel = string.Empty;
+        _classFocusSelection = null;
+        _classSpeech.Update(null, Environment.TickCount64);
     }
 
-    /// <summary>The ClassJob sheet stores names lower-case ("gladiator"); the game
-    /// capitalises them for display and so does this.</summary>
-    private static string Capitalise(string s)
-        => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+    /// <summary>
+    /// Read the highlighted class row. The 2026-10-01 log shows that the weapon
+    /// changes only after clicking a class: using it for browsing reads the
+    /// previously selected class. Unknown labels never borrow the preview text.
+    /// </summary>
+    private CharaMakeClassText.Entry? ReadFocusedClass()
+    {
+        var pointer = _gui.GetAddonByName("_CharaMakeClassSelector");
+        var stage = AtkStage.Instance();
+        if (pointer.IsNull || stage == null || stage->AtkInputManager == null) return null;
+        var label = CharaMakeClassFocus.ReadLabel((AtkUnitBase*)(nint)pointer,
+            stage->AtkInputManager->FocusedNode);
+        if (label == _classFocusLabel && _classFocusLanguage == Loc.Mode && _classFocusClientLanguage == _data.Language)
+            return _classFocusSelection;
+        _classFocusLabel = label;
+        _classFocusLanguage = Loc.Mode;
+        _classFocusClientLanguage = _data.Language;
+        var id = CharaMakeClassText.ResolveName(_data, label);
+        _classFocusSelection = CharaMakeClassText.ReadById(_data, id);
+        if (_classFocusSelection is { } entry) _classFocusSelection = entry with { Name = label };
+        _log.Info($"[CharaMake] focused class '{label}' -> ClassJob={id}");
+        return _classFocusSelection;
+    }
+
+    private void UpdateClass()
+    {
+        var selection = ReadFocusedClass();
+        var speech = _classSpeech.Update(selection, Environment.TickCount64);
+        if (speech.Headline.Length > 0)
+            _tolk.SpeakInterrupt(AccessibilityStrings.CharaMakeClass(speech.Headline));
+        if (speech.Description.Length > 0)
+        {
+            _log.Info($"[CharaMake] class description: ClassJob={selection?.ClassId} Lobby={CharaMakeClassText.LobbyRow(selection?.ClassId ?? 0)}");
+            _tolk.Speak(speech.Description);
+        }
+    }
+
+    private CharaMakeClassText.Entry? ReadClass(CsCharacter* model)
+    {
+        var weapon = model->DrawData.Weapon(CsDrawData.WeaponSlot.MainHand).ModelId.Value & CharaMakeClassText.ModelMask;
+        var now = Environment.TickCount64;
+        if (_haveClass && weapon == _lastWeapon && _classLanguage == Loc.Mode
+            && _classClientLanguage == _data.Language
+            && (_classSelection is { Description.Length: > 0 } || now - _classReadAt < 500))
+            return _classSelection;
+        _lastWeapon = weapon;
+        _classLanguage = Loc.Mode;
+        _classClientLanguage = _data.Language;
+        _classReadAt = now;
+        _haveClass = false;
+        _classSelection = CharaMakeClassText.Read(_data, weapon);
+        _haveClass = true;
+        _log.Info($"[CharaMake] class step: main-hand model 0x{weapon:X12} -> " +
+                  $"ClassJob={_classSelection?.ClassId}, name='{_classSelection?.Name}', description={_classSelection?.Description.Length ?? 0}");
+        return _classSelection;
+    }
+
+    /// <summary>Ctrl+F10 reads a fresh selection and consumes its pending description.</summary>
+    public bool TryReadClass()
+    {
+        if (!IsAddonVisible("_CharaMakeClassSelector")) return false;
+        var selection = ReadFocusedClass();
+        // A role heading/unknown row must not borrow the selected model's class.
+        // With no row focus, the selected model remains a useful fallback.
+        if (selection == null && _classFocusLabel.Length == 0)
+        {
+            var model = FindPreviewModel();
+            selection = model == null ? null : ReadClass(model);
+        }
+        var speech = _classSpeech.Update(selection, Environment.TickCount64, repeat: true);
+        if (speech.Headline.Length == 0)
+            _tolk.SpeakInterrupt(AccessibilityStrings.CharaMakeClassUnavailable);
+        else
+            _tolk.SpeakInterrupt(speech.Description.Length == 0 ? speech.Headline
+                : $"{speech.Headline}. {speech.Description}");
+        return true;
+    }
 
     // ── Announcing one changed value ──────────────────────────────────────────
 

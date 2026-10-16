@@ -75,7 +75,7 @@ public sealed class FlightProbe
         if (row == null)
         {
             _log.Warning($"[Flugsonde] Gebiet {territoryId} steht nicht im TerritoryType-Sheet.");
-            _tolk.SpeakInterrupt("Flugsonde: Gebiet unbekannt.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.FlightProbeUnknownArea);
             return;
         }
 
@@ -129,9 +129,7 @@ public sealed class FlightProbe
 
         // Gesprochen nur das Nötigste - der Rest steht im Log, und der Spieler
         // liest es dort ohnehin nach.
-        _tolk.SpeakInterrupt(
-            $"Flugsonde. Gebiet {place}. Nutzung {use}, Ätherstrom-Satz {set}, komplett {(complete ? "ja" : "nein")}. " +
-            $"Urteil {_flight.Blocked()}.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.FlightProbeSaved(place, use, set, complete, _flight.Blocked()));
     }
 
     private unsafe bool IsComplete(uint set)

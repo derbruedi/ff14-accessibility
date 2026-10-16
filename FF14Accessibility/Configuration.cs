@@ -15,6 +15,10 @@ public sealed class Configuration : IPluginConfiguration
     // kommen bereits in der Spielsprache vom Spiel. Siehe Loc / AccessibilityStrings.
     public LanguageMode Language = LanguageMode.Auto;
 
+    // Russian item/ability names and descriptions in speech. Missing fields in
+    // older settings keep the existing translation behaviour.
+    public bool TranslateItemsAndActions = true;
+
     // Tastaturbelegung. Standard ab V4.21 kollisionsfrei laut Live-Keybind-Dump
     // (2026-07-10): N ist der einzige freie Buchstabe, Strg+F1..F12 sind frei.
     // Format: "Taste" oder "Strg+Umschalt+Taste" (Modifier: Strg, Umschalt, Alt).
@@ -37,23 +41,27 @@ public sealed class Configuration : IPluginConfiguration
     // CAMERA_ZOOMOUT). Nur Strg+Numpad-Kombis sind zuverlaessig.
     public string KeyWalkGuide    = "Strg+Numpad3";     // Gehhilfe an/aus (neben Auto-Lauf Numpad3; Strg+Numpad3 laut Keybind-Dump frei)
     public string KeyAutoWalk     = "Numpad3";          // Auto-Lauf zum Ziel an/aus (braucht vnavmesh)
-    public string KeyFollowTarget = "+";                // Anvisiertem Ziel fortlaufend folgen an/aus (braucht vnavmesh). BARE + (VK_OEM_PLUS, NICHT Numpad+), im Keybind-Dump 2026-07-26 spielfrei
+    public string KeyFollowTarget = "Alt+F";            // Follow target (vnavmesh). The old OEM_PLUS key is also '=' on the hotbar.
     public string KeyRoutePreview = "Strg+Numpad5";     // Routen-Vorschau: Weg ansagen ohne zu laufen (Numpad5 hat die tastbare Erhebung; bare Numpad5=CAMERA_FOCUS, Strg+Numpad5 frei)
     public string KeyFaceWaypoint = "Numpad5";          // Einmal zur Wegrichtung der Gehhilfe drehen. Bare Numpad5 ist im Keybind-Dump CAMERA_FOCUS - vom User bewusst geopfert (rein visuell), das Plugin SCHLUCKT die Taste, damit die Kamera nicht zusaetzlich springt.
     public string KeyGotoCoords   = "Strg+Umschalt+F1"; // Zu Koordinaten aus der Zwischenablage laufen (z.B. "24.1 21.0" kopieren, dann Taste). Alle Strg+F/Umschalt+F sind belegt; Strg+F* ist laut Keybind-Dump spielfrei, also ist Strg+Umschalt+F* erst recht frei.
     public string KeyCopyCoords   = "Strg+Umschalt+F2"; // Eigene aktuelle Karten-Koordinaten in die Zwischenablage kopieren (zum Weitergeben im Chat). Gegenstueck zu KeyGotoCoords; Strg+Umschalt+F* laut Keybind-Dump spielfrei.
     public string KeyReadUI       = "Strg+F10";         // Aktuelles Menü vorlesen
+    public string KeyReadTable    = "Strg+Alt+F10";
     public string KeySilence      = "Strg+F11";         // Sprache stoppen
     public string KeyCombatStatus = "Strg+Entf";        // HP/MP ansagen. NICHT Strg+H: das Spiel oeffnete trotz Strg das Handwerker-Notizbuch (MENU_CRAFT=H), dessen Ansage die HP-Ansage abschnitt (Log 2026-07-19 19:19:00). Entf ist im Keybind-Dump gar nicht belegt
     public string KeyTargetStatus = "Entf";             // NUR die HP des anvisierten Ziels (Spielerwunsch 2026-08-31). Bare Entf, weil der Keybind-Dump Entf gar nicht belegt - dieselbe Feststellung, die schon Strg+Entf traegt. Im Kampf will man die Gegner-HP OHNE die eigene HP/MP-Litanei davor, deshalb eine eigene Taste statt eines Anhangs an KeyCombatStatus.
     public string KeySpStatus     = "Strg+Ende";        // SP-Stand (Sammelpunkte, engl. GP) ansagen - der Vorrat, den Sammler fuer Sammel-Fertigkeiten verbrauchen. Strg+Ende ist im Keybind-Dump CAMERA_SAVE (Kamera-Preset speichern) - rein visuell, fuer blindes Spiel folgenlos (wie die akzeptierte Kamera-Zoom-Ueberschneidung der Bild-Tasten). Plugin schluckt die Taste nicht.
     public string KeyStatusEffects = "Strg+Umschalt+Entf"; // Wirkungen auf dem Spieler ansagen (was liegt gerade auf mir). Eine Modifier-Stufe ueber dem Kampfstatus Strg+Entf, weil es dieselbe Frage ist - erst "wie stehe ich da", dann "was wirkt auf mir". Strg+Umschalt+Entf ist im Keybind-Dump weder vom Spiel noch vom Plugin belegt (Entf = Ziel-HP, Strg+Entf = Kampfstatus, Strg+Umschalt+Einfg = Ausruestungsvergleich).
+    public string KeyPlayerMenu = "Numpad0"; // Kontextmenue des anvisierten Spielers
     public string KeyToggleHeading = "N";               // Himmelsrichtungs-Ansage beim Drehen an/aus. Bare N ist die einzige freie Buchstaben-Taste im Spiel (in V5.31 fuer neue Features freigeraeumt, Keybind-Dump).
     public string KeyDumpUI       = "Strg+F5";          // Node-Tree des aktuellen Addons auf Desktop speichern
     public string KeyWhereAmI     = "Strg+F2";          // Aktives Fenster ansagen + sichtbare Fenster ins Log
     public string KeyReadHotbar   = "Strg+F9";          // Aktionsleiste 1 vorlesen (was liegt auf Taste 1-0)
     public string KeyReadInventory = "Strg+F3";         // Inventar vorlesen (Tasche + Schlüsselgegenstände)
     public string KeyReadGil       = "Umschalt+F3";     // Nur den Gil-Stand ansagen (Umschalt+F1..F12 laut Keybind-Dump frei)
+    public string KeyMoveToArmoury = "Alt+F3";          // Alle Ausrüstungsteile aus dem Inventar in die Arsenaltruhe legen
+    public string KeyShopQuantity = "Strg+Umschalt+B"; // Quantity entry for the focused gil-shop item
     public string KeyLevelExp      = "Strg+L";          // Stufe + fehlende EXP ansagen (L=Level; bare L ist im Spiel Linkshell)
     public string KeyRestedStatus  = "Umschalt+L";      // Ruhebereich + Erholungsbonus ansagen (neben der Stufe auf L; Umschalt+L steht nicht in der Belegt-Liste des Keybind-Dumps)
     // Rang des Begleit-Chocobos - die dritte Belegung der L-Familie (Strg+L eigene
@@ -227,6 +235,16 @@ public sealed class Configuration : IPluginConfiguration
     public string KeyPartyMonitor   = "Strg+Umschalt+F11"; // Heilmonitor an/aus
     public string KeyPartyRoster    = "Strg+Umschalt+F12"; // Gruppe mit Nummern vorlesen (welche Nummer ist wer)
 
+    /// <summary>Move the old follow default off the hotbar's equals key once.</summary>
+    public bool MigrateFollowTargetKey()
+    {
+        // Local saved configurations already use versions 15/16.
+        if (Version >= 17) return false;
+        if (KeyFollowTarget?.Trim() is "+" or "=") KeyFollowTarget = "Alt+F";
+        Version = 17;
+        return true;
+    }
+
     /// <summary>Resets all hotkeys to the current defaults (used by config migration).</summary>
     public void ResetKeysToDefaults()
     {
@@ -243,11 +261,13 @@ public sealed class Configuration : IPluginConfiguration
         KeyGotoCoords   = defaults.KeyGotoCoords;
         KeyCopyCoords   = defaults.KeyCopyCoords;
         KeyReadUI       = defaults.KeyReadUI;
+        KeyReadTable    = defaults.KeyReadTable;
         KeySilence      = defaults.KeySilence;
         KeyCombatStatus = defaults.KeyCombatStatus;
         KeyTargetStatus = defaults.KeyTargetStatus;
         KeySpStatus     = defaults.KeySpStatus;
         KeyStatusEffects = defaults.KeyStatusEffects;
+        KeyPlayerMenu = defaults.KeyPlayerMenu;
         KeyToggleHeading = defaults.KeyToggleHeading;
         KeyToggleAoeWarning = defaults.KeyToggleAoeWarning;
         KeyDumpUI       = defaults.KeyDumpUI;
@@ -255,6 +275,8 @@ public sealed class Configuration : IPluginConfiguration
         KeyReadHotbar   = defaults.KeyReadHotbar;
         KeyReadInventory = defaults.KeyReadInventory;
         KeyReadGil       = defaults.KeyReadGil;
+        KeyMoveToArmoury = defaults.KeyMoveToArmoury;
+        KeyShopQuantity = defaults.KeyShopQuantity;
         KeyLevelExp      = defaults.KeyLevelExp;
         KeyRestedStatus  = defaults.KeyRestedStatus;
         KeyChocoboRank   = defaults.KeyChocoboRank;
@@ -582,9 +604,9 @@ public sealed class Configuration : IPluginConfiguration
     // in sechs Sekunden). Abschaltbar, weil es auf einem Toetungs-Freibrief ein paar
     // Ansagen mehr sind.
     public bool FineTargetHpDuringLeve = true;
-    // Plugin-Gegner-Cast-Warnung (CombatService) UND Kampflog-Aktionszeilen
-    // (XivChatType.Action = 43, Mitkaempfer/Gegner/"Du wirkst …"). Aus = beides stumm;
-    // Schaden/Heilung/Buffs im Kampflog bleiben. Ein Schalter fuer beide Quellen.
+    // Warnungen vor relevanten Gegner-Casts. Aktionszeilen des Kampflogs werden
+    // unabhaengig davon nicht vorgelesen: sie enthalten auch die Casts anderer
+    // Spieler und bleiben nur im lesbaren Chatverlauf erhalten.
     public bool AnnounceEnemyCast = true;
     // Sonderaktionsleiste eines Auftrags. STANDARD AN, anders als die Flaechenwarnung:
     // hier wird nichts berechnet und nichts behauptet - die Leiste ist da oder nicht,
@@ -607,6 +629,16 @@ public sealed class Configuration : IPluginConfiguration
     // aufgezwungen werden. Opt-in per KeyToggleAoeWarning; spaeterer Release dreht den
     // Standard auf AN, sobald bestaetigt.
     public bool AnnounceAoeWarning = false;
+
+    // Explicit opt-in: rotates character and camera, never starts movement.
+    public bool AutoTurnAoe = false;
+    public bool AnnounceAttacker = true;
+    public bool WarnStrongerEnemies = true;
+    public bool AnnounceQuestObjectiveChanges = true;
+
+    // Welche Penumbra-Mods vor /acc mods aus eingeschaltet waren.
+    public bool ModsSwitchMemoryValid;
+    public List<string> ModsSwitchMemory = new();
     public float AoeWarnVolume = 0.5f;          // 0 = stumm, 1 = volle Lautstärke
 
     // Klang der Warnung (User-Wunsch 2026-08-21: "der ist nervig"). Vier Stimmen
@@ -671,7 +703,8 @@ public sealed class Configuration : IPluginConfiguration
 
     // Fähigkeit-bereit-Ansage (User-Wunsch 2026-07-30): wenn eine Fähigkeit mit
     // echter Abklingzeit (oGCD) wieder einsatzbereit ist, Ton + Name ansagen.
-    // GCD-Angriffsskills ausgeschlossen (CooldownService). STANDARD AN.
+    // Cooldown ready edges and special-action player status effects. GCD
+    // cycling stays excluded; proc effects do include GCD actions. DEFAULT ON.
     public bool AnnounceSkillReady = true;
     public float SkillReadyCueVolume = 0.5f;    // 0 = stumm, 1 = volle Lautstärke
     /// <summary>Volume for per-resource job-gauge ready tones (0 = mute).</summary>

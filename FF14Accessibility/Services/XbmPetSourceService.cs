@@ -24,14 +24,21 @@ namespace FF14Accessibility.Services;
 /// <param name="Position">Kartenmarker des Untergebiets, null wenn keiner.</param>
 public sealed record XbmPetTarget(
     byte     Number,
-    string   Name,
-    string   ZoneName,
-    string   AreaName,
+    string   RawName,
+    string   RawZoneName,
+    string   RawAreaName,
     ushort   PlaceNameId,
     uint     AreaPlaceNameId,
     uint     MapId,
     uint     TerritoryId,
-    Vector3? Position);
+    Vector3? Position)
+{
+    public XbmPetInfo? SourcePet { get; init; }
+    public uint ZonePlaceNameId { get; init; }
+    public string Name => SourcePet?.DisplayName ?? RawName;
+    public string ZoneName => RussianAuthorText.PlaceName(ZonePlaceNameId, RawZoneName);
+    public string AreaName => RussianAuthorText.PlaceName(AreaPlaceNameId, RawAreaName);
+}
 
 /// <summary>
 /// Fehlende Bestien des Bestienbändigers mit Fundort — Gegenstück zu
@@ -163,8 +170,16 @@ public sealed unsafe class XbmPetSourceService
 
     private XbmPetTarget BuildTarget(XbmPetInfo pet)
     {
+        XbmPetTarget Target(byte number, string name, string zone, string area,
+            ushort place, uint areaId, uint map, uint territory, Vector3? position)
+            => new(number, name, zone, area, place, areaId, map, territory, position)
+            {
+                SourcePet = pet,
+                ZonePlaceNameId = map != 0 && _data.GetExcelSheet<Map>().TryGetRow(map, out var row)
+                    ? row.PlaceName.RowId : place,
+            };
         if (pet.PlaceNameId == 0)
-            return new XbmPetTarget(pet.Number, pet.Name, string.Empty, string.Empty,
+            return Target(pet.Number, pet.Name, string.Empty, string.Empty,
                                     0, 0, 0, 0, null);
 
         var placeId = pet.PlaceNameId;
@@ -180,7 +195,7 @@ public sealed unsafe class XbmPetSourceService
             if (areaId != 0)
                 pos = _places.FindMarkerPosition(asZoneMap, areaId, areaName);
 
-            return new XbmPetTarget(
+            return Target(
                 pet.Number, pet.Name, zoneName, areaName,
                 placeId, areaId, asZoneMap,
                 _places.GetTerritoryOfMap(asZoneMap), pos);
@@ -189,12 +204,12 @@ public sealed unsafe class XbmPetSourceService
         // Fundort ist kein Zonenname → Wegpunkt auf irgendeiner Karte.
         var markerMap = _places.FindMapByMarkerPlaceName(placeId);
         if (markerMap == 0)
-            return new XbmPetTarget(pet.Number, pet.Name, pet.Habitat, string.Empty,
+            return Target(pet.Number, pet.Name, pet.Habitat, string.Empty,
                                     placeId, 0, 0, 0, null);
 
         var zone = _places.GetMapName(markerMap);
         var markerPos = _places.FindMarkerPosition(markerMap, placeId, pet.Habitat);
-        return new XbmPetTarget(
+        return Target(
             pet.Number, pet.Name, zone, pet.Habitat,
             placeId, placeId, markerMap,
             _places.GetTerritoryOfMap(markerMap), markerPos);
@@ -265,6 +280,7 @@ public sealed unsafe class XbmPetSourceService
     public IGameObject? FindNearestLive(string petName)
     {
         if (string.IsNullOrWhiteSpace(petName)) return null;
+        petName = _notebook.ResolveGameName(petName);
         var player = _objectTable.LocalPlayer;
         if (player == null) return null;
 

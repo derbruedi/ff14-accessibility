@@ -1,0 +1,1092 @@
+{
+  "StatusDescription": {
+    "1428": {
+      "source_base64": "5YmK6Zmk5LqI5a6a",
+      "translation": "Запланировано удаление."
+    },
+    "1514": {
+      "source_base64": "6YCj57aa44GX44Gm77yo77yw44GM5Zue5b6p44GX44Gm44GE44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно восстанавливаются."
+    },
+    "1576": {
+      "source_base64": "55+z5YyW44GX44Gf54q25oWL44CC5pS75pKD44KS5Y+X44GR44KL44Go5oim6ZeY5LiN6IO944Gr44Gq44KL44CC",
+      "translation": "Окаменение. Полученная атака приводит к потере сознания."
+    },
+    "1607": {
+      "source_base64": "4peP5by354OI44Gq6Zu35bGe5oCn44GM5pyJ5Yq544CC",
+      "translation": "Уязвимость к мощным атакам стихии молнии."
+    },
+    "1780": {
+      "source_base64": "5a6z5oSP44GC44KL6a2U5Yqb44Gr44KI44Gj44Gm5rGa5p+T44GV44KM44Gf54q25oWL44CC54m55a6a44Gu5pS75pKD44Gr44KI44Gj44Gm44CB5oim6ZeY5LiN6IO954q25oWL44Gr6Zml44KL44CC",
+      "translation": "Заражение враждебной магией. Определённая атака приводит к потере сознания."
+    },
+    "1979": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM5aKX5Yqg44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон увеличен."
+    },
+    "1980": {
+      "source_base64": "5LiO44OA44Oh44O844K444GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Наносимый урон уменьшен."
+    },
+    "1994": {
+      "source_base64": "6Ieq6Lqr44Gr5a++44GZ44KL77yo77yw5Zue5b6p5Yq55p6c44GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Эффективность получаемого исцеления ОЗ уменьшена."
+    },
+    "1995": {
+      "source_base64": "6Ieq6Lqr44Gr5a++44GZ44KL77yo77yw5Zue5b6p5Yq55p6c44GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Эффективность получаемого исцеления ОЗ уменьшена."
+    },
+    "1998": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM5aKX5Yqg44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон увеличен."
+    },
+    "1999": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM5aKX5Yqg44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон увеличен."
+    },
+    "2001": {
+      "source_base64": "44GZ44G544Gm44Gu5pS75pKD44Gr5a++44GX44Gm77yo77yw44GMMeOCiOOCiua4m+OCi+OBk+OBqOOBjOOBquOBhOeKtuaFi+OAgg==",
+      "translation": "Никакая атака не может уменьшить ОЗ ниже 1."
+    },
+    "2016": {
+      "source_base64": "5qyh44Gr5a6f6KGM44GZ44KL44Ob44O844Oq44O844K544OU44Oq44OD44OI44Gu5aiB5Yqb44GM5LiK5piH44GZ44KL54q25oWL44CC",
+      "translation": "Мощность следующего применения «Святого духа» увеличена."
+    },
+    "2028": {
+      "source_base64": "6a2U5rOV44GM6Kmg5ZSx5pmC6ZaT54Sh44GX44Gn5ZSx44GI44KJ44KM44KL54q25oWL44CC",
+      "translation": "Заклинания применяются без времени произнесения."
+    },
+    "2031": {
+      "source_base64": "57aZ57aa44OA44Oh44O844K444KS5Y+X44GR44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются из-за периодического урона."
+    },
+    "2032": {
+      "source_base64": "57aZ57aa44OA44Oh44O844K444KS5Y+X44GR44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются из-за периодического урона."
+    },
+    "2045": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM5aKX5Yqg44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон увеличен."
+    },
+    "2046": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM6Lu95rib44GV44KM44KL54q25oWL44CC",
+      "translation": "Получаемый урон уменьшен."
+    },
+    "2230": {
+      "source_base64": "44OR44OL44OD44Kv44Gr6Zml44Gj44Gf54q25oWL44CC44Op44Og44Km44GL44KJ6YGg44GW44GL44KL44KI44GG44Gr56e75YuV44GX44Gm44GX44G+44GG44CC",
+      "translation": "Паника заставляет двигаться прочь от Раму."
+    },
+    "2400": {
+      "source_base64": "5Luy6ZaT44GL44KJ6Zui44KM44KL44Go5oGQ5oWM54q25oWL44Gr44Gq44KL44CC",
+      "translation": "Удаление от союзников вызывает панику."
+    },
+    "2442": {
+      "source_base64": "5LiO44OA44Oh44O844K444GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Наносимый урон уменьшен."
+    },
+    "2541": {
+      "source_base64": "5LiN5rWE44Gr5L616aOf44GV44KM44Gk44Gk44GC44KL54q25oWL44CC44Kr44Km44Oz44OIMOOBp+S4jea1hOOBruaBkOaAlueKtuaFi+OBq+mZpeOCiuOAgeWvvuixoeOBi+OCiembouOCjOOCiOOBhuOBqOOBl+OBpuOBl+OBvuOBhuOAgg==",
+      "translation": "Нечистота постепенно поглощает вас. При достижении счётчиком 0 нечестивый ужас заставит двигаться прочь от цели."
+    },
+    "2542": {
+      "source_base64": "5LiN5rWE44Gu5oGQ5oCW44Gn6KGM5YuV44Gn44GN44Gq44GP44Gq44KK44CB5a++6LGh44GL44KJ6Zui44KM44KI44GG44Go44GX44Gm44GX44G+44GG54q25oWL44CC",
+      "translation": "Нечестивый ужас не позволяет действовать и заставляет двигаться прочь от цели."
+    },
+    "2784": {
+      "source_base64": "6K2m5oiS5bqm44Gu6Ieq5YuV5LiK5piH44GM5YGc5q2i44GX44Gm44GE44KL54q25oWL44CC",
+      "translation": "Автоматический рост уровня тревоги остановлен."
+    },
+    "2811": {
+      "source_base64": "44OX44Ot44Kw44Op44Og44GM6YCG44Gu6aCG55Wq44Gn5a6f6KGM44GV44KM44KL54q25oWL44CC",
+      "translation": "Программы выполняются в обратном порядке."
+    },
+    "2882": {
+      "source_base64": "5Y+X44GR44KL54mp55CG44OA44Oh44O844K444GM5aKX5Yqg44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый физический урон увеличен."
+    },
+    "2883": {
+      "source_base64": "44Kq44O844OI44Ki44K/44OD44Kv44Gu5pS75pKD6ZaT6ZqU44Go44CB44Km44Kn44Od44Oz44K544Kt44Or44GK44KI44Gz6a2U5rOV44Gu44Kt44Oj44K544OI44K/44Kk44Og44Go44Oq44Kt44Oj44K544OI44K/44Kk44Og44GM5bu26ZW344GV44KM44Gf54q25oWL44CC",
+      "translation": "Интервал между автоатаками, время применения и восстановления оружейных умений и заклинаний увеличены."
+    },
+    "2884": {
+      "source_base64": "77yo77yw6Ieq54S25Zue5b6p44GM54Sh5Yq55YyW44GV44KM44Gf54q25oWL44CC",
+      "translation": "Естественное восстановление ОЗ отключено."
+    },
+    "2906": {
+      "source_base64": "4peP44Kw44Os44Kk44OX44OL44Or44Gu5pS75pKD44Gr44KI44Gj44Gm5LuY5LiO44GV44KM44Gf5q+S44CC54m55a6a44Gu5pS75pKD44KS5Y+X44GR44KL5bqm44Gr5q+S44GM6YCy5YyW44GX44CB5qeY44CF44Gq5byx5L2T5Yq55p6c44G444Go5aSJ5YyW44GZ44KL44CC",
+      "translation": "Яд, наложенный атакой Глейпнира. При получении определённых атак яд изменяется, превращаясь в различные ослабляющие эффекты."
+    },
+    "2934": {
+      "source_base64": "4peP5pyq5a6M5oiQ44Gu54q25oWL44Gg44GM5by35Yi255qE44Gr55+t5pmC6ZaT56i85YON44GX44Gm44GE44KL54q25oWL44CC5Yq55p6c5pmC6ZaT5Lit44Gv56C05aOK44GV44KM44Gq44GE44CC",
+      "translation": "Незавершённый механизм принудительно работает короткое время. Его нельзя уничтожить, пока действует эффект."
+    },
+    "2956": {
+      "source_base64": "6KKr44OA44Oh44O844K444KS6Lu95rib44GZ44KL44K344O844Or44OJ44KS55m655Sf44GV44Gb44Gm44GE44KL54q25oWL44CC",
+      "translation": "Создан щит, уменьшающий получаемый урон."
+    },
+    "3027": {
+      "source_base64": "5LiO44OA44Oh44O844K444GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Наносимый урон уменьшен."
+    },
+    "3032": {
+      "source_base64": "44OX44Op44Kk44Oe44Or44Os44Oz44OJ44KS5a6f6KGM44Gn44GN44KL54q25oWL44CC",
+      "translation": "Можно применить «Первобытный разрыв»."
+    },
+    "3035": {
+      "source_base64": "6Ieq6Lqr44Gr5a++44GZ44KL77yo77yw5Zue5b6p5Yq55p6c44GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Эффективность получаемого исцеления ОЗ уменьшена."
+    },
+    "3040": {
+      "source_base64": "44Km44Kn44Od44Oz44K544Kt44Or44Gr44KI44KL5pS75pKD44Gr77yo77yw5ZC45Y+O5Yq55p6c44GM5LuY5LiO44GV44KM44Gf54q25oWL44CC",
+      "translation": "Оружейные умения поглощают ОЗ при попадании."
+    },
+    "3126": {
+      "source_base64": "6Ieq6Lqr44GMMeeVquebruOBq+WPl+OBkeOBn+S6i+ixoeOBjOiomOmMsuOBleOCjOOBpuOBhOOCi+eKtuaFi+OAgg==",
+      "translation": "Записано первое произошедшее с вами событие."
+    },
+    "3127": {
+      "source_base64": "6Ieq6Lqr44GMMueVquebruOBq+WPl+OBkeOBn+S6i+ixoeOBjOiomOmMsuOBleOCjOOBpuOBhOOCi+eKtuaFi+OAgg==",
+      "translation": "Записано второе произошедшее с вами событие."
+    },
+    "3128": {
+      "source_base64": "6Ieq6Lqr44GMM+eVquebruOBq+WPl+OBkeOBn+S6i+ixoeOBjOiomOmMsuOBleOCjOOBpuOBhOOCi+eKtuaFi+OAgg==",
+      "translation": "Записано третье произошедшее с вами событие."
+    },
+    "3252": {
+      "source_base64": "44OK44Or44K244Or44Gu5aSp56ek44Gu44GG44Gh44CB5q2744Gu5YG044Gr6a2C44GM6KiI5LiK44GV44KM44Gm44GE44KL54q25oWL44CC",
+      "translation": "Ваша душа учтена на стороне смерти весов Нальд'тала."
+    },
+    "3253": {
+      "source_base64": "44OK44Or44K244Or44Gu5aSp56ek44Gu44GG44Gh44CB55Sf44Gu5YG044Gr6a2C44GM6KiI5LiK44GV44KM44Gm44GE44KL54q25oWL44CC",
+      "translation": "Ваша душа учтена на стороне жизни весов Нальд'тала."
+    },
+    "3596": {
+      "source_base64": "5Yil44Gu5ae/44Gr5aSJ6Lqr44GX44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT44GM57WC5LqG44GZ44KL44Go5aSn54iG55m644KS6LW344GT44GZ44CC",
+      "translation": "Облик изменён. По окончании эффекта произойдёт мощный взрыв."
+    },
+    "3632": {
+      "source_base64": "4peP5b+F5ruF44Gu54KO44KS5LuY5LiO44GX44Gm44GE44KL54q25oWL44CC",
+      "translation": "Наложен эффект смертельного пламени."
+    },
+    "3633": {
+      "source_base64": "6Zu35bGe5oCn44OA44Oh44O844K444Gr44KI44KK44CB77yo77yw44GM5b6Q44CF44Gr5aSx44KP44KM44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются из-за урона стихии молнии."
+    },
+    "3634": {
+      "source_base64": "5rC35bGe5oCn44OA44Oh44O844K444Gr44KI44KK44CB77yo77yw44GM5b6Q44CF44Gr5aSx44KP44KM44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются из-за урона стихии льда."
+    },
+    "3635": {
+      "source_base64": "54Gr5bGe5oCn44OA44Oh44O844K444Gr44KI44KK44CB77yo77yw44GM5b6Q44CF44Gr5aSx44KP44KM44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются из-за урона стихии огня."
+    },
+    "3720": {
+      "source_base64": "5qyh44Gr55m65YuV44GZ44KL5pS75pKD44Gu5Zue6Lui6KeS44GMMuWAjeOBq+OBquOCi+eKtuaFi+OAgg==",
+      "translation": "Угол поворота следующей атаки удвоен."
+    },
+    "3722": {
+      "source_base64": "5qyh44Gr55m65YuV44GZ44KL5pS75pKD44Gu5Zue6Lui6KeS44GMNOWAjeOBq+OBquOCi+eKtuaFi+OAgg==",
+      "translation": "Угол поворота следующей атаки увеличен в 4 раза."
+    },
+    "3736": {
+      "source_base64": "5aSn5qi544Gr5o+P44GL44KM44Gf6a2U57SL44Gr44CB44Ko44O844OG44Or44KS5ZC444KP44KM44Gm44GE44KL54q25oWL44CC",
+      "translation": "Магическая печать на великом древе поглощает ваш эфир."
+    },
+    "3750": {
+      "source_base64": "6KGM5YuV44Gn44GN44Gq44GP44Gq44Gj44Gf54q25oWL44CC",
+      "translation": "Невозможно действовать."
+    },
+    "3927": {
+      "source_base64": "56We57WM5q+S44Gr44KI44KK44CB5pa55ZCR5oSf6Kaa44Gr55Ww5bi444GM55Sf44GY44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44CB5YmN5pa55ZCR44Gr56e75YuV44GX44Gm44GX44G+44GG44CC",
+      "translation": "Нейротоксин нарушает чувство направления. По окончании эффекта вы переместитесь вперёд."
+    },
+    "3928": {
+      "source_base64": "56We57WM5q+S44Gr44KI44KK44CB5pa55ZCR5oSf6Kaa44Gr55Ww5bi444GM55Sf44GY44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44CB5b6M5pa55ZCR44Gr56e75YuV44GX44Gm44GX44G+44GG44CC",
+      "translation": "Нейротоксин нарушает чувство направления. По окончании эффекта вы переместитесь назад."
+    },
+    "3929": {
+      "source_base64": "56We57WM5q+S44Gr44KI44KK44CB5pa55ZCR5oSf6Kaa44Gr55Ww5bi444GM55Sf44GY44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44CB5bem5pa55ZCR44Gr56e75YuV44GX44Gm44GX44G+44GG44CC",
+      "translation": "Нейротоксин нарушает чувство направления. По окончании эффекта вы переместитесь влево."
+    },
+    "3930": {
+      "source_base64": "56We57WM5q+S44Gr44KI44KK44CB5pa55ZCR5oSf6Kaa44Gr55Ww5bi444GM55Sf44GY44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44CB5Y+z5pa55ZCR44Gr56e75YuV44GX44Gm44GX44G+44GG44CC",
+      "translation": "Нейротоксин нарушает чувство направления. По окончании эффекта вы переместитесь вправо."
+    },
+    "3990": {
+      "source_base64": "44CMMeOAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «1»."
+    },
+    "3991": {
+      "source_base64": "44CMMuOAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «2»."
+    },
+    "3992": {
+      "source_base64": "44CMM+OAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «3»."
+    },
+    "3993": {
+      "source_base64": "44CMNOOAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «4»."
+    },
+    "3994": {
+      "source_base64": "44CMNeOAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «5»."
+    },
+    "3995": {
+      "source_base64": "44CMNuOAjeOBruOCq+ODvOODieOCkuW8leOBhOOBn+eKtuaFi+OAgg==",
+      "translation": "Вытянута карта «6»."
+    },
+    "4038": {
+      "source_base64": "6a2U5rOV6Zqc5aOB44Gr57a744Gz44GM55Sf44GY44Gf54q25oWL44CC5q2j6Z2i44GL44KJ44Gu5pS75pKD44Gn5aSn44OA44Oh44O844K444KS5Y+X44GR44KL44CC",
+      "translation": "Магический барьер повреждён. Атаки спереди наносят большой урон."
+    },
+    "4135": {
+      "source_base64": "4peP55u05YmN44Gr5a6f6KGM44GX44Gf5pS75pKD44KS5oCd44GE5Ye644GX44CB6KiY5oa244GX44Gm44GE44KL54q25oWL44CC",
+      "translation": "Предыдущая атака вспомнена и сохранена в памяти."
+    },
+    "4176": {
+      "source_base64": "56e75YuV44Gn44GN44Gq44GP44Gq44Gj44Gf54q25oWL44CC",
+      "translation": "Невозможно двигаться."
+    },
+    "4291": {
+      "source_base64": "44Kk44Oz44Oa44Kk44Or44Oh44Oz44OI44KS5a6f6KGM44Gn44GN44KL54q25oWL44CC",
+      "translation": "Можно применить «Пронзание»."
+    },
+    "4292": {
+      "source_base64": "44OP44O844OI44Kz44Oz44Oc44KS5a6f6KGM44Gn44GN44KL54q25oWL44CC",
+      "translation": "Можно применить сердечную комбинацию."
+    },
+    "4297": {
+      "source_base64": "56e75YuV6YCf5bqm44GM5LiK5piH44GX44Gf54q25oWL44CC",
+      "translation": "Скорость передвижения увеличена."
+    },
+    "4298": {
+      "source_base64": "6Ieq6Lqr44Gr5a++44GZ44KL77yo77yw5Zue5b6p5Yq55p6c44GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Эффективность получаемого исцеления ОЗ уменьшена."
+    },
+    "4299": {
+      "source_base64": "5LiO44OA44Oh44O844K444Go6Ieq6Lqr44GL44KJ44Gu77yo77yw5Zue5b6p5Yq55p6c44GM5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Наносимый урон и эффективность вашего исцеления ОЗ уменьшены."
+    },
+    "4300": {
+      "source_base64": "56e75YuV6YCf5bqm44GM5LiK5piH44GX44Gf54q25oWL44CC",
+      "translation": "Скорость передвижения увеличена."
+    },
+    "4318": {
+      "source_base64": "5qyh44Gu6a2U5rOV44GM44CB6Kmg5ZSx5pmC6ZaT54Sh44GX44Gn5ZSx44GI44KJ44KM44KL54q25oWL44CC6Kmg5ZSx5pmC6ZaT44Gu44Gq44GE6a2U5rOV44Gu5aC05ZCI44Gv5Luj44KP44KK44Gr5aiB5Yqb44GM5LiK5piH44GZ44KL44CC",
+      "translation": "Следующее заклинание применяется мгновенно. Если оно и так мгновенное, вместо этого увеличивается его мощность."
+    },
+    "4323": {
+      "source_base64": "44Ki44Oz44Ks44K444Kn44Oe44Oz44KS5a6f6KGM44Gn44GN44KL54q25oWL44CC",
+      "translation": "Можно применить «Сближение»."
+    },
+    "4325": {
+      "source_base64": "77yo77yw44GM5b6Q44CF44Gr5aSx44KP44KM44KL54q25oWL44CC",
+      "translation": "ОЗ постепенно теряются."
+    },
+    "4356": {
+      "source_base64": "6ZeH5bGe5oCn44Gu6a2U5Yqb44Gr44KI44KK5pS75pKD5Yqb44GM5ZCR5LiK44GX44Gf54q25oWL44CC",
+      "translation": "Сила атаки увеличена магией тьмы."
+    },
+    "4381": {
+      "source_base64": "5Y+X44GR44KL44OA44Oh44O844K444GM6Lu95rib44GV44KM44CB44GL44Gk5pS75pKD44KS5Y+X44GR44Gf5aC05ZCI44Gr44CB77yo77yw44KS5ZC45Y+O44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон уменьшен. Получение атаки позволяет поглощать ОЗ."
+    },
+    "4493": {
+      "source_base64": "UHZQ44Ot44O844Or44Ki44Kv44K344On44Oz44Go44GX44Gm44OQ44Oq44Ki44KS6YG45oqe44GX44Gm44GE44KL54q25oWL44CC",
+      "translation": "В качестве ролевого действия в сражениях между игроками выбран барьер."
+    },
+    "4756": {
+      "source_base64": "6YCj55Kw57Sw6IOe44GM5LuY552A44GX44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT44GM57WC5LqG44GZ44KL44Go44CB44CM6YCj55Kw57Sw6IOezrLvvLvlrrPvvL3jgI3jgavlpInljJbjgZnjgovjgII=",
+      "translation": "Прикреплена цепная клетка. По окончании эффекта она превратится в цепную клетку бета, вредоносную."
+    },
+    "4757": {
+      "source_base64": "6YCj55Kw57Sw6IOe44GM5rS75oCn5YyW44GX44Gf54q25oWL44CC57Sw6IOe44Gn57mL44GM44KM44Gm44GE44KL6ZaT44CB77yo77yw44GM5b6Q44CF44Gr5aSx44KP44KM44KL44CC",
+      "translation": "Цепная клетка активирована. ОЗ постепенно теряются, пока сохраняется связь через клетки."
+    },
+    "4830": {
+      "source_base64": "44OH44Kj44O844OX44OW44Or44O844Gu44Ko44O844OG44Or44Gr6K2344KJ44KM44Gf54q25oWL44CC",
+      "translation": "Вас защищает эфир глубокой синевы."
+    },
+    "4885": {
+      "source_base64": "4peP5pS75pKD44Gu44K/44O844Ky44OD44OI44Go44GX44Gm44CB54uZ44GE44KS44Gk44GR44KJ44KM44Gm44GE44KL54q25oWL44CC44G744GL44Gu44OX44Os44Kk44Ok44O844Gr6L+R44Gl44GP44Go44CB44K/44O844Ky44OD44OI44Gu5a++6LGh44GM56e744KL44CC",
+      "translation": "Вы выбраны целью атаки. При приближении к другому игроку целью станет он."
+    },
+    "4886": {
+      "source_base64": "4peP44K/44O844Ky44OD44OI44Gu5a++6LGh44Gr44Gq44KJ44Gq44GE44CC",
+      "translation": "Нельзя выбрать целью."
+    },
+    "5056": {
+      "source_base64": "5pmC6ZmQ44Gu5ZGq6Kmb44GM5Yi744G+44KM44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44Gr44CB5YyX44GL44KJ56qB6aKo44KS5Y+X44GR44KL44CC",
+      "translation": "Наложено отложенное проклятие. По окончании эффекта порыв ветра ударит с севера."
+    },
+    "5057": {
+      "source_base64": "5pmC6ZmQ44Gu5ZGq6Kmb44GM5Yi744G+44KM44Gf54q25oWL44CC5Yq55p6c5pmC6ZaT57WC5LqG5pmC44Gr44CB5Y2X44GL44KJ56qB6aKo44KS5Y+X44GR44KL44CC",
+      "translation": "Наложено отложенное проклятие. По окончании эффекта порыв ветра ударит с юга."
+    },
+    "5139": {
+      "source_base64": "77yo77yw6Ieq54S25Zue5b6p44GM54Sh5Yq55YyW44GV44KM44Gf54q25oWL44CC",
+      "translation": "Естественное восстановление ОЗ отключено."
+    },
+    "5179": {
+      "source_base64": "5r2c5Zyo55qE44Gr5q+S57Sg44KS5L+d5oyB44GX44Gf54q25oWL44CC5oim6ZeY5LiN6IO95pmC44CB5ZGo5Zuy44Gr5q+S57Sg44KS6aOb5pWj44GV44Gb44KL44CC",
+      "translation": "В организме скрыт токсин. При потере сознания он распространится вокруг."
+    },
+    "5426": {
+      "source_base64": "5LiA5a6a6YeP44Gu44OA44Oh44O844K444KS6Lu95rib44GZ44KL54q25oWL44CC",
+      "translation": "Получаемый урон уменьшается на определённую величину."
+    },
+    "5431": {
+      "source_base64": "56qB5bGe5oCn44Gr5a++44GZ44KL6ICQ5oCn44GM6JGX44GX44GP5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Сопротивление колющему урону значительно уменьшено."
+    },
+    "5432": {
+      "source_base64": "6aKo5bGe5oCn44Gr5a++44GZ44KL6ICQ5oCn44GM6JGX44GX44GP5L2O5LiL44GX44Gf54q25oWL44CC",
+      "translation": "Сопротивление урону стихии ветра значительно уменьшено."
+    },
+    "5435": {
+      "source_base64": "5Y+X44GR44KL54mp55CG44OA44Oh44O844K444GM6Lu95rib44GV44KM44KL54q25oWL44CC",
+      "translation": "Получаемый физический урон уменьшен."
+    },
+    "5436": {
+      "source_base64": "5Y+X44GR44KL6a2U5rOV44OA44Oh44O844K444GM6Lu95rib44GV44KM44KL54q25oWL44CC",
+      "translation": "Получаемый магический урон уменьшен."
+    },
+    "5440": {
+      "source_base64": "5YWJ5bGe5oCn44Gu44Ko44O844OG44Or44KS57qP44Gj44Gf54q25oWL44CC6ZeH5bGe5oCn44Gu44Ko44O844OG44Or44KS57qP44Gj44Gf6ICF5Lul5aSW44GL44KJ5Y+X44GR44KL44OA44Oh44O844K444KS54Sh5Yq55YyW44GZ44KL",
+      "translation": "Вас окутывает эфир света. Урон от всех, кроме окутанных эфиром тьмы, полностью предотвращается."
+    },
+    "5441": {
+      "source_base64": "6ZeH5bGe5oCn44Gu44Ko44O844OG44Or44KS57qP44Gj44Gf54q25oWL44CC5YWJ5bGe5oCn44Gu44Ko44O844OG44Or44KS57qP44Gj44Gf6ICF5Lul5aSW44GL44KJ5Y+X44GR44KL44OA44Oh44O844K444KS54Sh5Yq55YyW44GZ44KL",
+      "translation": "Вас окутывает эфир тьмы. Урон от всех, кроме окутанных эфиром света, полностью предотвращается."
+    },
+    "5468": {
+      "source_base64": "44Ki44Kv44K344On44Oz44GM5a6f6KGM44Gn44GN44Gq44GP44Gq44Gj44Gf54q25oWL44CC",
+      "translation": "Невозможно применять действия."
+    }
+  },
+  "MainCommandName": {
+    "38": {
+      "source_base64": "TG9ncw==",
+      "translation": "Журналы"
+    },
+    "39": {
+      "source_base64": "U29jaWFs",
+      "translation": "Общение"
+    },
+    "40": {
+      "source_base64": "U3lzdGVt",
+      "translation": "Система"
+    },
+    "43": {
+      "source_base64": "RHV0eQ==",
+      "translation": "Задания"
+    }
+  },
+  "GatheringTypeName": {
+    "0": {
+      "source_base64": "TWluaW5n",
+      "translation": "Добыча руды"
+    },
+    "1": {
+      "source_base64": "UXVhcnJ5aW5n",
+      "translation": "Разработка каменоломен"
+    },
+    "2": {
+      "source_base64": "TG9nZ2luZw==",
+      "translation": "Заготовка древесины"
+    },
+    "3": {
+      "source_base64": "SGFydmVzdGluZw==",
+      "translation": "Сбор урожая"
+    },
+    "4": {
+      "source_base64": "4peP6Yqb",
+      "translation": "Подводная охота"
+    },
+    "5": {
+      "source_base64": "4peP6Yqb",
+      "translation": "Подводная охота"
+    }
+  },
+  "DeepDungeonItemName": {
+    "20": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgTGV0aGFyZ3k=",
+      "translation": "Протомандер летаргии"
+    },
+    "21": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU3Rvcm1z",
+      "translation": "Протомандер бурь"
+    },
+    "22": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgRHJlYWQ=",
+      "translation": "Протомандер ужаса"
+    },
+    "23": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU2FmZXR5",
+      "translation": "Протомандер безопасности"
+    },
+    "24": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU2lnaHQ=",
+      "translation": "Протомандер зрения"
+    },
+    "25": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU3RyZW5ndGg=",
+      "translation": "Протомандер силы"
+    },
+    "26": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU3RlZWw=",
+      "translation": "Протомандер стали"
+    },
+    "27": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgQWZmbHVlbmNl",
+      "translation": "Протомандер изобилия"
+    },
+    "28": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgRmxpZ2h0",
+      "translation": "Протомандер полёта"
+    },
+    "29": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgQWx0ZXJhdGlvbg==",
+      "translation": "Протомандер преображения"
+    },
+    "30": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgUHVyaXR5",
+      "translation": "Протомандер чистоты"
+    },
+    "31": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgRm9ydHVuZQ==",
+      "translation": "Протомандер удачи"
+    },
+    "32": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgV2l0Y2hpbmc=",
+      "translation": "Протомандер колдовства"
+    },
+    "33": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgU2VyZW5pdHk=",
+      "translation": "Протомандер безмятежности"
+    },
+    "34": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgSW50dWl0aW9u",
+      "translation": "Протомандер интуиции"
+    },
+    "35": {
+      "source_base64": "UHJvdG9tYW5kZXIgb2YgUmFpc2luZw==",
+      "translation": "Протомандер воскрешения"
+    },
+    "8": {
+      "source_base64": "UG9tYW5kZXIgb2YgUHVyaXR5",
+      "translation": "Помандер чистоты"
+    }
+  },
+  "DeepDungeonItemTooltip": {
+    "36": {
+      "source_base64": "UmVuZGVycyBwYXJ0eSBhYmxlIHRvIHN3aWZ0bHkgZXhlY3V0ZSB3ZWFwb25za2lsbHMsIHNwZWxscywgYW5kIGF1dG8tYXR0YWNrcy4=",
+      "translation": "Позволяет группе быстрее выполнять боевые приёмы, заклинания и автоатаки."
+    },
+    "37": {
+      "source_base64": "UmVtb3ZlcyBhbGwgY3VyYWJsZSBzdGF0dXMgYWlsbWVudHMgZnJvbSB0aGUgcGFydHksIGFuZCBlcmVjdHMgYSBiYXJyaWVyIGFnYWluc3QgdGhlIG5leHQgc3RhdHVzIGFpbG1lbnQgc3VmZmVyZWQu",
+      "translation": "Снимает с группы все излечимые отрицательные эффекты и создаёт барьер от следующего отрицательного эффекта."
+    },
+    "38": {
+      "source_base64": "R3VhcmFudGVlcyBhIHZvdGl2ZSBjYW5kZWxhYnJhIAIIDeTpbgX/A2lu/wNvbgMgdGhlIG5leHQgAgke6W7/BmZsb29y/wZmbG9vcv8GZmxvb3L/BWFyZWEDLg==",
+      "translation": "Гарантирует появление обетного канделябра <var 08 E4E96E05 ((в)) ((на)) /var> <var 09 E96E ((следующем этаже)) ((следующем этаже)) ((следующем этаже)) ((следующей области)) /var>."
+    }
+  },
+  "DeepDungeonMagicStoneName": {
+    "5": {
+      "source_base64": "UG9pc29uZnJ1aXQgSW5jZW5zZQ==",
+      "translation": "Благовония ядовитых плодов"
+    }
+  },
+  "DeepDungeonMagicStoneTooltip": {
+    "5": {
+      "source_base64": "SnVuaXBlciBpbmNlbnNlIGJ1cm5lZCBieSB0aGUgZGVjZWFzZWQgaW4gYWNjb3JkYW5jZSB3aXRoIEZpcnN0IExpZ2h0IGZ1bmVyZWFsIHByYWN0aWNlcy4gU3VtbW9ucyB0aGUgZmFlcmllIGtpbmcgdG8gc2VudGVuY2UgYWxsIGZvZXMgdG8gZGVhdGgu",
+      "translation": "Можжевеловые благовония, которые усопшие воскуривают согласно погребальным обрядам Первого Света. Призывают короля фей, приговаривающего всех врагов к смерти."
+    }
+  },
+  "DeepDungeonEquipmentName": {
+    "7": {
+      "source_base64": "SWxsdW1lZCBBZXRoZXJwb29sIEFybQ==",
+      "translation": "Озарённое оружие эфирного пула"
+    },
+    "8": {
+      "source_base64": "SWxsdW1lZCBBZXRoZXJwb29sIEFybW9y",
+      "translation": "Озарённая броня эфирного пула"
+    }
+  },
+  "DeepDungeon4GimmickEffectTransientName": {
+    "1": {
+      "source_base64": "UHJpbW9yZGlhbCBGbGVzaA==",
+      "translation": "Изначальная плоть"
+    },
+    "3": {
+      "source_base64": "QW5vaW50bWVudA==",
+      "translation": "Помазание"
+    },
+    "4": {
+      "source_base64": "TW9ydGlmaWNhdGlvbg==",
+      "translation": "Умерщвление плоти"
+    },
+    "6": {
+      "source_base64": "U3dpZnQgUGFzc2FnZQ==",
+      "translation": "Быстрый проход"
+    },
+    "7": {
+      "source_base64": "Rm9lcycgRnJhaWx0eQ==",
+      "translation": "Слабость врагов"
+    },
+    "8": {
+      "source_base64": "R2F0aGVyaW5nIEdsb29t",
+      "translation": "Сгущающийся мрак"
+    },
+    "9": {
+      "source_base64": "VHJlYWNoZXJvdXMgR3JvdW5k",
+      "translation": "Коварная почва"
+    },
+    "10": {
+      "source_base64": "QmxpbmQgRmFpdGg=",
+      "translation": "Слепая вера"
+    }
+  },
+  "DeepDungeon4GimmickEffectTransientDescription": {
+    "1": {
+      "source_base64": "TXVkZHkgbWluZHMgbWFrZSBtdWQgb2YgbWVuLg==",
+      "translation": "Мутные мысли обращают людей в грязь."
+    },
+    "2": {
+      "source_base64": "RmVhciBub3QgdGhlIGZpcmUgd2l0aGluLg==",
+      "translation": "Не бойся внутреннего огня."
+    },
+    "3": {
+      "source_base64": "VGltZSBoZWFscyBhbGwgd291bmRzLg==",
+      "translation": "Время исцеляет все раны."
+    },
+    "4": {
+      "source_base64": "SGVlZCB2dWxuZXJhYmlsaXR5IHRvIGdhaW4gcG93ZXIgYW5kIHJlanV2ZW5hdGlvbi4=",
+      "translation": "Внемли уязвимости, чтобы обрести силу и обновление."
+    },
+    "5": {
+      "source_base64": "UmVwZWF0IHdpdGggYSBzd2lmdG5lc3MgeW91ciBncmVhdGVzdCBhYmlsaXRpZXMu",
+      "translation": "Быстро повторяй свои величайшие способности."
+    },
+    "6": {
+      "source_base64": "VGFycnkgbm90LiBTdHJpZGUgZm9ydGgu",
+      "translation": "Не медли. Ступай вперёд."
+    },
+    "7": {
+      "source_base64": "V2VhayBhcmUgdGhlIHdpY2tlZC4=",
+      "translation": "Слабы нечестивые."
+    },
+    "8": {
+      "source_base64": "QmUgYWZlYXJlZC4gVGhlIHBsYWd1ZSBpcyBuaWdoLg==",
+      "translation": "Страшись. Чума близка."
+    },
+    "9": {
+      "source_base64": "VHJlYWQgY2FyZWZ1bGx5IGZvciB0aGUgcm9hZCBpcyBwZXJpbG91cy4=",
+      "translation": "Ступай осторожно, ибо путь опасен."
+    },
+    "10": {
+      "source_base64": "UGlldHkgaXMgdGhlIHRydWUgbWFwIG9mIHRoZSByaWdodGVvdXMu",
+      "translation": "Благочестие — истинная карта праведных."
+    }
+  },
+  "LogFilterName": {
+    "121": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBlbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги в бою: применённые к ним предметы."
+    },
+    "122": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIGVuZ2FnZWQgZW5lbWllcy4=",
+      "translation": "Враги в бою: полученное исцеление заклинаниями."
+    },
+    "123": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги в бою: полученные положительные эффекты."
+    },
+    "124": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги в бою: полученные отрицательные эффекты."
+    },
+    "125": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIGVuZ2FnZWQgZW5lbWllcyBlbmRpbmcu",
+      "translation": "Враги в бою: окончание их положительных эффектов."
+    },
+    "126": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBlbmdhZ2VkIGVuZW1pZXMgZW5kaW5nLg==",
+      "translation": "Враги в бою: окончание их отрицательных эффектов."
+    },
+    "131": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IHVuZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги вне боя: нанесённый урон."
+    },
+    "132": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: неудачные атаки."
+    },
+    "133": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: начатые действия."
+    },
+    "134": {
+      "source_base64": "SXRlbXMgdXNlZCBieSB1bmVuZ2FnZWQgZW5lbWllcy4=",
+      "translation": "Враги вне боя: использованные предметы."
+    },
+    "135": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IHVuZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги вне боя: исходящее исцеление заклинаниями."
+    },
+    "136": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: наложенные положительные эффекты."
+    },
+    "137": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: наложенные отрицательные эффекты."
+    },
+    "138": {
+      "source_base64": "RGFtYWdlIHVuZW5nYWdlZCBlbmVtaWVzIGFyZSBkZWFsdC4=",
+      "translation": "Враги вне боя: полученный урон."
+    },
+    "139": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: неудачные атаки по ним."
+    },
+    "140": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIHVuZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги вне боя: применённые к ним действия."
+    },
+    "141": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiB1bmVuZ2FnZWQgZW5lbWllcy4=",
+      "translation": "Враги вне боя: применённые к ним предметы."
+    },
+    "142": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIHVuZW5nYWdlZCBlbmVtaWVzLg==",
+      "translation": "Враги вне боя: полученное исцеление заклинаниями."
+    },
+    "143": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: полученные положительные эффекты."
+    },
+    "144": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gdW5lbmdhZ2VkIGVuZW1pZXMu",
+      "translation": "Враги вне боя: полученные отрицательные эффекты."
+    },
+    "145": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIHVuZW5nYWdlZCBlbmVtaWVzIGVuZGluZy4=",
+      "translation": "Враги вне боя: окончание их положительных эффектов."
+    },
+    "146": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiB1bmVuZ2FnZWQgZW5lbWllcyBlbmRpbmcu",
+      "translation": "Враги вне боя: окончание их отрицательных эффектов."
+    },
+    "151": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IGFsbGlhbmNlIG1lbWJlcnMu",
+      "translation": "Участники альянса: нанесённый урон."
+    },
+    "152": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: неудачные атаки."
+    },
+    "153": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: начатые действия."
+    },
+    "154": {
+      "source_base64": "SXRlbXMgdXNlZCBieSBhbGxpYW5jZSBtZW1iZXJzLg==",
+      "translation": "Участники альянса: использованные предметы."
+    },
+    "155": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IGFsbGlhbmNlIG1lbWJlcnMu",
+      "translation": "Участники альянса: исходящее исцеление заклинаниями."
+    },
+    "156": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: наложенные положительные эффекты."
+    },
+    "157": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: наложенные отрицательные эффекты."
+    },
+    "158": {
+      "source_base64": "RGFtYWdlIGFsbGlhbmNlIG1lbWJlcnMgYXJlIGRlYWx0Lg==",
+      "translation": "Участники альянса: полученный урон."
+    },
+    "159": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: неудачные атаки по ним."
+    },
+    "160": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIGFsbGlhbmNlIG1lbWJlcnMu",
+      "translation": "Участники альянса: применённые к ним действия."
+    },
+    "161": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBhbGxpYW5jZSBtZW1iZXJzLg==",
+      "translation": "Участники альянса: применённые к ним предметы."
+    },
+    "162": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIGFsbGlhbmNlIG1lbWJlcnMu",
+      "translation": "Участники альянса: полученное исцеление заклинаниями."
+    },
+    "163": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: полученные положительные эффекты."
+    },
+    "164": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gYWxsaWFuY2UgbWVtYmVycy4=",
+      "translation": "Участники альянса: полученные отрицательные эффекты."
+    },
+    "165": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIGFsbGlhbmNlIG1lbWJlcnMgZW5kaW5nLg==",
+      "translation": "Участники альянса: окончание их положительных эффектов."
+    },
+    "166": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBhbGxpYW5jZSBtZW1iZXJzIGVuZGluZy4=",
+      "translation": "Участники альянса: окончание их отрицательных эффектов."
+    },
+    "171": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IGZyaWVuZGx5IE5QQ3Mu",
+      "translation": "Дружественные неигровые персонажи: нанесённый урон."
+    },
+    "172": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: неудачные атаки."
+    },
+    "173": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: начатые действия."
+    },
+    "174": {
+      "source_base64": "SXRlbXMgdXNlZCBieSBmcmllbmRseSBOUENzLg==",
+      "translation": "Дружественные неигровые персонажи: использованные предметы."
+    },
+    "175": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IGZyaWVuZGx5IE5QQ3Mu",
+      "translation": "Дружественные неигровые персонажи: исходящее исцеление заклинаниями."
+    },
+    "176": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: наложенные положительные эффекты."
+    },
+    "177": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: наложенные отрицательные эффекты."
+    },
+    "178": {
+      "source_base64": "RGFtYWdlIGZyaWVuZGx5IE5QQ3MgYXJlIGRlYWx0Lg==",
+      "translation": "Дружественные неигровые персонажи: полученный урон."
+    },
+    "179": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: неудачные атаки по ним."
+    },
+    "180": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIGZyaWVuZGx5IE5QQ3Mu",
+      "translation": "Дружественные неигровые персонажи: применённые к ним действия."
+    },
+    "181": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBmcmllbmRseSBOUENzLg==",
+      "translation": "Дружественные неигровые персонажи: применённые к ним предметы."
+    },
+    "182": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIGZyaWVuZGx5IE5QQ3Mu",
+      "translation": "Дружественные неигровые персонажи: полученное исцеление заклинаниями."
+    },
+    "183": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: полученные положительные эффекты."
+    },
+    "184": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gZnJpZW5kbHkgTlBDcy4=",
+      "translation": "Дружественные неигровые персонажи: полученные отрицательные эффекты."
+    },
+    "185": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIGZyaWVuZGx5IE5QQ3MgZW5kaW5nLg==",
+      "translation": "Дружественные неигровые персонажи: окончание их положительных эффектов."
+    },
+    "186": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBmcmllbmRseSBOUENzIGVuZGluZy4=",
+      "translation": "Дружественные неигровые персонажи: окончание их отрицательных эффектов."
+    },
+    "191": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Ваши питомцы и спутники: нанесённый урон."
+    },
+    "192": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgeW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: неудачные атаки."
+    },
+    "193": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgeW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: начатые действия."
+    },
+    "194": {
+      "source_base64": "SXRlbXMgdXNlZCBieSB5b3VyIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Ваши питомцы и спутники: использованные предметы."
+    },
+    "195": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Ваши питомцы и спутники: исходящее исцеление заклинаниями."
+    },
+    "196": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgeW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: наложенные положительные эффекты."
+    },
+    "197": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgeW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: наложенные отрицательные эффекты."
+    },
+    "198": {
+      "source_base64": "RGFtYWdlIHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucyBhcmUgZGVhbHQu",
+      "translation": "Ваши питомцы и спутники: полученный урон."
+    },
+    "199": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24geW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: неудачные атаки по ним."
+    },
+    "200": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Ваши питомцы и спутники: применённые к ним действия."
+    },
+    "201": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiB5b3VyIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Ваши питомцы и спутники: применённые к ним предметы."
+    },
+    "202": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Ваши питомцы и спутники: полученное исцеление заклинаниями."
+    },
+    "203": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8geW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: полученные положительные эффекты."
+    },
+    "204": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24geW91ciBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Ваши питомцы и спутники: полученные отрицательные эффекты."
+    },
+    "205": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIHlvdXIgcGV0cyBhbmQgY29tcGFuaW9ucyBlbmRpbmcu",
+      "translation": "Ваши питомцы и спутники: окончание их положительных эффектов."
+    },
+    "206": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiB5b3VyIHBldHMgYW5kIGNvbXBhbmlvbnMgZW5kaW5nLg==",
+      "translation": "Ваши питомцы и спутники: окончание их отрицательных эффектов."
+    },
+    "211": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников группы: нанесённый урон."
+    },
+    "212": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: неудачные атаки."
+    },
+    "213": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: начатые действия."
+    },
+    "214": {
+      "source_base64": "SXRlbXMgdXNlZCBieSBwYXJ0eSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники участников группы: использованные предметы."
+    },
+    "215": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников группы: исходящее исцеление заклинаниями."
+    },
+    "216": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: наложенные положительные эффекты."
+    },
+    "217": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: наложенные отрицательные эффекты."
+    },
+    "218": {
+      "source_base64": "RGFtYWdlIHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMgYXJlIGRlYWx0Lg==",
+      "translation": "Питомцы и спутники участников группы: полученный урон."
+    },
+    "219": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: неудачные атаки по ним."
+    },
+    "220": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников группы: применённые к ним действия."
+    },
+    "221": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBwYXJ0eSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники участников группы: применённые к ним предметы."
+    },
+    "222": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников группы: полученное исцеление заклинаниями."
+    },
+    "223": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: полученные положительные эффекты."
+    },
+    "224": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gcGFydHkgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников группы: полученные отрицательные эффекты."
+    },
+    "225": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIHBhcnR5IG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMgZW5kaW5nLg==",
+      "translation": "Питомцы и спутники участников группы: окончание их положительных эффектов."
+    },
+    "226": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBwYXJ0eSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zIGVuZGluZy4=",
+      "translation": "Питомцы и спутники участников группы: окончание их отрицательных эффектов."
+    },
+    "231": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников альянса: нанесённый урон."
+    },
+    "232": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: неудачные атаки."
+    },
+    "233": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: начатые действия."
+    },
+    "234": {
+      "source_base64": "SXRlbXMgdXNlZCBieSBhbGxpYW5jZSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники участников альянса: использованные предметы."
+    },
+    "235": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников альянса: исходящее исцеление заклинаниями."
+    },
+    "236": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: наложенные положительные эффекты."
+    },
+    "237": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: наложенные отрицательные эффекты."
+    },
+    "238": {
+      "source_base64": "RGFtYWdlIGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMgYXJlIGRlYWx0Lg==",
+      "translation": "Питомцы и спутники участников альянса: полученный урон."
+    },
+    "239": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: неудачные атаки по ним."
+    },
+    "240": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников альянса: применённые к ним действия."
+    },
+    "241": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBhbGxpYW5jZSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники участников альянса: применённые к ним предметы."
+    },
+    "242": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники участников альянса: полученное исцеление заклинаниями."
+    },
+    "243": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: полученные положительные эффекты."
+    },
+    "244": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gYWxsaWFuY2UgbWVtYmVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники участников альянса: полученные отрицательные эффекты."
+    },
+    "245": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIGFsbGlhbmNlIG1lbWJlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMgZW5kaW5nLg==",
+      "translation": "Питомцы и спутники участников альянса: окончание их положительных эффектов."
+    },
+    "246": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBhbGxpYW5jZSBtZW1iZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zIGVuZGluZy4=",
+      "translation": "Питомцы и спутники участников альянса: окончание их отрицательных эффектов."
+    },
+    "251": {
+      "source_base64": "RGFtYWdlIGRlYWx0IGJ5IG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники остальных игроков: нанесённый урон."
+    },
+    "252": {
+      "source_base64": "RmFpbGVkIGF0dGFja3MgYnkgb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: неудачные атаки."
+    },
+    "253": {
+      "source_base64": "QWN0aW9ucyBpbml0aWF0ZWQgYnkgb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: начатые действия."
+    },
+    "254": {
+      "source_base64": "SXRlbXMgdXNlZCBieSBvdGhlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники остальных игроков: использованные предметы."
+    },
+    "255": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IGJ5IG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники остальных игроков: исходящее исцеление заклинаниями."
+    },
+    "256": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgYnkgb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: наложенные положительные эффекты."
+    },
+    "257": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgYnkgb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: наложенные отрицательные эффекты."
+    },
+    "258": {
+      "source_base64": "RGFtYWdlIG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucyBhcmUgZGVhbHQu",
+      "translation": "Питомцы и спутники остальных игроков: полученный урон."
+    },
+    "259": {
+      "source_base64": "RmFpbGVkIGF0dGFja3Mgb24gb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: неудачные атаки по ним."
+    },
+    "260": {
+      "source_base64": "QWN0aW9ucyB1c2VkIG9uIG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники остальных игроков: применённые к ним действия."
+    },
+    "261": {
+      "source_base64": "SXRlbXMgdXNlZCBvbiBvdGhlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMu",
+      "translation": "Питомцы и спутники остальных игроков: применённые к ним предметы."
+    },
+    "262": {
+      "source_base64": "RWZmZWN0cyBvZiBoZWFsaW5nIHNwZWxscyBjYXN0IG9uIG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucy4=",
+      "translation": "Питомцы и спутники остальных игроков: полученное исцеление заклинаниями."
+    },
+    "263": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIGdyYW50ZWQgdG8gb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: полученные положительные эффекты."
+    },
+    "264": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBpbmZsaWN0ZWQgb24gb3RoZXJzJyBwZXRzIGFuZCBjb21wYW5pb25zLg==",
+      "translation": "Питомцы и спутники остальных игроков: полученные отрицательные эффекты."
+    },
+    "265": {
+      "source_base64": "QmVuZWZpY2lhbCBlZmZlY3RzIG9uIG90aGVycycgcGV0cyBhbmQgY29tcGFuaW9ucyBlbmRpbmcu",
+      "translation": "Питомцы и спутники остальных игроков: окончание их положительных эффектов."
+    },
+    "266": {
+      "source_base64": "RGV0cmltZW50YWwgZWZmZWN0cyBvbiBvdGhlcnMnIHBldHMgYW5kIGNvbXBhbmlvbnMgZW5kaW5nLg==",
+      "translation": "Питомцы и спутники остальных игроков: окончание их отрицательных эффектов."
+    }
+  },
+  "ActionName": {
+    "425": {
+      "source_base64": "UmVmbGVjdA==",
+      "translation": "Отражение"
+    },
+    "5050": {
+      "source_base64": "UmVmbGVjdA==",
+      "translation": "Отражение"
+    },
+    "15073": {
+      "source_base64": "UmVmbGVjdA==",
+      "translation": "Отражение"
+    }
+  },
+  "StatusName": {
+    "518": {
+      "source_base64": "UmVmbGVjdA==",
+      "translation": "Отражение"
+    },
+    "2337": {
+      "source_base64": "UmVmbGVjdA==",
+      "translation": "Отражение"
+    }
+  }
+}

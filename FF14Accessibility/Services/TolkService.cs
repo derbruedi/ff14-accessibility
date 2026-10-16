@@ -178,9 +178,11 @@ public sealed class TolkService : IDisposable
     {
         // Mirrors Speak: with no screen reader attached nothing was spoken, so
         // there is no echo to suppress either.
-        if (!IsAvailable || string.IsNullOrEmpty(text)) return;
+        if (!IsAvailable) { SpeechTrace.Note("MUT", text); return; }
+        if (string.IsNullOrEmpty(text)) return;
         text = Sanitize(text);
         if (text.Length == 0) return;
+        SpeechTrace.Note("QUE", text);
         Remember(text);
 
         var now = Stopwatch.GetTimestamp();
@@ -270,7 +272,8 @@ public sealed class TolkService : IDisposable
 
     public void Speak(string text)
     {
-        if (!IsAvailable || string.IsNullOrEmpty(text)) return;
+        if (!IsAvailable) { SpeechTrace.Note("MUT", text); return; }
+        if (string.IsNullOrEmpty(text)) return;
         text = Sanitize(text);
         if (text.Length == 0) return;
         _log.Info($"[Speak] '{Short(text)}'");
@@ -300,6 +303,7 @@ public sealed class TolkService : IDisposable
         var sameSource = source == 0 || _lastSpokenSource == 0 || source == _lastSpokenSource;
         if (text == _lastSpoken && elapsed < 0.5 && sameSource)
         {
+            SpeechTrace.Note("DEB", text);
             _log.Info($"[Speak] DEBOUNCED '{Short(text)}'");
             return;
         }
@@ -312,6 +316,7 @@ public sealed class TolkService : IDisposable
         // user just heard. Distinct texts are never affected.
         if (elapsed < 1.0 && _lastSpoken.StartsWith(text + ", ", StringComparison.Ordinal))
         {
+            SpeechTrace.Note("TEIL-DEB", text);
             _log.Info($"[Speak] TEIL-DEBOUNCED '{Short(text)}' (steckt in '{Short(_lastSpoken)}')");
             return;
         }
@@ -320,6 +325,7 @@ public sealed class TolkService : IDisposable
         _lastSpokenTick = now;
         _lastSpokenSource = source;
 
+        SpeechTrace.Note("INT", text);
         _log.Info($"[Speak] INT '{Short(text)}'");
         TolkNative.Tolk_Output(text, true); // speech + braille, see Speak()
         Remember(text);

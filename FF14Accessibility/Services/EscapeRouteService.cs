@@ -38,6 +38,10 @@ public readonly record struct DangerZone(
     /// </summary>
     public bool ContainsWithMargin(Vector3 p, float margin)
     {
+        if (!AoeEscapePath.Finite(p) || !AoeEscapePath.Finite(Center)
+            || !float.IsFinite(Range) || !float.IsFinite(Facing)
+            || !float.IsFinite(HalfAngleRad) || !float.IsFinite(HalfWidth)
+            || !float.IsFinite(margin)) return true;
         var dx = p.X - Center.X;
         var dz = p.Z - Center.Z;
 
@@ -84,9 +88,7 @@ public readonly record struct DangerZone(
 
     private static float Normalize(float rad)
     {
-        while (rad >  MathF.PI) rad -= MathF.Tau;
-        while (rad < -MathF.PI) rad += MathF.Tau;
-        return rad;
+        return MathF.IEEERemainder(rad, MathF.Tau);
     }
 }
 
@@ -196,6 +198,16 @@ public sealed class EscapeRouteService
     /// beidem, unterscheidet der Aufrufer an <see cref="InDanger"/>.
     /// </summary>
     public Vector3? SafeSpot => _hasSpot ? _spot : null;
+
+    /// <summary>The automatic turn and audio beacon must use one validated
+    /// point. A missing point keeps the ordinary route beacon silent in danger.</summary>
+    internal void SetAutoTurnGuidance(bool inDanger, Vector3? spot)
+    {
+        InDanger = inDanger;
+        _hasSpot = inDanger && spot.HasValue;
+        if (_hasSpot) _spot = spot!.Value;
+        SearchExhausted = false;
+    }
 
     /// <summary>
     /// Einmal je Frame aus <see cref="CombatService"/>, mit allen gerade aktiven

@@ -58,7 +58,7 @@ public sealed unsafe class AozNotebookProbe
         var addon = _notebook.Addon();
         if (addon == null || !addon->AtkUnitBase.IsVisible)
         {
-            _tolk.SpeakInterrupt("Das Zauberbuch der Blaumagie ist nicht offen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.AozProbeClosed);
             return;
         }
 
@@ -71,10 +71,8 @@ public sealed unsafe class AozNotebookProbe
         var unlockVerdict = DumpUnlockCrosscheck(addon);
 
         _log.Info("───────────────────────────────────");
-        _tolk.SpeakInterrupt(
-            $"Blaumagie-Sonde. Reiter {addon->TabIndex + 1} von {addon->TabCount}. " +
-            $"{withId} von 16 Kacheln mit Aktions-Id, {filled} von 24 Plaetzen belegt. " +
-            $"{unlockVerdict} Rest im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.AozProbeSaved(
+            addon->TabIndex + 1, addon->TabCount, withId, filled, unlockVerdict));
     }
 
     /// <summary>
@@ -121,17 +119,17 @@ public sealed unsafe class AozNotebookProbe
         string verdict;
         if (windowKnown < 0)
         {
-            verdict = "Fenster-Zaehler nicht lesbar, Vergleich offen.";
+            verdict = AccessibilityStrings.AozProbeCounterUnreadable;
             _log.Info($"[AozSonde] URTEIL: {verdict}");
         }
         else if (windowKnown == known)
         {
-            verdict = $"UnlockLink stimmt mit dem Fenster ueberein ({known}).";
+            verdict = AccessibilityStrings.AozProbeCounterMatches(known);
             _log.Info($"[AozSonde] URTEIL: TRAEGT. {verdict}");
         }
         else
         {
-            verdict = $"ACHTUNG, UnlockLink sagt {known}, das Fenster {windowKnown}.";
+            verdict = AccessibilityStrings.AozProbeCounterMismatch(known, windowKnown);
             _log.Info($"[AozSonde] URTEIL: TRAEGT NICHT. {verdict} " +
                       $"Die Kategorie Blaumagie zeigt dann eine falsche Liste.");
         }

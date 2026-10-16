@@ -31,6 +31,14 @@ public static class ColorNamer
 {
     private static bool De => Loc.IsGerman;
 
+    /// <summary>
+    /// Dreisprachige Wortwahl: DE / EN / RU. Russisch wird am Bildschirmrand
+    /// vorgelesen, waehrend der Spieler mit den Pfeiltasten ueber 192 Felder
+    /// faehrt - ein Wort, kein Satz, wie im Deutschen und Englischen.
+    /// </summary>
+    private static string W(string de, string en, string ru) =>
+        Loc.IsRussian ? ru : Loc.IsGerman ? de : en;
+
     /// <summary>What the swatch is for. Skin and hair get their own vocabulary
     /// because generic hue words ("dark orange") describe them badly.</summary>
     public enum Kind
@@ -65,15 +73,15 @@ public static class ColorNamer
 
     private static string Neutral(double l) => l switch
     {
-        < 0.06 => De ? "schwarz"          : "black",
-        < 0.16 => De ? "fast schwarz"     : "near black",
-        < 0.28 => De ? "anthrazit"        : "charcoal",
-        < 0.42 => De ? "dunkelgrau"       : "dark grey",
-        < 0.58 => De ? "mittelgrau"       : "medium grey",
-        < 0.72 => De ? "grau"             : "grey",
-        < 0.85 => De ? "hellgrau"         : "light grey",
-        < 0.95 => De ? "sehr helles Grau" : "off white",
-        _      => De ? "weiß"             : "white",
+        < 0.06 => W("schwarz", "black", "чёрный"),
+        < 0.16 => W("fast schwarz", "near black", "почти чёрный"),
+        < 0.28 => W("anthrazit", "charcoal", "антрацитовый"),
+        < 0.42 => W("dunkelgrau", "dark grey", "тёмно-серый"),
+        < 0.58 => W("mittelgrau", "medium grey", "средне-серый"),
+        < 0.72 => W("grau", "grey", "серый"),
+        < 0.85 => W("hellgrau", "light grey", "светло-серый"),
+        < 0.95 => W("sehr helles Grau", "off white", "почти белый"),
+        _      => W("weiß", "white", "белый"),
     };
 
     // ── Generic hue naming ────────────────────────────────────────────────────
@@ -85,29 +93,29 @@ public static class ColorNamer
     /// </summary>
     private static string HueFamily(double h) => h switch
     {
-        < 8   => De ? "Rot"        : "red",
-        < 16  => De ? "Ziegelrot"  : "brick red",
-        < 24  => De ? "Orangerot"  : "orange red",
-        < 34  => De ? "Orange"     : "orange",
-        < 43  => De ? "Bernstein"  : "amber",
-        < 52  => De ? "Gold"       : "gold",
-        < 63  => De ? "Gelb"       : "yellow",
-        < 78  => De ? "Gelbgrün"   : "yellow green",
-        < 100 => De ? "Limettgrün" : "lime green",
-        < 140 => De ? "Grün"       : "green",
-        < 160 => De ? "Smaragd"    : "emerald green",
-        < 176 => De ? "Blaugrün"   : "sea green",
-        < 192 => De ? "Türkis"     : "teal",
-        < 205 => De ? "Cyan"       : "cyan",
-        < 220 => De ? "Himmelblau" : "sky blue",
-        < 240 => De ? "Blau"       : "blue",
-        < 258 => De ? "Indigo"     : "indigo",
-        < 275 => De ? "Violett"    : "violet",
-        < 292 => De ? "Lila"       : "purple",
-        < 315 => De ? "Magenta"    : "magenta",
-        < 335 => De ? "Pink"       : "pink",
-        < 348 => De ? "Himbeerrot" : "raspberry",
-        _     => De ? "Rot"        : "red",
+        < 8   => W("Rot", "red", "красный"),
+        < 16  => W("Ziegelrot", "brick red", "кирпично-красный"),
+        < 24  => W("Orangerot", "orange red", "оранжево-красный"),
+        < 34  => W("Orange", "orange", "оранжевый"),
+        < 43  => W("Bernstein", "amber", "янтарный"),
+        < 52  => W("Gold", "gold", "золотой"),
+        < 63  => W("Gelb", "yellow", "жёлтый"),
+        < 78  => W("Gelbgrün", "yellow green", "жёлто-зелёный"),
+        < 100 => W("Limettgrün", "lime green", "лаймовый"),
+        < 140 => W("Grün", "green", "зелёный"),
+        < 160 => W("Smaragd", "emerald green", "изумрудный"),
+        < 176 => W("Blaugrün", "sea green", "морской волны"),
+        < 192 => W("Türkis", "teal", "бирюзовый"),
+        < 205 => W("Cyan", "cyan", "циан"),
+        < 220 => W("Himmelblau", "sky blue", "небесно-голубой"),
+        < 240 => W("Blau", "blue", "синий"),
+        < 258 => W("Indigo", "indigo", "индиго"),
+        < 275 => W("Violett", "violet", "фиолетовый"),
+        < 292 => W("Lila", "purple", "сиреневый"),
+        < 315 => W("Magenta", "magenta", "маджента"),
+        < 335 => W("Pink", "pink", "розовый"),
+        < 348 => W("Himbeerrot", "raspberry", "малиновый"),
+        _     => W("Rot", "red", "красный"),
     };
 
     /// <summary>
@@ -122,27 +130,27 @@ public static class ColorNamer
         // Dark and at least somewhat coloured -> the brown family.
         if (l < 0.48 && s >= 0.10)
         {
-            if (h < 20) return De ? "Rotbraun"     : "reddish brown";
-            if (h < 32) return De ? "Braun"        : "brown";
-            if (h < 45) return De ? "Warmbraun"    : "warm brown";
-            return           De ? "Olivbraun"      : "olive brown";
+            if (h < 20) return W("Rotbraun", "reddish brown", "красно-коричневый");
+            if (h < 32) return W("Braun", "brown", "коричневый");
+            if (h < 45) return W("Warmbraun", "warm brown", "тёпло-коричневый");
+            return           W("Olivbraun", "olive brown", "оливково-коричневый");
         }
 
         // Light and washed out -> the cream family.
         if (l >= 0.72 && s < 0.55)
         {
-            if (h < 18) return De ? "Rosébeige"    : "rosy beige";
-            if (h < 30) return De ? "Pfirsich"     : "peach";
-            if (h < 45) return De ? "Creme"        : "cream";
-            return           De ? "Elfenbein"      : "ivory";
+            if (h < 18) return W("Rosébeige", "rosy beige", "розово-бежевый");
+            if (h < 30) return W("Pfirsich", "peach", "персиковый");
+            if (h < 45) return W("Creme", "cream", "кремовый");
+            return           W("Elfenbein", "ivory", "цвет слоновой кости");
         }
 
         // Mid lightness, low saturation -> beige/khaki rather than a hue word.
         if (s < 0.28)
         {
-            if (h < 30) return De ? "Beige"        : "beige";
-            if (h < 48) return De ? "Khaki"        : "khaki";
-            return           De ? "Oliv"           : "olive";
+            if (h < 30) return W("Beige", "beige", "бежевый");
+            if (h < 48) return W("Khaki", "khaki", "хаки");
+            return           W("Oliv", "olive", "оливковый");
         }
 
         return null;
@@ -157,9 +165,9 @@ public static class ColorNamer
         // Very desaturated blues/greens read as slate/sage, not as "blue".
         if (s < 0.14)
         {
-            if (h >= 176 && h < 258) family = De ? "Blaugrau" : "blue grey";
-            else if (h >= 60 && h < 176) family = De ? "Graugrün" : "sage";
-            else if (h >= 258) family = De ? "Mauve" : "mauve";
+            if (h >= 176 && h < 258) family = W("Blaugrau", "blue grey", "сине-серый");
+            else if (h >= 60 && h < 176) family = W("Graugrün", "sage", "серо-зелёный");
+            else if (h >= 258) family = W("Mauve", "mauve", "лиловый");
         }
 
         return Join(Lightness(l), Intensity(s, l), family);
@@ -169,13 +177,13 @@ public static class ColorNamer
     /// carries no information.</summary>
     private static string? Lightness(double l) => l switch
     {
-        < 0.14 => De ? "sehr dunkles" : "very dark",
-        < 0.30 => De ? "dunkles"      : "dark",
-        < 0.42 => De ? "gedecktes"    : "deep",
+        < 0.14 => W("sehr dunkles", "very dark", "очень тёмный"),
+        < 0.30 => W("dunkles", "dark", "тёмный"),
+        < 0.42 => W("gedecktes", "deep", "глубокий"),
         < 0.62 => null,
-        < 0.75 => De ? "helles"       : "light",
-        < 0.88 => De ? "blasses"      : "pale",
-        _      => De ? "sehr blasses" : "very pale",
+        < 0.75 => W("helles", "light", "светлый"),
+        < 0.88 => W("blasses", "pale", "бледный"),
+        _      => W("sehr blasses", "very pale", "очень бледный"),
     };
 
     /// <summary>Saturation qualifier. Suppressed at the extremes of lightness,
@@ -183,9 +191,9 @@ public static class ColorNamer
     private static string? Intensity(double s, double l)
     {
         if (l < 0.15 || l > 0.90) return null;
-        if (s < 0.16) return De ? "gräuliches" : "greyish";
-        if (s < 0.34) return De ? "gedämpftes" : "muted";
-        if (s > 0.78) return De ? "kräftiges"  : "vivid";
+        if (s < 0.16) return W("gräuliches", "greyish", "сероватый");
+        if (s < 0.34) return W("gedämpftes", "muted", "приглушённый");
+        if (s > 0.78) return W("kräftiges", "vivid", "насыщенный");
         return null;
     }
 
@@ -206,11 +214,11 @@ public static class ColorNamer
         {
             var g = l switch
             {
-                < 0.22 => De ? "sehr dunkles Moosgrün" : "very dark moss green",
-                < 0.40 => De ? "dunkles Seegrün"       : "dark sea green",
-                < 0.62 => De ? "Seegrün"               : "sea green",
-                < 0.80 => De ? "helles Seegrün"        : "pale sea green",
-                _      => De ? "sehr blasses Grün"     : "very pale green",
+                < 0.22 => W("sehr dunkles Moosgrün", "very dark moss green", "очень тёмный моховой зелёный"),
+                < 0.40 => W("dunkles Seegrün", "dark sea green", "тёмный морской зелёный"),
+                < 0.62 => W("Seegrün", "sea green", "морской зелёный"),
+                < 0.80 => W("helles Seegrün", "pale sea green", "светлый морской зелёный"),
+                _      => W("sehr blasses Grün", "very pale green", "очень бледный зелёный"),
             };
             return g;
         }
@@ -219,11 +227,11 @@ public static class ColorNamer
         {
             return l switch
             {
-                < 0.22 => De ? "sehr dunkles Schiefergrau" : "very dark slate",
-                < 0.40 => De ? "dunkles Blaugrau"          : "dark blue grey",
-                < 0.62 => De ? "Blaugrau"                  : "blue grey",
-                < 0.80 => De ? "helles Blaugrau"           : "pale blue grey",
-                _      => De ? "eisblasses Weiß"           : "ice pale white",
+                < 0.22 => W("sehr dunkles Schiefergrau", "very dark slate", "очень тёмный шиферный"),
+                < 0.40 => W("dunkles Blaugrau", "dark blue grey", "тёмный сине-серый"),
+                < 0.62 => W("Blaugrau", "blue grey", "сине-серый"),
+                < 0.80 => W("helles Blaugrau", "pale blue grey", "светлый сине-серый"),
+                _      => W("eisblasses Weiß", "ice pale white", "ледяной белый"),
             };
         }
 
@@ -232,31 +240,31 @@ public static class ColorNamer
         {
             return l switch
             {
-                < 0.20 => De ? "fast schwarz"    : "near black",
-                < 0.38 => De ? "dunkles Aschgrau": "dark ashen",
-                < 0.60 => De ? "Aschgrau"        : "ashen grey",
-                < 0.80 => De ? "helles Aschgrau" : "pale ashen",
-                _      => De ? "porzellanweiß"   : "porcelain white",
+                < 0.20 => W("fast schwarz", "near black", "почти чёрный"),
+                < 0.38 => W("dunkles Aschgrau", "dark ashen", "тёмный пепельный"),
+                < 0.60 => W("Aschgrau", "ashen grey", "пепельно-серый"),
+                < 0.80 => W("helles Aschgrau", "pale ashen", "светлый пепельный"),
+                _      => W("porzellanweiß", "porcelain white", "фарфоровый"),
             };
         }
 
         // The warm skin ramp. Saturation separates rosy/olive from plain.
-        var warmth = h < 18 ? (De ? "rosiges " : "rosy ")
-                   : h >= 40 ? (De ? "oliv " : "olive ")
+        var warmth = h < 18 ? (W("rosiges ", "rosy ", "розоватый "))
+                   : h >= 40 ? (W("oliv ", "olive ", "оливковый "))
                    : string.Empty;
 
         var baseTone = l switch
         {
-            < 0.16 => De ? "fast schwarzes Braun" : "near black brown",
-            < 0.28 => De ? "sehr dunkles Braun"   : "very dark brown",
-            < 0.38 => De ? "dunkles Braun"        : "dark brown",
-            < 0.48 => De ? "warmes Braun"         : "warm brown",
-            < 0.57 => De ? "Bronze"               : "bronze",
-            < 0.66 => De ? "gebräunt"             : "tan",
-            < 0.74 => De ? "warmes Beige"         : "warm beige",
-            < 0.82 => De ? "helles Beige"         : "light beige",
-            < 0.90 => De ? "hell"                 : "fair",
-            _      => De ? "sehr hell"            : "very fair",
+            < 0.16 => W("fast schwarzes Braun", "near black brown", "почти чёрный коричневый"),
+            < 0.28 => W("sehr dunkles Braun", "very dark brown", "очень тёмный коричневый"),
+            < 0.38 => W("dunkles Braun", "dark brown", "тёмный коричневый"),
+            < 0.48 => W("warmes Braun", "warm brown", "тёплый коричневый"),
+            < 0.57 => W("Bronze", "bronze", "бронзовый"),
+            < 0.66 => W("gebräunt", "tan", "загорелый"),
+            < 0.74 => W("warmes Beige", "warm beige", "тёплый бежевый"),
+            < 0.82 => W("helles Beige", "light beige", "светлый бежевый"),
+            < 0.90 => W("hell", "fair", "светлый"),
+            _      => W("sehr hell", "very fair", "очень светлый"),
         };
 
         return (warmth + baseTone).Trim();
@@ -274,13 +282,13 @@ public static class ColorNamer
         {
             return l switch
             {
-                < 0.08 => De ? "schwarz"       : "black",
-                < 0.22 => De ? "fast schwarz"  : "near black",
-                < 0.38 => De ? "dunkelgrau"    : "dark grey",
-                < 0.58 => De ? "grau"          : "grey",
-                < 0.74 => De ? "silbergrau"    : "silver grey",
-                < 0.90 => De ? "silber"        : "silver",
-                _      => De ? "weiß"          : "white",
+                < 0.08 => W("schwarz", "black", "чёрный"),
+                < 0.22 => W("fast schwarz", "near black", "почти чёрный"),
+                < 0.38 => W("dunkelgrau", "dark grey", "тёмно-серый"),
+                < 0.58 => W("grau", "grey", "серый"),
+                < 0.74 => W("silbergrau", "silver grey", "серебристо-серый"),
+                < 0.90 => W("silber", "silver", "серебряный"),
+                _      => W("weiß", "white", "белый"),
             };
         }
 
@@ -288,29 +296,29 @@ public static class ColorNamer
         if (h >= 8 && h < 60)
         {
             if (l >= 0.72)
-                return s < 0.30 ? (De ? "platinblond" : "platinum blond")
-                     : h < 30   ? (De ? "erdbeerblond" : "strawberry blond")
-                                : (De ? "goldblond"    : "golden blond");
+                return s < 0.30 ? (W("platinblond", "platinum blond", "платиновая блондинка"))
+                     : h < 30   ? (W("erdbeerblond", "strawberry blond", "земляничная блондинка"))
+                                : (W("goldblond", "golden blond", "золотистая блондинка"));
             if (l >= 0.56)
-                return s < 0.28 ? (De ? "aschblond"   : "ash blond")
-                                : (De ? "honigblond"  : "honey blond");
+                return s < 0.28 ? (W("aschblond", "ash blond", "пепельная блондинка"))
+                                : (W("honigblond", "honey blond", "медовая блондинка"));
             if (l >= 0.42)
-                return h < 24   ? (De ? "kupferrot"   : "copper red")
-                     : s < 0.30 ? (De ? "dunkelblond" : "dark blond")
-                                : (De ? "hellbraun"   : "light brown");
+                return h < 24   ? (W("kupferrot", "copper red", "медный"))
+                     : s < 0.30 ? (W("dunkelblond", "dark blond", "тёмная блондинка"))
+                                : (W("hellbraun", "light brown", "светло-каштановый"));
             if (l >= 0.26)
-                return h < 22   ? (De ? "kastanienbraun" : "auburn")
-                                : (De ? "schokobraun"    : "chocolate brown");
-            return h < 22 ? (De ? "dunkles Rotbraun" : "dark auburn")
-                          : (De ? "dunkelbraun"      : "dark brown");
+                return h < 22   ? (W("kastanienbraun", "auburn", "каштановый"))
+                                : (W("schokobraun", "chocolate brown", "шоколадный"));
+            return h < 22 ? (W("dunkles Rotbraun", "dark auburn", "тёмный красно-коричневый"))
+                          : (W("dunkelbraun", "dark brown", "тёмно-коричневый"));
         }
 
         // Reds outside the blond/brown ramp.
         if (h >= 335 || h < 8)
         {
-            if (l < 0.30) return De ? "dunkles Weinrot" : "dark wine red";
-            if (l < 0.55) return De ? "rot"             : "red";
-            return De ? "helles Rosé" : "pale rose";
+            if (l < 0.30) return W("dunkles Weinrot", "dark wine red", "тёмный винный");
+            if (l < 0.55) return W("rot", "red", "красный");
+            return W("helles Rosé", "pale rose", "светло-розовый");
         }
 
         // Dyed colours: the generic namer is right for these.

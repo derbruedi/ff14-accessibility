@@ -1,3 +1,7 @@
+> **Справка для разработчиков из исходного проекта.** Примеры могут относиться
+> к другим играм, движкам и инструментам. Для текущей русской версии используйте
+> [оглавление документации](README.md); порядок работы задают AGENTS.md и docs/maintenance.
+
 # Technical Reference
 
 Compact overview: MelonLoader, BepInEx, Harmony, and Tolk.

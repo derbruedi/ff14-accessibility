@@ -1,0 +1,36 @@
+name: Проблема с модом или установкой
+description: Сообщить о проблеме в русской версии FF14 Accessibility.
+title: "[Ошибка] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Версия плагина или установщика
+      description: Например, мод 6.08.73 или установщик 1.0.0. Если версия неизвестна, так и напишите.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Что вы делали
+      description: Укажите способ установки (EXE или ручной ZIP), если проблема связана с установкой. Для ошибки в игре назовите окно и нажатые клавиши по порядку.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что должно было произойти
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что произошло или прозвучало
+      description: Если возможно, приведите точную фразу скринридера.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Дополнительные сведения
+      description: Скринридер, язык игры, клавиатура или геймпад. Перед добавлением журнала уберите личные сведения.

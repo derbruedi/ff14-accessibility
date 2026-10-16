@@ -34,25 +34,19 @@ public sealed class CooldownService
     private readonly IClientState _clientState;
     private readonly IDataManager _data;
     private readonly CueService   _cue;
-    private readonly TolkService  _tolk;
-    // Der zweite Sprachkanal. Die Bereit-Meldung geht hierueber, weil sie
-    // mitten im Kampf faellt und der Screenreader dort von der naechsten Zeile
-    // (Zauberleiste, Chat) geschnitten wird - User-Ansage 2026-08-31.
-    private readonly WarningVoiceService _warnVoice;
     private readonly Configuration _config;
     private readonly IPluginLog   _log;
+    private readonly JobProcService _procs;
 
     public CooldownService(IClientState clientState, IDataManager data, CueService cue,
-                           TolkService tolk, WarningVoiceService warnVoice,
-                           Configuration config, IPluginLog log)
+                           Configuration config, IPluginLog log, IObjectTable objects)
     {
         _clientState = clientState;
         _data        = data;
         _cue         = cue;
-        _tolk        = tolk;
-        _warnVoice   = warnVoice;
         _config      = config;
         _log         = log;
+        _procs       = new JobProcService(objects, clientState, data, log);
     }
 
     // Any action whose total recast is at or below this counts as a global-
@@ -61,6 +55,11 @@ public sealed class CooldownService
     // far longer (15 s+), so 3 s cleanly separates the two without relying on
     // the build-specific GCD recast-group id.
     private const float GcdRecastCeiling = 3.0f;
+
+    // Alles ab dieser Id ist eine Zeile aus dem CraftAction-Sheet und damit
+    // keine Action im Sinne des ActionManager (kleinste: 100001 Basic
+    // Synthesis). Siehe die Erklaerung in EvaluateAction.
+    private const uint CraftActionIdFloor = 100000;
 
     // StandardHotbars = Hotbars[0..9]; 16 slots exist per bar (UI uses 12).
     private const int StandardBarCount = 10;
@@ -80,10 +79,20 @@ public sealed class CooldownService
     private byte _trackedJob = byte.MaxValue;
 
     /// <summary>Called every frame from Plugin.OnFrameworkUpdate.</summary>
-    public unsafe void Update()
+    public unsafe void Update(ReadyAnnouncementBatch announcements)
     {
-        if (!_config.AnnounceSkillReady) return;
-        if (!_clientState.IsLoggedIn) return;
+        if (!_config.AnnounceSkillReady || !_clientState.IsLoggedIn)
+        {
+            _procs.Reset();
+            _lastCharges.Clear();
+            _recastTotal.Clear();
+            _trackedJob = byte.MaxValue;
+            return;
+        }
+
+        var before = announcements.Count;
+        _procs.Collect(announcements);
+        if (announcements.Count > before) _cue.PlaySkillReadyTone();
 
         var am      = ActionManager.Instance();
         var hotbars = RaptureHotbarModule.Instance();
@@ -119,11 +128,11 @@ public sealed class CooldownService
                 case RaptureHotbarModule.HotbarSlotType.Action:
                     var id = s->CommandId;
                     if (id == 0 || !_seen.Add(id)) continue;   // dedupe across slots/bars
-                    EvaluateAction(am, id, level);
+                    EvaluateAction(am, id, level, announcements);
                     break;
 
                 case RaptureHotbarModule.HotbarSlotType.GeneralAction:
-                    EvaluateGeneralAction(am, s);
+                    EvaluateGeneralAction(am, s, announcements);
                     break;
             }
         }
@@ -150,7 +159,7 @@ public sealed class CooldownService
     /// die Zeilennummer 4 nicht mit der Aktion 4 in denselben Toepfen mischt.
     /// </para>
     /// </summary>
-    private unsafe void EvaluateGeneralAction(ActionManager* am, RaptureHotbarModule.HotbarSlot* s)
+    private unsafe void EvaluateGeneralAction(ActionManager* am, RaptureHotbarModule.HotbarSlot* s, ReadyAnnouncementBatch announcements)
     {
         var row = s->CommandId;
         if (row == 0) return;
@@ -176,7 +185,7 @@ public sealed class CooldownService
 
         if (_lastCharges.TryGetValue(id, out var prev) && charges > prev
             && _recastTotal.TryGetValue(id, out var total) && total > GcdRecastCeiling)
-            Announce(id, charges, 1);
+            Announce(id, charges, 1, announcements);
 
 #if DEBUG
         // Zeigt beim Testen, ob dieser Zweig ueberhaupt Zahlen bekommt: ob der
@@ -191,8 +200,30 @@ public sealed class CooldownService
         _lastCharges[id] = charges;
     }
 
-    private unsafe void EvaluateAction(ActionManager* am, uint id, uint level)
+    private unsafe void EvaluateAction(ActionManager* am, uint id, uint level, ReadyAnnouncementBatch announcements)
     {
+        // ABSTURZ-SCHUTZ (2026-09-26, Nutzer-Report): eine Handwerksaktion auf
+        // der Leiste legte Dalamud mit einer Zugriffsverletzung (C0000005) in
+        // Client::Game::ActionManager.GetMaxCharges+0x23 um. Der Crash-Stack war
+        // CooldownService.Update -> EvaluateAction -> GetMaxCharges, also genau
+        // diese Zeile, und zwar im laufenden Bild-Takt, nicht beim Belegen.
+        //
+        // Ursache: der Hotbar-Slot einer Handwerksaktion traegt die Zeilen-Id aus
+        // dem CraftAction-Sheet (100001 Basic Synthesis … 100371 Tricks of the
+        // Trade auf Stufe 19), NICHT die Id einer Action-Zeile. GetMaxCharges ist
+        // eine statische Bindung direkt in den Client (ohne thisPtr, also auch
+        // ohne Instanz-Null-Check) und indiziert intern die Action-Liste des
+        // Spielers; eine Id, die dort nicht existiert, laeuft aus dem Gatter und
+        // reisst den Prozess mit. ActionName() unten liefert fuer so eine Id
+        // laengst einen leeren String - dieselbe Pruefung, nur frueher.
+        //
+        // Die Mod kennzeichnet Handwerksaktionen nirgends als solche; der
+        // Id-Bereich ist das einzige Signal, das der Slot hergibt. Handwerks-
+        // aktionen brauchen hier nichts: sie haben keine Ladungen, und ein
+        // GCD-Ausschluss ueber GcdRecastCeiling filtert sie ohnehin heraus
+        // (Basis-Synthese 2,5 s).
+        if (id >= CraftActionIdFloor) return;
+
         var maxCharges = ActionManager.GetMaxCharges(id, level);
         if (maxCharges < 1) maxCharges = 1;
         var charges = am->GetCurrentCharges(id);
@@ -218,12 +249,12 @@ public sealed class CooldownService
         // remembered recast) stays silent until it has been used at least once.
         if (_lastCharges.TryGetValue(id, out var prev) && charges > prev
             && _recastTotal.TryGetValue(id, out var total) && total > GcdRecastCeiling)
-            Announce(id, charges, maxCharges);
+            Announce(id, charges, maxCharges, announcements);
 
         _lastCharges[id] = charges;
     }
 
-    private void Announce(uint id, uint charges, ushort maxCharges)
+    private void Announce(uint id, uint charges, ushort maxCharges, ReadyAnnouncementBatch announcements)
     {
         var name = ActionName(id);
         if (string.IsNullOrEmpty(name)) return;
@@ -233,10 +264,7 @@ public sealed class CooldownService
             : AccessibilityStrings.SkillReady(name);
 
         _cue.PlaySkillReadyTone();
-        // Warnstimme zuerst, Screenreader als Rueckfall: Speak() gibt false
-        // zurueck, wenn der Kanal aus oder nicht verfuegbar ist - dann darf die
-        // Meldung nicht still verlorengehen.
-        if (!_warnVoice.Speak(text)) _tolk.Speak(text);
+        announcements.Add(text);
         _log.Info($"[Cooldown] Bereit: '{name}' id={id} charges={charges}/{maxCharges}");
     }
 
@@ -244,7 +272,7 @@ public sealed class CooldownService
     {
         if (_data.GetExcelSheet<LuminaAction>().TryGetRow(id, out var row))
         {
-            var n = row.Name.ExtractText();
+            var n = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(n)) return n;
         }
         return string.Empty;

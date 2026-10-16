@@ -15,42 +15,56 @@ public static partial class AccessibilityStrings
     // NOT the OS culture directly. Auto still falls back to the OS culture.
     private static bool IsGerman => Loc.IsGerman;
 
-    public static string TitleScreen => IsGerman ? "Titelbildschirm" : "Title screen";
-    public static string MainMenu => IsGerman ? "Hauptmenü" : "Main menu";
-    public static string Back => IsGerman ? "Zurück" : "Back";
-    public static string NoHelpAvailable => IsGerman ? "Keine Hilfe verfügbar" : "No help available";
-    public static string HelpForTitle => IsGerman
-        ? "Enter öffnet das Hauptmenü. Strg+F1 sagt diese Hilfe erneut an."
-        : "Press Enter to open the main menu. Press Ctrl+F1 to hear this help again.";
-    public static string HelpForTitleMenu => IsGerman
-        ? "Pfeil hoch und runter zum Wechseln, Enter zum Bestätigen, Escape zurück, Strg+F1 für Hilfe."
-        : "Use up and down arrow keys to move, Enter to confirm, Escape to go back, Ctrl+F1 for help.";
+    /// <summary>
+    /// Picks the text for the active announcement language.
+    ///
+    /// The Russian text is optional on purpose: a string that has not been
+    /// translated yet keeps working and simply stays English. That way the
+    /// Russian pass can grow one section at a time instead of having to land
+    /// as one lump; the untranslated ones are English rather than silent.
+    /// </summary>
+    internal static string L(string de, string en, string? ru = null)
+        => Loc.IsRussian ? ru ?? en : IsGerman ? de : en;
+
+    /// <summary>
+    /// Authored character descriptions keep the upstream DE/EN table. Russian
+    /// translations match the complete English text in a separate offline catalog.
+    /// A new or changed entry keeps its original wording until translated.
+    /// </summary>
+    internal static string LocText(string de, string en)
+        => L(de, en, Loc.IsRussian ? RussianCharacterText.Find(en) : null);
+
+    public static string TitleScreen => L("Titelbildschirm", "Title screen", "Титульный экран");
+    public static string MainMenu => L("Hauptmenü", "Main menu", "Главное меню");
+    public static string Back => L("Zurück", "Back", "Назад");
+    public static string NoHelpAvailable => L("Keine Hilfe verfügbar", "No help available", "Справка недоступна");
+    public static string HelpForTitle => L("Enter öffnet das Hauptmenü. Strg+F1 sagt diese Hilfe erneut an.", "Press Enter to open the main menu. Press Ctrl+F1 to hear this help again.", "Enter открывает главное меню. Ctrl+F1 повторит эту справку.");
+    public static string HelpForTitleMenu => L("Pfeil hoch und runter zum Wechseln, Enter zum Bestätigen, Escape zurück, Strg+F1 für Hilfe.", "Use up and down arrow keys to move, Enter to confirm, Escape to go back, Ctrl+F1 for help.", "Стрелки вверх и вниз переключают, Enter подтверждает, Escape возвращает назад, Ctrl+F1 — справка.");
 
     public static string Confirmed(string item) =>
-        IsGerman ? $"Auswahl bestätigt: {item}" : $"Confirmed: {item}";
+        L($"Auswahl bestätigt: {item}", $"Confirmed: {item}", $"Выбор подтверждён: {item}");
 
     public static string MenuPosition(string item, int index, int count) =>
-        IsGerman ? $"{item}, {index} von {count}" : $"{item}, {index} of {count}";
+        L($"{item}, {index} von {count}", $"{item}, {index} of {count}", $"{item}, {index} из {count}");
 
     /// <summary>GrandCompanyExchange (seal quartermaster) row: item name, seal
     /// price, amount already owned. The generic reader announced the bare
     /// "0, 1.060, name" without labels; this makes the columns explicit.</summary>
     public static string GrandCompanyRow(string name, string price, string owned) =>
-        IsGerman ? $"{name}, {price} Staatstaler, Besitz {owned}"
-                 : $"{name}, {price} seals, {owned} owned";
+        L($"{name}, {price} Staatstaler, Besitz {owned}", $"{name}, {price} seals, {owned} owned", $"{name}, {price} печатей, в наличии {owned}");
 
     /// <summary>Announces the active category tab of a shop/window, e.g. the
     /// GrandCompanyExchange tabs (Waffen/Rüstung/...).</summary>
     public static string CategoryLabel(string name) =>
-        IsGerman ? $"Kategorie {name}." : $"Category {name}.";
+        L($"Kategorie {name}.", $"Category {name}.", $"Категория {name}.");
 
     /// <summary>ItemSearch: Enter on a category started a market search.</summary>
     public static string MarketSearching(string category) =>
-        IsGerman ? $"Suche: {category}." : $"Searching: {category}.";
+        L($"Suche: {category}.", $"Searching: {category}.", $"Ищу: {category}.");
 
     /// <summary>ItemSearch: Search button / RunSearch without a category label.</summary>
     public static string MarketSearchStarted =>
-        IsGerman ? "Suche gestartet." : "Search started.";
+        L("Suche gestartet.", "Search started.", "Поиск начат.");
 
     /// <summary>
     /// Rank tier button in the left column of the seal shop. Those buttons carry
@@ -63,70 +77,68 @@ public static partial class AccessibilityStrings
     public static string GcRankTier(int index, int count, string firstRank, string lastRank)
     {
         var range = firstRank.Length > 0 && lastRank.Length > 0
-            ? (IsGerman ? $", {firstRank} bis {lastRank}" : $", {firstRank} to {lastRank}")
+            ? (L($", {firstRank} bis {lastRank}", $", {firstRank} to {lastRank}", $", с {firstRank} по {lastRank}"))
             : string.Empty;
-        return IsGerman ? $"Rangstufe {index} von {count}{range}"
-                        : $"Rank tier {index} of {count}{range}";
+        return L($"Rangstufe {index} von {count}{range}", $"Rank tier {index} of {count}{range}", $"Ступень ранга {index} из {count}{range}");
     }
 
     /// <summary>Fallback title for GrandCompanyRank when the window node is empty.</summary>
     public static string GrandCompanyRankTitleFallback =>
-        IsGerman ? "Rang der staatlichen Gesellschaft" : "Grand company rank";
+        L("Rang der staatlichen Gesellschaft", "Grand company rank", "Звание в государственной компании");
 
     /// <summary>Opening summary: title, company name, current rank (if marked).</summary>
     public static string GrandCompanyRankSummary(string title, string company, string rank) =>
         string.IsNullOrWhiteSpace(rank)
-            ? (IsGerman ? $"{title}. {company}." : $"{title}. {company}.")
-            : (IsGerman
-                ? $"{title}. {company}. Dein Rang: {rank}."
-                : $"{title}. {company}. Your rank: {rank}.");
+            ? L($"{title}. {company}.", $"{title}. {company}.", $"{title}. {company}.")
+            : L($"{title}. {company}. Dein Rang: {rank}.", $"{title}. {company}. Your rank: {rank}.",
+                $"{title}. {company}. Твоё звание: {rank}.");
 
     /// <summary>Next GC rank above the player's current one.</summary>
     public static string GrandCompanyNextRank(string nextRank) =>
-        IsGerman ? $"Nächster Rang: {nextRank}." : $"Next rank: {nextRank}.";
+        L($"Naechster Rang: {nextRank}.", $"Next rank: {nextRank}.", $"Следующее звание: {nextRank}.");
 
     /// <summary>GC rank still needed before hunting-log rank 2 unlocks.</summary>
     public static string GrandCompanyHuntRankNeeds(int huntRank, string gcRank) =>
-        IsGerman
-            ? $"Für Jagd-Rang {huntRank} brauchst du: {gcRank}."
-            : $"For hunting log rank {huntRank} you need: {gcRank}.";
+        L($"Fuer Jagd-Rang {huntRank} brauchst du: {gcRank}.",
+          $"For hunting log rank {huntRank} you need: {gcRank}.",
+          $"Для ранга охоты {huntRank} нужно: {gcRank}.");
 
     /// <summary>Player already holds the GC rank that unlocks this hunt log.</summary>
     public static string GrandCompanyHuntRankUnlocked(int huntRank) =>
-        IsGerman
-            ? $"Jagd-Rang {huntRank}: Gesellschaftsrang erreicht."
-            : $"Hunting log rank {huntRank}: grand company rank met.";
+        L($"Jagd-Rang {huntRank}: Gesellschaftsrang erreicht.",
+          $"Hunting log rank {huntRank}: grand company rank met.",
+          $"Ранг охоты {huntRank}: звание компании достигнуто.");
 
     /// <summary>Company tab switch inside GrandCompanyRank.</summary>
     public static string GrandCompanyRankTab(string company, string rank) =>
         string.IsNullOrWhiteSpace(rank)
             ? company
-            : (IsGerman ? $"{company}. Dein Rang: {rank}." : $"{company}. Your rank: {rank}.");
+            : L($"{company}. Dein Rang: {rank}.", $"{company}. Your rank: {rank}.",
+                $"{company}. Твоё звание: {rank}.");
 
     /// <summary>Icon-only GC radio when the sheet name is missing.</summary>
     public static string GrandCompanyTabFallback(int oneBased, int total) =>
-        IsGerman
-            ? $"Gesellschaft {oneBased} von {total}"
-            : $"grand company {oneBased} of {total}";
+        L($"Gesellschaft {oneBased} von {total}", $"grand company {oneBased} of {total}",
+          $"компания {oneBased} из {total}");
 
     /// <summary>Appended to a tab/button announcement when it is the active one.</summary>
-    public static string SelectedSuffix => IsGerman ? ", ausgewählt" : ", selected";
+    public static string SelectedSuffix => L(", ausgewählt", ", selected", ", выбрано");
 
     // ── Reittier-Verzeichnis (MountNoteBook) ─────────────────────────
     /// <summary>Active view tab of the mount guide (Favorites/Normal/Search).</summary>
-    public static string MountViewFavorites => IsGerman ? "Favoriten." : "Favorites.";
-    public static string MountViewNormal    => IsGerman ? "Alle Reittiere." : "All mounts.";
-    public static string MountViewSearch    => IsGerman ? "Suche." : "Search.";
+    public static string MountViewFavorites => L("Favoriten.", "Favorites.", "Избранное.");
+    public static string MountViewNormal    => L("Alle Reittiere.", "All mounts.", "Все маунты.");
+    public static string MountViewSearch    => L("Suche.", "Search.", "Поиск.");
 
     /// <summary>Page tab of the mount guide (1-based).</summary>
     public static string MountPage(int page) =>
-        IsGerman ? $"Seite {page}." : $"Page {page}.";
+        L($"Seite {page}.", $"Page {page}.", $"Страница {page}.");
 
     /// <summary>Spoken when the focus lands on the mount guide's search box.</summary>
-    public static string MountSearchField => IsGerman ? "Reittier suchen, Eingabefeld." : "Mount search, text field.";
+    public static string MountSearchField => L("Reittier suchen, Eingabefeld.", "Mount search, text field.", "Поиск маунта, поле ввода.");
 
     /// <summary>Spoken when the focus lands on the minion guide's search box.</summary>
-    public static string MinionSearchField => IsGerman ? "Begleiter suchen, Eingabefeld." : "Minion search, text field.";
+    public static string MinionSearchField => L("Begleiter suchen, Eingabefeld.", "Minion search, text field.", "Поиск питомца, поле ввода.");
 
     // ── Bestienbuch des Bestienbaendigers (XBMMonsterNotebook) ───────
     /// <summary>
@@ -140,19 +152,16 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string XbmPetTile(byte number, string name, string habitat)
     {
-        var head = IsGerman
-            ? $"Nr. {number}, {name}"
-            : $"No. {number}, {name}";
+        var head = L($"Nr. {number}, {name}", $"No. {number}, {name}", $"№ {number}, {name}");
         if (string.IsNullOrWhiteSpace(habitat))
             return head + ".";
-        return IsGerman
-            ? $"{head}, Fundort {habitat}."
-            : $"{head}, habitat {habitat}.";
+        return L($"{head}, Lebensraum {habitat}.", $"{head}, habitat {habitat}.",
+                 $"{head}, место обитания: {habitat}.");
     }
 
     /// <summary>Beast tile whose sheet row could not be resolved — number only.</summary>
     public static string XbmPetNumberOnly(byte number) =>
-        IsGerman ? $"Nr. {number}." : $"no. {number}.";
+        L($"Nr. {number}.", $"no. {number}.", $"№ {number}.");
 
     // ── Zauberbuch der Blaumagie (AOZNotebook) ───────────────────────
     /// <summary>
@@ -163,29 +172,28 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string AozSpellTile(string name, byte number, bool selected)
     {
-        var head = IsGerman ? $"{name}, Nr. {number}" : $"{name}, no. {number}";
+        var head = L($"{name}, Nr. {number}", $"{name}, no. {number}", $"{name}, номер {number}");
         if (!selected) return head + ".";
-        return IsGerman ? $"{head}, ausgewählt." : $"{head}, selected.";
+        return L($"{head}, ausgewählt.", $"{head}, selected.", $"{head}, выбрано.");
     }
 
     /// <summary>Spell tile whose action could not be resolved - position only.</summary>
     public static string AozUnknownSpell(int position) =>
-        IsGerman ? $"Zauberfeld {position}." : $"Spell tile {position}.";
+        L($"Zauberfeld {position}.", $"Spell tile {position}.", $"Ячейка заклинания {position}.");
 
     /// <summary>One of the 24 active-command slots, filled.</summary>
     public static string AozActiveSlot(int slot, string name, byte number) =>
-        IsGerman ? $"Platz {slot}, {name}, Nr. {number}."
-                 : $"Slot {slot}, {name}, no. {number}.";
+        L($"Platz {slot}, {name}, Nr. {number}.", $"Slot {slot}, {name}, no. {number}.", $"Слот {slot}, {name}, номер {number}.");
 
     /// <summary>One of the 24 active-command slots, empty.</summary>
     public static string AozActiveSlotEmpty(int slot) =>
-        IsGerman ? $"Platz {slot}, leer." : $"Slot {slot}, empty.";
+        L($"Platz {slot}, leer.", $"Slot {slot}, empty.", $"Слот {slot}, пусто.");
 
     /// <summary>The focused spell is already learned.</summary>
-    public static string AozLearned => IsGerman ? "Erlernt." : "Learned.";
+    public static string AozLearned => L("Erlernt.", "Learned.", "Изучено.");
 
     /// <summary>The focused spell is not learned yet.</summary>
-    public static string AozNotLearned => IsGerman ? "Noch nicht erlernt." : "Not learned yet.";
+    public static string AozNotLearned => L("Noch nicht erlernt.", "Not learned yet.", "Ещё не изучено.");
 
     /// <summary>
     /// Overview spoken when the spellbook opens: which tab, how many spells
@@ -195,22 +203,20 @@ public static partial class AccessibilityStrings
     public static string AozOverview(int tab, int tabCount, string learned, string active)
     {
         var parts = new List<string>();
-        parts.Add(IsGerman ? $"Zauberbuch der Blaumagie, Reiter {tab} von {tabCount}."
-                           : $"Blue magic spellbook, tab {tab} of {tabCount}.");
+        parts.Add(L($"Zauberbuch der Blaumagie, Reiter {tab} von {tabCount}.", $"Blue magic spellbook, tab {tab} of {tabCount}.", $"Книга синей магии, вкладка {tab} из {tabCount}."));
         if (!string.IsNullOrWhiteSpace(learned))
-            parts.Add(IsGerman ? $"Erlernt {learned.Trim()}." : $"Learned {learned.Trim()}.");
+            parts.Add(L($"Erlernt {learned.Trim()}.", $"Learned {learned.Trim()}.", $"Изучено {learned.Trim()}."));
         if (!string.IsNullOrWhiteSpace(active))
-            parts.Add(IsGerman ? $"Aktive Kommandos {active.Trim()}."
-                               : $"Active commands {active.Trim()}.");
+            parts.Add(L($"Aktive Kommandos {active.Trim()}.", $"Active commands {active.Trim()}.", $"Активные команды {active.Trim()}."));
         return string.Join(" ", parts);
     }
 
     // ── Umschalt-Zustaende (Checkbox / Radiobutton) ──────────────────
     /// <summary>Checkbox is ticked / unticked.</summary>
-    public static string StateOn  => IsGerman ? "an" : "on";
-    public static string StateOff => IsGerman ? "aus" : "off";
+    public static string StateOn  => L("an", "on", "вкл");
+    public static string StateOff => L("aus", "off", "выкл");
     /// <summary>Radio button is the selected option.</summary>
-    public static string RadioSelected => IsGerman ? "ausgewählt" : "selected";
+    public static string RadioSelected => L("ausgewählt", "selected", "выбрано");
     /// <summary>
     /// Radio button is one of the options, but NOT the active one.
     ///
@@ -222,79 +228,84 @@ public static partial class AccessibilityStrings
     /// Eine Auswahl, die man nicht hoert, ist keine.
     /// </para>
     /// </summary>
-    public static string RadioNotSelected => IsGerman ? "nicht ausgewählt" : "not selected";
+    public static string RadioNotSelected => L("nicht ausgewählt", "not selected", "не выбрано");
     /// <summary>Control-type word for a checkbox, so the user knows it is a
     /// toggle they can flip - not just an informational label.</summary>
-    public static string SwitchControl => IsGerman ? "Schalter" : "switch";
+    public static string SwitchControl => L("Schalter", "switch", "переключатель");
 
     // ── Jumbo-Glueckskaktor (LotteryWeeklyInput) ─────────────────────
     /// <summary>Close chrome on windows that only show the WindowA_Button icon.</summary>
-    public static string CloseControl => IsGerman ? "Schließen" : "Close";
+    public static string CloseControl => L("Schließen", "Close", "Закрыть");
 
     /// <summary>Digit key on the Jumbo Cactpot pad, with the slot that will receive it.</summary>
     public static string LotteryWeeklyDigit(string digit, int slot) =>
-        IsGerman ? $"Ziffer {digit}, Stelle {slot}" : $"Digit {digit}, position {slot}";
+        L($"Ziffer {digit}, Stelle {slot}", $"Digit {digit}, position {slot}", $"Цифра {digit}, позиция {slot}");
 
     /// <summary>Digit key when no slot radio is marked selected.</summary>
     public static string LotteryWeeklyDigitOnly(string digit) =>
-        IsGerman ? $"Ziffer {digit}" : $"Digit {digit}";
+        L($"Ziffer {digit}", $"Digit {digit}", $"Цифра {digit}");
 
     /// <summary>One of the four ticket digit slots.</summary>
     public static string LotteryWeeklySlot(int slot, string digit, bool selected)
     {
         var state = selected ? RadioSelected : RadioNotSelected;
-        return IsGerman
-            ? $"Stelle {slot}, {digit}, {state}"
-            : $"Position {slot}, {digit}, {state}";
+        return L($"Stelle {slot}, {digit}, {state}", $"Position {slot}, {digit}, {state}",
+            $"Позиция {slot}, {digit}, {state}");
     }
 
     /// <summary>Empty digit on a slot that has not been filled yet.</summary>
-    public static string LotteryWeeklyEmptyDigit => IsGerman ? "leer" : "empty";
+    public static string LotteryWeeklyEmptyDigit => L("leer", "empty", "пусто");
 
     /// <summary>Buy button enriched with the number currently on the four slots.</summary>
     public static string LotteryWeeklyBuy(string buyLabel, string number) =>
-        IsGerman ? $"{buyLabel}, Nummer {number}" : $"{buyLabel}, number {number}";
+        L($"{buyLabel}, Nummer {number}", $"{buyLabel}, number {number}", $"{buyLabel}, номер {number}");
 
     // ── Mini-Glueckskaktor (LotteryDaily) ────────────────────────────
     /// <summary>Fallback when title nodes are not ready yet on open.</summary>
     public static string LotteryDailyFallbackTitle =>
-        IsGerman ? "Mini-Glückskaktor." : "Mini Cactpot.";
+        L("Mini-Glückskaktor.", "Mini Cactpot.", "Мини-кактпот.");
+
+    public static string LotteryDailyRevealCount(int count) =>
+        L($"Noch {count} Felder aufdecken.", $"Uncover {count} more cells.",
+            $"Открой клетки: осталось {count}.");
 
     /// <summary>Covered board cell (row/col 1-based).</summary>
     public static string LotteryDailyCellCovered(int row, int col) =>
-        IsGerman ? $"Feld Zeile {row}, Spalte {col}, verdeckt"
-                 : $"Cell row {row}, column {col}, covered";
+        L($"Feld Zeile {row}, Spalte {col}, verdeckt", $"Cell row {row}, column {col}, covered",
+            $"Клетка: строка {row}, столбец {col}, закрыта");
 
     /// <summary>Revealed board cell with its digit.</summary>
     public static string LotteryDailyCell(int row, int col, string digit) =>
-        IsGerman ? $"Feld Zeile {row}, Spalte {col}, {digit}"
-                 : $"Cell row {row}, column {col}, {digit}";
+        L($"Feld Zeile {row}, Spalte {col}, {digit}", $"Cell row {row}, column {col}, {digit}",
+            $"Клетка: строка {row}, столбец {col}, {digit}");
 
     public static string LotteryDailyRow(int n) =>
-        IsGerman ? $"Zeile {n}" : $"Row {n}";
+        L($"Zeile {n}", $"Row {n}", $"Строка {n}");
 
     public static string LotteryDailyColumn(int n) =>
-        IsGerman ? $"Spalte {n}" : $"Column {n}";
+        L($"Spalte {n}", $"Column {n}", $"Столбец {n}");
 
     /// <summary>Major diagonal (top-left to bottom-right) — LaneSelector.MajorDiagonal.</summary>
     public static string LotteryDailyMajorDiagonal =>
-        IsGerman ? "Diagonale links oben nach rechts unten" : "Diagonal top-left to bottom-right";
+        L("Diagonale links oben nach rechts unten", "Diagonal top-left to bottom-right",
+            "Диагональ слева сверху направо вниз");
 
     /// <summary>Minor diagonal (top-right to bottom-left) — LaneSelector.MinorDiagonal.</summary>
     public static string LotteryDailyMinorDiagonal =>
-        IsGerman ? "Diagonale rechts oben nach links unten" : "Diagonal top-right to bottom-left";
+        L("Diagonale rechts oben nach links unten", "Diagonal top-right to bottom-left",
+            "Диагональ справа сверху налево вниз");
 
     public static string LotteryDailyLane(string lane, string digits, string state) =>
-        IsGerman ? $"{lane}, {digits}, {state}" : $"{lane}, {digits}, {state}";
+        $"{lane}, {digits}, {state}";
 
     public static string LotteryDailyLaneWithSum(string lane, string digits, int sum, string state) =>
-        IsGerman ? $"{lane}, {digits}, Summe {sum}, {state}"
-                 : $"{lane}, {digits}, sum {sum}, {state}";
+        L($"{lane}, {digits}, Summe {sum}, {state}", $"{lane}, {digits}, sum {sum}, {state}",
+            $"{lane}, {digits}, сумма {sum}, {state}");
 
     public static string LotteryDailyLaneWithPayout(
         string lane, string digits, int sum, string mgp, string state) =>
-        IsGerman ? $"{lane}, {digits}, Summe {sum}, {mgp} MGP, {state}"
-                 : $"{lane}, {digits}, sum {sum}, {mgp} MGP, {state}";
+        L($"{lane}, {digits}, Summe {sum}, {mgp} MGP, {state}", $"{lane}, {digits}, sum {sum}, {mgp} MGP, {state}",
+            $"{lane}, {digits}, сумма {sum}, {mgp} МГП, {state}");
 
     /// <summary>
     /// A switch that has NO name of its own - neither text nor tooltip - named by
@@ -311,60 +322,58 @@ public static partial class AccessibilityStrings
     /// </para>
     /// </summary>
     public static string GroupMemberPosition(string group, int index, int count) =>
-        IsGerman ? $"{group}, {index} von {count}" : $"{group}, {index} of {count}";
+        L($"{group}, {index} von {count}", $"{group}, {index} of {count}", $"{group}, {index} из {count}");
     /// <summary>Control is greyed out / not currently changeable (NodeFlags.Enabled
     /// cleared) - e.g. a sub-toggle while its master switch is off.</summary>
-    public static string StateDisabled => IsGerman ? "ausgegraut" : "greyed out";
+    public static string StateDisabled => L("ausgegraut", "greyed out", "недоступно");
 
     // ── Einstellungen der Inhaltssuche (ContentsFinderSetting) ───────
     /// <summary>The four language boxes of the duty-finder settings. Named by
     /// their position, which is the order the game's own configuration lists
     /// them in (ContentsFinderUseLangTypeJA / EN / DE / FR).</summary>
-    public static string DutyLanguageJapanese => IsGerman ? "Japanisch" : "Japanese";
-    public static string DutyLanguageEnglish  => IsGerman ? "Englisch"  : "English";
-    public static string DutyLanguageGerman   => IsGerman ? "Deutsch"   : "German";
-    public static string DutyLanguageFrench   => IsGerman ? "Französisch" : "French";
+    public static string DutyLanguageJapanese => L("Japanisch", "Japanese", "японский");
+    public static string DutyLanguageEnglish  => L("Englisch", "English", "английский");
+    public static string DutyLanguageGerman   => L("Deutsch", "German", "немецкий");
+    public static string DutyLanguageFrench   => L("Französisch", "French", "французский");
 
     /// <summary>Heading of the language row, so a box is not heard as a loose
     /// switch ("Sprache Deutsch, Schalter, an").</summary>
-    public static string DutyLanguageGroup => IsGerman ? "Sprache" : "Language";
+    public static string DutyLanguageGroup => L("Sprache", "Language", "язык");
 
     /// <summary>LookingForGroupCondition — loot rules dropdown (dump 2026-09-24).</summary>
-    public static string LfgLootRulesLabel => IsGerman ? "Beuteregeln" : "Loot rules";
+    public static string LfgLootRulesLabel => L("Beuteregeln", "Loot rules", "Правила добычи");
     /// <summary>LookingForGroupCondition — completion filter dropdown.</summary>
     public static string LfgCompletionLabel =>
-        IsGerman ? "Abgeschlossene Inhalte" : "Completed content";
-    public static string LfgCommentLabel => IsGerman ? "Kommentar" : "Comment";
-    public static string LfgPasswordLabel => IsGerman ? "Passwort" : "Password";
+        L("Abgeschlossene Inhalte", "Completed content", "Пройденные задания");
+    public static string LfgCommentLabel => L("Kommentar", "Comment", "Комментарий");
+    public static string LfgPasswordLabel => L("Passwort", "Password", "Пароль");
     public static string LfgItemLevelLabel =>
-        IsGerman ? "Gegenstandsstufe" : "Item level";
-    public static string LfgRoleSlot => IsGerman ? "Rollenplatz" : "Role slot";
+        L("Gegenstandsstufe", "Item level", "Уровень предмета");
+    public static string LfgRoleSlot => L("Rollenplatz", "Role slot", "Роль");
 
     /// <summary>The window's own help text for the option under the focus,
     /// spoken on its own after a short dwell - prefixed so the user knows what
     /// is being read.</summary>
     public static string SettingHelp(string help) =>
-        IsGerman ? $"Erklärung: {help}" : $"Explanation: {help}";
+        L($"Erklärung: {help}", $"Explanation: {help}", $"Пояснение: {help}");
 
     // ── Sprachumschaltung (/acc lang) ────────────────────────────────
-    public static string LanguageGerman  => IsGerman ? "Deutsch" : "German";
-    public static string LanguageEnglish => IsGerman ? "Englisch" : "English";
+    public static string LanguageGerman  => L("Deutsch", "German", "немецкий");
+    public static string LanguageEnglish => L("Englisch", "English", "английский");
+    /// <summary>Name der Sprache fuer die Bestaetigung von "/acc lang ru".</summary>
+    public static string LanguageRussian => L("Russisch", "Russian", "русский");
 
     public static string LanguageSet(string language) =>
-        IsGerman ? $"Sprache auf {language} umgestellt." : $"Language set to {language}.";
+        L($"Sprache auf {language} umgestellt.", $"Language set to {language}.", $"Язык переключён на {language}.");
 
     public static string LanguageAuto(string language) =>
-        IsGerman
-            ? $"Sprache folgt jetzt Windows: {language}."
-            : $"Language now follows Windows: {language}.";
+        L($"Sprache folgt jetzt Windows: {language}.", $"Language now follows Windows: {language}.", $"Язык теперь как в Windows: {language}.");
 
     public static string LanguageUsage =>
-        IsGerman
-            ? "Sprache wählen mit: /acc lang de, /acc lang en oder /acc lang auto."
-            : "Choose a language with: /acc lang de, /acc lang en or /acc lang auto.";
+        L("Sprache wählen mit: /acc lang de, /acc lang en oder /acc lang auto.", "Choose a language with: /acc lang de, /acc lang en or /acc lang auto.", "Выбрать язык: /acc lang ru, /acc lang en или /acc lang auto.");
 
     public static string UnknownCommand =>
-        IsGerman ? "Unbekannter Befehl. Tippe /acc help für Hilfe." : "Unknown command. Type /acc help for help.";
+        L("Unbekannter Befehl. Tippe /acc help für Hilfe.", "Unknown command. Type /acc help for help.", "Неизвестная команда. Набери /acc help для справки.");
 
     // ── Keybind-Dump (/acc keys) ─────────────────────────────────────
     /// <summary>
@@ -374,139 +383,131 @@ public static partial class AccessibilityStrings
     /// Only the conflict count is actionable there: a plugin key is dead.
     /// </summary>
     public static string KeybindConflictsShort(int conflictCount) =>
-        IsGerman
-            ? (conflictCount == 1 ? "1 Tastenkonflikt." : $"{conflictCount} Tastenkonflikte.")
-            : (conflictCount == 1 ? "1 key conflict." : $"{conflictCount} key conflicts.");
+        L(conflictCount == 1 ? "1 Tastenkonflikt." : $"{conflictCount} Tastenkonflikte.",
+          conflictCount == 1 ? "1 key conflict." : $"{conflictCount} key conflicts.",
+          conflictCount == 1 ? "1 конфликт клавиш." : $"{conflictCount} конфликтов клавиш.");
 
     public static string KeybindDumpSaved(int boundCount, int conflictCount) =>
-        IsGerman
-            ? $"Tastenbelegung gespeichert: {boundCount} Aktionen mit Taste, {conflictCount} Konflikte mit Plugin-Tasten. Datei auf dem Desktop, Details im Log."
-            : $"Keybinds saved: {boundCount} bound actions, {conflictCount} conflicts with plugin keys. File on desktop, details in log.";
+        L($"Tastenbelegung gespeichert: {boundCount} Aktionen mit Taste, {conflictCount} Konflikte mit Plugin-Tasten. Datei auf dem Desktop, Details im Log.", $"Keybinds saved: {boundCount} bound actions, {conflictCount} conflicts with plugin keys. File on desktop, details in log.", $"Назначения клавиш сохранены: {boundCount} действий с клавишей, {conflictCount} конфликтов с клавишами плагина. Файл на рабочем столе, подробности в логе.");
 
     public static string KeybindDumpFailed =>
-        IsGerman
-            ? "Tastenbelegung konnte nicht gelesen werden. Details im Log."
-            : "Could not read keybinds. See log for details.";
+        L("Tastenbelegung konnte nicht gelesen werden. Details im Log.", "Could not read keybinds. See log for details.", "Не удалось прочитать назначения клавиш. Подробности в логе.");
+
+    // ── Diagnose (/acc diag) ─────────────────────────────────────────
+    // Report path for a blind player: no navigating to an install folder, the
+    // file lands on the desktop and can be attached to a message as it is.
+    public static string DiagnoseRunning =>
+        L("Diagnose läuft, einen Moment.", "Diagnostics running, one moment.", "Собираю диагностику, секунду.");
+
+    public static string DiagnoseSaved(string className, string path, int entries) =>
+        L($"Diagnose gespeichert. Beruf {className}, Einträge {entries}. Datei: {path}",
+          $"Diagnostics saved. Job {className}, entries {entries}. File: {path}",
+          $"Диагностика сохранена. Класс {className}, записей {entries}. Файл: {path}");
+
+    public static string DiagnoseFailed =>
+        L("Diagnose konnte nicht geschrieben werden.", "Could not write the diagnostics file.", "Не удалось записать файл диагностики.");
 
     // ── ConfigSystem ─────────────────────────────────────────────────
     public static string ConfigSystem =>
-        IsGerman ? "Systemeinstellungen" : "System Configuration";
+        L("Systemeinstellungen", "System Configuration", "Системные настройки");
 
     public static string ConfigSystemSaved =>
-        IsGerman ? "Einstellungen gespeichert" : "Settings saved";
+        L("Einstellungen gespeichert", "Settings saved", "Настройки сохранены");
 
     public static string ConfigSystemDiscarded =>
-        IsGerman ? "Änderungen verworfen" : "Changes discarded";
+        L("Änderungen verworfen", "Changes discarded", "Изменения отменены");
 
-    public static string HelpForConfigSystem => IsGerman
-        ? "Pfeile hoch und runter wechseln Option. Links und rechts ändern Wert oder Tab. Enter speichert, Escape verwirft, Strg+F1 für Hilfe."
-        : "Up and down arrows move between options. Left and right change value or tab. Enter saves, Escape discards, Ctrl+F1 for help.";
+    public static string HelpForConfigSystem => L("Pfeile hoch und runter wechseln Option. Links und rechts ändern Wert oder Tab. Enter speichert, Escape verwirft, Strg+F1 für Hilfe.", "Up and down arrows move between options. Left and right change value or tab. Enter saves, Escape discards, Ctrl+F1 for help.", "Стрелки вверх и вниз переключают пункт. Влево и вправо меняют значение или вкладку. Enter сохраняет, Escape отменяет, Ctrl+F1 — справка.") + " " + SystemVolumeEditHint;
 
-    public static string CheckboxOn  => IsGerman ? "an"  : "on";
-    public static string CheckboxOff => IsGerman ? "aus" : "off";
+    public static string CheckboxOn  => L("an", "on", "вкл");
+    public static string CheckboxOff => L("aus", "off", "выкл");
 
     public static string OptionPosition(string label, string value, int index, int count) =>
-        IsGerman
-            ? $"{label}, {value}, {index} von {count}"
-            : $"{label}, {value}, {index} of {count}";
+        L($"{label}, {value}, {index} von {count}", $"{label}, {value}, {index} of {count}", $"{label}, {value}, {index} из {count}");
 
     public static string TabPosition(string label, int index, int count) =>
-        IsGerman
-            ? $"{label}, Tab {index} von {count}"
-            : $"{label}, tab {index} of {count}";
+        L($"{label}, Tab {index} von {count}", $"{label}, tab {index} of {count}", $"{label}, вкладка {index} из {count}");
 
     // ── Triple Triad (Kartenspiel) ───────────────────────────────────
     // Fields read directly from AddonTripleTriad (Board/BlueDeck/RedDeck,
     // ilspycmd-verified). Numbers are pre-formatted by the service (1-9, 10 -> "A")
     // so the digit/A convention stays language-independent.
-    public static string CardGameTitle => IsGerman ? "Kartenspiel" : "Card game";
+    public static string CardGameTitle => L("Kartenspiel", "Card game", "Карточная игра");
 
     /// <summary>The four edge numbers of a card, in a fixed clockwise-from-top order.</summary>
     public static string CardSides(string up, string right, string down, string left) =>
-        IsGerman
-            ? $"oben {up}, rechts {right}, unten {down}, links {left}"
-            : $"top {up}, right {right}, bottom {down}, left {left}";
+        L($"oben {up}, rechts {right}, unten {down}, links {left}", $"top {up}, right {right}, bottom {down}, left {left}", $"сверху {up}, справа {right}, снизу {down}, слева {left}");
 
     /// <summary>Owner of a card that sits on the board or in a hand.</summary>
-    public static string CardOwnerYours => IsGerman ? "deine" : "yours";
-    public static string CardOwnerEnemy => IsGerman ? "gegnerische" : "enemy";
+    public static string CardOwnerYours => L("deine", "yours", "твоя");
+    public static string CardOwnerEnemy => L("gegnerische", "enemy", "вражеская");
 
     /// <summary>One board cell (1-based), either empty or holding a card.</summary>
     public static string BoardCellEmpty(int cell) =>
-        IsGerman ? $"Feld {cell}: leer" : $"Cell {cell}: empty";
+        L($"Feld {cell}: leer", $"Cell {cell}: empty", $"Поле {cell}: пусто");
 
     public static string BoardCellCard(int cell, string owner, string sides) =>
-        IsGerman ? $"Feld {cell}: {owner}, {sides}" : $"Cell {cell}: {owner}, {sides}";
+        L($"Feld {cell}: {owner}, {sides}", $"Cell {cell}: {owner}, {sides}", $"Поле {cell}: {owner}, {sides}");
 
     /// <summary>One hand card (1-based).</summary>
     public static string HandCard(int index, string sides) =>
-        IsGerman ? $"Karte {index}: {sides}" : $"Card {index}: {sides}";
+        L($"Karte {index}: {sides}", $"Card {index}: {sides}", $"Карта {index}: {sides}");
 
     /// <summary>Focus announcement for a single card (board cell or hand card).</summary>
     public static string FocusBoardCell(int cell, string content) =>
-        IsGerman ? $"Feld {cell}, {content}" : $"Cell {cell}, {content}";
+        L($"Feld {cell}, {content}", $"Cell {cell}, {content}", $"Поле {cell}, {content}");
 
     public static string FocusHandCard(int index, int count, string sides) =>
-        IsGerman ? $"Handkarte {index} von {count}, {sides}" : $"Hand card {index} of {count}, {sides}";
+        L($"Handkarte {index} von {count}, {sides}", $"Hand card {index} of {count}, {sides}", $"Карта в руке {index} из {count}, {sides}");
 
     public static string CardGameNotOpen =>
-        IsGerman ? "Kartenspiel ist nicht offen." : "Card game is not open.";
+        L("Kartenspiel ist nicht offen.", "Card game is not open.", "Карточная игра не открыта.");
 
     public static string BoardIntro(int yours, int enemy) =>
-        IsGerman
-            ? $"Brett. Deine Karten {yours}, gegnerische {enemy}."
-            : $"Board. Your cards {yours}, enemy {enemy}.";
+        L($"Brett. Deine Karten {yours}, gegnerische {enemy}.", $"Board. Your cards {yours}, enemy {enemy}.", $"Доска. Твои карты {yours}, вражеские {enemy}.");
 
     public static string HandIntro(int count) =>
-        IsGerman ? $"Deine Hand, {count} Karten." : $"Your hand, {count} cards.";
+        L($"Deine Hand, {count} Karten.", $"Your hand, {count} cards.", $"Твоя рука, {count} карт.");
 
     public static string HandEmpty =>
-        IsGerman ? "Keine Handkarten mehr." : "No hand cards left.";
+        L("Keine Handkarten mehr.", "No hand cards left.", "Карт на руке больше нет.");
 
     // HYPOTHESE (in-game zu verifizieren): TurnState NormalMove/MaskedMove = du bist
     // am Zug, Waiting = Gegner/warten. Der Rohwert wird zusaetzlich geloggt.
-    public static string YourTurn => IsGerman ? "Du bist am Zug." : "Your turn.";
-    public static string WaitingTurn => IsGerman ? "Warten." : "Waiting.";
+    public static string YourTurn => L("Du bist am Zug.", "Your turn.", "Твой ход.");
+    public static string WaitingTurn => L("Warten.", "Waiting.", "Ждём.");
 
     // ── Fenster-Ansage (F2 / /acc win) ───────────────────────────────
     public static string ActiveWindow(string name, int visibleCount) =>
-        IsGerman
-            ? $"Aktives Fenster: {name}. {visibleCount} Fenster sichtbar, Liste im Log."
-            : $"Active window: {name}. {visibleCount} windows visible, list written to log.";
+        L($"Aktives Fenster: {name}. {visibleCount} Fenster sichtbar, Liste im Log.", $"Active window: {name}. {visibleCount} windows visible, list written to log.", $"Активное окно: {name}. Видимых окон: {visibleCount}, список в логе.");
 
     public static string NoWindowFocused(int visibleCount) =>
-        IsGerman
-            ? $"Kein Fenster fokussiert. {visibleCount} Fenster sichtbar, Liste im Log."
-            : $"No window focused. {visibleCount} windows visible, list written to log.";
+        L($"Kein Fenster fokussiert. {visibleCount} Fenster sichtbar, Liste im Log.", $"No window focused. {visibleCount} windows visible, list written to log.", $"Окно не в фокусе. Видимых окон: {visibleCount}, список в логе.");
 
     public static string UiManagerUnavailable =>
-        IsGerman ? "Fenster-Liste nicht verfügbar." : "Window list not available.";
+        L("Fenster-Liste nicht verfügbar.", "Window list not available.", "Список окон недоступен.");
 
     public static string DumpSaved(int addonCount, int nodeCount) =>
-        IsGerman
-            ? $"UI Dump auf Desktop gespeichert. {addonCount} Fenster, {nodeCount} Nodes."
-            : $"UI dump saved to desktop. {addonCount} windows, {nodeCount} nodes.";
+        L($"UI Dump auf Desktop gespeichert. {addonCount} Fenster, {nodeCount} Nodes.", $"UI dump saved to desktop. {addonCount} windows, {nodeCount} nodes.", $"Дамп интерфейса сохранён на рабочий стол. Окон: {addonCount}, узлов: {nodeCount}.");
 
     public static string AddonNotOpen(string names) =>
-        IsGerman ? $"Addon {names} nicht offen." : $"Addon {names} not open.";
+        L($"Addon {names} nicht offen.", $"Addon {names} not open.", $"Аддон {names} не открыт.");
 
     // ── Ok-Taste (Enter in Lobby/Charaktererstellung) ────────────────
-    public static string OkPressed  => IsGerman ? "Ok" : "Ok";
-    public static string NoOkButton => IsGerman ? "Kein Ok-Knopf gefunden." : "No Ok button found.";
+    public static string OkPressed  => L("Ok", "Ok", "Ок");
+    public static string NoOkButton => L("Kein Ok-Knopf gefunden.", "No Ok button found.", "Кнопка Ок не найдена.");
 
     // ── Charaktererstellung: Volk & Geschlecht ───────────────────────
-    public static string GenderMale   => IsGerman ? "männlich" : "male";
-    public static string GenderFemale => IsGerman ? "weiblich" : "female";
+    public static string GenderMale   => L("männlich", "male", "мужской");
+    public static string GenderFemale => L("weiblich", "female", "женский");
 
     // ── SelectYesno ──────────────────────────────────────────────────
     /// <summary>Fallback button labels, used only when the dialog's own button
     /// nodes carry no text - normally the labels are READ from the game.</summary>
-    public static string YesWord => IsGerman ? "Ja" : "Yes";
-    public static string NoWord  => IsGerman ? "Nein" : "No";
+    public static string YesWord => L("Ja", "Yes", "Да");
+    public static string NoWord  => L("Nein", "No", "Нет");
     public static string DialogButtons(string confirm, string cancel) =>
-        IsGerman
-            ? $"{confirm} oder {cancel}? Links und rechts wechseln, Enter wählt aus."
-            : $"{confirm} or {cancel}? Left and right to switch, Enter to select.";
+        L($"{confirm} oder {cancel}? Num4/6 wechseln, Num0 oder Enter bestätigt, Escape bricht ab.", $"{confirm} or {cancel}? Num4/6 changes the selection, Num0 or Enter confirms, Escape cancels.", $"{confirm} или {cancel}? Num4 и Num6 выбирают кнопку, Num0 или Enter нажимает выбранную кнопку, Escape отменяет.");
 
     // ── Navigation: Himmelsrichtungen, relative Richtung, Distanz ─────
     // Sprachabhängige Kompass-Wörter (0 = Norden .. 7 = Nordwesten). Property,
@@ -517,7 +518,10 @@ public static partial class AccessibilityStrings
     private static readonly string[] CompassEn =
         { "North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest" };
 
-    public static string[] CompassWords => IsGerman ? CompassDe : CompassEn;
+    private static readonly string[] CompassRu =
+        { "Север", "Северо-восток", "Восток", "Юго-восток", "Юг", "Юго-запад", "Запад", "Северо-запад" };
+
+    public static string[] CompassWords => Loc.IsRussian ? CompassRu : IsGerman ? CompassDe : CompassEn;
 
     // Adjective/adverb compass forms for "&lt;distance&gt; meters &lt;dir&gt;"
     // spot lines (0 = North .. 7 = Northwest).
@@ -525,18 +529,17 @@ public static partial class AccessibilityStrings
         { "nördlich", "nordöstlich", "östlich", "südöstlich", "südlich", "südwestlich", "westlich", "nordwestlich" };
     private static readonly string[] CompassAdjEn =
         { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" };
-    public static string[] CompassAdjectives => IsGerman ? CompassAdjDe : CompassAdjEn;
+    private static readonly string[] CompassAdjRu =
+        { "севернее", "северо-восточнее", "восточнее", "юго-восточнее", "южнее", "юго-западнее", "западнее", "северо-западнее" };
+
+    public static string[] CompassAdjectives => Loc.IsRussian ? CompassAdjRu : IsGerman ? CompassAdjDe : CompassAdjEn;
 
     /// <summary>A spot list line: name, level, optional status (gathering),
     /// distance and compass bearing (shared by fishing and gathering).</summary>
     public static string SpotListLine(string name, int level, float distance, string compass, string? status = null) =>
         status == null
-            ? (IsGerman
-                ? $"{name}, Stufe {level}, {distance:F0} Meter {compass}"
-                : $"{name}, level {level}, {distance:F0} meters {compass}")
-            : (IsGerman
-                ? $"{name}, Stufe {level}, {status}, {distance:F0} Meter {compass}"
-                : $"{name}, level {level}, {status}, {distance:F0} meters {compass}");
+            ? (L($"{name}, Stufe {level}, {distance:F0} Meter {compass}", $"{name}, level {level}, {distance:F0} meters {compass}", $"{name}, уровень {level}, {distance:F0} метров {compass}"))
+            : (L($"{name}, Stufe {level}, {status}, {distance:F0} Meter {compass}", $"{name}, level {level}, {status}, {distance:F0} meters {compass}", $"{name}, уровень {level}, {status}, {distance:F0} метров {compass}"));
     /// <summary>
     /// Relative-to-heading direction word for a signed angle in degrees
     /// (negative = left, 0 = ahead).
@@ -553,34 +556,34 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string RelativeDirection(double relativeAngle) => relativeAngle switch
     {
-        < -135 => IsGerman ? "hinter links"  : "behind to the left",
-        < -45  => IsGerman ? "links"         : "left",
-        < -15  => IsGerman ? "leicht links"  : "slightly left",
-        <= 15  => IsGerman ? "geradeaus"     : "straight ahead",
-        <= 45  => IsGerman ? "leicht rechts" : "slightly right",
-        <= 135 => IsGerman ? "rechts"        : "right",
-        _      => IsGerman ? "hinter rechts" : "behind to the right",
+        < -135 => L("hinter links", "behind to the left", "сзади слева"),
+        < -45  => L("links", "left", "слева"),
+        < -15  => L("leicht links", "slightly left", "чуть слева"),
+        <= 15  => L("geradeaus", "straight ahead", "прямо"),
+        <= 45  => L("leicht rechts", "slightly right", "чуть справа"),
+        <= 135 => L("rechts", "right", "справа"),
+        _      => L("hinter rechts", "behind to the right", "сзади справа"),
     };
 
     /// <summary>Spoken distance: very close as a phrase, otherwise metres, then
     /// kilometres. Mirrors the mod's metre convention (not in-game yalms).</summary>
     public static string FormatDistance(float distance) =>
-        distance < 2f    ? (IsGerman ? "direkt neben dir" : "right next to you") :
-        distance < 100f  ? (IsGerman ? $"{distance:F0} Meter"     : $"{distance:F0} meters") :
-                           (IsGerman ? $"{distance / 1000:F1} Kilometer" : $"{distance / 1000:F1} kilometers");
+        distance < 2f    ? (L("direkt neben dir", "right next to you", "прямо рядом с тобой")) :
+        distance < 100f  ? (L($"{distance:F0} Meter", $"{distance:F0} meters", $"{distance:F0} метров")) :
+                           (L($"{distance / 1000:F1} Kilometer", $"{distance / 1000:F1} kilometers", $"{distance / 1000:F1} километров"));
 
     // ── Objekt-Browser: Kategorie-Labels & -Ansagen (NavigationService) ─
     /// <summary>The spoken name of an object-browser category in the active
     /// language. Identity is the NavCategory key; this is display only.</summary>
     internal static string CategoryLabel(NavCategory cat) => cat switch
     {
-        NavCategory.All              => IsGerman ? "Alles"             : "Everything",
-        NavCategory.Npcs             => IsGerman ? "NPCs"              : "NPCs",
-        NavCategory.Merchants        => IsGerman ? "Händler"           : "Merchants",
-        NavCategory.Enemies          => IsGerman ? "Gegner"            : "Enemies",
-        NavCategory.Allies           => IsGerman ? "Verbündete"        : "Allies",
-        NavCategory.Players          => IsGerman ? "Spieler"           : "Players",
-        NavCategory.Objects          => IsGerman ? "Objekte"           : "Objects",
+        NavCategory.All              => L("Alles", "Everything", "Всё"),
+        NavCategory.Npcs             => L("NPCs", "NPCs", "НПС"),
+        NavCategory.Merchants        => L("Händler", "Merchants", "торговец"),
+        NavCategory.Enemies          => L("Gegner", "Enemies", "Противник"),
+        NavCategory.Allies           => L("Verbündete", "Allies", "Союзники"),
+        NavCategory.Players          => L("Spieler", "Players", "Игрок"),
+        NavCategory.Objects          => L("Objekte", "Objects", "Объекты"),
         // NICHT "Dungeons": die Kategorie haelt auch Prüfungs-, Raid- und
         // PvP-Türen, und die Ansage nennt Inhalt und Art ohnehin. Das deutsche Wort
         // ist das des SPIELS, keine nach Gefühl gewählte Übersetzung - der Client
@@ -588,36 +591,36 @@ public static partial class AccessibilityStrings
         // und "There are no duties available" heisst dort "Keine Inhalte vorhanden"
         // (Addon 2500/2509, in beiden Sprachen gedumpt). Ein Duty ist also ein
         // "Inhalt", und der Spieler hört das Wort im Spiel bereits.
-        NavCategory.Duties           => IsGerman ? "Inhalte"           : "Duties",
-        NavCategory.QuestNpcs        => IsGerman ? "Quest-NPCs"        : "Quest NPCs",
-        NavCategory.QuestObjects     => IsGerman ? "Quest-Objekte"     : "Quest objects",
-        NavCategory.QuestEnemies     => IsGerman ? "Quest-Gegner"      : "Quest enemies",
-        NavCategory.GatheringNodes   => IsGerman ? "Sammelpunkte"      : "Gathering nodes",
+        NavCategory.Duties           => L("Inhalte", "Duties", "Инстансы"),
+        NavCategory.QuestNpcs        => L("Quest-NPCs", "Quest NPCs", "НПС по заданиям"),
+        NavCategory.QuestObjects     => L("Quest-Objekte", "Quest objects", "Объекты по заданиям"),
+        NavCategory.QuestEnemies     => L("Quest-Gegner", "Quest enemies", "Противники по заданиям"),
+        NavCategory.GatheringNodes   => L("Sammelpunkte", "Gathering nodes", "Точки сбора"),
         NavCategory.Fates            => "FATEs",
-        NavCategory.EventAreas       => IsGerman ? "Events" : "Events",
-        NavCategory.HuntingTargets   => IsGerman ? "Jagdziele"          : "Hunting targets",
+        NavCategory.EventAreas       => L("Events", "Events", "События"),
+        NavCategory.HuntingTargets   => L("Jagdziele", "Hunting targets", "Цели охоты"),
         // "Jagdziele der Gesellschaft" statt "Jagdtagebuch der Staatlichen
         // Gesellschaft": die Beschriftung wird bei jedem Blättern gesprochen,
         // und sie steht direkt hinter "Jagdziele" - das Wort, das die beiden
         // unterscheidet, gehört nach vorn und der Rest muss kurz bleiben.
-        NavCategory.GrandCompanyHunt => IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets",
-        NavCategory.BlueMagic        => IsGerman ? "Blaumagie"          : "Blue magic",
-        NavCategory.Beastmaster      => IsGerman ? "Bestien"            : "Beasts",
-        NavCategory.FishingSpots     => IsGerman ? "Angelplätze"       : "Fishing spots",
+        NavCategory.GrandCompanyHunt => L("Jagdziele der Gesellschaft", "Grand company targets", "Цели охоты гранд-компании"),
+        NavCategory.BlueMagic        => L("Blaumagie", "Blue magic", "Синяя магия"),
+        NavCategory.Beastmaster      => L("Bestien", "Beasts", "Звери"),
+        NavCategory.FishingSpots     => L("Angelplätze", "Fishing spots", "Рыбные места"),
         // Bewusst NICHT "Dungeons", obwohl der Wunsch so formuliert war: die Liste
         // haelt auch Prüfungen und Raids. Und bewusst nicht noch einmal "Inhalte" -
         // die Kategorie darüber heisst so und zeigt nur die Türen in der Nähe; das
         // Wort "alle" ist genau der Unterschied zwischen beiden.
-        NavCategory.WorldDuties      => IsGerman ? "Alle Inhalte"      : "All duties",
-        NavCategory.Aetherytes       => IsGerman ? "Ätheryten"         : "Aetherytes",
-        NavCategory.QuestGoals       => IsGerman ? "Quest-Ziele"       : "Quest goals",
-        NavCategory.AcceptableQuests => IsGerman ? "Annehmbare Quests" : "Available quests",
-        NavCategory.Levequests       => IsGerman ? "Freibriefe"        : "Levequests",
-        NavCategory.Waypoints        => IsGerman ? "Wegpunkte"         : "Waypoints",
+        NavCategory.WorldDuties      => L("Alle Inhalte", "All duties", "Все инстансы"),
+        NavCategory.Aetherytes       => L("Ätheryten", "Aetherytes", "Эфириты"),
+        NavCategory.QuestGoals       => L("Quest-Ziele", "Quest goals", "Цели заданий"),
+        NavCategory.AcceptableQuests => L("Annehmbare Quests", "Available quests", "Доступные задания"),
+        NavCategory.Levequests       => L("Freibriefe", "Levequests", "Ливквесты"),
+        NavCategory.Waypoints        => L("Wegpunkte", "Waypoints", "Точки пути"),
         // Das Wort des Users (2026-08-29). Es steht bewusst neben "Inhalte" und
         // "Alle Inhalte", ohne sich mit ihnen zu schneiden: jene beiden führen zu
         // einer TÜR, diese führt DURCH das, was hinter ihr liegt.
-        NavCategory.DungeonRoute     => IsGerman ? "Dungeon"           : "Dungeon",
+        NavCategory.DungeonRoute     => L("Dungeon", "Dungeon", "подземелье"),
         _                            => cat.ToString(),
     };
 
@@ -625,9 +628,9 @@ public static partial class AccessibilityStrings
     /// while browsing the merchant category.</summary>
     internal static string ShopKindWord(ShopKind kind) => kind switch
     {
-        ShopKind.GilShop  => IsGerman ? "Laden"   : "shop",
-        ShopKind.Exchange => IsGerman ? "Tausch"  : "exchange",
-        _                 => IsGerman ? "Händler" : "merchant",
+        ShopKind.GilShop  => L("Laden", "shop", "магазин"),
+        ShopKind.Exchange => L("Tausch", "exchange", "обмен"),
+        _                 => L("Händler", "merchant", "торговец"),
     };
 
     /// <summary>
@@ -652,9 +655,9 @@ public static partial class AccessibilityStrings
     {
         var category = contentType switch
         {
-            2 => IsGerman ? "Dungeon" : "dungeon",
-            4 => IsGerman ? "Prüfung" : "trial",
-            5 => IsGerman ? "Raid"    : "raid",
+            2 => L("Dungeon", "dungeon", "подземелье"),
+            4 => L("Prüfung", "trial", "испытание"),
+            5 => L("Raid", "raid", "рейд"),
             6 => "PvP",
             _ => gameTypeName,
         };
@@ -662,7 +665,7 @@ public static partial class AccessibilityStrings
         // Ein Inhalt ohne Stufenanforderung sagt nichts über eine Stufe, statt
         // "Stufe 0" zu sagen.
         var withLevel = level > 0
-            ? (IsGerman ? $"{dutyName}, Stufe {level}" : $"{dutyName}, level {level}")
+            ? (L($"{dutyName}, Stufe {level}", $"{dutyName}, level {level}", $"{dutyName}, уровень {level}"))
             : dutyName;
 
         return category.Length > 0 ? $"{category}: {withLevel}" : withLevel;
@@ -675,56 +678,38 @@ public static partial class AccessibilityStrings
     // now matches it.
     public static string CategoryQuestCount(string label, int here, int away) =>
         away > 0
-            ? (IsGerman
-                ? $"{label}: {here} im Gebiet, {away} in anderen Gebieten."
-                : $"{label}: {here} in this area, {away} in other areas.")
-            : (IsGerman
-                ? $"{label}: {here} im Gebiet."
-                : $"{label}: {here} in this area.");
+            ? (L($"{label}: {here} im Gebiet, {away} in anderen Gebieten.", $"{label}: {here} in this area, {away} in other areas.", $"{label}: {here} в этой местности, {away} в других местностях."))
+            : (L($"{label}: {here} im Gebiet.", $"{label}: {here} in this area.", $"{label}: {here} в этой местности."));
 
     public static string CategoryWaypointCount(int count, int exits) =>
         exits > 0
-            ? (IsGerman
-                ? $"Wegpunkte: {count} im Gebiet, davon {exits} Übergänge."
-                : $"Waypoints: {count} in this area, {exits} of them exits.")
-            : (IsGerman
-                ? $"Wegpunkte: {count} im Gebiet."
-                : $"Waypoints: {count} in this area.");
+            ? (L($"Wegpunkte: {count} im Gebiet, davon {exits} Übergänge.", $"Waypoints: {count} in this area, {exits} of them exits.", $"Точки пути: {count} в этой местности, из них {exits} переходов."))
+            : (L($"Wegpunkte: {count} im Gebiet.", $"Waypoints: {count} in this area.", $"Точки пути: {count} в этой местности."));
 
     public static string CategoryAetheryteCount(int count) =>
-        IsGerman
-            ? $"Ätheryten: {count} im Gebiet."
-            : $"Aetherytes: {count} in this area.";
+        L($"Ätheryten: {count} im Gebiet.", $"Aetherytes: {count} in this area.", $"Эфириты: {count} в этой местности.");
 
     // ── FATEs: aktive Welt-Ereignisse der Zone ──
     public static string CategoryFateCount(int active, int preparing) =>
         preparing > 0
-            ? (IsGerman
-                ? $"FATEs: {active} aktiv, {preparing} starten gleich."
-                : $"FATEs: {active} active, {preparing} starting soon.")
-            : (IsGerman
-                ? $"FATEs: {active} aktiv."
-                : $"FATEs: {active} active.");
+            ? (L($"FATEs: {active} aktiv, {preparing} starten gleich.", $"FATEs: {active} active, {preparing} starting soon.", $"Фейты: {active} активно, {preparing} скоро начнутся."))
+            : (L($"FATEs: {active} aktiv.", $"FATEs: {active} active.", $"Фейты: {active} активно."));
 
     /// <summary>One FATE line: name, level, then either the completion percent or,
     /// for a not-yet-started FATE, a "starting soon" note.</summary>
     public static string FateEntry(string name, int level, byte progress, bool preparing) =>
-        IsGerman
-            ? $"{name}, Stufe {level}, {(preparing ? "startet gleich" : $"{progress} Prozent")}"
-            : $"{name}, level {level}, {(preparing ? "starting soon" : $"{progress} percent")}";
+        L($"{name}, Stufe {level}, {(preparing ? "startet gleich" : $"{progress} Prozent")}",
+          $"{name}, level {level}, {(preparing ? "starting soon" : $"{progress} percent")}",
+          $"{name}, уровень {level}, {(preparing ? "вот-вот начнётся" : $"{progress} процентов")}");
 
     public static string NoFatesInZone =>
-        IsGerman ? "Keine FATEs in diesem Gebiet." : "No FATEs in this area.";
+        L("Keine FATEs in diesem Gebiet.", "No FATEs in this area.", "В этой местности нет фейтов.");
 
     // ── Events: zeitliche Kollab-Events (Yo-kai-Zonen + Event-FATEs) ──
     public static string CategoryTimedEventCount(int total, int here) =>
         here > 0
-            ? (IsGerman
-                ? $"Events: {total} Gebiete, {here} hier."
-                : $"Events: {total} zones, {here} here.")
-            : (IsGerman
-                ? $"Events: {total} Gebiete, keines hier."
-                : $"Events: {total} zones, none here.");
+            ? (L($"Events: {total} Gebiete, {here} hier.", $"Events: {total} zones, {here} here.", $"События: {total} местностей, здесь {here}."))
+            : (L($"Events: {total} Gebiete, keines hier.", $"Events: {total} zones, none here.", $"События: {total} местностей, здесь ни одного."));
 
     /// <summary>One timed-event line: event name and zone.</summary>
     public static string TimedEventEntry(string eventName, string zone) =>
@@ -734,64 +719,49 @@ public static partial class AccessibilityStrings
 
     /// <summary>Spoken after a Yo-kai zone line — what to do there.</summary>
     public static string TimedEventYokaiHint =>
-        IsGerman
-            ? "FATEs dort mit der Yo-kai-Uhr machen."
-            : "Do FATEs there with the Yo-kai Watch on.";
+        L("FATEs dort mit der Yo-kai-Uhr machen.", "Do FATEs there with the Yo-kai Watch on.", "Делай там фейты с включёнными часами Йо-кай.");
 
     /// <summary>Spoken after a collab Event-FATE spawn line.</summary>
     public static string TimedEventFateHint =>
-        IsGerman
-            ? "Event-FATE dort machen, wenn es erscheint."
-            : "Do the event FATE there when it appears.";
+        L("Mach dort das Event-FATE, wenn es erscheint.", "Do the event FATE there when it appears.",
+          "Сделай там событийный ФЕЙТ, когда он появится.");
 
     public static string NoTimedEvents =>
-        IsGerman
-            ? "Keine zeitlichen Events."
-            : "No timed events.";
+        L("Keine zeitlichen Events.", "No timed events.", "Временных событий нет.");
 
     // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
     public static string CategoryHuntingCount(int rank, int total, int here) =>
         here > 0
-            ? (IsGerman
-                ? $"Jagdziele, Rang {rank}: {total} offen, {here} in diesem Gebiet."
-                : $"Hunting targets, rank {rank}: {total} open, {here} in this area.")
-            : (IsGerman
-                ? $"Jagdziele, Rang {rank}: {total} offen, keines in diesem Gebiet."
-                : $"Hunting targets, rank {rank}: {total} open, none in this area.");
+            ? L($"Jagdziele, Rang {rank}: {total} offen, {here} in diesem Gebiet.",
+                $"Hunting targets, rank {rank}: {total} open, {here} in this area.",
+                $"Цели охоты, ранг {rank}: открыто {total}, {here} в этом районе.")
+            : L($"Jagdziele, Rang {rank}: {total} offen, in diesem Gebiet keine.",
+                $"Hunting targets, rank {rank}: {total} open, none in this area.",
+                $"Цели охоты, ранг {rank}: открыто {total}, в этом районе ни одной.");
 
     /// <summary>One hunting log line: the monster and how many kills are still missing.</summary>
     public static string HuntingTargetEntry(string monster, int killed, int required) =>
-        IsGerman
-            ? $"{monster}, {killed} von {required} erlegt"
-            : $"{monster}, {killed} of {required} killed";
+        L($"{monster}, {killed} von {required} erlegt", $"{monster}, {killed} of {required} killed", $"{monster}, {killed} из {required} повержено");
 
     /// <summary>Said instead of the habitat when a live specimen is in range -
     /// the distance and direction that follow lead to the monster itself.</summary>
     public static string HuntingMonsterNearby =>
-        IsGerman ? "in der Nähe" : "nearby";
+        L("in der Nähe", "nearby", "рядом");
 
     /// <summary>The area a hunting log monster lives in, as the log names it.</summary>
     public static string HuntingArea(string area) =>
-        area.Length == 0 ? string.Empty : (IsGerman ? $"lebt in {area}" : $"lives in {area}");
+        area.Length == 0 ? string.Empty : (L($"lebt in {area}", $"lives in {area}", $"живёт в {area}"));
 
     public static string HuntingNoRoute(string monster, string zone) =>
-        IsGerman
-            ? $"{monster} lebt in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
-            : $"{monster} lives in {zone}. No route there over zone transitions.";
+        L($"{monster} lebt in {zone}. Dorthin führt kein Weg über Gebietsübergänge.", $"{monster} lives in {zone}. No route there over zone transitions.", $"{monster} живёт в {zone}. Дороги туда через переходы между местностями нет.");
 
     public static string HuntingAreaUnknown(string monster, string area) =>
         area.Length > 0
-            ? (IsGerman
-                ? $"{monster} lebt in {area}. Dieses Gebiet ist auf der Karte nicht verzeichnet."
-                : $"{monster} lives in {area}. That area is not marked on the map.")
-            : (IsGerman
-                ? $"Für {monster} ist kein Ort bekannt."
-                : $"No location known for {monster}.");
+            ? (L($"{monster} lebt in {area}. Dieses Gebiet ist auf der Karte nicht verzeichnet.", $"{monster} lives in {area}. That area is not marked on the map.", $"{monster} живёт в {area}. Эта местность не отмечена на карте."))
+            : (L($"Für {monster} ist kein Ort bekannt.", $"No location known for {monster}.", $"Для {monster} место неизвестно."));
 
     public static string NoHuntingTargets =>
-        IsGerman
-            ? "Keine offenen Jagdziele in diesem Rang."
-            : "No open hunting targets in this rank.";
+        L("Keine offenen Jagdziele in diesem Rang.", "No open hunting targets in this rank.", "В этом ранге нет открытых целей охоты.");
 
     // ── Areal absuchen ──
     //
@@ -805,19 +775,13 @@ public static partial class AccessibilityStrings
     public static string HuntingSearchPart(string spotName, int index, int count,
                                            string distance, string direction) =>
         spotName.Length > 0
-            ? (IsGerman
-                ? $"Suchpunkt {index} von {count}, {spotName}, {distance}, {direction}."
-                : $"search point {index} of {count}, {spotName}, {distance}, {direction}.")
-            : (IsGerman
-                ? $"Suchpunkt {index} von {count}, {distance}, {direction}."
-                : $"search point {index} of {count}, {distance}, {direction}.");
+            ? (L($"Suchpunkt {index} von {count}, {spotName}, {distance}, {direction}.", $"search point {index} of {count}, {spotName}, {distance}, {direction}.", $"Точка поиска {index} из {count}, {spotName}, {distance}, {direction}."))
+            : (L($"Suchpunkt {index} von {count}, {distance}, {direction}.", $"search point {index} of {count}, {distance}, {direction}.", $"Точка поиска {index} из {count}, {distance}, {direction}."));
 
     /// <summary>Said the moment a specimen of the selected hunting target turns
     /// up in the object table - the point of the whole search.</summary>
     public static string HuntingTargetInRange(string monster, string distance, string direction) =>
-        IsGerman
-            ? $"{monster} in Reichweite, {distance}, {direction}."
-            : $"{monster} in range, {distance}, {direction}.";
+        L($"{monster} in Reichweite, {distance}, {direction}.", $"{monster} in range, {distance}, {direction}.", $"{monster} в пределах досягаемости, {distance}, {direction}.");
 
     // ── Jagdziele der Staatlichen Gesellschaft ──
     //
@@ -828,20 +792,18 @@ public static partial class AccessibilityStrings
     {
         var label = company.Length > 0
             ? company
-            : (IsGerman ? "Jagdziele der Gesellschaft" : "Grand company targets");
+            : (L("Jagdziele der Gesellschaft", "Grand company targets", "Цели охоты гранд-компании"));
         return here > 0
-            ? (IsGerman
-                ? $"{label}, Rang {rank}: {total} offen, {here} in diesem Gebiet."
-                : $"{label}, rank {rank}: {total} open, {here} in this area.")
-            : (IsGerman
-                ? $"{label}, Rang {rank}: {total} offen, keines in diesem Gebiet."
-                : $"{label}, rank {rank}: {total} open, none in this area.");
+            ? L($"{label}, Rang {rank}: {total} offen, {here} in diesem Gebiet.",
+                $"{label}, rank {rank}: {total} open, {here} in this area.",
+                $"{label}, ранг {rank}: открыто {total}, {here} в этом районе.")
+            : L($"{label}, Rang {rank}: {total} offen, in diesem Gebiet keine.",
+                $"{label}, rank {rank}: {total} open, none in this area.",
+                $"{label}, ранг {rank}: открыто {total}, в этом районе ни одной.");
     }
 
     public static string NoCompanyHuntTargets =>
-        IsGerman
-            ? "Keine offenen Jagdziele der Gesellschaft in diesem Rang."
-            : "No open grand company targets in this rank.";
+        L("Keine offenen Jagdziele der Gesellschaft in diesem Rang.", "No open grand company targets in this rank.", "В этом ранге нет открытых целей охоты гранд-компании.");
 
     // ── Blaumagie: die noch fehlenden Zauber und ihr Fundort ──
     //
@@ -851,16 +813,12 @@ public static partial class AccessibilityStrings
     // Monstername waere schlimmer als keiner.
     public static string CategoryBlueMagicCount(int total, int here) =>
         here > 0
-            ? (IsGerman
-                ? $"Blaumagie: {total} Zauber fehlen, {here} in diesem Gebiet."
-                : $"Blue magic: {total} spells missing, {here} in this area.")
-            : (IsGerman
-                ? $"Blaumagie: {total} Zauber fehlen, keiner in diesem Gebiet."
-                : $"Blue magic: {total} spells missing, none in this area.");
+            ? (L($"Blaumagie: {total} Zauber fehlen, {here} in diesem Gebiet.", $"Blue magic: {total} spells missing, {here} in this area.", $"Синяя магия: не хватает {total} заклинаний, {here} в этой местности."))
+            : (L($"Blaumagie: {total} Zauber fehlen, keiner in diesem Gebiet.", $"Blue magic: {total} spells missing, none in this area.", $"Синяя магия: не хватает {total} заклинаний, в этой местности ни одного."));
 
     /// <summary>One blue magic line: the spell and its number in the book.</summary>
     public static string BlueMagicEntry(string spell, byte number) =>
-        IsGerman ? $"{spell}, Nr. {number}" : $"{spell}, no. {number}";
+        L($"{spell}, Nr. {number}", $"{spell}, no. {number}", $"{spell}, номер {number}");
 
     /// <summary>
     /// Said when the player already stands in the spell's own area. The sheet
@@ -869,22 +827,21 @@ public static partial class AccessibilityStrings
     /// honest answer; the carrier has to be found via the enemy category.
     /// </summary>
     public static string BlueMagicHere =>
-        IsGerman
-            ? "hier in diesem Gebiet. Das Spiel nennt keine genauere Stelle, such den Träger über die Kategorie Gegner."
-            : "here in this area. The game names no closer spot; find the carrier via the enemy category.";
+        L("hier in diesem Gebiet. Das Spiel nennt keine genauere Stelle, such den Träger über die Kategorie Gegner.", "here in this area. The game names no closer spot; find the carrier via the enemy category.", "здесь, в этой местности. Игра не называет более точного места, ищи носителя через категорию Противники.");
 
     /// <summary>The zone plus how many transitions away it is.</summary>
     public static string InAreaWithHops(string zone, int hops) =>
         hops <= 0
             ? InArea(zone)
-            : (IsGerman
+            : L(
                 // "Gebietswechsel" ist im Deutschen in Ein- und Mehrzahl gleich.
-                ? $"im Gebiet {zone}, {hops} Gebietswechsel entfernt."
-                : $"in the area {zone}, {hops} {(hops == 1 ? "transition" : "transitions")} away.");
+                $"im Gebiet {zone}, {hops} Gebietswechsel entfernt.",
+                $"in the area {zone}, {hops} {(hops == 1 ? "transition" : "transitions")} away.",
+                $"в местности {zone}, переходов: {hops}.");
 
     /// <summary>The spell is learned inside an instance, named by it.</summary>
     public static string BlueMagicInDuty(string duty) =>
-        IsGerman ? $"in der Instanz {duty}." : $"in the duty {duty}.";
+        L($"in der Instanz {duty}.", $"in the duty {duty}.", $"в инстансе {duty}.");
 
     /// <summary>
     /// The game names no place at all for this spell. True for exactly 14 of the
@@ -892,72 +849,61 @@ public static partial class AccessibilityStrings
     /// offline 2026-09-02 - their location field is empty, not merely unmapped).
     /// </summary>
     public static string BlueMagicNoPlace =>
-        IsGerman
-            ? "kein Fundort in der Welt, Belohnung aus dem Maskierten Karneval oder Startzauber."
-            : "no location in the world; a Masked Carnivale reward or the starting spell.";
+        L("kein Fundort in der Welt, Belohnung aus dem Maskierten Karneval oder Startzauber.", "no location in the world; a Masked Carnivale reward or the starting spell.", "в мире места нет: награда из Маскированного карнавала или стартовое заклинание.");
 
     public static string NoBlueMagicTargets =>
-        IsGerman
-            ? "Es fehlt kein Blaumagie-Zauber."
-            : "No blue magic spells missing.";
+        L("Es fehlt kein Blaumagie-Zauber.", "No blue magic spells missing.", "Пропущенных заклинаний синей магии нет.");
 
     public static string BlueMagicNoRoute(string spell, string zone) =>
-        IsGerman
-            ? $"{spell} gibt es in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
-            : $"{spell} is found in {zone}. No route there over zone transitions.";
+        L($"{spell} gibt es in {zone}. Dorthin führt kein Weg über Gebietsübergänge.", $"{spell} is found in {zone}. No route there over zone transitions.", $"{spell} есть в {zone}. Дороги туда через переходы между местностями нет.");
 
     public static string BlueMagicNoDoor(string spell, string duty) =>
-        IsGerman
-            ? $"{spell} gibt es in {duty}. Zu diesem Eingang ist kein Ort hinterlegt."
-            : $"{spell} is found in {duty}. No location is recorded for that entrance.";
+        L($"{spell} gibt es in {duty}. Zu diesem Eingang ist kein Ort hinterlegt.", $"{spell} is found in {duty}. No location is recorded for that entrance.", $"{spell} есть в {duty}. Для этого входа место не сохранено.");
 
     // ── Bestienbuch: fehlende Bestien und ihr Fundort ──
     public static string CategoryBeastmasterCount(int total, int here) =>
         here > 0
-            ? (IsGerman
-                ? $"Bestien: {total} fehlen, {here} in diesem Gebiet."
-                : $"Beasts: {total} missing, {here} in this area.")
-            : (IsGerman
-                ? $"Bestien: {total} fehlen, keine in diesem Gebiet."
-                : $"Beasts: {total} missing, none in this area.");
+            ? L($"Bestien: {total} fehlen, {here} in diesem Gebiet.",
+                $"Beasts: {total} missing, {here} in this area.",
+                $"Звери: не хватает {total}, {here} в этом районе.")
+            : L($"Bestien: {total} fehlen, in diesem Gebiet keine.",
+                $"Beasts: {total} missing, none in this area.",
+                $"Звери: не хватает {total}, в этом районе никого.");
 
     /// <summary>One beast line: name and its number in the bestiary.</summary>
     public static string BeastmasterEntry(string name, byte number) =>
-        IsGerman ? $"{name}, Nr. {number}" : $"{name}, no. {number}";
+        L($"{name}, Nr. {number}", $"{name}, no. {number}", $"{name}, номер {number}");
 
     /// <summary>
     /// Player is already in the beast's zone. Sheet names the place, not a
     /// finer spawn; living specimen is sought by name when loaded.
     /// </summary>
     public static string BeastmasterHere =>
-        IsGerman
-            ? "hier in diesem Gebiet. Wenn kein Exemplar geladen ist, such über die Kategorie Gegner."
-            : "here in this area. If no specimen is loaded, look via the enemy category.";
+        L("hier in diesem Gebiet. Ist keines geladen, suche ueber die Kategorie der Gegner.",
+          "here in this area. If no specimen is loaded, look via the enemy category.",
+          "здесь в этом районе. Если ни один не загружен, ищи через категорию противников.");
 
     /// <summary>Sub-area / waypoint inside the zone, when known.</summary>
     public static string BeastmasterArea(string area) =>
-        area.Length == 0 ? string.Empty : (IsGerman ? $"Untergebiet {area}" : $"area {area}");
+        area.Length == 0 ? string.Empty : L($"Untergebiet {area}", $"area {area}", $"подрайон {area}");
 
     /// <summary>Quest/reward beast with no PlaceName in the sheet.</summary>
     public static string BeastmasterNoPlace =>
-        IsGerman
-            ? "das Spiel nennt keinen Fundort."
-            : "the game names no habitat.";
+        L("das Spiel nennt keinen Lebensraum.", "the game names no habitat.",
+          "игра не называет место обитания.");
 
     public static string NoBeastmasterTargets =>
-        IsGerman
-            ? "Keine fehlenden Bestien."
-            : "No missing beasts.";
+        L("Keine vermissten Bestien.", "No missing beasts.", "Пропавших зверей нет.");
 
     public static string BeastmasterNoRoute(string name, string zone) =>
-        IsGerman
-            ? $"{name} gibt es in {zone}. Dorthin führt kein Weg über Gebietsübergänge."
-            : $"{name} is found in {zone}. No route there over zone transitions.";
+        L($"{name} lebt in {zone}. Ueber Gebietswechsel ist sie nicht erreichbar.",
+          $"{name} is found in {zone}. No route there over zone transitions.",
+          $"{name} водится в {zone}. Переходами между зонами туда не попасть.");
 
     public static string BeastmasterAreaUnknown(string name, string area) =>
-        IsGerman
-            ? $"{name}: Untergebiet {area} ist auf der Karte nicht verzeichnet."
-            : $"{name}: area {area} is not marked on the map.";
+        L($"{name}: Untergebiet {area} ist auf der Karte nicht verzeichnet.",
+          $"{name}: area {area} is not marked on the map.",
+          $"{name}: подрайон {area} не отмечен на карте.");
 
     // ── Alle Inhalte: die weltweite Dungeon-, Prüfungs- und Raid-Liste ──
 
@@ -968,9 +914,7 @@ public static partial class AccessibilityStrings
     /// Freischaltfrage nicht beantwortet - geraten wird sie nicht.
     /// </summary>
     public static string CategoryWorldDutyCount(int total, int unlocked) =>
-        IsGerman
-            ? $"Alle Inhalte: {total}, davon {unlocked} freigeschaltet."
-            : $"All duties: {total}, {unlocked} of them unlocked.";
+        L($"Alle Inhalte: {total}, davon {unlocked} freigeschaltet.", $"All duties: {total}, {unlocked} of them unlocked.", $"Все инстансы: {total}, из них {unlocked} открыто.");
 
     // ── Dungeon: die Stationen des Wegs, in Reihenfolge ──
 
@@ -981,9 +925,7 @@ public static partial class AccessibilityStrings
     /// "wie lang ist die Liste".
     /// </summary>
     public static string CategoryDungeonCount(int total, int next) =>
-        IsGerman
-            ? $"Dungeon: {total} Stationen, weiter bei {next}."
-            : $"Dungeon: {total} stations, continuing at {next}.";
+        L($"Dungeon: {total} Stationen, weiter bei {next}.", $"Dungeon: {total} stations, continuing at {next}.", $"Подземелье: {total} остановок, продолжаем с {next}.");
 
     /// <summary>
     /// Für diesen Ort liegt keine Wegdatei vor. Wird gesagt und nicht
@@ -991,24 +933,22 @@ public static partial class AccessibilityStrings
     /// leerer Fall hier immer ein Hinweis, dass etwas mit der Datei nicht stimmt.
     /// </summary>
     public static string NoDungeonRoute =>
-        IsGerman
-            ? "Für diesen Ort ist kein Weg hinterlegt."
-            : "No route is stored for this place.";
+        L("Für diesen Ort ist kein Weg hinterlegt.", "No route is stored for this place.", "Для этого места маршрут не сохранён.");
 
     /// <summary>Wie eine Station heißt, die weder Art noch Namen trägt. Nur der
     /// Auto-Lauf braucht das Wort wirklich - er sagt "Laufe zu ...", und dort
     /// darf nichts Leeres stehen.</summary>
     public static string DungeonWaypointWord =>
-        IsGerman ? "Wegpunkt" : "waypoint";
+        L("Wegpunkt", "waypoint", "точка пути");
 
     /// <summary>Die Art einer Station, gesprochen. Ein reiner Wegpunkt trägt
     /// keine Art - er heißt nur nach seiner Nummer, alles andere wäre Füllwort.</summary>
     public static string DungeonStepKindWord(DungeonStepKind kind) => kind switch
     {
-        DungeonStepKind.Interact => IsGerman ? "benutzen"      : "interact",
-        DungeonStepKind.Boss     => IsGerman ? "Boss"          : "boss",
-        DungeonStepKind.Treasure => IsGerman ? "Schatztruhe"   : "treasure coffer",
-        DungeonStepKind.Jump     => IsGerman ? "springen"      : "jump",
+        DungeonStepKind.Interact => L("benutzen", "interact", "взаимодействовать"),
+        DungeonStepKind.Boss     => L("Boss", "boss", "босс"),
+        DungeonStepKind.Treasure => L("Schatztruhe", "treasure coffer", "сундук с сокровищами"),
+        DungeonStepKind.Jump     => L("springen", "jump", "прыжок"),
         _                        => string.Empty,
     };
 
@@ -1025,7 +965,7 @@ public static partial class AccessibilityStrings
     public static string DungeonStepEntry(
         int number, int total, string kindWord, string name, string distance, string direction)
     {
-        var head = IsGerman ? $"{number} von {total}" : $"{number} of {total}";
+        var head = L($"{number} von {total}", $"{number} of {total}", $"{number} из {total}");
 
         // Art und Name sind beide oft da, oft nur eines, manchmal keines - ein
         // Wegpunkt hat weder das eine noch das andere. Zusammensetzen statt
@@ -1039,15 +979,11 @@ public static partial class AccessibilityStrings
     /// <summary>Die letzte Station ist erreicht. Der Dungeon endet mit einem
     /// Boss, also ist das eine echte Auskunft und kein Listenende.</summary>
     public static string DungeonRouteEnd =>
-        IsGerman
-            ? "Letzte Station des Wegs."
-            : "Last station of the route.";
+        L("Letzte Station des Wegs.", "Last station of the route.", "Последняя остановка маршрута.");
 
     /// <summary>Die Liste ist leer - kann nur passieren, wenn die Sheets nicht lesbar waren.</summary>
     public static string NoWorldDuties =>
-        IsGerman
-            ? "Keine Inhalte in der Liste."
-            : "No duties in the list.";
+        L("Keine Inhalte in der Liste.", "No duties in the list.", "В списке нет инстансов.");
 
     /// <summary>
     /// Dieser Inhalt ist noch nicht freigeschaltet. Steht früh im Satz, weil es
@@ -1055,7 +991,7 @@ public static partial class AccessibilityStrings
     /// Kommt aus der spieleigenen Prüfung, nicht aus einem Stufenvergleich.
     /// </summary>
     public static string DutyLocked =>
-        IsGerman ? "gesperrt" : "locked";
+        L("gesperrt", "locked", "заблокирован");
 
     /// <summary>
     /// Zu diesem Eingang führt kein Weg über Zonenübergänge - z.B. weil er selbst
@@ -1063,9 +999,7 @@ public static partial class AccessibilityStrings
     /// Spieler eine Taste, die nichts tun kann.
     /// </summary>
     public static string DutyNoWalkingRoute =>
-        IsGerman
-            ? "kein Laufweg dorthin."
-            : "no walking route there.";
+        L("kein Laufweg dorthin.", "no walking route there.", "пешком туда не дойти.");
 
     /// <summary>
     /// Der Auto-Lauf wurde auf einen Inhalt in einer anderen Zone gedrückt, zu
@@ -1076,17 +1010,18 @@ public static partial class AccessibilityStrings
 
     /// <summary>Peil-Ton eingeschaltet.</summary>
     public static string TargetBeaconOn =>
-        IsGerman
+        L(
             // Wortlaut geaendert 2026-08-23: der Ton verstummt NICHT mehr beim
             // Ausrichten (siehe BeaconService). Ein gesprochener Satz, der ein
             // Verhalten verspricht, das es nicht mehr gibt, schickt den Spieler
             // auf die Suche nach einem Fehler, der keiner ist.
-            ? "Peil-Ton an. Er wird mittig und ruhig, wenn du richtig stehst."
-            : "Target beacon on. It centres and slows once you are lined up.";
+            "Peil-Ton an. Er wird mittig und ruhig, wenn du richtig stehst.",
+            "Target beacon on. It centres and slows once you are lined up.",
+            "Маяк цели включён. Он станет ровным и спокойным, когда встанешь правильно.");
 
     /// <summary>Peil-Ton ausgeschaltet.</summary>
     public static string TargetBeaconOff =>
-        IsGerman ? "Peil-Ton aus." : "Target beacon off.";
+        L("Peil-Ton aus.", "Target beacon off.", "Маяк цели выключен.");
 
     /// <summary>
     /// Name einer Zielart, gesprochen im Klangtest (/acc soundtest) vor der
@@ -1095,21 +1030,19 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string BeaconKindName(BeaconKind kind) => kind switch
     {
-        BeaconKind.Enemy        => IsGerman ? "Gegner"          : "Enemy",
-        BeaconKind.Npc          => IsGerman ? "NPC"             : "NPC",
-        BeaconKind.Object       => IsGerman ? "Objekt"          : "Object",
-        BeaconKind.Gathering    => IsGerman ? "Sammelpunkt"     : "Gathering node",
-        BeaconKind.Transition   => IsGerman ? "Übergang"        : "Transition",
-        BeaconKind.Aetheryte    => IsGerman ? "Ätheryt"         : "Aetheryte",
-        BeaconKind.Quest        => IsGerman ? "Quest-Ziel"      : "Quest objective",
-        BeaconKind.DutyEntrance => IsGerman ? "Inhalts-Eingang" : "Duty entrance",
-        _                       => IsGerman ? "Ziel"            : "Target",
+        BeaconKind.Enemy        => L("Gegner", "Enemy", "Противник"),
+        BeaconKind.Npc          => L("NPC", "NPC", "НПС"),
+        BeaconKind.Object       => L("Objekt", "Object", "Объект"),
+        BeaconKind.Gathering    => L("Sammelpunkt", "Gathering node", "Точка сбора"),
+        BeaconKind.Transition   => L("Übergang", "Transition", "Переход"),
+        BeaconKind.Aetheryte    => L("Ätheryt", "Aetheryte", "Эфирит"),
+        BeaconKind.Quest        => L("Quest-Ziel", "Quest objective", "Цель задания"),
+        BeaconKind.DutyEntrance => L("Inhalts-Eingang", "Duty entrance", "Вход в дело"),
+        _                       => L("Ziel", "Target", "Цель"),
     };
 
     public static string DutyNoRouteTo(string dutyName, string zoneName) =>
-        IsGerman
-            ? $"{dutyName} liegt in {zoneName}. Dorthin führt kein Weg über Zonenübergänge."
-            : $"{dutyName} is in {zoneName}. No route there over zone transitions.";
+        L($"{dutyName} liegt in {zoneName}. Dorthin führt kein Weg über Zonenübergänge.", $"{dutyName} is in {zoneName}. No route there over zone transitions.", $"{dutyName} в зоне {zoneName}. Через переходы между зонами туда не попасть.");
 
     // ── Freibriefe (Levequests): Geber-NPCs + Ziele + Gegner des laufenden Leves ──
 
@@ -1117,13 +1050,13 @@ public static partial class AccessibilityStrings
     /// is running - outside that there are no leve enemies, and a permanent
     /// "0 Gegner" would make the player look for something that cannot be there.</summary>
     public static string CategoryLevequestCount(int givers, int goals, int enemies) =>
-        IsGerman
-            ? enemies > 0
-                ? $"Freibriefe: {enemies} Gegner, {givers} Geber, {goals} Ziele."
-                : $"Freibriefe: {givers} Geber, {goals} Ziele."
-            : enemies > 0
-                ? $"Levequests: {enemies} enemies, {givers} givers, {goals} goals."
-                : $"Levequests: {givers} givers, {goals} goals.";
+        enemies > 0
+            ? L($"Freibriefe: {enemies} Gegner, {givers} Geber, {goals} Ziele.",
+                $"Levequests: {enemies} enemies, {givers} givers, {goals} goals.",
+                $"Ливквесты: противников {enemies}, выдающих {givers}, целей {goals}.")
+            : L($"Freibriefe: {givers} Geber, {goals} Ziele.",
+                $"Levequests: {givers} givers, {goals} goals.",
+                $"Ливквесты: выдающих {givers}, целей {goals}.");
 
     /// <summary>
     /// Accepted leve held, but map markers and running-director enemies are
@@ -1131,9 +1064,9 @@ public static partial class AccessibilityStrings
     /// Names come from the Leve sheet.
     /// </summary>
     public static string CategoryLevequestAcceptedOnly(string names) =>
-        IsGerman
-            ? $"Freibriefe: angenommen {names}. Kein Kartenmarker — im Tagebuch unter Freibriefe „Neuer Versuch“ und dann „Beginnen“."
-            : $"Levequests: accepted {names}. No map marker — in the journal under Levequests use Retry, then Start.";
+        L($"Freibriefe: angenommen {names}. Kein Kartenmarker — im Tagebuch unter Freibriefe „Neuer Versuch“ und dann „Beginnen“.",
+          $"Levequests: accepted {names}. No map marker — in the journal under Levequests use Retry, then Start.",
+          $"Ливквесты: принято {names}. Метки на карте нет — в журнале в разделе ливквестов «Повторить», затем «Начать».");
 
     /// <summary>
     /// Leve is running (director active) but no leve-bound enemies are in the
@@ -1142,52 +1075,50 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string CategoryLevequestRunningNoEnemies(string name, string objective) =>
         string.IsNullOrWhiteSpace(objective)
-            ? (IsGerman
-                ? $"Freibriefe: läuft {name}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet."
-                : $"Levequests: running {name}. No leve enemies nearby yet — go to the task area.")
-            : (IsGerman
-                ? $"Freibriefe: läuft {name}. {objective}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet."
-                : $"Levequests: running {name}. {objective}. No leve enemies nearby yet — go to the task area.");
+            ? L($"Freibriefe: läuft {name}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet.",
+                $"Levequests: running {name}. No leve enemies nearby yet — go to the task area.",
+                $"Ливквесты: идёт {name}. Противников ливквеста рядом пока нет — иди к области задания.")
+            : L($"Freibriefe: läuft {name}. {objective}. Noch keine Freibrief-Gegner in der Nähe — zum Aufgabengebiet.",
+                $"Levequests: running {name}. {objective}. No leve enemies nearby yet — go to the task area.",
+                $"Ливквесты: идёт {name}. {objective}. Противников ливквеста рядом пока нет — иди к области задания.");
 
     /// <summary>Spoken role prefix so the player knows whether a leve destination
     /// is the Levemete (accept/hand in), the objective (do the task) or one of
     /// the enemies the running leve asks them to kill.</summary>
     public static string LeveRolePrefix(QuestMarkerRole role) => role switch
     {
-        QuestMarkerRole.LeveGiver     => IsGerman ? "Freibrief-Geber: " : "Levequest giver: ",
-        QuestMarkerRole.LeveObjective => IsGerman ? "Freibrief-Ziel: "  : "Levequest goal: ",
-        QuestMarkerRole.LeveEnemy     => IsGerman ? "Freibrief-Gegner: " : "Levequest enemy: ",
-        QuestMarkerRole.QuestTrigger  => IsGerman ? "Auslöser: " : "Trigger: ",
+        QuestMarkerRole.LeveGiver     => L("Freibrief-Geber: ", "Levequest giver: ", "Выдаёт ливквест: "),
+        QuestMarkerRole.LeveObjective => L("Freibrief-Ziel: ", "Levequest goal: ", "Цель ливквеста: "),
+        QuestMarkerRole.LeveEnemy     => L("Freibrief-Gegner: ", "Levequest enemy: ", "Враг по ливквесту: "),
+        QuestMarkerRole.QuestTrigger  => L("Auslöser: ", "Trigger: ", "Триггер: "),
         _                             => string.Empty,
     };
 
     /// <summary>Quest-objects category header: live EventObjs plus sheet EventRange
     /// walk-in volumes for accepted quests in this zone.</summary>
     public static string CategoryQuestObjectCount(int objects, int triggers) =>
-        IsGerman
-            ? objects > 0 && triggers > 0
-                ? $"Quest-Objekte: {objects} Objekte, {triggers} Auslöser in der Nähe."
-                : triggers > 0
-                    ? $"Quest-Objekte: {triggers} Auslöser in der Nähe."
-                    : $"Quest-Objekte: {objects} in der Nähe."
-            : objects > 0 && triggers > 0
-                ? $"Quest objects: {objects} objects, {triggers} triggers nearby."
-                : triggers > 0
-                    ? $"Quest objects: {triggers} triggers nearby."
-                    : $"Quest objects: {objects} nearby.";
+        objects > 0 && triggers > 0
+            ? L($"Quest-Objekte: {objects} Objekte, {triggers} Auslöser in der Nähe.",
+                $"Quest objects: {objects} objects, {triggers} triggers nearby.",
+                $"Объекты заданий: объектов {objects}, триггеров {triggers} рядом.")
+            : triggers > 0
+                ? L($"Quest-Objekte: {triggers} Auslöser in der Nähe.",
+                    $"Quest objects: {triggers} triggers nearby.",
+                    $"Объекты заданий: триггеров рядом {triggers}.")
+                : L($"Quest-Objekte: {objects} in der Nähe.",
+                    $"Quest objects: {objects} nearby.",
+                    $"Объекты заданий: рядом {objects}.");
 
     /// <summary>Nothing under Quest objects: no live props and no EventRanges.</summary>
     public static string NoQuestObjectsOrTriggers =>
-        IsGerman
-            ? "Keine Quest-Objekte und keine Auslöser in der Nähe."
-            : "No quest objects or triggers nearby.";
+        L("Keine Quest-Objekte und keine Auslöser in der Nähe.", "No quest objects or triggers nearby.", "Рядом нет объектов задания и триггеров.");
 
     /// <summary>How many of this monster the leve wants, appended to an enemy
     /// entry ("Freibrief-Gegner: Stolper-Fungus, 7 gesucht, 12 Meter ...").
     /// The count is what the leve DEMANDS, not what is still missing: the
     /// progress lives in the duty list, the demand in the leve data.</summary>
     public static string LeveEnemyWanted(int required) =>
-        IsGerman ? $", {required} gesucht" : $", {required} wanted";
+        L($", {required} gesucht", $", {required} wanted", $", нужно {required}");
 
     // ── Aufgabenliste des laufenden Inhalts (Freibrief, Dungeon, FATE) ──
     //
@@ -1196,107 +1127,91 @@ public static partial class AccessibilityStrings
     // dahinter bekommt hier seine Worte.
 
     public static string NoActiveTasks =>
-        IsGerman
-            ? "Keine laufende Aufgabe."
-            : "No task running.";
+        L("Keine laufende Aufgabe.", "No task running.", "Нет активной задачи.");
 
     /// <summary>Header before a director's lines: its own name.</summary>
     public static string TasksOf(string title) =>
-        IsGerman ? $"Aufgaben: {title}." : $"Tasks: {title}.";
+        L($"Aufgaben: {title}.", $"Tasks: {title}.", $"Задачи: {title}.");
 
     /// <summary>Header when the director has no name of its own.</summary>
     public static string TasksHeading =>
-        IsGerman ? "Aufgaben." : "Tasks.";
+        L("Aufgaben.", "Tasks.", "Задачи.");
 
     public static string TodoFraction(int current, int needed) =>
         needed > 0
-            ? IsGerman ? $", {current} von {needed}" : $", {current} of {needed}"
-            : TodoCount(current);
+            ? L($", {current} von {needed}", $", {current} of {needed}", $", {current} из {needed}"): TodoCount(current);
 
     public static string TodoCount(int current) =>
-        IsGerman ? $", {current}" : $", {current}";
+        L($", {current}", $", {current}", $", {current}");
 
     public static string TodoPercent(int percent) =>
-        IsGerman ? $", {percent} Prozent" : $", {percent} percent";
+        L($", {percent} Prozent", $", {percent} percent", $", {percent} процентов");
 
     /// <summary>Remaining time of a task line, minutes when it is worth it.</summary>
     public static string TodoTimeLeft(int seconds)
     {
         var minutes = seconds / 60;
         var rest = seconds % 60;
-        if (IsGerman)
-            return minutes > 0 ? $", noch {minutes} Minuten {rest} Sekunden" : $", noch {rest} Sekunden";
-        return minutes > 0 ? $", {minutes} minutes {rest} seconds left" : $", {rest} seconds left";
+        return minutes > 0
+            ? L($", noch {minutes} Minuten {rest} Sekunden", $", {minutes} minutes {rest} seconds left",
+                $", осталось {minutes} мин {rest} с")
+            : L($", noch {rest} Sekunden", $", {rest} seconds left", $", осталось {rest} с");
     }
 
     /// <summary>Marks a task line the game shows as done.</summary>
-    public static string TodoDone => IsGerman ? ", erledigt" : ", done";
+    public static string TodoDone => L(", erledigt", ", done", ", выполнено");
 
     public static string NoLevequests =>
-        IsGerman
-            ? "Keine Freibriefe. Erst bei einem Freibrief-Geber annehmen."
-            : "No levequests. Accept one from a levemete first.";
+        L("Keine Freibriefe. Erst bei einem Freibrief-Geber annehmen.", "No levequests. Accept one from a levemete first.", "Ливквестов нет. Сначала возьми у того, кто их выдаёт.");
 
     // Fishing spots (Angelplätze). Type label used when the spot flows through
     // the shared PlaceDestination path; entry adds the required fishing level.
-    public static string FishingSpotType => IsGerman ? "Angelplatz" : "Fishing spot";
+    public static string FishingSpotType => L("Angelplatz", "Fishing spot", "Место рыбалки");
 
     public static string FishingSpotEntry(string name, int level) =>
-        IsGerman
-            ? $"{name}, Stufe {level}"
-            : $"{name}, level {level}";
+        L($"{name}, Stufe {level}", $"{name}, level {level}", $"{name}, уровень {level}");
 
     public static string CategoryFishingCount(int count) =>
-        IsGerman
-            ? $"Angelplätze: {count} im Gebiet."
-            : $"Fishing spots: {count} in this area.";
+        L($"Angelplätze: {count} im Gebiet.", $"Fishing spots: {count} in this area.", $"Места рыбалки: {count} в этой зоне.");
 
     public static string NoFishingSpots =>
-        IsGerman ? "Keine Angelplätze in diesem Gebiet." : "No fishing spots in this area.";
+        L("Keine Angelplätze in diesem Gebiet.", "No fishing spots in this area.", "В этой зоне нет мест рыбалки.");
 
     /// <summary>Header for the Sammelpunkte category: live nodes first, then
     /// how many are available overall, and how many are in THIS zone.</summary>
     public static string CategoryGatheringSpotCount(int total, int here, int upNow)
     {
         var herePart = here > 0
-            ? (IsGerman ? $"{here} in diesem Gebiet." : $"{here} in this area.")
-            : (IsGerman ? "keiner in diesem Gebiet." : "none in this area.");
+            ? (L($"{here} in diesem Gebiet.", $"{here} in this area.", $"{here} в этой зоне."))
+            : (L("keiner in diesem Gebiet.", "none in this area.", "ни одного в этой зоне."));
         if (upNow > 0)
         {
-            return IsGerman
-                ? $"Sammelpunkte: {upNow} gerade da, {total} verfügbar, {herePart}"
-                : $"Gathering spots: {upNow} up now, {total} available, {herePart}";
+            return L($"Sammelpunkte: {upNow} gerade da, {total} verfügbar, {herePart}", $"Gathering spots: {upNow} up now, {total} available, {herePart}", $"Точки сбора: {upNow} сейчас здесь, {total} всего, {herePart}");
         }
-        return IsGerman
-            ? $"Sammelpunkte: {total} verfügbar, {herePart}"
-            : $"Gathering spots: {total} available, {herePart}";
+        return L($"Sammelpunkte: {total} verfügbar, {herePart}", $"Gathering spots: {total} available, {herePart}", $"Точки сбора: {total} всего, {herePart}");
     }
 
     /// <summary>Status word after the level: live targetable node vs catalog-only.</summary>
     public static string GatheringSpotStatus(bool currentlyUp) =>
         currentlyUp
-            ? (IsGerman ? "gerade da" : "up now")
-            : (IsGerman ? "verfügbar" : "available");
+            ? (L("gerade da", "up now", "сейчас здесь"))
+            : (L("verfügbar", "available", "доступно"));
 
     /// <summary>Spoken the moment the game reports the player can cast from where
     /// they stand and face - the orientation cue a blind fisher rotates until
     /// they hear (FishingEventHandler.CanFish flips true in the ready stance).</summary>
     public static string FishReady =>
-        IsGerman ? "Angelbereit." : "Ready to fish.";
+        L("Angelbereit.", "Ready to fish.", "Можно забрасывать.");
 
     /// <summary>Spoken on a bite - strike now (FishingState -> Bite).</summary>
     public static string FishBite =>
-        IsGerman ? "Biss!" : "Bite!";
+        L("Biss!", "Bite!", "Клюёт!");
 
     public static string CategoryObjectCount(string label, int count) =>
-        IsGerman
-            ? $"{label}: {count} in der Nähe."
-            : $"{label}: {count} nearby.";
+        L($"{label}: {count} in der Nähe.", $"{label}: {count} nearby.", $"{label}: {count} рядом.");
 
     public static string NoObjectsInRange(string label, float range) =>
-        IsGerman
-            ? $"Keine {label} in {range:F0} Metern."
-            : $"No {label} within {range:F0} meters.";
+        L($"Keine {label} in {range:F0} Metern.", $"No {label} within {range:F0} meters.", $"Нет {label} в радиусе {range:F0} метров.");
 
     // ── Objekt-/Ziel-Ansagen (NavigationService) ─────────────────────
     // "Unbenannt" removed 2026-08-08: it said nothing about what the thing was,
@@ -1307,7 +1222,7 @@ public static partial class AccessibilityStrings
     /// code that RECOGNISES a counter it printed earlier (see UIReaderService,
     /// IsSpokenProgress) must not hard-code the German "von" - that comparison
     /// silently stops matching the moment the announcement speaks English.</summary>
-    public static string CounterConnector => IsGerman ? "von" : "of";
+    public static string CounterConnector => L("von", "of", "из");
 
     public static string Counter(int index, int count) =>
         $"{index} {CounterConnector} {count}";
@@ -1320,52 +1235,48 @@ public static partial class AccessibilityStrings
 
     /// <summary>Trailing warning when the game refused to set the target
     /// (leading space, appended to a target announcement).</summary>
-    public static string NotTargetedSuffix => IsGerman ? " Achtung, nicht anvisiert." : " Warning, not targeted.";
+    public static string NotTargetedSuffix => L(" Achtung, nicht anvisiert.", " Warning, not targeted.", " Внимание, цель не взята.");
 
-    public static string TargetPrefix => IsGerman ? "Ziel: " : "Target: ";
+    public static string TargetPrefix => L("Ziel: ", "Target: ", "Цель: ");
 
-    public static string Tracking(string name)      => IsGerman ? $"Verfolge {name}." : $"Tracking {name}.";
-    public static string TargetNotFound(string name)=> IsGerman ? $"Ziel {name} nicht gefunden." : $"Target {name} not found.";
-    public static string TargetReached(string name) => IsGerman ? $"Ziel erreicht: {name}." : $"Target reached: {name}.";
+    public static string Tracking(string name)      => L($"Verfolge {name}.", $"Tracking {name}.", $"Слежу за {name}.");
+    public static string TargetNotFound(string name)=> L($"Ziel {name} nicht gefunden.", $"Target {name} not found.", $"Цель {name} не найдена.");
+    public static string TargetReached(string name) => L($"Ziel erreicht: {name}.", $"Target reached: {name}.", $"Цель достигнута: {name}.");
     public static string TargetDirection(string name, string distance, string direction) =>
-        IsGerman ? $"{name}: {distance}, {direction}." : $"{name}: {distance}, {direction}.";
+        L($"{name}: {distance}, {direction}.", $"{name}: {distance}, {direction}.", $"{name}: {distance}, {direction}.");
 
-    public static string TrackingStopped => IsGerman ? "Zielverfolgung beendet." : "Target tracking stopped.";
-    public static string WalkTargetLost  => IsGerman ? "Gehhilfe: Ziel verloren." : "Walk guide: target lost.";
-    public static string NoGameTarget    => IsGerman ? "Kein Ziel anvisiert." : "No target selected.";
-    public static string NoNearbyObjects => IsGerman ? "Keine Objekte in der Nähe." : "No objects nearby.";
-    public static string NearbyList(string joined) => IsGerman ? $"In der Nähe: {joined}" : $"Nearby: {joined}";
+    public static string TrackingStopped => L("Zielverfolgung beendet.", "Target tracking stopped.", "Слежение за целью прекращено.");
+    public static string WalkTargetLost  => L("Gehhilfe: Ziel verloren.", "Walk guide: target lost.", "Помощь в ходьбе: цель потеряна.");
+    public static string NoGameTarget    => L("Kein Ziel anvisiert.", "No target selected.", "Цель не выбрана.");
+    public static string NoNearbyObjects => L("Keine Objekte in der Nähe.", "No objects nearby.", "Рядом нет объектов.");
+    public static string NearbyList(string joined) => L($"In der Nähe: {joined}", $"Nearby: {joined}", $"Рядом: {joined}");
 
     /// <summary>"No target. Select an object with Page Down first." (object browser hint).
     /// The object browser moved off N onto the Page keys in V5.31, so the hint
     /// names Page Down (KeyNextObject default) now, not the old N.</summary>
-    public static string NoTargetSelectN => IsGerman
-        ? "Kein Ziel. Erst mit Bild ab ein Objekt wählen."
-        : "No target. Select an object with Page Down first.";
+    public static string NoTargetSelectN => L("Kein Ziel. Erst mit Bild ab ein Objekt wählen.", "No target. Select an object with Page Down first.", "Цели нет. Сначала выбери объект клавишей Page Down.");
 
     /// <summary>"No target set. Select an object with Page Down first." (direction key).</summary>
-    public static string NoTargetTracked => IsGerman
-        ? "Kein Ziel gesetzt. Erst mit Bild ab ein Objekt wählen."
-        : "No target set. Select an object with Page Down first.";
+    public static string NoTargetTracked => L("Kein Ziel gesetzt. Erst mit Bild ab ein Objekt wählen.", "No target set. Select an object with Page Down first.", "Цель не задана. Сначала выбери объект клавишей Page Down.");
 
     /// <summary>Type name for an object kind, spoken after the object name.</summary>
     public static string ObjectKindName(ObjectKind kind) => kind switch
     {
-        ObjectKind.Pc             => IsGerman ? "Spieler"     : "Player",
-        ObjectKind.BattleNpc      => IsGerman ? "Kampf-NPC"   : "Combat NPC",
-        ObjectKind.EventNpc       => IsGerman ? "NPC"         : "NPC",
-        ObjectKind.Treasure       => IsGerman ? "Schatz"      : "Treasure",
-        ObjectKind.Aetheryte      => IsGerman ? "Ätheryt"     : "Aetheryte",
-        ObjectKind.GatheringPoint => IsGerman ? "Sammelpunkt" : "Gathering node",
-        ObjectKind.EventObj       => IsGerman ? "Objekt"      : "Object",
+        ObjectKind.Pc             => L("Spieler", "Player", "Игрок"),
+        ObjectKind.BattleNpc      => L("Kampf-NPC", "Combat NPC", "Боевой NPC"),
+        ObjectKind.EventNpc       => L("NPC", "NPC", "НПС"),
+        ObjectKind.Treasure       => L("Schatz", "Treasure", "Сокровище"),
+        ObjectKind.Aetheryte      => L("Ätheryt", "Aetheryte", "Эфирит"),
+        ObjectKind.GatheringPoint => L("Sammelpunkt", "Gathering node", "Точка сбора"),
+        ObjectKind.EventObj       => L("Objekt", "Object", "Объект"),
         // The game's own class for usable housing furniture (Chocobo-Stall,
         // Briefkasten, Diarium-Pult). "Einrichtung" rather than "Möbel": it also
         // covers the stable and the mailbox, which are not furniture in the
         // everyday sense but are exactly this kind to the game.
-        ObjectKind.HousingEventObject => IsGerman ? "Einrichtung" : "Furnishing",
-        ObjectKind.Companion      => IsGerman ? "Begleiter"   : "Companion",
-        ObjectKind.Retainer       => IsGerman ? "Gehilfe"     : "Retainer",
-        ObjectKind.Mount          => IsGerman ? "Reittier"    : "Mount",
+        ObjectKind.HousingEventObject => L("Einrichtung", "Furnishing", "Обстановка"),
+        ObjectKind.Companion      => L("Begleiter", "Companion", "Спутник"),
+        ObjectKind.Retainer       => L("Gehilfe", "Retainer", "Помощник"),
+        ObjectKind.Mount          => L("Reittier", "Mount", "Маунт"),
         _                         => kind.ToString(),
     };
 
@@ -1376,34 +1287,28 @@ public static partial class AccessibilityStrings
     /// decision 2026-08-08). Verified offline the same day: for every nameless
     /// object in the log, the game's own name sheets are empty too.
     /// </summary>
-    public static string UnnamedOfKind(ObjectKind kind) => IsGerman
-        ? $"{ObjectKindName(kind)} ohne Namen"
-        : $"{ObjectKindName(kind)} with no name";
+    public static string UnnamedOfKind(ObjectKind kind) => L($"{ObjectKindName(kind)} ohne Namen", $"{ObjectKindName(kind)} with no name", $"{ObjectKindName(kind)} без имени");
 
     /// <summary>
     /// The two objects the game names with an ICON instead of a word. Both words
     /// are the game's own vocabulary, not an invention of this mod - see
     /// ObjectNameService.IconNamed for where each one is quoted from.
     /// </summary>
-    public static string GardenBed => IsGerman ? "Beet"        : "Garden bed";
-    public static string MailBox   => IsGerman ? "Postkasten"  : "Mailbox";
+    public static string GardenBed => L("Beet", "Garden bed", "Грядка");
+    public static string MailBox   => L("Postkasten", "Mailbox", "Почтовый ящик");
 
     /// <summary>
     /// Appended to an object's name to say which quest it serves: "Zielort für
     /// Narben im Wald". The game calls 1667 different props "Zielort", so the
     /// name alone identifies nothing (user report 2026-08-08).
     /// </summary>
-    public static string ForQuest(string quest) => IsGerman
-        ? $" für {quest}"
-        : $" for {quest}";
+    public static string ForQuest(string quest) => L($" für {quest}", $" for {quest}", $" для задания «{quest}»");
 
     /// <summary>
     /// Appended to a zone transition to say where it leads: "Ausgang nach
     /// Neu-Gridania".
     /// </summary>
-    public static string LeadsToArea(string area) => IsGerman
-        ? $" nach {area}"
-        : $" to {area}";
+    public static string LeadsToArea(string area) => L($" nach {area}", $" to {area}", $" в {area}");
 
     /// <summary>
     /// Appended to an object the player has already stood next to: "Truhe 2,
@@ -1412,30 +1317,30 @@ public static partial class AccessibilityStrings
     /// reads off the room they remember walking through (user wish 2026-08-08).
     /// Leading comma and space, so it slots into the description like the kind.
     /// </summary>
-    public static string AlreadyVisited => IsGerman ? ", schon besucht" : ", already visited";
+    public static string AlreadyVisited => L(", schon besucht", ", already visited", ", уже посещено");
 
     /// <summary>Quest hint from a nameplate icon id, or empty for none.</summary>
     public static string QuestMarkerHint(uint iconId) => iconId switch
     {
         0                     => string.Empty,
-        >= 71001 and <= 71006 => IsGerman ? "Quest verfügbar" : "Quest available",
-        >= 71021 and <= 71046 => IsGerman ? "Quest aktiv"     : "Quest active",
-        >= 71000 and <= 71999 => IsGerman ? "Quest"           : "Quest",
+        >= 71001 and <= 71006 => L("Quest verfügbar", "Quest available", "Задание доступно"),
+        >= 71021 and <= 71046 => L("Quest aktiv", "Quest active", "Задание активно"),
+        >= 71000 and <= 71999 => L("Quest", "Quest", "Задание"),
         _                     => string.Empty,
     };
 
     /// <summary>Gathering-node description ("Gathering node" / "&lt;type&gt;, level N").
     /// <paramref name="type"/> is the game-provided node type; may be empty.</summary>
-    public static string GatheringNodeFallback => IsGerman ? "Sammelpunkt" : "Gathering node";
+    public static string GatheringNodeFallback => L("Sammelpunkt", "Gathering node", "Точка сбора");
     public static string GatheringNodeDesc(string type, int level) =>
         level > 0
-            ? (IsGerman ? $"{type}, Stufe {level}" : $"{type}, level {level}")
+            ? (L($"{type}, Stufe {level}", $"{type}, level {level}", $"{type}, уровень {level}"))
             : type;
 
     // ── Quest-Ziel-Ansage (zusammengesetzt) ──────────────────────────
-    public static string NoAcceptableQuests => IsGerman ? "Keine annehmbaren Quests in der Nähe." : "No available quests nearby.";
-    public static string NoQuestGoals       => IsGerman ? "Keine Quest-Ziele. Erst eine Quest annehmen." : "No quest goals. Accept a quest first.";
-    public static string StoryPrefix        => IsGerman ? "Story: " : "Story: ";
+    public static string NoAcceptableQuests => L("Keine annehmbaren Quests in der Nähe.", "No available quests nearby.", "Рядом нет доступных заданий.");
+    public static string NoQuestGoals       => L("Keine Quest-Ziele. Erst eine Quest annehmen.", "No quest goals. Accept a quest first.", "Целей заданий нет. Сначала возьми задание.");
+    public static string StoryPrefix        => L("Story: ", "Story: ", "Сюжет: ");
 
     /// <summary>
     /// The kind of quest, spoken in front of the quest name. Every known kind is
@@ -1448,14 +1353,14 @@ public static partial class AccessibilityStrings
     public static string QuestKindPrefix(QuestKind kind) => kind switch
     {
         QuestKind.MainStory  => StoryPrefix,
-        QuestKind.Job        => IsGerman ? "Job: " : "Job: ",
-        QuestKind.BeastTribe => IsGerman ? "Freundesvolk: " : "Beast tribe: ",
-        QuestKind.Chronicle  => IsGerman ? "Chronik: " : "Chronicle: ",
-        QuestKind.SideQuest  => IsGerman ? "Nebenauftrag: " : "Side quest: ",
-        QuestKind.Other      => IsGerman ? "Sonstiges: " : "Other: ",
+        QuestKind.Job        => L("Job: ", "Job: ", "Класс: "),
+        QuestKind.BeastTribe => L("Freundesvolk: ", "Beast tribe: ", "Племя: "),
+        QuestKind.Chronicle  => L("Chronik: ", "Chronicle: ", "Хроника: "),
+        QuestKind.SideQuest  => L("Nebenauftrag: ", "Side quest: ", "Побочное задание: "),
+        QuestKind.Other      => L("Sonstiges: ", "Other: ", "Прочее: "),
         _                    => string.Empty,
     };
-    public static string LevelPrefix(int level) => IsGerman ? $"Stufe {level}, " : $"Level {level}, ";
+    public static string LevelPrefix(int level) => L($"Stufe {level}, ", $"Level {level}, ", $"Уровень {level}, ");
 
     // ── Was eine Quest freischaltet ──────────────────────────────────
     //
@@ -1472,29 +1377,34 @@ public static partial class AccessibilityStrings
     // Name weg - "schaltet ein Dungeon frei" bleibt wahr, ein geratener Name
     // waere es nicht.
     public static string QuestUnlocksDungeon(string name) => name.Length > 0
-        ? (IsGerman ? $"schaltet das Dungeon '{name}' frei" : $"unlocks the dungeon '{name}'")
-        : (IsGerman ? "schaltet ein Dungeon frei" : "unlocks a dungeon");
+        ? (L($"schaltet das Dungeon '{name}' frei", $"unlocks the dungeon '{name}'", $"открывает подземелье «{name}»"))
+        : (L("schaltet ein Dungeon frei", "unlocks a dungeon", "открывает подземелье"));
 
     public static string QuestUnlocksEmote(string name) => name.Length > 0
-        ? (IsGerman ? $"schaltet die Emote '{name}' frei" : $"unlocks the emote '{name}'")
-        : (IsGerman ? "schaltet eine Emote frei" : "unlocks an emote");
+        ? (L($"schaltet die Emote '{name}' frei", $"unlocks the emote '{name}'", $"открывает эмоцию «{name}»"))
+        : (L("schaltet eine Emote frei", "unlocks an emote", "открывает эмоцию"));
 
     public static string QuestUnlocksAction(string name) => name.Length > 0
-        ? (IsGerman ? $"schaltet die Aktion '{name}' frei" : $"unlocks the action '{name}'")
-        : (IsGerman ? "schaltet eine Aktion frei" : "unlocks an action");
+        ? (L($"schaltet die Aktion '{name}' frei", $"unlocks the action '{name}'", $"открывает действие «{name}»"))
+        : (L("schaltet eine Aktion frei", "unlocks an action", "открывает действие"));
 
     public static string QuestUnlocksClassJob(string name) => name.Length > 0
-        ? (IsGerman ? $"schaltet '{name}' frei" : $"unlocks '{name}'")
-        : (IsGerman ? "schaltet eine Klasse oder einen Job frei" : "unlocks a class or job");
+        ? (L($"schaltet '{name}' frei", $"unlocks '{name}'", $"открывает «{name}»"))
+        : (L("schaltet eine Klasse oder einen Job frei", "unlocks a class or job", "открывает класс или работу"));
 
     /// <summary>SystemReward / OtherReward: die Felder sind gesetzt, ihr Inhalt
     /// ist aber nicht aufloesbar - es gibt im Lumina-Stand des Clients kein Blatt
     /// dazu. Also wird gesagt, WAS gemessen ist, und nicht geraten, WAS es ist.</summary>
     public static string QuestUnlocksSomething =>
-        IsGerman ? "schaltet etwas Neues frei" : "unlocks something new";
-    public static string InArea(string zone)    => IsGerman ? $"im Gebiet {zone}." : $"in the area {zone}.";
-    public static string InAnotherArea       => IsGerman ? "in einem anderen Gebiet." : "in another area.";
-    public static string NumpadWalksToTransition => IsGerman ? " Nummernblock 3 läuft zum Übergang." : " Numpad 3 walks to the transition.";
+        L("schaltet etwas Neues frei", "unlocks something new", "открывает что-то новое");
+    public static string InArea(string zone)    => L($"im Gebiet {zone}.", $"in the area {zone}.", $"в зоне {zone}.");
+    public static string InAnotherArea       => L("in einem anderen Gebiet.", "in another area.", "в другой зоне.");
+    public static string NumpadWalksToTransition => L(" Nummernblock 3 läuft zum Übergang.", " Numpad 3 walks to the transition.", " Numpad 3 ведёт к переходу.");
+    public static string InteriorEntranceName(string name) => L($"Eingang nach {name}", $"Entrance to {name}", $"Вход в {name}");
+    public static string InteriorEntranceConfirmHint => L(
+        " Am Eingang Nummernblock 0 drücken und den Eintritt im Spiel bestätigen.",
+        " At the entrance press Numpad 0 and confirm entry in the game.",
+        " У входа нажмите Num0 и подтвердите вход в игре.");
 
     /// <summary>
     /// Whether the player stands inside the marker's goal circle. A sighted
@@ -1502,27 +1412,28 @@ public static partial class AccessibilityStrings
     /// says nothing about being in the right place - and on a search leve the
     /// enemies only appear once the player is inside.
     /// </summary>
-    public static string InsideGoalCircle => IsGerman ? ", im Zielkreis" : ", inside the goal area";
+    public static string InsideGoalCircle => L(", im Zielkreis", ", inside the goal area", ", в круге цели");
 
     /// <summary>How far the player still is from the EDGE of the goal circle.
     /// <paramref name="distance"/> is already formatted.</summary>
     public static string ToGoalCircle(string distance) =>
-        IsGerman ? $", noch {distance} bis zum Zielkreis" : $", {distance} to the goal area";
+        L($", noch {distance} bis zum Zielkreis", $", {distance} to the goal area", $", до круга цели ещё {distance}");
 
     /// <summary>The "get there via &lt;transition&gt;" clause of a cross-zone quest
     /// announcement, including the count of remaining transitions.</summary>
     public static string RouteViaHop(string hopName, string distance, string direction, int extraHops) =>
-        IsGerman
-            ? $" Dorthin über {hopName}, {distance}, {direction}" +
-              (extraHops > 0 ? $", danach noch {extraHops} weitere Übergänge." : ".")
-            : $" Get there via {hopName}, {distance}, {direction}" +
-              (extraHops > 0 ? $", then {extraHops} more transitions." : ".");
+        L($" Dorthin über {hopName}, {distance}, {direction}" +
+              (extraHops > 0 ? $", danach noch {extraHops} weitere Übergänge." : "."),
+          $" Get there via {hopName}, {distance}, {direction}" +
+              (extraHops > 0 ? $", then {extraHops} more transitions." : "."),
+          $" Туда через {hopName}, {distance}, {direction}" +
+              (extraHops > 0 ? $", потом ещё переходов: {extraHops}." : "."));
 
     // ── Wegpunkte / Gehhilfe / Routen-Ansagen ────────────────────────
     /// <summary>Appended to a marker selection when the real object behind it
     /// was taken as the game target - that is what makes it usable, and the
     /// player has no other way to tell.</summary>
-    public static string MarkerTargeted => IsGerman ? "Angezielt." : "Targeted.";
+    public static string MarkerTargeted => L("Angezielt.", "Targeted.", "Цель взята.");
 
     /// <summary>Spoken when the plugin aims the game at the object behind the
     /// current selection by itself - a gathering node, the NPC or prop of a
@@ -1530,40 +1441,36 @@ public static partial class AccessibilityStrings
     /// <see cref="MarkerTargeted"/> it names what was aimed at: the player did
     /// not pick it by hand, so "Targeted." alone would leave them guessing what
     /// the interact key is now pointing at.</summary>
-    public static string AimedAt(string name) => IsGerman ? $"Angezielt: {name}." : $"Targeted: {name}.";
+    public static string AimedAt(string name) => L($"Angezielt: {name}.", $"Targeted: {name}.", $"Цель взята: {name}.");
 
-    public static string NoAetherytesFound => IsGerman ? "Keine Ätheryten in diesem Gebiet gefunden." : "No aetherytes found in this area.";
-    public static string NoWaypointsFound  => IsGerman ? "Keine Wegpunkte in diesem Gebiet gefunden." : "No waypoints found in this area.";
-    public static string NoNavmeshStraightLine => IsGerman ? "Kein Wegenetz, führe in Luftlinie." : "No navmesh, guiding in a straight line.";
-    public static string ComputingRoute    => IsGerman ? "Weg wird berechnet." : "Computing route.";
-    public static string NewRoute(string direction) => IsGerman ? $"Neuer Weg: {direction}." : $"New route: {direction}.";
-    public static string ComputingRouteTo(string name) => IsGerman ? $"Berechne Weg zu {name}." : $"Computing route to {name}.";
-    public static string NoNavmeshPlugin   => IsGerman
-        ? "Kein Wegenetz. Das Plugin vnavmesh fehlt oder lädt noch."
-        : "No navmesh. The vnavmesh plugin is missing or still loading.";
+    public static string NoAetherytesFound => L("Keine Ätheryten in diesem Gebiet gefunden.", "No aetherytes found in this area.", "В этой зоне не найдено эфиритов.");
+    public static string NoWaypointsFound  => L("Keine Wegpunkte in diesem Gebiet gefunden.", "No waypoints found in this area.", "В этой зоне не найдено путевых точек.");
+    public static string NoNavmeshStraightLine => L("Kein Wegenetz, führe in Luftlinie.", "No navmesh, guiding in a straight line.", "Навигационной сетки нет, веду по прямой.");
+    public static string ComputingRoute    => L("Weg wird berechnet.", "Computing route.", "Считаю маршрут.");
+    public static string NewRoute(string direction) => L($"Neuer Weg: {direction}.", $"New route: {direction}.", $"Новый маршрут: {direction}.");
+    public static string ComputingRouteTo(string name) => L($"Berechne Weg zu {name}.", $"Computing route to {name}.", $"Считаю маршрут к {name}.");
+    public static string NoNavmeshPlugin   => L("Kein Wegenetz. Das Plugin vnavmesh fehlt oder lädt noch.", "No navmesh. The vnavmesh plugin is missing or still loading.", "Навигационной сетки нет. Плагин vnavmesh отсутствует или ещё загружается.");
     public static string NewFlagMarker(string distance, string compass) =>
-        IsGerman ? $"Neue Markierung, {distance}, {compass}." : $"New flag, {distance}, {compass}.";
+        L($"Neue Markierung, {distance}, {compass}.", $"New flag, {distance}, {compass}.", $"Новая метка, {distance}, {compass}.");
 
     /// <summary>", up"/", down" vertical hint appended to a guide step; "" when level.</summary>
-    public static string VerticalUp   => IsGerman ? ", aufwärts" : ", up";
-    public static string VerticalDown => IsGerman ? ", abwärts"  : ", down";
+    public static string VerticalUp   => L(", aufwärts", ", up", ", вверх");
+    public static string VerticalDown => L(", abwärts", ", down", ", вниз");
 
     /// <summary>Gesprochen, wenn die Gehhilfe bei einem weit entfernten Ziel auf
     /// eine Zwischenetappe umschaltet, statt sofort auf Luftlinie zu wechseln
     /// (V5.97, Etappen-Strategie bei Netzende weit vor dem Ziel).</summary>
-    public static string WalkGuideStaging => IsGerman
-        ? "Ziel weit entfernt, führe in Etappen."
-        : "Destination far away, guiding in stages.";
+    public static string WalkGuideStaging => L("Ziel weit entfernt, führe in Etappen.", "Destination far away, guiding in stages.", "Цель далеко, веду по этапам.");
 
     // ── Routen-Vorschau (RouteService.DescribeRoute) ─────────────────
     public static string RoutePracticallyThere(string name) =>
-        IsGerman ? $"Weg zu {name}: praktisch am Ziel." : $"Route to {name}: practically there.";
+        L($"Weg zu {name}: praktisch am Ziel.", $"Route to {name}: practically there.", $"Маршрут к {name}: практически на месте.");
     public static string RouteHeader(string name, float total) =>
-        IsGerman ? $"Weg zu {name}, {total:F0} Meter: " : $"Route to {name}, {total:F0} meters: ";
+        L($"Weg zu {name}, {total:F0} Meter: ", $"Route to {name}, {total:F0} meters: ", $"Маршрут к {name}, {total:F0} метров: ");
     public static string RouteSegment(float distance, string compass) =>
-        IsGerman ? $"{distance:F0} Meter nach {compass}" : $"{distance:F0} meters {compass}";
-    public static string RouteThen => IsGerman ? ", dann " : ", then ";
-    public static string RouteAndOn => IsGerman ? ", dann weiter" : ", then onward";
+        L($"{distance:F0} Meter nach {compass}", $"{distance:F0} meters {compass}", $"{distance:F0} метров на {compass}");
+    public static string RouteThen => L(", dann ", ", then ", ", затем ");
+    public static string RouteAndOn => L(", dann weiter", ", then onward", ", затем дальше");
 
     /// <summary>Der Hoehenanteil des Weges, angehaengt an die Vorschau. Getrennt
     /// nach Auf und Ab, weil eine Verrechnung die Treppe verschweigen wuerde, ueber
@@ -1571,21 +1478,19 @@ public static partial class AccessibilityStrings
     public static string RouteClimb(float up, float down)
     {
         if (up > 0f && down > 0f)
-            return IsGerman
-                ? $" Dabei {up:F0} Meter aufwärts und {down:F0} Meter abwärts."
-                : $" Along the way {up:F0} meters up and {down:F0} meters down.";
+            return L($" Dabei {up:F0} Meter aufwärts und {down:F0} Meter abwärts.", $" Along the way {up:F0} meters up and {down:F0} meters down.", $" По пути {up:F0} метров вверх и {down:F0} метров вниз.");
         if (up > 0f)
-            return IsGerman ? $" Dabei {up:F0} Meter aufwärts." : $" Along the way {up:F0} meters up.";
-        return IsGerman ? $" Dabei {down:F0} Meter abwärts." : $" Along the way {down:F0} meters down.";
+            return L($" Dabei {up:F0} Meter aufwärts.", $" Along the way {up:F0} meters up.", $" По пути {up:F0} метров вверх.");
+        return L($" Dabei {down:F0} Meter abwärts.", $" Along the way {down:F0} meters down.", $" По пути {down:F0} метров вниз.");
     }
 
     // ── Datenzentrums-Auswahl (TitleDCWorldMap) ──────────────────────
     public static string DCSelected(string dc, IReadOnlyCollection<string> worlds) =>
         worlds.Count > 0
-            ? (IsGerman
-                ? $"{dc} ausgewählt. Welten: {string.Join(", ", worlds)}. Zum Bestätigen den Ok-Knopf drücken."
-                : $"{dc} selected. Worlds: {string.Join(", ", worlds)}. Press the Ok button to confirm.")
-            : (IsGerman ? $"{dc} ausgewählt." : $"{dc} selected.");
+            ? L($"{dc} ausgewählt. Welten: {string.Join(", ", worlds)}. Zum Bestätigen den Ok-Knopf drücken.",
+                $"{dc} selected. Worlds: {string.Join(", ", worlds)}. Press the Ok button to confirm.",
+                $"{dc} выбран. Миры: {string.Join(", ", worlds)}. Для подтверждения нажми Ок.")
+            : L($"{dc} ausgewählt.", $"{dc} selected.", $"{dc} выбран.");
 
     // ════════════════════════════════════════════════════════════════
     //  UIReaderService - Fenster-, Listen- und Menue-Ansagen
@@ -1600,22 +1505,20 @@ public static partial class AccessibilityStrings
     /// when nothing is selected.</summary>
     public static string ListSummary(string selection, int count) =>
         selection.Length > 0
-            ? (IsGerman ? $"{selection}, {count} Einträge" : $"{selection}, {count} entries")
-            : (IsGerman ? $"Menü, {count} Einträge"        : $"Menu, {count} entries");
+            ? (L($"{selection}, {count} Einträge", $"{selection}, {count} entries", $"{selection}, {count} записей"))
+            : (L($"Menü, {count} Einträge", $"Menu, {count} entries", $"Меню, {count} записей"));
 
-    public static string NoEntries       => IsGerman ? "Keine Einträge" : "No entries";
-    public static string NoEntriesSuffix => IsGerman ? ", keine Einträge" : ", no entries";
+    public static string NoEntries       => L("Keine Einträge", "No entries", "Записей нет");
+    public static string NoEntriesSuffix => L(", keine Einträge", ", no entries", ", записей нет");
 
     /// <summary>", N entries" plus optional ": &lt;selection&gt;", appended to a tab line.</summary>
     public static string ListEntriesSuffix(int count, string selection) =>
-        IsGerman
-            ? $", {count} Einträge{(selection.Length > 0 ? $": {selection}" : string.Empty)}"
-            : $", {count} entries{(selection.Length > 0 ? $": {selection}" : string.Empty)}";
+        L($", {count} Einträge{(selection.Length > 0 ? $": {selection}" : string.Empty)}",
+          $", {count} entries{(selection.Length > 0 ? $": {selection}" : string.Empty)}",
+          $", записей: {count}{(selection.Length > 0 ? $": {selection}" : string.Empty)}");
 
     public static string SocialTabHeader(string label, int index, int total) =>
-        IsGerman
-            ? $"{label}, Registerkarte {index} von {total}"
-            : $"{label}, tab {index} of {total}";
+        L($"{label}, Registerkarte {index} von {total}", $"{label}, tab {index} of {total}", $"{label}, вкладка {index} из {total}");
 
     /// <summary>Character window (key C) tab: Attributes / Profile / Classes / Reputation.</summary>
     public static string CharacterTabHeader(string label, int index, int total) =>
@@ -1624,39 +1527,44 @@ public static partial class AccessibilityStrings
     /// <summary>Fallback when a Character tab radio has no readable label yet.</summary>
     public static string CharacterTabFallback(int zeroBasedIndex) => zeroBasedIndex switch
     {
-        0 => IsGerman ? "Attribute" : "Attributes",
-        1 => IsGerman ? "Profil" : "Profile",
-        2 => IsGerman ? "Klassen und Jobs" : "Classes and Jobs",
-        3 => IsGerman ? "Ansehen" : "Reputation",
-        _ => IsGerman ? $"Registerkarte {zeroBasedIndex + 1}" : $"tab {zeroBasedIndex + 1}",
+        0 => L("Attribute", "Attributes", "Характеристики"),
+        1 => L("Profil", "Profile", "Профиль"),
+        2 => L("Klassen und Jobs", "Classes and Jobs", "Классы и профессии"),
+        3 => L("Ansehen", "Reputation", "Репутация"),
+        _ => L($"Registerkarte {zeroBasedIndex + 1}", $"tab {zeroBasedIndex + 1}", $"Вкладка {zeroBasedIndex + 1}"),
     };
 
     public static string OnlineWindowPrefix(string rest) =>
-        IsGerman ? $"Online-Fenster. {rest}" : $"Online window. {rest}";
+        L($"Online-Fenster. {rest}", $"Online window. {rest}", $"Окно онлайн. {rest}");
 
     // ── Text-Eingabe-Echo (beim Tippen) ──────────────────────────────
-    public static string InputEmpty => IsGerman ? "leer" : "empty";
-    public static string Deleted(string removed) => IsGerman ? $"{removed} gelöscht" : $"{removed} deleted";
+    public static string InputEmpty => L("leer", "empty", "пусто");
+    public static string Deleted(string removed) => L($"{removed} gelöscht", $"{removed} deleted", $"{removed} удалено");
 
     // ── Benachrichtigung (ActivateNotification) ──────────────────────
-    public static string NoOpenNotification => IsGerman ? "Keine offene Benachrichtigung." : "No open notification.";
-    public static string NotificationNotResponding => IsGerman ? "Benachrichtigung reagiert nicht." : "Notification not responding.";
+    public static string NoOpenNotification => L("Keine offene Benachrichtigung.", "No open notification.", "Открытых уведомлений нет.");
+    public static string NotificationNotResponding => L("Benachrichtigung reagiert nicht.", "Notification not responding.", "Уведомление не отвечает.");
 
     // ── ContentsTutorial-Popup (Freischaltungen) ─────────────────────
-    // NOTE: The actual close-button match ("Schließen") lives in the service and
-    // stays in the game-client language (Teil 2), these are the spoken frames.
     public static string PageOf(int current, int total) =>
-        IsGerman ? $" Seite {current} von {total}." : $" Page {current} of {total}.";
+        L($" Seite {current} von {total}.", $" Page {current} of {total}.", $" Страница {current} из {total}.");
 
     /// <summary>
     /// The window's own page indicator, passed through as it reads ("1/2").
     /// Used where the game already formats it and only the word is missing.
     /// </summary>
     public static string PageLabel(string page) =>
-        IsGerman ? $"Seite {page}" : $"Page {page}";
+        L($"Seite {page}", $"Page {page}", $"Страница {page}");
 
     /// <summary>Next page, for windows whose paging button carries no text.</summary>
-    public static string NextPage => IsGerman ? "Weiter" : "Next";
+    public static string NextPage => L("Weiter", "Next", "Дальше");
+    public static string PreviousPage => L("Vorherige Seite", "Previous page", "Предыдущая страница");
+    public static string TutorialUnderstood => L("Ich weiß, was zu tun ist.", "I understand what to do.", "Я понимаю, что нужно делать.");
+    public static string ContentsTutorialHelp(string repeatKey) =>
+        L($"Mit den Spieltasten eine Schaltfläche wählen, Enter betätigt die gewählte Schaltfläche. {repeatKey} liest diese Seite erneut.",
+          $"Use the game's navigation keys to choose a button; Enter activates the selected button. {repeatKey} reads this page again.",
+          $"Клавишами навигации игры выберите кнопку; Enter нажимает выбранную кнопку. {repeatKey} повторяет эту страницу.");
+    public static string TutorialLoading => L("Die Seite wird geladen.", "The page is loading.", "Страница загружается.");
 
     /// <summary>
     /// A control that exists but is switched off right now - a paging button on
@@ -1665,56 +1573,50 @@ public static partial class AccessibilityStrings
     /// learning why nothing happens.
     /// </summary>
     public static string ControlUnavailable(string label) =>
-        IsGerman ? $"{label}, nicht verfügbar" : $"{label}, unavailable";
-    public static string EnterCloses    => IsGerman ? " Enter schließt." : " Press Enter to close.";
-    public static string EnterPagesOn   => IsGerman ? " Enter blättert weiter." : " Press Enter to continue.";
-    public static string Closed         => IsGerman ? "Geschlossen." : "Closed.";
-    public static string CloseButtonNotResponding => IsGerman ? "Schließen-Knopf reagiert nicht." : "Close button not responding.";
-    public static string NextButtonNotResponding  => IsGerman ? "Weiter-Knopf reagiert nicht." : "Next button not responding.";
+        L($"{label}, nicht verfügbar", $"{label}, unavailable", $"{label}, недоступно");
+    public static string EnterCloses    => L(" Enter schließt.", " Press Enter to close.", " Enter закрывает.");
+    public static string EnterPagesOn   => L(" Enter blättert weiter.", " Press Enter to continue.", " Enter листает дальше.");
+    public static string Closed         => L("Geschlossen.", "Closed.", "Закрыто.");
+    public static string CloseButtonNotResponding => L("Schließen-Knopf reagiert nicht.", "Close button not responding.", "Кнопка закрытия не отвечает.");
+    public static string NextButtonNotResponding  => L("Weiter-Knopf reagiert nicht.", "Next button not responding.", "Кнопка Дальше не отвечает.");
 
     // ── Bestiarium (MonsterNote) ─────────────────────────────────────
-    public static string BestiaryNotOpen   => IsGerman ? "Bestiarium ist nicht geöffnet." : "The bestiary is not open.";
-    public static string BestiaryListNotFound => IsGerman ? "Bestiarium-Liste nicht gefunden." : "Bestiary list not found.";
-    public static string NoMonstersInList  => IsGerman ? "Keine Monster in dieser Liste." : "No monsters in this list.";
-    public static string LivesIn(string habitat) => IsGerman ? $", lebt in {habitat}" : $", lives in {habitat}";
+    public static string BestiaryNotOpen   => L("Bestiarium ist nicht geöffnet.", "The bestiary is not open.", "Бестиарий не открыт.");
+    public static string BestiaryListNotFound => L("Bestiarium-Liste nicht gefunden.", "Bestiary list not found.", "Список бестиария не найден.");
+    public static string NoMonstersInList  => L("Keine Monster in dieser Liste.", "No monsters in this list.", "В этом списке нет монстров.");
+    public static string LivesIn(string habitat) => L($", lebt in {habitat}", $", lives in {habitat}", $", водится: {habitat}");
     public static string BestiaryOverview(int count, string rows) =>
-        IsGerman ? $"Bestiarium, {count} Monster. {rows}" : $"Bestiary, {count} monsters. {rows}";
+        L($"Bestiarium, {count} Monster. {rows}", $"Bestiary, {count} monsters. {rows}", $"Бестиарий, {count} монстров. {rows}");
     /// <summary>A rank picker row: which class's log, which rank, and how many of its ten entries are done.</summary>
     public static string BestiaryRankRow(string className, string rank, int done, int total)
     {
         var body = done >= total
-            ? (IsGerman ? $"Rang {rank}, alle {total} Einträge erledigt" : $"Rank {rank}, all {total} entries complete")
-            : (IsGerman ? $"Rang {rank}, {done} von {total} Einträgen erledigt" : $"Rank {rank}, {done} of {total} entries done");
+            ? (L($"Rang {rank}, alle {total} Einträge erledigt", $"Rank {rank}, all {total} entries complete", $"Ранг {rank}, все {total} записей выполнены"))
+            : (L($"Rang {rank}, {done} von {total} Einträgen erledigt", $"Rank {rank}, {done} of {total} entries done", $"Ранг {rank}, выполнено {done} из {total} записей"));
         return string.IsNullOrEmpty(className) ? body : $"{className}, {body}";
     }
 
     /// <summary>Class / company tab of the hunting log, with the rank currently shown.</summary>
     public static string BestiaryClassTab(string className, int rank) =>
-        IsGerman ? $"{className}, Rang {rank}" : $"{className}, rank {rank}";
+        L($"{className}, Rang {rank}", $"{className}, rank {rank}", $"{className}, ранг {rank}");
 
     // ── Gegenstand abliefern (Request / delivery) ────────────────────
     // "Hand Over" is the EN client's button; verify against an EN dump in Teil 2.
-    public static string DeliveryOpen => IsGerman
-        ? "Gegenstand abliefern. Drücke Strg F3 für die passenden Gegenstände, dann auswählen und Übergeben."
-        : "Hand over item. Press Ctrl F3 for the matching items, then select and Hand Over.";
+    public static string DeliveryOpen => L("Gegenstand abliefern. Drücke Strg F3 für die passenden Gegenstände, dann auswählen und Übergeben.", "Hand over item. Press Ctrl F3 for the matching items, then select and Hand Over.", "Сдать предмет. Нажми Ctrl F3, чтобы найти подходящие предметы, потом выбери и нажми Сдать.");
     public static string DeliveryItems(IReadOnlyList<string> items) => items.Count switch
     {
-        0 => IsGerman ? "Keine passenden Gegenstände im Beutel gefunden." : "No matching items found in your bag.",
-        1 => IsGerman
-                ? $"Ein passender Gegenstand: {items[0]}. Auswählen und dann Übergeben drücken."
-                : $"One matching item: {items[0]}. Select it, then press Hand Over.",
-        _ => IsGerman
-                ? $"{items.Count} passende Gegenstände: {string.Join(", ", items)}. Auswählen und dann Übergeben drücken."
-                : $"{items.Count} matching items: {string.Join(", ", items)}. Select one, then press Hand Over.",
+        0 => L("Keine passenden Gegenstände im Beutel gefunden.", "No matching items found in your bag.", "В сумке нет подходящих предметов."),
+        1 => L($"Ein passender Gegenstand: {items[0]}. Auswählen und dann Übergeben drücken.", $"One matching item: {items[0]}. Select it, then press Hand Over.", $"Подходящий предмет один: {items[0]}. Выбери его и нажми Сдать."),
+        _ => L($"{items.Count} passende Gegenstände: {string.Join(", ", items)}. Auswählen und dann Übergeben drücken.",
+               $"{items.Count} matching items: {string.Join(", ", items)}. Select one, then press Hand Over.",
+               $"{items.Count} подходящих предметов: {string.Join(", ", items)}. Выбери один и нажми Сдать."),
     };
 
     // ── Zufaelliges Aussehen (CharaMake RandomLook) ──────────────────
-    public static string NoAppearanceWindow => IsGerman
-        ? "Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung."
-        : "No appearance window open. Only during the Appearance step of character creation.";
-    public static string RandomAppearanceNotFound => IsGerman ? "Knopf Zufälliges Aussehen nicht gefunden." : "Random appearance button not found.";
-    public static string RandomAppearanceNotResponding => IsGerman ? "Knopf Zufälliges Aussehen reagiert nicht." : "Random appearance button not responding.";
-    public static string RandomAppearancePressed => IsGerman ? "Zufälliges Aussehen gedrückt." : "Random appearance pressed.";
+    public static string NoAppearanceWindow => L("Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung.", "No appearance window open. Only during the Appearance step of character creation.", "Окно внешности не открыто. Только на шаге внешности при создании персонажа.");
+    public static string RandomAppearanceNotFound => L("Knopf Zufälliges Aussehen nicht gefunden.", "Random appearance button not found.", "Кнопка Случайная внешность не найдена.");
+    public static string RandomAppearanceNotResponding => L("Knopf Zufälliges Aussehen reagiert nicht.", "Random appearance button not responding.", "Кнопка Случайная внешность не отвечает.");
+    public static string RandomAppearancePressed => L("Zufälliges Aussehen gedrückt.", "Random appearance pressed.", "Случайная внешность нажата.");
 
     // ── Seitenwechsel / Reiter (generisch) ───────────────────────────
     /// <summary>Konfigurationsseite mit der Anzahl ihrer Einstellungen. Die Zahl
@@ -1725,135 +1627,122 @@ public static partial class AccessibilityStrings
     /// Spieler sieht die ganze Seite auf einen Blick; die Zahl ist das
     /// Gegenstueck dazu.</summary>
     public static string ConfigPageWithCount(string heading, int count) =>
-        IsGerman
-            ? $"{heading}, {count} {(count == 1 ? "Einstellung" : "Einstellungen")}"
-            : $"{heading}, {count} {(count == 1 ? "setting" : "settings")}";
+        L($"{heading}, {count} {(count == 1 ? "Einstellung" : "Einstellungen")}",
+          $"{heading}, {count} {(count == 1 ? "setting" : "settings")}",
+          $"{heading}, настроек: {count}");
 
-    public static string TabPressedNoPageChange => IsGerman ? "Reiter gedrückt, aber kein Seitenwechsel erkannt." : "Tab pressed, but no page change detected.";
-    public static string TabNotResponding => IsGerman ? "Reiter reagiert nicht." : "Tab not responding.";
+    public static string TabPressedNoPageChange => L("Reiter gedrückt, aber kein Seitenwechsel erkannt.", "Tab pressed, but no page change detected.", "Вкладка нажата, но смены страницы не произошло.");
+    public static string TabNotResponding => L("Reiter reagiert nicht.", "Tab not responding.", "Вкладка не отвечает.");
 
     // ── Datenzentrum / Gamepad / Uebung / Menue ──────────────────────
-    public static string ChooseDataCenter => IsGerman ? "Datenzentrum wählen." : "Choose a data center.";
-    public static string GamepadCalibration => IsGerman ? "Gamepad-Kalibrierung. Escape zum Schließen." : "Gamepad calibration. Press Escape to close.";
-    public static string ExerciseStarted => IsGerman ? "Übung gestartet." : "Exercise started.";
-    public static string BeginButtonNotResponding => IsGerman ? "Beginnen-Knopf reagiert nicht." : "Begin button not responding.";
-    public static string NoActiveMenu => IsGerman ? "Kein aktives Menü." : "No active menu.";
+    public static string ChooseDataCenter => L("Datenzentrum wählen.", "Choose a data center.", "Выбери дата-центр.");
+    public static string GamepadCalibration => L("Gamepad-Kalibrierung. Escape zum Schließen.", "Gamepad calibration. Press Escape to close.", "Калибровка геймпада. Escape закрывает.");
+    public static string ExerciseStarted => L("Übung gestartet.", "Exercise started.", "Упражнение запущено.");
+    public static string BeginButtonNotResponding => L("Beginnen-Knopf reagiert nicht.", "Begin button not responding.", "Кнопка Начать не отвечает.");
+    public static string NoActiveMenu => L("Kein aktives Menü.", "No active menu.", "Активного меню нет.");
 
     // ── Dump (/acc dump) ─────────────────────────────────────────────
-    public static string NoActiveAddonToDump => IsGerman ? "Kein aktives Addon für Dump gefunden." : "No active addon found to dump.";
-    public static string NoAddonName => IsGerman ? "Kein Addon-Name. Beispiel: /acc dump TitleDCWorldMap" : "No addon name. Example: /acc dump TitleDCWorldMap";
-    public static string DumpFileError => IsGerman ? "Dump nur im Dalamud-Log. Datei-Fehler." : "Dump only in the Dalamud log. File error.";
+    public static string NoActiveAddonToDump => L("Kein aktives Addon für Dump gefunden.", "No active addon found to dump.", "Не нашла активного окна для дампа.");
+    public static string NoAddonName => L("Kein Addon-Name. Beispiel: /acc dump TitleDCWorldMap", "No addon name. Example: /acc dump TitleDCWorldMap", "Нет имени окна. Пример: /acc dump TitleDCWorldMap");
+    public static string DumpFileError => L("Dump nur im Dalamud-Log. Datei-Fehler.", "Dump only in the Dalamud log. File error.", "Дамп только в логе Dalamud. Файл не записался.");
     public static string UnknownWindowDumped(int count) =>
-        IsGerman
-            ? $"Kein bekanntes Fenster. {count} sichtbare Fenster gedumpt, Liste im Log."
-            : $"No known window. Dumped {count} visible windows, list in the log.";
+        L($"Kein bekanntes Fenster. {count} sichtbare Fenster gedumpt, Liste im Log.", $"No known window. Dumped {count} visible windows, list in the log.", $"Знакомого окна нет. Сохранила {count} видимых окон, список в логе.");
 
     // ── Zusammengesetzte Ansagen (UIReader Etappe 2) ─────────────────
     /// <summary>" item: " / " items: " count label for a gathered/read item list.</summary>
     public static string ItemsCountLabel(int count) =>
-        IsGerman ? (count == 1 ? " Gegenstand: " : " Gegenstände: ")
-                 : (count == 1 ? " item: " : " items: ");
+        L(count == 1 ? " Gegenstand: " : " Gegenstaende: ",
+          count == 1 ? " item: " : " items: ",
+          count == 1 ? " предмет: " : " предметов: ");
 
     /// <summary>The word "Level" / "Stufe" - used both standalone and to expand
     /// the game's abbreviated level label.</summary>
-    public static string LevelWord => IsGerman ? "Stufe" : "Level";
-    public static string LevelSuffix(int level) => IsGerman ? $", Stufe {level}" : $", level {level}";
+    public static string LevelWord => L("Stufe", "Level", "Уровень");
+    public static string LevelSuffix(int level) => L($", Stufe {level}", $", level {level}", $", уровень {level}");
     public static string NameWithLevel(string name, int level) =>
-        IsGerman ? $"{name}, Stufe {level}" : $"{name}, level {level}";
-    public static string AmountLabel(string yield) => IsGerman ? $"Menge {yield}" : $"Amount {yield}";
+        L($"{name}, Stufe {level}", $"{name}, level {level}", $"{name}, уровень {level}");
+    public static string AmountLabel(string yield) => L($"Menge {yield}", $"Amount {yield}", $"Количество: {yield}");
     public static string UnknownItem(uint iconId) =>
-        IsGerman ? $"Unbekannter Gegenstand, Icon {iconId}" : $"Unknown item, icon {iconId}";
+        L($"Unbekannter Gegenstand, Icon {iconId}", $"Unknown item, icon {iconId}", $"Неизвестный предмет, иконка {iconId}");
 
     // ── Konfig-Steuerelemente (Slider / Dropdown / Eingabefeld) ──────
     public static string SliderDesc(string label, string value, int min, int max) =>
-        IsGerman
-            ? $"{label}, Regler, {value}, von {min} bis {max}."
-            : $"{label}, slider, {value}, from {min} to {max}.";
+        L($"{label}, Regler, {value}, von {min} bis {max}.", $"{label}, slider, {value}, from {min} to {max}.", $"{label}, ползунок, {value}, от {min} до {max}.");
     // Short form for 0..100 percentage sliders (volumes): the "%" already implies
     // the range, so drop "slider" and "from 0 to 100" - the long form got cut off
     // by the next control while navigating quickly (user report 2026-07-27).
     public static string SliderPercent(string label, string value) =>
-        IsGerman ? $"{label}, {value} %" : $"{label}, {value}%";
+        L($"{label}, {value} %", $"{label}, {value}%", $"{label}, {value} %");
     public static string DropdownDesc(string label, string value) =>
-        IsGerman ? $"{label}, Auswahlliste, {value}." : $"{label}, dropdown, {value}.";
+        L($"{label}, Auswahlliste, {value}.", $"{label}, dropdown, {value}.", $"{label}, выпадающий список, {value}.");
     /// <summary>One option while stepping through an OPENED drop-down. Names the
     /// stored choice, which a sighted player sees highlighted in the list.</summary>
     public static string DropdownOption(string option, int index, int count, bool selected) =>
-        IsGerman
-            ? $"{option}, {index} von {count}{(selected ? ", ausgewählt" : "")}"
-            : $"{option}, {index} of {count}{(selected ? ", selected" : "")}";
+        L($"{option}, {index} von {count}{(selected ? ", ausgewählt" : "")}",
+          $"{option}, {index} of {count}{(selected ? ", selected" : "")}",
+          $"{option}, {index} из {count}{(selected ? ", выбрано" : "")}");
     // ── Zur Wegrichtung drehen (Numpad5) ─────────────────────────────
     /// <summary>Spoken after the player was turned towards the guide point.</summary>
     public static string FaceAligned(string distance) =>
-        IsGerman ? $"Ausgerichtet. {distance} geradeaus." : $"Aligned. {distance} straight ahead.";
+        L($"Ausgerichtet. {distance} geradeaus.", $"Aligned. {distance} straight ahead.", $"Направление взято. {distance} прямо.");
 
-    /// <summary>The key was pressed without a walk guide running.</summary>
+    /// <summary>No guide, browser destination, game target or active walk to read.</summary>
     public static string FaceNoRoute =>
-        IsGerman
-            ? "Kein Weg aktiv. Erst ein Ziel wählen."
-            : "No route active. Pick a destination first.";
+        L("Kein Ziel gewählt. Wähle ein Objekt oder ein Ziel in der Navigationsliste.",
+          "No target selected. Select an object or a destination in the navigation list.",
+          "Цель не выбрана. Выбери объект или цель в списке навигации.");
+
+    public static string TargetSameHorizontalPosition =>
+        L("an derselben horizontalen Position", "at the same horizontal position",
+          "в той же точке по горизонтали");
 
     /// <summary>Guide point and player are on the same spot - no direction to turn to.</summary>
     public static string FaceAlreadyThere =>
-        IsGerman ? "Du stehst schon am Wegpunkt." : "You are already at the waypoint.";
+        L("Du stehst schon am Wegpunkt.", "You are already at the waypoint.", "Ты уже стоишь на путевой точке.");
 
     /// <summary>Stand-in when no label text can be found next to a control.</summary>
-    public static string NoLabel => IsGerman ? "Ohne Beschriftung" : "Unlabelled";
+    public static string NoLabel => L("Ohne Beschriftung", "Unlabelled", "Без подписи");
 
     /// <summary>The browsed history category is a real chat channel, but its
     /// internal number has not been measured yet, so the mod will not switch to
     /// it rather than risk sending into the wrong channel.</summary>
     public static string ChannelNotAvailable(string channel) =>
-        IsGerman
-            ? $"Kanal {channel} kann noch nicht gesetzt werden."
-            : $"Channel {channel} cannot be set yet.";
+        L($"Kanal {channel} kann noch nicht gesetzt werden.", $"Channel {channel} cannot be set yet.", $"Канал {channel} пока нельзя установить.");
 
     /// <summary>Browsing the tell history, but no message carries a player the
     /// mod could answer.</summary>
     public static string NoTellPartner =>
-        IsGerman
-            ? "Kein Flüster-Partner zum Antworten."
-            : "No tell partner to answer.";
+        L("Kein Flüster-Partner zum Antworten.", "No tell partner to answer.", "Нет собеседника для ответа шёпотом.");
 
     /// <summary>The game refused the tell target - said out loud, because a
     /// silent failure would look like the message is on its way.</summary>
     public static string TellTargetFailed(string target) =>
-        IsGerman
-            ? $"Flüstern an {target} nicht möglich."
-            : $"Cannot set tell target {target}.";
+        L($"Flüstern an {target} nicht möglich.", $"Cannot set tell target {target}.", $"Шепнуть {target} не получилось.");
 
     /// <summary>No player payload on the focused chat-history line.</summary>
     public static string ChatPlayerNone =>
-        IsGerman
-            ? "Diese Nachricht hat keinen Spieler-Absender."
-            : "This message has no player sender.";
+        L("Diese Nachricht hat keinen Spieler-Absender.", "This message has no player sender.", "У этого сообщения нет отправителя-игрока.");
 
     /// <summary>Context menu opened for the chat sender.</summary>
     public static string ChatPlayerMenuOpened(string name) =>
-        IsGerman
-            ? $"Menü für {name}."
-            : $"Menu for {name}.";
+        L($"Menü für {name}.", $"Menu for {name}.", $"Меню: {name}.");
 
     /// <summary>Sender not in ObjectTable / party HUD / social lists.</summary>
     public static string ChatPlayerNotFound(string name) =>
-        IsGerman
-            ? $"{name} nicht gefunden — nicht geladen und nicht in Freunde, Gruppe oder FG."
-            : $"{name} not found — not loaded and not in friends, party, or free company.";
+        L($"{name} nicht gefunden — nicht geladen und nicht in Freunde, Gruppe oder FG.", $"{name} not found — not loaded and not in friends, party, or free company.", $"{name} не найден: не загружен и его нет ни в друзьях, ни в отряде, ни в содружестве.");
 
     /// <summary>Found in a social list in another zone; menu needs a live object.</summary>
     public static string ChatPlayerElsewhere(string name, string zone) =>
-        IsGerman
-            ? $"{name} gemeldet in {zone}. Menü und Laufen brauchen ihn hier geladen."
-            : $"{name} reported in {zone}. Menu and walk need them loaded here.";
+        L($"{name} gemeldet in {zone}. Menü und Laufen brauchen ihn hier geladen.", $"{name} reported in {zone}. Menu and walk need them loaded here.", $"{name} числится в {zone}. Для меню и ходьбы он должен быть загружен здесь.");
 
     /// <summary>Social list had a location id the sheets do not name.</summary>
     public static string ChatPlayerZoneUnknown =>
-        IsGerman ? "unbekanntem Gebiet" : "an unknown area";
+        L("unbekanntem Gebiet", "an unknown area", "неизвестной области");
 
     public static string InputFieldValue(string typed) =>
         typed.Length > 0
-            ? (IsGerman ? $"Eingabefeld: {typed}" : $"Input field: {typed}")
-            : (IsGerman ? "Eingabefeld, leer"     : "Input field, empty");
+            ? (L($"Eingabefeld: {typed}", $"Input field: {typed}", $"Поле ввода: {typed}"))
+            : (L("Eingabefeld, leer", "Input field, empty", "Поле ввода, пусто"));
 
     /// <summary>
     /// An input field that carries no label of its own, named by the control that
@@ -1868,8 +1757,8 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string NamedInputFieldValue(string label, string typed) =>
         typed.Length > 0
-            ? (IsGerman ? $"{label}, Eingabefeld: {typed}" : $"{label}, input field: {typed}")
-            : (IsGerman ? $"{label}, Eingabefeld, leer"    : $"{label}, input field, empty");
+            ? (L($"{label}, Eingabefeld: {typed}", $"{label}, input field: {typed}", $"{label}, поле ввода: {typed}"))
+            : (L($"{label}, Eingabefeld, leer", $"{label}, input field, empty", $"{label}, поле ввода, пусто"));
 
     // ── Zahl mit ihrer Beschriftung ──────────────────────────────────
     /// <summary>
@@ -1888,14 +1777,14 @@ public static partial class AccessibilityStrings
     // ── Belohnungs-Zeile (JournalResult) ─────────────────────────────
     // Currency type is only a UI image, so the mod labels amounts by position.
     public static string[] RewardCurrencyLabels =>
-        IsGerman ? new[] { "Erfahrung", "Gil" } : new[] { "EXP", "Gil" };
-    public static string MoreReward => IsGerman ? "weitere Vergütung" : "further reward";
+        Loc.IsRussian ? new[] { "Опыт", "Гил" } : IsGerman ? new[] { "Erfahrung", "Gil" } : new[] { "EXP", "Gil" };
+    public static string MoreReward => L("weitere Vergütung", "further reward", "дополнительная награда");
     /// <summary>Prefix spoken in front of the whole quest-completion reward summary.</summary>
-    public static string RewardPrefix => IsGerman ? "Belohnung: " : "Reward: ";
+    public static string RewardPrefix => L("Belohnung: ", "Reward: ", "Награда: ");
     /// <summary>A reward item with a quantity: German "&lt;qty&gt; mal &lt;name&gt;",
     /// English just "&lt;qty&gt; &lt;name&gt;" (no "times").</summary>
     public static string RewardItemQuantity(string qty, string name) =>
-        IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
+        L($"{qty} mal {name}", $"{qty} {name}", $"{name}, {qty} штук");
     /// <summary>A reward item followed by its description - name first, then the
     /// description, like the ability tooltips (period so the reader pauses).</summary>
     public static string RewardItemWithDescription(string label, string description) =>
@@ -1904,8 +1793,13 @@ public static partial class AccessibilityStrings
     /// <summary>The tooltip description spoken on its own after the focus has
     /// dwelled on an inventory item (the name was already announced when the
     /// focus landed) - prefixed so the user knows what is being read.</summary>
+    /// <summary>Spoken when a skill carries no tooltip text in the sheets -
+    /// without it the numpad-5 description key would look like a stuck menu.</summary>
+    public static string SkillDescriptionMissing(string name) =>
+        L($"Für {name} ist keine Beschreibung hinterlegt.", $"No description is stored for {name}.", $"Для {name} описание не записано.");
+
     public static string ItemDescription(string description) =>
-        IsGerman ? $"Beschreibung: {description}" : $"Description: {description}";
+        L($"Beschreibung: {description}", $"Description: {description}", $"Описание: {description}");
 
     /// <summary>
     /// What a row in an exchange window costs, appended to the item name. The
@@ -1918,49 +1812,50 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string ShopPrice(uint count, string currency) =>
         currency.Length > 0
-            ? (IsGerman ? $", für {count} {currency}" : $", for {count} {currency}")
-            : (IsGerman ? $", Preis {count}"          : $", price {count}");
+            ? (L($", für {count} {currency}", $", for {count} {currency}", $", за {count} {currency}"))
+            : (L($", Preis {count}", $", price {count}", $", цена {count}"));
 
     /// <summary>How many of the currency the player holds, appended after the
     /// price. Only spoken when the number actually changed - see the caller.</summary>
     public static string ShopOwned(int owned) =>
-        IsGerman ? $", du hast {owned}" : $", you have {owned}";
+        L($", du hast {owned}", $", you have {owned}", $", у тебя {owned}");
 
     // ── Inventar-Reiter (Inventory) ──────────────────────────────────
     /// <summary>The active inventory bag tab, announced on switch. The label is
     /// the game's own tab number ("1".."4").</summary>
     public static string InventoryTab(string label) =>
-        IsGerman ? $"Tasche {label}" : $"Bag {label}";
+        L($"Tasche {label}", $"Bag {label}", $"Сумка {label}");
     /// <summary>Fallback for an inventory tab the game leaves unlabeled - so the
     /// user still hears that focus reached a tab, without inventing a number.</summary>
     public static string InventoryTabOther =>
-        IsGerman ? "Inventar, weiterer Reiter" : "Inventory, other tab";
+        L("Inventar, weiterer Reiter", "Inventory, other tab", "Инвентарь, другая вкладка");
 
     // ── Keybind-Zeile (Config) ───────────────────────────────────────
     public static string KeyBindingLine(string label, IReadOnlyList<string> keys) =>
         keys.Count > 0
-            ? (IsGerman ? $"{label}, Taste {string.Join(", ", keys)}" : $"{label}, key {string.Join(", ", keys)}")
-            : (IsGerman ? $"{label}, keine Taste" : $"{label}, no key");
+            ? L($"{label}, Taste {string.Join(", ", keys)}", $"{label}, key {string.Join(", ", keys)}",
+                $"{label}, клавиша {string.Join(", ", keys)}")
+            : (L($"{label}, keine Taste", $"{label}, no key", $"{label}, клавиша не задана"));
 
     // ── Anfaenger-Arena (BeginnersMansionProblem) ────────────────────
     // "Beginner's Arena" is the EN content name; verify against an EN dump (Teil 2).
-    public static string ArenaTitle => IsGerman ? "Anfänger-Arena" : "Beginner's Arena";
+    public static string ArenaTitle => L("Anfänger-Arena", "Beginner's Arena", "Арена новичков");
     public static string ArenaExercise(string exercise) =>
-        IsGerman ? $". Übung: {exercise}" : $". Exercise: {exercise}";
-    public static string ArenaEnterBegins => IsGerman ? ". Enter beginnt." : ". Press Enter to begin.";
+        L($". Übung: {exercise}", $". Exercise: {exercise}", $". Упражнение: {exercise}");
+    public static string ArenaEnterBegins => L(". Enter beginnt.", ". Press Enter to begin.", ". Нажми Enter, чтобы начать.");
 
     // ── Benachrichtigung aktivieren ──────────────────────────────────
-    public static string Activating(string text) => IsGerman ? $"Aktiviere: {text}" : $"Activating: {text}";
-    public static string NotificationActivated => IsGerman ? "Benachrichtigung aktiviert" : "Notification activated";
+    public static string Activating(string text) => L($"Aktiviere: {text}", $"Activating: {text}", $"Включаю: {text}");
+    public static string NotificationActivated => L("Benachrichtigung aktiviert", "Notification activated", "Уведомление включено");
 
     // ════════════════════════════════════════════════════════════════
     //  CombatService / VitalsService - Kampf, Vitalwerte, Level
     // ════════════════════════════════════════════════════════════════
-    public static string NotLoggedIn => IsGerman ? "Nicht eingeloggt." : "Not logged in.";
-    public static string CombatStart => IsGerman ? "Kampf." : "Combat.";
-    public static string CombatEnd => IsGerman ? "Kampf vorbei." : "Combat over.";
-    public static string AoeWarningOn  => IsGerman ? "Flächenwarnung an." : "Area warning on.";
-    public static string AoeWarningOff => IsGerman ? "Flächenwarnung aus." : "Area warning off.";
+    public static string NotLoggedIn => L("Nicht eingeloggt.", "Not logged in.", "Вход в игру не выполнен.");
+    public static string CombatStart => L("Kampf.", "Combat.", "Бой.");
+    public static string CombatEnd => L("Kampf vorbei.", "Combat over.", "Бой окончен.");
+    public static string AoeWarningOn  => L("Flächenwarnung an.", "Area warning on.", "Предупреждение о зонах включено.");
+    public static string AoeWarningOff => L("Flächenwarnung aus.", "Area warning off.", "Предупреждение о зонах выключено.");
 
     /// <summary>
     /// Bar fill as a whole percent - the same reading a sighted player takes off
@@ -1975,7 +1870,7 @@ public static partial class AccessibilityStrings
     private static int Percent(uint cur, uint max)
     {
         if (max == 0) return 0;
-        var percent = (int)(cur * 100u / max);
+        var percent = VitalPercent.Floor(cur, max);
         return percent == 0 && cur > 0 ? 1 : percent;
     }
 
@@ -1983,36 +1878,36 @@ public static partial class AccessibilityStrings
     /// Das Ziel behaelt den Prozentwert (<see cref="TargetHpSentence"/>) - dort
     /// zeigt das Spiel nie eine Zahl an.</summary>
     public static string HpSentence(uint cur, uint max) =>
-        IsGerman ? $"HP: {cur} von {max}." : $"HP: {cur} of {max}.";
+        L($"HP: {cur} von {max}.", $"HP: {cur} of {max}.", $"Жизнь: {cur} из {max}.");
     public static string TargetHpSentence(uint cur, uint max) =>
-        IsGerman ? $"Ziel HP: {Percent(cur, max)} Prozent." : $"Target HP: {Percent(cur, max)} percent.";
+        L($"Ziel HP: {Percent(cur, max)} Prozent.", $"Target HP: {Percent(cur, max)} percent.", $"Жизнь цели: {Percent(cur, max)} процентов.");
 
     // ── Aktions-Form (ActionShapeService) ───────────────────────────
     //  Der Tooltip nennt die Zahl ("Radius, 5y"), die FORM zeichnet das Spiel nur.
     //  Diese Woerter sind der Text-Ersatz dafuer.
 
     /// <summary>Kreis. Beim Kreis stimmt das Wort "Radius" des Tooltips.</summary>
-    public static string ShapeCircle => IsGerman ? "Kreis" : "circle";
+    public static string ShapeCircle => L("Kreis", "circle", "Круг");
 
     /// <summary>Kegel, dessen Telegraph-Grafik keinen Winkel nennt. Sagt KEINEN
     /// Winkel statt eines geratenen.</summary>
-    public static string ShapeCone => IsGerman ? "Kegel" : "cone";
+    public static string ShapeCone => L("Kegel", "cone", "Конус");
 
     /// <summary>Kegel mit dem vollen Winkel aus dem Grafiknamen (gl_fan090 = 90).</summary>
     public static string ShapeConeWithAngle(float fullAngleDeg) =>
-        IsGerman ? $"Kegel, {fullAngleDeg:0.#} Grad" : $"cone, {fullAngleDeg:0.#} degrees";
+        L($"Kegel, {fullAngleDeg:0.#} Grad", $"cone, {fullAngleDeg:0.#} degrees", $"Конус, {fullAngleDeg:0.#} градусов");
 
     /// <summary>Linie beziehungsweise Rechteck. Die halbe Breite (XAxisModifier)
     /// ist unbestaetigt und wird deshalb nicht gesprochen.</summary>
-    public static string ShapeLine => IsGerman ? "Linie" : "line";
+    public static string ShapeLine => L("Linie", "line", "Линия");
 
     /// <summary>Wie die Form an die Tooltip-Ansage angehaengt wird.</summary>
     public static string ShapeSuffix(string shape) =>
-        IsGerman ? $"Form: {shape}" : $"Shape: {shape}";
+        L($"Form: {shape}", $"Shape: {shape}", $"Форма: {shape}");
 
     /// <summary>", HP X percent" fragment appended to a target announcement.</summary>
     public static string TargetHpFragment(uint cur, uint max) =>
-        IsGerman ? $", HP {Percent(cur, max)} Prozent" : $", HP {Percent(cur, max)} percent";
+        L($", HP {Percent(cur, max)} Prozent", $", HP {Percent(cur, max)} percent", $", жизнь {Percent(cur, max)} процентов");
 
     /// <summary>", Stufe 12, HP 40 Prozent" - der Anhang fuer eine Zielansage.
     /// Die Stufe kommt aus ICharacter.Level, die HP bleiben prozentual.
@@ -2020,7 +1915,7 @@ public static partial class AccessibilityStrings
     public static string TargetLevelHpFragment(byte level, uint cur, uint max)
     {
         var lvl = level > 0
-            ? (IsGerman ? $", Stufe {level}" : $", level {level}")
+            ? (L($", Stufe {level}", $", level {level}", $", уровень {level}"))
             : string.Empty;
         return max > 0 ? lvl + TargetHpFragment(cur, max) : lvl;
     }
@@ -2031,7 +1926,7 @@ public static partial class AccessibilityStrings
     /// noch zaehlt, und einem, an dem die Emote-Aufforderung nur "ist bereits
     /// zahm" zurueckgibt.</summary>
     public static string AlreadyTamed =>
-        IsGerman ? ", schon gezähmt" : ", already tamed";
+        L(", schon gezähmt", ", already tamed", ", уже приручен");
 
     /// <summary>", rasend, nicht zähmbar" - an dem Gegner ist ein Besänftigen
     /// misslungen (Status 214 "Aufstachelung", Sheet-Text "Nach misslungener
@@ -2040,7 +1935,7 @@ public static partial class AccessibilityStrings
     /// Der Grund steht mit dabei, weil "rasend" allein nur einen Zustand nennt
     /// und nicht, was er für den Spieler bedeutet.</summary>
     public static string Agitated =>
-        IsGerman ? ", rasend, nicht zähmbar" : ", agitated, cannot be tamed";
+        L(", rasend, nicht zähmbar", ", agitated, cannot be tamed", ", в ярости, приручить нельзя");
 
     /// <summary>HP als Zahl, MP als Prozentwert und nur wenn die Klasse Mana hat.
     /// MP bleibt prozentual, weil MaxMp seit Patch 5.0 fuer JEDE Klasse auf JEDEM
@@ -2048,15 +1943,14 @@ public static partial class AccessibilityStrings
     /// irgendwo sieht; das Partyfenster zeichnet daraus "100.00%".</summary>
     public static string VitalStatus(uint hp, uint hpMax, uint mp, uint mpMax, bool hasMp) =>
         hasMp
-            ? (IsGerman ? $"HP {hp} von {hpMax}, MP {Percent(mp, mpMax)} Prozent."
-                        : $"HP {hp} of {hpMax}, MP {Percent(mp, mpMax)} percent.")
-            : (IsGerman ? $"HP {hp} von {hpMax}." : $"HP {hp} of {hpMax}.");
+            ? (L($"HP {hp} von {hpMax}, MP {Percent(mp, mpMax)} Prozent.", $"HP {hp} of {hpMax}, MP {Percent(mp, mpMax)} percent.", $"Жизнь {hp} из {hpMax}, мана {Percent(mp, mpMax)} процентов."))
+            : (L($"HP {hp} von {hpMax}.", $"HP {hp} of {hpMax}.", $"Жизнь {hp} из {hpMax}."));
 
     /// <summary>" &lt;name&gt;, HP X percent." target clause appended to the status readout.</summary>
     public static string TargetStatusClause(string name, uint cur, uint max) =>
-        IsGerman ? $" {name}, HP {Percent(cur, max)} Prozent." : $" {name}, HP {Percent(cur, max)} percent.";
+        L($" {name}, HP {Percent(cur, max)} Prozent.", $" {name}, HP {Percent(cur, max)} percent.", $" {name}, жизнь {Percent(cur, max)} процентов.");
 
-    public static string TargetFallbackName => IsGerman ? "Ziel" : "Target";
+    public static string TargetFallbackName => L("Ziel", "Target", "Цель");
 
     /// <summary>
     /// Was ein anvisierter SPIELER sonst noch ist: Klasse, Stufe, Gruppenzugehoerigkeit.
@@ -2073,38 +1967,38 @@ public static partial class AccessibilityStrings
     {
         var parts = new List<string>();
         if (job.Length > 0) parts.Add(job);
-        if (level > 0) parts.Add(IsGerman ? $"Stufe {level}" : $"Level {level}");
+        if (level > 0) parts.Add(L($"Stufe {level}", $"Level {level}", $"Нужен уровень {level}"));
         parts.Add(inGroup
-            ? (IsGerman ? "in deiner Gruppe" : "in your group")
-            : (IsGerman ? "nicht in deiner Gruppe" : "not in your group"));
+            ? (L("in deiner Gruppe", "in your group", "в твоей группе"))
+            : (L("nicht in deiner Gruppe", "not in your group", "не в твоей группе")));
 
         return string.Join(", ", parts);
     }
 
     // GP (Sammelpunkte) - the DE client says "SP", the EN client "GP".
-    public static string NoGatheringPoints => IsGerman ? "Keine Sammelpunkte. SP gibt es nur als Sammler." : "No gathering points. GP only exists for gatherers.";
+    public static string NoGatheringPoints => L("Keine Sammelpunkte. SP gibt es nur als Sammler.", "No gathering points. GP only exists for gatherers.", "Нет точек сбора. Очки сбора есть только у собирателей.");
     public static string GpValue(uint cur, uint max) =>
-        IsGerman ? $"SP {Percent(cur, max)} Prozent." : $"GP {Percent(cur, max)} percent.";
+        L($"SP {Percent(cur, max)} Prozent.", $"GP {Percent(cur, max)} percent.", $"Очки сбора {Percent(cur, max)} процентов.");
 
-    public static string EnemyCasts(string action) => IsGerman ? $"Gegner wirkt {action}." : $"Enemy casts {action}.";
+    public static string EnemyCasts(string action) => L($"Gegner wirkt {action}.", $"Enemy casts {action}.", $"Противник применяет {action}.");
 
     /// <summary>Cast warning naming the caster - used when the casting enemy is
     /// NOT the player's current target, so it is clear the danger comes from
     /// somewhere else.</summary>
     public static string NamedEnemyCasts(string enemy, string action) =>
-        IsGerman ? $"{enemy} wirkt {action}." : $"{enemy} casts {action}.";
+        L($"{enemy} wirkt {action}.", $"{enemy} casts {action}.", $"{enemy} применяет {action}.");
 
     /// <summary>Cast warning for a spell aimed AT THE PLAYER. Since 2026-08-18 every
     /// cast of the current target is announced, so the plain wording above no longer
     /// implies "at you" - the aimed case has to say so explicitly.</summary>
     public static string EnemyCastsAtYou(string action) =>
-        IsGerman ? $"Gegner wirkt {action} auf dich." : $"Enemy casts {action} on you.";
+        L($"Gegner wirkt {action} auf dich.", $"Enemy casts {action} on you.", $"Противник применяет {action} на тебя.");
 
     /// <summary>Cast warning naming the caster AND stating that it is aimed at the
     /// player - the most urgent combination, so both facts are spoken.</summary>
     public static string NamedEnemyCastsAtYou(string enemy, string action) =>
-        IsGerman ? $"{enemy} wirkt {action} auf dich." : $"{enemy} casts {action} on you.";
-    public static string AnAbility => IsGerman ? "eine Fähigkeit" : "an ability";
+        L($"{enemy} wirkt {action} auf dich.", $"{enemy} casts {action} on you.", $"{enemy} применяет {action} на тебя.");
+    public static string AnAbility => L("eine Fähigkeit", "an ability", "какое-то умение");
 
     // ── Gefahrenfläche eines Gegner-Casts (Form + Vorwarnung) ────────
     // Wunsch des Users 2026-08-19: cactbot hat für Levelinhalte praktisch keine
@@ -2120,25 +2014,23 @@ public static partial class AccessibilityStrings
     /// "Linie"); hier kommt nur die Zahl dazu, weil im Kampf kein Tooltip danebensteht,
     /// der sie schon genannt hätte.</summary>
     public static string AoeShapeWithRange(string shape, int meters) =>
-        IsGerman ? $"{shape}, {meters} Meter" : $"{shape}, {meters} meters";
+        L($"{shape}, {meters} Meter", $"{shape}, {meters} meters", $"{shape}, {meters} метров");
 
     /// <summary>Form, die ausdrücklich AUF DEM SPIELER liegt - der Fall, in dem
     /// Weglaufen und nicht Ausweichen die richtige Antwort ist.</summary>
     public static string AoeShapeWithRangeOnYou(string shape, int meters) =>
-        IsGerman ? $"{shape} um dich, {meters} Meter" : $"{shape} on you, {meters} meters";
+        L($"{shape} um dich, {meters} Meter", $"{shape} on you, {meters} meters", $"{shape} вокруг тебя, {meters} метров");
 
     /// <summary>Der Spieler stand schon beim Beginn des Casts in der Fläche.
     /// Hängt an der Cast-Ansage.</summary>
     public static string AoeStandingInIt(float seconds) =>
-        IsGerman ? $"Du stehst drin, {AoeSeconds(seconds)}."
-                 : $"You are in it, {AoeSeconds(seconds)}.";
+        L($"Du stehst drin, {AoeSeconds(seconds)}.", $"You are in it, {AoeSeconds(seconds)}.", $"Ты стоишь в зоне, {AoeSeconds(seconds)}.");
 
     /// <summary>Der Spieler ist WÄHREND eines laufenden Casts in die Fläche
     /// hineingelaufen. Eigener Satz mit "Achtung", weil hier keine Cast-Ansage
     /// davorsteht, an der man ihn festmachen könnte.</summary>
     public static string AoeEnteredZone(float seconds) =>
-        IsGerman ? $"Achtung, du stehst drin, {AoeSeconds(seconds)}."
-                 : $"Careful, you are in it, {AoeSeconds(seconds)}.";
+        L($"Achtung, du stehst drin, {AoeSeconds(seconds)}.", $"Careful, you are in it, {AoeSeconds(seconds)}.", $"Осторожно, ты в зоне, {AoeSeconds(seconds)}.");
 
     /// <summary>
     /// Wohin man ausweichen kann — die Richtung, die ein sehender Spieler in
@@ -2147,8 +2039,7 @@ public static partial class AccessibilityStrings
     /// Peil-Ton, der danach die Feinausrichtung übernimmt.
     /// </summary>
     public static string EscapeDirection(string direction, string distance) =>
-        IsGerman ? $"Raus nach {direction}, {distance}."
-                 : $"Escape {direction}, {distance}.";
+        L($"Raus nach {direction}, {distance}.", $"Escape {direction}, {distance}.", $"Уходи на {direction}, {distance}.");
 
     /// <summary>
     /// Es gibt keinen erreichbaren sicheren Punkt in Reichweite. MUSS gesagt
@@ -2156,7 +2047,7 @@ public static partial class AccessibilityStrings
     /// blinden Spieler sonst nicht von „ausgerichtet" zu unterscheiden.
     /// </summary>
     public static string EscapeNoneFound =>
-        IsGerman ? "Kein sicherer Weg gefunden." : "No safe spot found.";
+        L("Kein sicherer Weg gefunden.", "No safe spot found.", "Безопасного места не найдено.");
 
     /// <summary>Restliche Cast-Zeit als hörbares Zeitbudget. Aufgerundet, damit aus
     /// 0,4 Sekunden nicht "0 Sekunden" wird; unter einer Sekunde bleibt nur noch
@@ -2164,9 +2055,9 @@ public static partial class AccessibilityStrings
     private static string AoeSeconds(float seconds)
     {
         var whole = (int)MathF.Ceiling(seconds);
-        if (whole <= 0) return IsGerman ? "sofort" : "now";
-        if (whole == 1) return IsGerman ? "1 Sekunde" : "1 second";
-        return IsGerman ? $"{whole} Sekunden" : $"{whole} seconds";
+        if (whole <= 0) return L("sofort", "now", "срочно");
+        if (whole == 1) return L("1 Sekunde", "1 second", "1 секунда");
+        return L($"{whole} Sekunden", $"{whole} seconds", $"{whole} секунд");
     }
 
     /// <summary>Setzt die Gefahren-Angaben hinter eine fertige Cast-Ansage. Beide
@@ -2187,100 +2078,87 @@ public static partial class AccessibilityStrings
     /// <summary>Ein Platz der Leiste, mit seiner Nummer - die Nummer ist die Taste,
     /// die ihn ausloest.</summary>
     public static string DutyActionSlot(int slot, string action) =>
-        IsGerman ? $"{slot}: {action}" : $"{slot}: {action}";
+        L($"{slot}: {action}", $"{slot}: {action}", $"{slot}: {action}");
 
     /// <summary>Die Leiste ist aufgetaucht oder hat sich geaendert. Nennt die Taste
     /// mit, weil sie selten gebraucht wird und man sie sonst genau dann sucht,
     /// wenn keine Zeit dafuer ist.</summary>
     public static string DutyActionsAvailable(string actions, string key) =>
-        IsGerman ? $"Sonderaktion verfügbar, {actions}. Taste {key}."
-                 : $"Duty action available, {actions}. Key {key}.";
+        L($"Sonderaktion verfügbar, {actions}. Taste {key}.", $"Duty action available, {actions}. Key {key}.", $"Особое действие доступно, {actions}. Клавиша {key}.");
 
     /// <summary>Es gibt gerade keine Sonderaktionsleiste.</summary>
     public static string NoDutyActions =>
-        IsGerman ? "Keine Sonderaktion vorhanden." : "No duty action available.";
+        L("Keine Sonderaktion vorhanden.", "No duty action available.", "Особых действий нет.");
 
     /// <summary>Die Taste zeigt auf einen Platz, den dieser Auftrag nicht belegt.</summary>
     public static string DutyActionSlotEmpty(int slot) =>
-        IsGerman ? $"Sonderaktion {slot} ist leer." : $"Duty action {slot} is empty.";
+        L($"Sonderaktion {slot} ist leer.", $"Duty action {slot} is empty.", $"Слот особого действия {slot} пуст.");
 
     /// <summary>Das Spiel hat die Ausfuehrung abgelehnt. Bewusst OHNE Grund: den
     /// nennt das Spiel selbst per Fehlermeldung, und den hier zu erfinden waere
     /// eine Behauptung ueber Kampflogik.</summary>
     public static string DutyActionRefused(string action) =>
-        IsGerman ? $"{action} geht gerade nicht." : $"{action} not possible right now.";
+        L($"{action} geht gerade nicht.", $"{action} not possible right now.", $"{action} сейчас нельзя.");
 
     // ── Level / Erfahrung ────────────────────────────────────────────
-    public static string LevelReached(int level) => IsGerman ? $"Stufe {level} erreicht." : $"Reached level {level}.";
-    public static string LevelNotAvailable => IsGerman ? "Stufe nicht verfügbar." : "Level not available.";
-    public static string LevelMax(int level) => IsGerman ? $"Stufe {level}, Maximalstufe erreicht." : $"Level {level}, maximum level reached.";
+    public static string LevelReached(int level) => L($"Stufe {level} erreicht.", $"Reached level {level}.", $"Достигнут уровень {level}.");
+    public static string LevelNotAvailable => L("Stufe nicht verfügbar.", "Level not available.", "Уровень недоступен.");
+    public static string LevelMax(int level) => L($"Stufe {level}, Maximalstufe erreicht.", $"Level {level}, maximum level reached.", $"Уровень {level}, достигнут предел.");
     public static string LevelExpLeft(int level, int left) =>
-        IsGerman
-            ? $"Stufe {level}. Noch {left} Erfahrungspunkte bis zur nächsten Stufe."
-            : $"Level {level}. {left} experience points to the next level.";
+        L($"Stufe {level}. Noch {left} Erfahrungspunkte bis zur nächsten Stufe.", $"Level {level}. {left} experience points to the next level.", $"Уровень {level}. До следующего уровня осталось {left} очков опыта.");
     // Live-Ansage bei jedem XP-Gewinn (kurz gehalten, laeuft im Kampf oft).
     public static string XpGained(int amount) =>
-        IsGerman ? $"{amount} Erfahrung." : $"{amount} experience.";
+        L($"{amount} Erfahrung.", $"{amount} experience.", $"{amount} опыта.");
 
     // Ruhebereich (Sichelmond an der EP-Leiste): dort sammelt sich der
     // Erholungsbonus an, auch offline.
     public static string RestedAreaEntered =>
-        IsGerman ? "Ruhebereich. Erholungsbonus sammelt sich." : "Rested area. Rested bonus is accumulating.";
+        L("Ruhebereich. Erholungsbonus sammelt sich.", "Rested area. Rested bonus is accumulating.", "Зона отдыха. Бонус отдыха накапливается.");
     public static string RestedAreaLeft =>
-        IsGerman ? "Ruhebereich verlassen." : "Left the rested area.";
+        L("Ruhebereich verlassen.", "Left the rested area.", "Зона отдыха покинута.");
     // Zusatz zur Stufen-Ansage (Strg+L). Fuehrendes Leerzeichen, weil die Teile
     // an den Stufen-Satz angehaengt werden.
     public static string RestedAreaNow =>
-        IsGerman ? " Im Ruhebereich." : " In a rested area.";
+        L(" Im Ruhebereich.", " In a rested area.", " В зоне отдыха.");
     public static string RestedAreaNot =>
-        IsGerman ? " Kein Ruhebereich." : " Not in a rested area.";
+        L(" Kein Ruhebereich.", " Not in a rested area.", " Не в зоне отдыха.");
     public static string RestedBonusPercent(int percent) =>
-        IsGerman
-            ? $" Erholungsbonus für {percent} Prozent einer Stufe."
-            : $" Rested bonus for {percent} percent of a level.";
+        L($" Erholungsbonus für {percent} Prozent einer Stufe.", $" Rested bonus for {percent} percent of a level.", $" Бонус отдыха на {percent} процентов уровня.");
     public static string RestedBonusEmpty =>
-        IsGerman ? " Kein Erholungsbonus." : " No rested bonus.";
+        L(" Kein Erholungsbonus.", " No rested bonus.", " Бонуса отдыха нет.");
     public static string RestedNotAvailable =>
-        IsGerman ? "Erholungsbonus nicht verfügbar." : "Rested bonus not available.";
+        L("Erholungsbonus nicht verfügbar.", "Rested bonus not available.", "Бонус отдыха недоступен.");
 
     // ── Begleit-Chocobo (Rang statt Stufe) ───────────────────────────
     // Das Spiel nennt den Fortschritt des Chocobos "Rang", nicht "Stufe" - die
     // Ansage uebernimmt dieses Wort, damit sie sich nicht mit der eigenen
     // Stufen-Ansage auf Strg+L vermischt.
     public static string ChocoboRankNone =>
-        IsGerman ? "Kein Begleit-Chocobo." : "No companion chocobo.";
+        L("Kein Begleit-Chocobo.", "No companion chocobo.", "Нет чокобо-спутника.");
     public static string ChocoboRankNotAvailable =>
-        IsGerman ? "Chocobo-Rang nicht verfügbar." : "Chocobo rank not available.";
+        L("Chocobo-Rang nicht verfügbar.", "Chocobo rank not available.", "Ранг чокобо недоступен.");
     public static string ChocoboRankMax(int rank) =>
-        IsGerman
-            ? $"Chocobo Rang {rank}, Höchstrang erreicht."
-            : $"Chocobo rank {rank}, maximum rank reached.";
+        L($"Chocobo Rang {rank}, Höchstrang erreicht.", $"Chocobo rank {rank}, maximum rank reached.", $"Ранг чокобо {rank}, достигнут предел.");
     public static string ChocoboRankExpLeft(int rank, int left) =>
-        IsGerman
-            ? $"Chocobo Rang {rank}. Noch {left} Erfahrungspunkte bis Rang {rank + 1}."
-            : $"Chocobo rank {rank}. {left} experience points to rank {rank + 1}.";
+        L($"Chocobo Rang {rank}. Noch {left} Erfahrungspunkte bis Rang {rank + 1}.", $"Chocobo rank {rank}. {left} experience points to rank {rank + 1}.", $"Ранг чокобо {rank}. До ранга {rank + 1} осталось {left} очков опыта.");
     // Ohne Grenze bleibt nur der gesammelte Stand - siehe AnnounceChocoboRank,
     // warum die Grenze fehlen kann.
     public static string ChocoboRankExpOnly(int rank, int current) =>
-        IsGerman
-            ? $"Chocobo Rang {rank}, {current} Erfahrungspunkte gesammelt."
-            : $"Chocobo rank {rank}, {current} experience points earned.";
+        L($"Chocobo Rang {rank}, {current} Erfahrungspunkte gesammelt.", $"Chocobo rank {rank}, {current} experience points earned.", $"Ранг чокобо {rank}, собрано {current} очков опыта.");
     // Sterne stehen im Chocobo-Fenster neben dem Rang; als eigener Satzteil
     // angehaengt, damit sie bei null Sternen einfach entfallen.
     public static string ChocoboStars(int stars) =>
-        IsGerman
-            ? (stars == 1 ? " 1 Stern." : $" {stars} Sterne.")
-            : (stars == 1 ? " 1 star." : $" {stars} stars.");
+        L(stars == 1 ? " 1 Stern." : $" {stars} Sterne.",
+          stars == 1 ? " 1 star." : $" {stars} stars.",
+          stars == 1 ? " 1 звезда." : $" {stars} звёзд.");
 
     // ── Mitstreiter-Fenster (Addon Buddy) ────────────────────────────
     // Fenstertitel kommt aus dem Spiel; Fallback nur wenn der Window-Knoten leer ist.
     public static string BuddyWindowTitleFallback =>
-        IsGerman ? "Mitstreiter" : "Companion";
+        L("Mitstreiter", "Companion", "Спутник");
 
     public static string BuddyWindowNoCompanion(string title) =>
-        IsGerman
-            ? $"{title}. Kein Begleit-Chocobo."
-            : $"{title}. No companion chocobo.";
+        L($"{title}. Kein Begleit-Chocobo.", $"{title}. No companion chocobo.", $"{title}. Спутника-чокобо нет.");
 
     /// <summary>
     /// Full open announcement for the Mitstreiter window. Rank part already
@@ -2320,19 +2198,15 @@ public static partial class AccessibilityStrings
     }
 
     public static string BuddyHp(int current, int max) =>
-        IsGerman
-            ? $"LP {current} von {max}"
-            : $"HP {current} of {max}";
+        L($"LP {current} von {max}", $"HP {current} of {max}", $"Здоровье {current} из {max}");
 
     public static string BuddySkillPoints(int points) =>
-        IsGerman
-            ? (points == 1 ? "1 Fertigkeitspunkt" : $"{points} Fertigkeitspunkte")
-            : (points == 1 ? "1 skill point" : $"{points} skill points");
+        L(points == 1 ? "1 Fertigkeitspunkt" : $"{points} Fertigkeitspunkte",
+          points == 1 ? "1 skill point" : $"{points} skill points",
+          points == 1 ? "1 очко навыка" : $"очков навыка: {points}");
 
     public static string BuddySummonTime(int currentSec, int maxSec) =>
-        IsGerman
-            ? $"Zeit {FormatBuddyClock(currentSec)} von {FormatBuddyClock(maxSec)}"
-            : $"Time {FormatBuddyClock(currentSec)} of {FormatBuddyClock(maxSec)}";
+        L($"Zeit {FormatBuddyClock(currentSec)} von {FormatBuddyClock(maxSec)}", $"Time {FormatBuddyClock(currentSec)} of {FormatBuddyClock(maxSec)}", $"Время {FormatBuddyClock(currentSec)} из {FormatBuddyClock(maxSec)}");
 
     private static string FormatBuddyClock(int totalSeconds)
     {
@@ -2347,11 +2221,11 @@ public static partial class AccessibilityStrings
     /// window — a silent failure must not look like a silent mod.
     /// </summary>
     public static string CompanionOpening =>
-        IsGerman ? "Mitstreiter-Fenster wird geöffnet." : "Opening the companion window.";
+        L("Mitstreiter-Fenster wird geöffnet.", "Opening the companion window.", "Открываю окно спутника.");
 
     /// <summary>Spoken when the window is missing or not painted yet.</summary>
     public static string CompanionWindowEmpty =>
-        IsGerman ? "Mitstreiter-Fenster noch leer." : "Companion window still empty.";
+        L("Mitstreiter-Fenster noch leer.", "Companion window still empty.", "Окно спутника ещё пустое.");
 
     /// <summary>
     /// The branch ranks of the skills tab (child addon <c>BuddySkill</c>) as one
@@ -2361,7 +2235,7 @@ public static partial class AccessibilityStrings
     /// sits inside <see cref="BuddyWindowSummary"/> and is also spoken on its own.
     /// </summary>
     public static string BuddySkillBranches(string branches) =>
-        IsGerman ? $"Zweige: {branches}" : $"Branches: {branches}";
+        L($"Zweige: {branches}", $"Branches: {branches}", $"Ветви: {branches}");
 
     /// <summary>
     /// One branch of the skills tab: name and rank as the window paints them.
@@ -2373,99 +2247,96 @@ public static partial class AccessibilityStrings
     // Set" - also NICHT verkaufen. Wortwahl wie im Spiel (Addon 756/11993).
     // Kurzform fuer Listen, in denen sie hinter jedem Gegenstand stehen kann.
     public static string InGearsetShort =>
-        IsGerman ? ", im Ausrüstungsset" : ", in a gear set";
+        L(", im Ausrüstungsset", ", in a gear set", ", в комплекте снаряжения");
     // Welche EIGENEN Klassen das Teil tragen koennen - die Frage vorm Verkaufen.
     // Ein- und Mehrzahl getrennt, sonst stolpert die Ansage bei einer Klasse.
     public static string ForYourClasses(string classes, int count) =>
-        IsGerman
-            ? (count == 1 ? $", für deine Klasse {classes}" : $", für deine Klassen {classes}")
-            : (count == 1 ? $", for your {classes}" : $", for your classes {classes}");
+        L(count == 1 ? $", für deine Klasse {classes}" : $", für deine Klassen {classes}",
+          count == 1 ? $", for your {classes}" : $", for your classes {classes}",
+          count == 1 ? $", для твоей профессии {classes}" : $", для твоих профессий {classes}");
     // Langform fuer den einzelnen Gegenstand, wo Platz fuer die Warnung ist.
     public static string InGearsetWarning =>
-        IsGerman
-            ? " Achtung: in einem Ausrüstungsset gespeichert, nicht verkaufen."
-            : " Careful: saved in a gear set, do not sell.";
+        L(" Achtung: in einem Ausrüstungsset gespeichert, nicht verkaufen.", " Careful: saved in a gear set, do not sell.", " Внимание: сохранено в комплекте снаряжения, не продавать.");
 
     // ════════════════════════════════════════════════════════════════
     //  EquipmentService - Ausruestung
     // ════════════════════════════════════════════════════════════════
-    public static string HighQuality => IsGerman ? " Hoch-Qualität" : " high quality";
-    public static string NoEquipmentWorn => IsGerman ? "Keine Ausrüstung angelegt." : "No equipment worn.";
-    public static string SlotsFree(int empty) => IsGerman ? $" {empty} Plätze frei." : $" {empty} slots free.";
+    public static string HighQuality => L(" Hoch-Qualität", " high quality", " высокое качество");
+    public static string NoEquipmentWorn => L("Keine Ausrüstung angelegt.", "No equipment worn.", "Снаряжение не надето.");
+    public static string SlotsFree(int empty) => L($" {empty} Plätze frei.", $" {empty} slots free.", $" Свободных слотов: {empty}.");
     public static string EquipmentList(string parts, string emptyNote) =>
-        IsGerman ? $"Ausrüstung: {parts}.{emptyNote}" : $"Equipment: {parts}.{emptyNote}";
-    public static string ItemFallback(uint id) => IsGerman ? $"Gegenstand {id}" : $"Item {id}";
+        L($"Ausrüstung: {parts}.{emptyNote}", $"Equipment: {parts}.{emptyNote}", $"Снаряжение: {parts}.{emptyNote}");
+    public static string ItemFallback(uint id) => L($"Gegenstand {id}", $"Item {id}", $"Предмет {id}");
 
     // Traegt kein Stueck einen Schaden, sagt die Liste sonst gar nichts ueber den
     // Zustand - und Schweigen ist von "nicht angesagt" nicht zu unterscheiden.
     // Ein Satz fuer den ganzen Koerper statt zwölfmal "Zustand 100 Prozent".
     public static string EquipmentAllFullCondition =>
-        IsGerman ? " Alle in vollem Zustand." : " All at full condition.";
+        L(" Alle in vollem Zustand.", " All at full condition.", " Всё в полной прочности.");
 
-    public static string EquipChangeInProgress => IsGerman ? "Ausrüstungswechsel läuft schon." : "Equipment change already in progress.";
-    public static string EquipModuleUnavailable => IsGerman ? "Ausrüstungsmodul nicht verfügbar." : "Equipment module not available.";
-    public static string ApplyingRecommendedGear => IsGerman ? "Lege empfohlene Ausrüstung an." : "Applying recommended equipment.";
-    public static string EquipChangeFailed => IsGerman ? "Ausrüstungswechsel fehlgeschlagen." : "Equipment change failed.";
-    public static string EquipChangeDidntWork => IsGerman ? "Ausrüstungswechsel hat nicht geklappt." : "Equipment change did not work.";
+    public static string EquipChangeInProgress => L("Ausrüstungswechsel läuft schon.", "Equipment change already in progress.", "Смена снаряжения уже идёт.");
+    public static string EquipModuleUnavailable => L("Ausrüstungsmodul nicht verfügbar.", "Equipment module not available.", "Модуль снаряжения недоступен.");
+    public static string ApplyingRecommendedGear => L("Lege empfohlene Ausrüstung an.", "Applying recommended equipment.", "Надеваю рекомендованное снаряжение.");
+    public static string EquipChangeFailed => L("Ausrüstungswechsel fehlgeschlagen.", "Equipment change failed.", "Смена снаряжения не удалась.");
+    public static string EquipChangeDidntWork => L("Ausrüstungswechsel hat nicht geklappt.", "Equipment change did not work.", "Смена снаряжения не сработала.");
     public static string EquipResult(int changed) =>
         changed > 0
-            ? (IsGerman ? $"Empfohlene Ausrüstung angelegt, {changed} Teile gewechselt." : $"Recommended equipment applied, {changed} pieces changed.")
-            : (IsGerman
-                ? "Ausrüstung unverändert. Entweder schon optimal, oder Wechsel gerade nicht möglich."
-                : "Equipment unchanged. Either already optimal, or a change is not possible right now.");
+            ? (L($"Empfohlene Ausrüstung angelegt, {changed} Teile gewechselt.", $"Recommended equipment applied, {changed} pieces changed.", $"Рекомендованное снаряжение надето, заменено предметов: {changed}."))
+            : (L("Ausrüstung unverändert. Entweder schon optimal, oder Wechsel gerade nicht möglich.", "Equipment unchanged. Either already optimal, or a change is not possible right now.", "Снаряжение не изменилось. Либо уже оптимально, либо смена сейчас невозможна."));
 
     /// <summary>Spoken equipment-slot label (mod wording, not the game's).</summary>
-    public static string SlotEquipment  => IsGerman ? "Ausrüstung"   : "Equipment";
-    public static string SlotWeapon     => IsGerman ? "Waffe"        : "Weapon";
-    public static string SlotOffHand    => IsGerman ? "Nebenhand"    : "Off hand";
-    public static string SlotHead       => IsGerman ? "Kopf"         : "Head";
-    public static string SlotBody       => IsGerman ? "Rumpf"        : "Body";
-    public static string SlotHands      => IsGerman ? "Hände"        : "Hands";
-    public static string SlotWaist      => IsGerman ? "Gürtel"       : "Waist";
-    public static string SlotLegs       => IsGerman ? "Beine"        : "Legs";
-    public static string SlotFeet       => IsGerman ? "Füße"         : "Feet";
-    public static string SlotEars       => IsGerman ? "Ohren"        : "Ears";
-    public static string SlotNeck       => IsGerman ? "Hals"         : "Neck";
-    public static string SlotWrists     => IsGerman ? "Handgelenke"  : "Wrists";
-    public static string SlotRing       => IsGerman ? "Ring"         : "Ring";
-    public static string SlotSoulCrystal=> IsGerman ? "Jobkristall"  : "Soul Crystal";
+    public static string SlotEquipment  => L("Ausrüstung", "Equipment", "Снаряжение");
+    public static string SlotWeapon     => L("Waffe", "Weapon", "Оружие");
+    public static string SlotOffHand    => L("Nebenhand", "Off hand", "Левая рука");
+    public static string SlotHead       => L("Kopf", "Head", "Голова");
+    public static string SlotBody       => L("Rumpf", "Body", "Туловище");
+    public static string SlotHands      => L("Hände", "Hands", "Руки");
+    public static string SlotWaist      => L("Gürtel", "Waist", "Пояс");
+    public static string SlotLegs       => L("Beine", "Legs", "Ноги");
+    public static string SlotFeet       => L("Füße", "Feet", "Ступни");
+    public static string SlotEars       => L("Ohren", "Ears", "Уши");
+    public static string SlotNeck       => L("Hals", "Neck", "Шея");
+    public static string SlotWrists     => L("Handgelenke", "Wrists", "Запястья");
+    public static string SlotRing       => L("Ring", "Ring", "Кольцо");
+    public static string SlotSoulCrystal=> L("Jobkristall", "Soul Crystal", "Камень души");
 
     // ════════════════════════════════════════════════════════════════
     //  GearInfoService - Stufe & Tragbarkeit
     // ════════════════════════════════════════════════════════════════
-    public static string GearLevel(uint level) => IsGerman ? $"Stufe {level}" : $"Level {level}";
-    public static string Wearable(string level) => IsGerman ? $"{level}, tragbar" : $"{level}, wearable";
+    public static string GearLevel(uint level) => L($"Stufe {level}", $"Level {level}", $"Нужен уровень {level}");
+    public static string Wearable(string level) => L($"{level}, tragbar", $"{level}, wearable", $"{level}, можно надеть");
     public static string NotWearable(string level, string reason) =>
-        IsGerman ? $"{level}, nicht tragbar, {reason}" : $"{level}, not wearable, {reason}";
-    public static string FromLevel(uint level) => IsGerman ? $"ab Stufe {level}" : $"from level {level}";
-    public static string OnlyForClass(string forWho) => IsGerman ? $"nur für {forWho}" : $"only for {forWho}";
-    public static string DifferentClassNeeded => IsGerman ? "andere Klasse nötig" : "different class required";
-    public static string NotForYourRace => IsGerman ? "nicht für dein Volk" : "not for your race";
+        L($"{level}, nicht tragbar, {reason}", $"{level}, not wearable, {reason}", $"{level}, нельзя надеть, {reason}");
+    public static string FromLevel(uint level) => L($"ab Stufe {level}", $"from level {level}", $"с уровня {level}");
+    public static string OnlyForClass(string forWho) => L($"nur für {forWho}", $"only for {forWho}", $"только для {forWho}");
+    public static string DifferentClassNeeded => L("andere Klasse nötig", "different class required", "нужен другой класс");
+    public static string NotForYourRace => L("nicht für dein Volk", "not for your race", "не для твоей расы");
 
     // ── Werte eines Ausrüstungsteils (zum Vergleichen) ──
     // Die Attributnamen selbst kommen aus dem BaseParam-Sheet in Spielsprache
     // und werden NICHT hier übersetzt - sie werden gelesen, nicht erfunden.
     public static string ItemLevelValue(uint level) =>
-        IsGerman ? $"Gegenstandsstufe {level}" : $"item level {level}";
+        L($"Gegenstandsstufe {level}", $"item level {level}", $"Уровень предмета {level}");
     public static string DefensePhysValue(int v) =>
-        IsGerman ? $"Verteidigung {v}" : $"defence {v}";
+        L($"Verteidigung {v}", $"defence {v}", $"Защита {v}");
     public static string DefenseMagValue(int v) =>
-        IsGerman ? $"Magieabwehr {v}" : $"magic defence {v}";
+        L($"Magieabwehr {v}", $"magic defence {v}", $"Магическая защита {v}");
     public static string DamagePhysValue(int v) =>
-        IsGerman ? $"Angriff {v}" : $"physical damage {v}";
+        L($"Angriff {v}", $"physical damage {v}", $"Физический урон {v}");
     public static string DamageMagValue(int v) =>
-        IsGerman ? $"Magieschaden {v}" : $"magic damage {v}";
+        L($"Magieschaden {v}", $"magic damage {v}", $"Магический урон {v}");
     /// <summary>Weapon delay, given in seconds (the game stores milliseconds).</summary>
     public static string DelayValue(double seconds) =>
-        IsGerman ? $"Verzögerung {seconds:0.0} Sekunden" : $"delay {seconds:0.0} seconds";
+        L($"Verzögerung {seconds:0.0} Sekunden", $"delay {seconds:0.0} seconds", $"Задержка {seconds:0.0} секунд");
     /// <summary>One attribute bonus, e.g. "Stärke plus 4" - name from the sheet.</summary>
     public static string AttributeValue(string name, int v) =>
-        IsGerman
-            ? $"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}"
-            : $"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}";
-    public static string MateriaSlots(int n) => IsGerman
-        ? (n == 1 ? "1 Materia-Slot" : $"{n} Materia-Slots")
-        : (n == 1 ? "1 materia slot" : $"{n} materia slots");
+        L($"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}",
+          $"{name} {(v < 0 ? "minus" : "plus")} {Math.Abs(v)}",
+          $"{name} {(v < 0 ? "минус" : "плюс")} {Math.Abs(v)}");
+    public static string MateriaSlots(int n) =>
+        L(n == 1 ? "1 Materia-Platz" : $"{n} Materia-Plätze",
+          n == 1 ? "1 materia slot" : $"{n} materia slots",
+          n == 1 ? "1 слот материи" : $"слотов материи: {n}");
 
     // ════════════════════════════════════════════════════════════════
     //  Plugin.cs - Start, Koordinaten-Lauf, Himmelsrichtung, Hilfe
@@ -2474,102 +2345,99 @@ public static partial class AccessibilityStrings
     /// string; the dots are spoken out per language so the screen reader does
     /// not run the digits together.</summary>
     public static string VersionReady(string version) =>
-        IsGerman
-            ? $"FF14 Accessibility Version {version.Replace(".", " Punkt ")} bereit."
-            : $"FF14 Accessibility version {version.Replace(".", " point ")} ready.";
+        L($"FF14 Accessibility Version {version.Replace(".", " Punkt ")} bereit.",
+          $"FF14 Accessibility version {version.Replace(".", " point ")} ready.",
+          $"FF14 Accessibility версия {version.Replace(".", " точка ")} готова.");
 
     // Koordinaten-Lauf (Goto/Copy clipboard coords)
     public static string ClipboardUnreadable =>
-        IsGerman ? "Zwischenablage konnte nicht gelesen werden." : "Could not read the clipboard.";
+        L("Zwischenablage konnte nicht gelesen werden.", "Could not read the clipboard.", "Не удалось прочитать буфер обмена.");
     public static string NoCoordsInClipboard =>
-        IsGerman
-            ? "Keine Koordinaten in der Zwischenablage gefunden. Erst die Zahlen kopieren, dann die Taste drücken."
-            : "No coordinates found on the clipboard. Copy the numbers first, then press the key.";
+        L("Keine Koordinaten in der Zwischenablage gefunden. Erst die Zahlen kopieren, dann die Taste drücken.", "No coordinates found on the clipboard. Copy the numbers first, then press the key.", "В буфере обмена нет координат. Сначала скопируй числа, потом нажми клавишу.");
     public static string MapUnknownConvert =>
-        IsGerman ? "Aktuelle Karte unbekannt, kann nicht umrechnen." : "Current map unknown, cannot convert.";
+        L("Aktuelle Karte unbekannt, kann nicht umrechnen.", "Current map unknown, cannot convert.", "Текущая карта неизвестна, пересчитать не получится.");
     /// <summary>Walk-target name for a clipboard coordinate (feeds the later
     /// "walking to / arrived at &lt;name&gt;" announcements).</summary>
     public static string CoordsName(float mapX, float mapY) =>
-        IsGerman ? $"Koordinaten {mapX:0.0}, {mapY:0.0}" : $"Coordinates {mapX:0.0}, {mapY:0.0}";
+        L($"Koordinaten {mapX:0.0}, {mapY:0.0}", $"Coordinates {mapX:0.0}, {mapY:0.0}", $"Координаты {mapX:0.0}, {mapY:0.0}");
     public static string WalkingToCoords(float mapX, float mapY) =>
-        IsGerman ? $"Laufe zu Koordinaten {mapX:0.0}, {mapY:0.0}." : $"Walking to coordinates {mapX:0.0}, {mapY:0.0}.";
+        L($"Laufe zu Koordinaten {mapX:0.0}, {mapY:0.0}.", $"Walking to coordinates {mapX:0.0}, {mapY:0.0}.", $"Иду к координатам {mapX:0.0}, {mapY:0.0}.");
     public static string PositionUnknown =>
-        IsGerman ? "Position unbekannt." : "Position unknown.";
+        L("Position unbekannt.", "Position unknown.", "Положение неизвестно.");
     public static string MapUnknownCoords =>
-        IsGerman ? "Aktuelle Karte unbekannt, kann Koordinaten nicht bestimmen." : "Current map unknown, cannot determine coordinates.";
+        L("Aktuelle Karte unbekannt, kann Koordinaten nicht bestimmen.", "Current map unknown, cannot determine coordinates.", "Текущая карта неизвестна, координаты не определить.");
     public static string ClipboardNotWritable =>
-        IsGerman ? "Zwischenablage konnte nicht beschrieben werden." : "Could not write to the clipboard.";
+        L("Zwischenablage konnte nicht beschrieben werden.", "Could not write to the clipboard.", "Не удалось записать в буфер обмена.");
     public static string CoordsCopied(float mapX, float mapY) =>
-        IsGerman ? $"Koordinaten {mapX:0.0}, {mapY:0.0} kopiert." : $"Coordinates {mapX:0.0}, {mapY:0.0} copied.";
+        L($"Koordinaten {mapX:0.0}, {mapY:0.0} kopiert.", $"Coordinates {mapX:0.0}, {mapY:0.0} copied.", $"Координаты {mapX:0.0}, {mapY:0.0} скопированы.");
 
     // Gathering walk-to (shared by /acc gathergo and GatheringService)
     public static string NoGatheringSpotsJob =>
-        IsGerman ? "Keine Sammelstellen für deinen Beruf in dieser Zone." : "No gathering spots for your job in this area.";
+        L("Keine Sammelstellen für deinen Beruf in dieser Zone.", "No gathering spots for your job in this area.", "Нет мест сбора для твоей профессии в этой зоне.");
     public static string GatheringSpotName(int level) =>
-        IsGerman ? $"Sammelstelle, Stufe {level}" : $"Gathering spot, level {level}";
+        L($"Sammelstelle, Stufe {level}", $"Gathering spot, level {level}", $"Место сбора, уровень {level}");
 
     // Himmelsrichtung (compass heading toggle)
     public static string HeadingOn(string direction) =>
         direction.Length > 0
-            ? (IsGerman ? $"Himmelsrichtung an. {direction}." : $"Compass heading on. {direction}.")
-            : (IsGerman ? "Himmelsrichtung an." : "Compass heading on.");
+            ? (L($"Himmelsrichtung an. {direction}.", $"Compass heading on. {direction}.", $"Направление включено. {direction}."))
+            : (L("Himmelsrichtung an.", "Compass heading on.", "Направление включено."));
     public static string HeadingOff =>
-        IsGerman ? "Himmelsrichtung aus." : "Compass heading off.";
+        L("Himmelsrichtung aus.", "Compass heading off.", "Направление выключено.");
 
     /// <summary>Spoken at the start of "/acc soundtest" (audition the cue sounds).</summary>
     public static string SoundTestRunning =>
-        IsGerman
-            ? "Klangtest: Navigations-Ton von vorn, rechts, hinten, dann Wegpunkt und Ankunft, Anstoß und Kante, dann HP- und Mana-Töne."
-            : "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival, bump and ledge, then HP and mana tones.";
+        L("Klangprobe: Navigationston von vorn, rechts, hinten, dann Wegpunkt und Ankunft, " +
+          "Anstoß und Kante, dann HP- und Mana-Töne.",
+          "Sound test: navigation tone from ahead, right, behind, then waypoint and arrival, " +
+          "bump and ledge, then HP and mana tones.",
+          "Проверка звуков: тон навигации спереди, справа, сзади, затем путевая точка и прибытие, " +
+          "дальше толчок и край, затем звуки жизни и маны.");
 
     // Labels spoken before each HP/MP tone in the sound test, so the audition is
     // self-explaining.
-    public static string SoundTestHpHeal    => IsGerman ? "HP, Heilung"       : "HP, healing";
-    public static string SoundTestHpDamage  => IsGerman ? "HP, Schaden"       : "HP, damage";
-    public static string SoundTestHpCritical=> IsGerman ? "HP, kritisch"      : "HP, critical";
-    public static string SoundTestMpGain    => IsGerman ? "Mana, Aufladung"   : "Mana, restored";
-    public static string SoundTestMpSpend   => IsGerman ? "Mana, Verbrauch"   : "Mana, spent";
+    public static string SoundTestHpHeal    => L("HP, Heilung", "HP, healing", "Жизнь, лечение");
+    public static string SoundTestHpDamage  => L("HP, Schaden", "HP, damage", "Жизнь, урон");
+    public static string SoundTestHpCritical=> L("HP, kritisch", "HP, critical", "Жизнь, критично");
+    public static string SoundTestMpGain    => L("Mana, Aufladung", "Mana, restored", "Мана, восстановление");
+    public static string SoundTestMpSpend   => L("Mana, Verbrauch", "Mana, spent", "Мана, расход");
 
     /// <summary>Spoken before the free-walk bump cue in "/acc soundtest".</summary>
     public static string SoundTestBump =>
-        IsGerman ? "Anstoß" : "Bump";
+        L("Anstoß", "Bump", "Толчок");
 
     /// <summary>Spoken before the jump-ahead cue in "/acc soundtest".</summary>
     public static string SoundTestJumpAhead =>
-        IsGerman ? "Sprung voraus" : "Jump ahead";
+        L("Sprung voraus", "Jump ahead", "Впереди прыжок");
 
     /// <summary>Spoken before the drop-ahead cue in "/acc soundtest".</summary>
     public static string SoundTestDropAhead =>
-        IsGerman ? "Absturz voraus" : "Drop ahead";
+        L("Absturz voraus", "Drop ahead", "Впереди обрыв");
 
     // Gruppen-Heilmonitor: die Nummer sagt WER, die Tonhoehe sagt WIE SCHLIMM.
     /// <summary>Spoken before the heal-monitor audition in "/acc soundtest".</summary>
     public static string SoundTestPartyMonitor =>
-        IsGerman
-            ? "Heilmonitor: Nummer drei bei vollem Leben, halb, und fast tot."
-            : "Heal monitor: number three at full health, half, and nearly dead.";
+        L("Heilmonitor: Nummer drei bei vollem Leben, halb, und fast tot.", "Heal monitor: number three at full health, half, and nearly dead.", "Монитор лечения: номер три — полная жизнь, половина, почти смерть.");
 
     /// <summary>Spoken when the heal monitor is switched on.</summary>
     public static string PartyMonitorOn =>
-        IsGerman ? "Heilmonitor an" : "Heal monitor on";
+        L("Heilmonitor an", "Heal monitor on", "Монитор лечения включён");
 
     /// <summary>Spoken when the heal monitor is switched off.</summary>
     public static string PartyMonitorOff =>
-        IsGerman ? "Heilmonitor aus" : "Heal monitor off";
+        L("Heilmonitor aus", "Heal monitor off", "Монитор лечения выключен");
 
     /// <summary>Spoken when the monitor is on but the clips are still loading.</summary>
     public static string PartyMonitorPreparing =>
-        IsGerman
-            ? "Heilmonitor an, Klänge werden noch geladen."
-            : "Heal monitor on, sounds are still loading.";
+        L("Heilmonitor an, Klänge werden noch geladen.", "Heal monitor on, sounds are still loading.", "Монитор лечения включён, звуки ещё загружаются.");
 
     /// <summary>Spoken for the roster readout when the player is not in a party.</summary>
     public static string PartyMonitorNoParty =>
-        IsGerman ? "Keine Gruppe" : "No party";
+        L("Keine Gruppe", "No party", "Группы нет");
 
     /// <summary>Introduces the numbered roster readout.</summary>
     public static string PartyMonitorRosterIntro =>
-        IsGerman ? "Gruppe" : "Party";
+        L("Gruppe", "Party", "Группа");
 
     /// <summary>
     /// Wird beim Anvisieren eines Gruppenmitglieds angehaengt, solange der
@@ -2577,7 +2445,7 @@ public static partial class AccessibilityStrings
     /// Zieltaste. Fuehrendes Komma, weil es immer angehaengt wird.
     /// </summary>
     public static string PartyPositionSuffix(int position) =>
-        IsGerman ? $", Gruppe {position}" : $", party {position}";
+        L($", Gruppe {position}", $", party {position}", $", группа {position}");
 
     // Gegnerfarben: jeder Gegner im Kampf bekommt eine Farbe als Rufnamen.
     /// <summary>
@@ -2591,23 +2459,26 @@ public static partial class AccessibilityStrings
     {
         var german = new[] { "Weiß", "Rot", "Blau", "Grün", "Lila", "Gelb", "Orange", "Grau" };
         var english = new[] { "White", "Red", "Blue", "Green", "Purple", "Yellow", "Orange", "Grey" };
-        var table = IsGerman ? german : english;
+        // Russisch in derselben Reihenfolge: der Spieler hoert die acht Woerter
+        // seit Jahren so. Uebersetzt, nicht neu erfunden.
+        var russian = new[] { "Белый", "Красный", "Синий", "Зелёный", "Фиолетовый", "Жёлтый", "Оранжевый", "Серый" };
+        var table = Loc.IsRussian ? russian : IsGerman ? german : english;
         return index >= 0 && index < table.Length ? table[index] : string.Empty;
     }
 
     /// <summary>Spoken for the enemy readout while the feature is switched off.</summary>
     public static string EnemyMarkersOff =>
-        IsGerman ? "Gegnerfarben sind aus." : "Enemy colours are off.";
+        L("Gegnerfarben sind aus.", "Enemy colours are off.", "Цвета противников выключены.");
 
     /// <summary>Spoken for the enemy readout when nothing is engaged.</summary>
     public static string NoEnemiesEngaged =>
-        IsGerman ? "Kein Gegner im Kampf." : "No enemies engaged.";
+        L("Kein Gegner im Kampf.", "No enemies engaged.", "В бою нет противников.");
 
     /// <summary>Opens the enemy readout with the count - the "how many" answer.</summary>
     public static string EnemyCountIntro(int count) =>
-        IsGerman
-            ? (count == 1 ? "Ein Gegner:" : $"{count} Gegner:")
-            : (count == 1 ? "One enemy:" : $"{count} enemies:");
+        L(count == 1 ? "Ein Gegner:" : $"{count} Gegner:",
+          count == 1 ? "One enemy:" : $"{count} enemies:",
+          count == 1 ? "Один противник:" : $"Противников: {count}");
 
     /// <summary>
     /// One line of the enemy readout: colour, name, health, and whether that enemy
@@ -2616,44 +2487,42 @@ public static partial class AccessibilityStrings
     public static string EnemyFieldEntry(string color, string name, int hpPercent, bool onMe)
     {
         var text = string.IsNullOrEmpty(color) ? name : $"{color}, {name}";
-        if (hpPercent >= 0) text += IsGerman ? $", {hpPercent} Prozent" : $", {hpPercent} percent";
-        if (onMe) text += IsGerman ? ", auf dir" : ", on you";
+        if (hpPercent >= 0) text += L($", {hpPercent} Prozent", $", {hpPercent} percent", $", {hpPercent} процентов");
+        if (onMe) text += L(", auf dir", ", on you", ", на тебе");
         return text + ".";
     }
 
     // Quest-/Marker-Ziel nicht auflösbar
     public static string QuestInAnotherZoneNoHop(string quest) =>
-        IsGerman
-            ? $"{quest} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin."
-            : $"{quest} is in another area and I can't find a transition there.";
+        L($"{quest} ist in einem anderen Gebiet und ich finde keinen Übergang dorthin.", $"{quest} is in another area and I can't find a transition there.", $"{quest} в другой зоне, и я не нахожу туда перехода.");
     public static string NoWalkablePointAt(string name) =>
-        IsGerman ? $"Kein begehbarer Punkt am {name} gefunden." : $"No walkable point found at {name}.";
+        L($"Kein begehbarer Punkt am {name} gefunden.", $"No walkable point found at {name}.", $"Нет проходимой точки у {name}.");
     public static string NoWalkablePointNear(string name) =>
-        IsGerman ? $"Kein begehbarer Punkt bei {name} gefunden." : $"No walkable point found near {name}.";
+        L($"Kein begehbarer Punkt bei {name} gefunden.", $"No walkable point found near {name}.", $"Нет проходимой точки рядом с {name}.");
 
     // Bestiarium: nächstes lebendes Exemplar / Lebensraum
     public static string NoMonsterNearby(string monster) =>
-        IsGerman ? $"Kein {monster} in der Nähe." : $"No {monster} nearby.";
+        L($"Kein {monster} in der Nähe.", $"No {monster} nearby.", $"Рядом нет: {monster}.");
     public static string NoMonsterNearbyHabitat(string monster, string habitat) =>
-        IsGerman ? $"Kein {monster} in der Nähe. Lebt in {habitat}." : $"No {monster} nearby. Lives in {habitat}.";
+        L($"Kein {monster} in der Nähe. Lebt in {habitat}.", $"No {monster} nearby. Lives in {habitat}.", $"Рядом нет: {monster}. Водится в {habitat}.");
 
     /// <summary>Standalone "not targeted" warning (Bestiary walk); the leading-space
     /// variant is <see cref="NotTargetedSuffix"/>.</summary>
     public static string NotTargetedWarning =>
-        IsGerman ? "Achtung, nicht anvisiert." : "Warning, not targeted.";
+        L("Achtung, nicht anvisiert.", "Warning, not targeted.", "Внимание, цель не выбрана.");
 
     /// <summary>The full "/acc help" readout: every plugin hotkey and command.
-    /// Keys are the current defaults (Page keys, Numpad 3, Plus - kept in sync
+    /// Keys are the current defaults (Page keys, Numpad 3, Alt+F - kept in sync
     /// with <see cref="Configuration"/>).</summary>
-    public static string HelpFull => IsGerman
-        ? "Tasten: " +
+    public static string HelpFull => L(
+        "Tasten: " +
           "Bild ab, nächstes Objekt ansagen und anvisieren. " +
           "Bild auf, vorheriges Objekt. " +
           "Strg+Bild ab, Kategorie vorwärts. " +
           "Strg+Bild auf, Kategorie zurück. " +
           "Strg+Nummernblock 3, Gehhilfe an oder aus, folgt dem Wegenetz um Hindernisse. " +
           "Nummernblock 3, automatisch zum Ziel laufen. " +
-          "Plus, dem anvisierten Ziel folgen an oder aus. " +
+          "Alt+F, dem anvisierten Ziel folgen an oder aus. " +
           "Strg+Nummernblock 5, Weg zum Ziel ansagen ohne zu laufen. " +
           "F, zum Ziel hindrehen. W, laufen. " +
           "Strg+F1, diese Hilfe. " +
@@ -2681,21 +2550,23 @@ public static partial class AccessibilityStrings
           "/acc ui, Menü vorlesen. " +
           "/acc win, Aktives Fenster ansagen. " +
           "/acc keys, Spiel-Tastenbelegung auf den Desktop speichern. " +
+          "/acc translate off oder on, russische Gegenstands- und Faehigkeitsuebersetzung aus oder an. " +
           "/acc cooldowns, Fähigkeit-bereit-Ansage an oder aus. " +
+          "/acc aoeturn on oder off, automatisch zum Flaechenausgang ausrichten. " +
           "/acc fly, Fliegen beim Auto-Lauf an oder aus, und sagt ob es hier geht. " +
           "/acc gegner, alle Gegner im Kampf mit Farbe, Leben und wer auf dir ist. " +
           "/acc trails, aufgezeichnete Spuren in diesem Gebiet auflisten. " +
           "/acc trail del und die Nummer, eine Spur löschen. " +
           "/acc machbar, was der Beutel im offenen Rezeptbuch jetzt hergibt. " +
-          "/acc stop, Sprache stoppen."
-        : "Keys: " +
+          "/acc stop, Sprache stoppen.",
+          "Keys: " +
           "Page Down, announce and target the next object. " +
           "Page Up, previous object. " +
           "Ctrl+Page Down, next category. " +
           "Ctrl+Page Up, previous category. " +
           "Ctrl+Numpad 3, walk guide on or off, follows the navmesh around obstacles. " +
           "Numpad 3, walk to the target automatically. " +
-          "Plus, follow the current target on or off. " +
+          "Alt+F, follow the current target on or off. " +
           "Ctrl+Numpad 5, describe the route to the target without walking. " +
           "F, turn toward the target. W, move forward. " +
           "Ctrl+F1, this help. " +
@@ -2715,7 +2586,6 @@ public static partial class AccessibilityStrings
           "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
           "Ctrl+F4, read the bestiary out; while the crafting log is open instead what the bag can make right now, with the first-craft bonus named. " +
           "Commands: " +
-          "/acc craftable, same list, for typing. " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +
           "/acc clear, clear the target. " +
@@ -2724,54 +2594,105 @@ public static partial class AccessibilityStrings
           "/acc ui, read the current menu. " +
           "/acc win, announce the active window. " +
           "/acc keys, save the game's key bindings to the desktop. " +
+          "/acc translate off or on, Russian item and ability translation off or on. " +
           "/acc cooldowns, ability-ready announcements on or off. " +
+          "/acc aoeturn on or off, automatically face the area attack exit. " +
           "/acc fly, flying during auto-walk on or off, and whether it works here. " +
           "/acc enemies, every engaged enemy with colour, health and who is on you. " +
           "/acc trails, list the trails recorded in this area. " +
           "/acc trail del and the number, delete a trail. " +
-          "/acc stop, stop speech.";
+          "/acc machbar, what the bag can make in the open recipe book. " +
+          "/acc stop, stop speech.",
+          // Russische Fassung: dieselben Tasten und Befehle, in der Reihenfolge
+          // der deutschen Liste. Tastennamen bleiben ENGLISCH (Bild ab/auf ->
+          // Page Down/Up, Nummernblock -> Numpad) - ein uebersetzter Tastenname
+          // nennt eine Taste, die es auf der Tastatur nicht gibt.
+          "Клавиши: " +
+          "Page Down, назвать и выделить следующий объект. " +
+          "Page Up, предыдущий объект. " +
+          "Ctrl+Page Down, следующая категория. " +
+          "Ctrl+Page Up, предыдущая категория. " +
+          "Ctrl+Numpad 3, проводник ходьбы включить или выключить, идёт по навигационной сетке в обход препятствий. " +
+          "Numpad 3, автоматически идти к цели. " +
+          "Alt+F, следовать за выбранной целью включить или выключить. " +
+          "Ctrl+Numpad 5, описать путь к цели, не идя. " +
+          "F, повернуться к цели. W, идти вперёд. " +
+          "Ctrl+F1, эта справка. " +
+          "Ctrl+F2, активное окно. " +
+          "Ctrl+F10, прочитать текущее меню. " +
+          "Ctrl+F11, остановить речь. " +
+          "Ctrl+Delete, назвать жизнь и ману. " +
+          "Delete, назвать жизнь выбранной цели. " +
+          "Ctrl+F9, прочитать выбранную панель действий. " +
+          "Ctrl+F6, прочитать надетое снаряжение. " +
+          "Ctrl+Shift+Insert, открыть сравнение снаряжения таблицей: сначала вывод, затем по строке на значение с обеих сторон. Numpad 8 и 2 листают, Numpad 4 возвращает назад. " +
+          "Ctrl+F7, надеть рекомендованное снаряжение. " +
+          "Ctrl+F8, случайная внешность при создании персонажа. " +
+          "Ctrl+Numpad 0, открыть меню назначения: сначала выбери клавишу, затем что на неё поставить. Numpad 8 и 2 листают, Numpad 0 выбирает, Numpad 4 и 6 меняют список, Numpad запятая возвращает назад. " +
+          "Ctrl+Numpad 2, журнал собирателя: рудокоп, ботаник, рыбак. Numpad 0 ведёт к месту находки. " +
+          "Ctrl+Shift+F6, запись следа включить или выключить: пройди один раз сам участок, которого не знает навигационная сетка. " +
+          "Ctrl+Shift+F7, прочитать список задач текущего занятия: ливквест, подземелье или ФЕЙТ. " +
+          "Ctrl+F4, прочитать бестиарий; в открытой книжке ремесленника вместо этого что сумка может сделать сейчас, вместе с бонусом за первый раз. " +
+          "Команды: " +
+          "/acc craftable, тот же список, для набора вручную. " +
+          "/acc nav, направление к цели. " +
+          "/acc set, следить за текущей целью. " +
+          "/acc clear, снять цель. " +
+          "/acc near, объекты рядом. " +
+          "/acc status, назвать жизнь и ману. " +
+          "/acc ui, прочитать текущее меню. " +
+          "/acc win, назвать активное окно. " +
+          "/acc keys, сохранить игровые привязки клавиш на рабочий стол. " +
+          "/acc translate off или on, отключить или включить русский перевод предметов и умений. " +
+          "/acc cooldowns, оповещение о готовности умений включить или выключить. " +
+          "/acc aoeturn on или off, включить или выключить автоповорот к выходу из AoE. " +
+          "/acc fly, полёт при автопередвижении включить или выключить, и говорит, можно ли здесь. " +
+          "/acc enemies, все противники в бою с цветом, жизнью и тем, кто на тебе. " +
+          "/acc trails, перечислить записанные следы в этой местности. " +
+          "/acc trail del и номер, удалить след. " +
+          "/acc machbar, что сумка может сделать в открытой книге рецептов. " +
+          "/acc stop, остановить речь.");
 
     // ════════════════════════════════════════════════════════════════
     //  AutoWalkService - Auto-Lauf, Ziel folgen, Wegenetz-Aufbau
     // ════════════════════════════════════════════════════════════════
     public static string FollowNoTarget =>
-        IsGerman ? "Kein Ziel zum Folgen. Erst ein Ziel anwählen." : "No target to follow. Select a target first.";
+        L("Kein Ziel zum Folgen. Erst ein Ziel anwählen.", "No target to follow. Select a target first.", "Нет цели, за которой идти. Сначала выбери цель.");
     public static string FollowSelf =>
-        IsGerman ? "Das bist du selbst." : "That is you.";
+        L("Das bist du selbst.", "That is you.", "Это ты.");
+
     public static string Following(string name) =>
-        IsGerman ? $"Folge {name}." : $"Following {name}.";
+        L($"Folge {name}.", $"Following {name}.", $"Следую за {name}.");
     public static string FollowStopped =>
-        IsGerman ? "Folgen beendet." : "Follow stopped.";
+        L("Folgen beendet.", "Follow stopped.", "Следование остановлено.");
     public static string FollowStoppedZone =>
-        IsGerman ? "Folgen beendet, Gebiet gewechselt." : "Follow stopped, zone changed.";
+        L("Folgen beendet, Gebiet gewechselt.", "Follow stopped, zone changed.", "Следование остановлено, зона сменилась.");
     public static string FollowTargetGone(string name) =>
-        IsGerman ? $"{name} ist weg. Folgen beendet." : $"{name} is gone. Follow stopped.";
+        L($"{name} ist weg. Folgen beendet.", $"{name} is gone. Follow stopped.", $"Больше не вижу {name}. Следование остановлено.");
     public static string FollowAbortedNoResponse =>
-        IsGerman ? "Folgen abgebrochen, vnavmesh antwortet nicht." : "Follow aborted, vnavmesh not responding.";
+        L("Folgen abgebrochen, vnavmesh antwortet nicht.", "Follow aborted, vnavmesh not responding.", "Следование прервано, vnavmesh не отвечает.");
     public static string FollowAbortedUnavailable =>
-        IsGerman ? "Folgen abgebrochen, vnavmesh nicht verfügbar." : "Follow aborted, vnavmesh not available.";
+        L("Folgen abgebrochen, vnavmesh nicht verfügbar.", "Follow aborted, vnavmesh not available.", "Следование прервано, vnavmesh недоступен.");
 
     public static string MeshLoading =>
-        IsGerman ? "Wegenetz wird geladen." : "Loading navmesh.";
+        L("Wegenetz wird geladen.", "Loading navmesh.", "Навигационная сетка загружается.");
     public static string MeshPercent(int percent) =>
-        IsGerman ? $"Wegenetz {percent} Prozent." : $"Navmesh {percent} percent.";
+        L($"Wegenetz {percent} Prozent.", $"Navmesh {percent} percent.", $"Навигационная сетка {percent} процентов.");
     public static string MeshReady =>
-        IsGerman ? "Wegenetz fertig geladen." : "Navmesh loaded.";
+        L("Wegenetz fertig geladen.", "Navmesh loaded.", "Навигационная сетка загружена.");
     public static string MeshAborted =>
-        IsGerman ? "Wegenetz-Aufbau abgebrochen." : "Navmesh build aborted.";
+        L("Wegenetz-Aufbau abgebrochen.", "Navmesh build aborted.", "Построение навигационной сетки прервано.");
     public static string MeshStillLoading(float percent) =>
-        IsGerman ? $"Wegenetz lädt noch, {percent:F0} Prozent. Gleich nochmal versuchen."
-                 : $"Navmesh still loading, {percent:F0} percent. Try again shortly.";
+        L($"Wegenetz lädt noch, {percent:F0} Prozent. Gleich nochmal versuchen.", $"Navmesh still loading, {percent:F0} percent. Try again shortly.", $"Навигационная сетка ещё грузится, {percent:F0} процентов. Попробуй ещё раз чуть позже.");
     public static string MeshNotReady =>
-        IsGerman ? "Wegenetz ist noch nicht bereit. Gleich nochmal versuchen." : "Navmesh is not ready yet. Try again shortly.";
+        L("Wegenetz ist noch nicht bereit. Gleich nochmal versuchen.", "Navmesh is not ready yet. Try again shortly.", "Навигационная сетка ещё не готова. Попробуй ещё раз чуть позже.");
     public static string PathfindBusy =>
-        IsGerman ? "Wegfindung läuft schon. Gleich nochmal versuchen." : "Pathfinding is already running. Try again shortly.";
+        L("Wegfindung läuft schon. Gleich nochmal versuchen.", "Pathfinding is already running. Try again shortly.", "Поиск пути уже идёт. Попробуй чуть позже.");
     public static string AutoWalkUnavailable =>
-        IsGerman ? "Auto-Lauf nicht verfügbar. Das Plugin vnavmesh fehlt oder ist nicht geladen."
-                 : "Auto-walk not available. The vnavmesh plugin is missing or not loaded.";
+        L("Auto-Lauf nicht verfügbar. Das Plugin vnavmesh fehlt oder ist nicht geladen.", "Auto-walk not available. The vnavmesh plugin is missing or not loaded.", "Автобег недоступен. Плагин vnavmesh отсутствует или не загружен.");
 
     public static string WalkingTo(string name) =>
-        IsGerman ? $"Laufe zu {name}." : $"Walking to {name}.";
+        L($"Laufe zu {name}.", $"Walking to {name}.", $"Иду к {name}.");
 
     /// <summary>
     /// Der Lauf startet zu einem Ersatzpunkt, weil das Ziel unter etwas Begehbarem
@@ -2781,15 +2702,13 @@ public static partial class AccessibilityStrings
     /// vom Ziel entfernt.
     /// </summary>
     public static string WalkingToBelowLedge(string name, float metres) =>
-        IsGerman ? $"{name} liegt unter einem Vorsprung. Laufe bis auf {metres:F0} Meter heran."
-                 : $"{name} is under an overhang. Walking to within {metres:F0} meters of it.";
+        L($"{name} liegt unter einem Vorsprung. Laufe bis auf {metres:F0} Meter heran.", $"{name} is under an overhang. Walking to within {metres:F0} meters of it.", $"{name} под выступом. Подойду на {metres:F0} метров.");
 
     /// <summary>Ankunft am Ersatzpunkt: das Ziel selbst liegt noch die genannte
     /// Strecke in der genannten Himmelsrichtung. Richtung statt links/rechts aus
     /// demselben Grund wie ueberall sonst in der Navigation.</summary>
     public static string ArrivedBelowLedge(string name, float metres, string direction) =>
-        IsGerman ? $"Angekommen. {name} ist {MetersRemaining(metres)} nach {direction}, unter dem Vorsprung."
-                 : $"Arrived. {name} is {MetersRemaining(metres)} to the {direction}, under the overhang.";
+        L($"Angekommen. {name} ist {MetersRemaining(metres)} nach {direction}, unter dem Vorsprung.", $"Arrived. {name} is {MetersRemaining(metres)} to the {direction}, under the overhang.", $"Пришёл. {name}: {MetersRemaining(metres)} на {direction}, под выступом.");
 
     // ── Fliegen (V5.96) ───────────────────────────────────────────────────────
     // Der Auto-Lauf fliegt, wo das Spiel es zulaesst. Die Ansagen halten den
@@ -2800,20 +2719,19 @@ public static partial class AccessibilityStrings
     /// <summary>Der Lauf wird ein Flug. Gesprochen statt <see cref="WalkingTo"/>,
     /// nicht zusaetzlich - zwei Saetze zum Start waeren eine Ansage zu viel.</summary>
     public static string FlyingTo(string name) =>
-        IsGerman ? $"Fliege zu {name}." : $"Flying to {name}.";
+        L($"Fliege zu {name}.", $"Flying to {name}.", $"Лечу к {name}.");
 
     /// <summary>Angekommen und gelandet. Eigener Satz statt
     /// <see cref="TargetReached"/>, weil die Landung mit zum Ergebnis gehoert:
     /// erst am Boden laesst sich reden, sammeln und kaempfen.</summary>
     public static string FlightArrived(string name) =>
-        IsGerman ? $"Angekommen und gelandet: {name}." : $"Arrived and landed: {name}.";
+        L($"Angekommen und gelandet: {name}.", $"Arrived and landed: {name}.", $"Прилетел и приземлился: {name}.");
 
     /// <summary>Der Spieler fliegt, aber es kam kein Flugweg zustande. Der Lauf
     /// geht am Boden weiter, und genau das sagt der Satz - Stille waere hier von
     /// einem Abbruch nicht zu unterscheiden.</summary>
     public static string NoFlightPathWalkingInstead =>
-        IsGerman ? "Kein Flugweg gefunden, ich laufe."
-                 : "No flight route found, walking instead.";
+        L("Kein Flugweg gefunden, ich laufe.", "No flight route found, walking instead.", "Воздушный путь не найден, иду пешком.");
 
     /// <summary>
     /// Die Suche nach dem Flugweg laeuft noch. Gesprochen erst, wenn sie laenger
@@ -2826,23 +2744,20 @@ public static partial class AccessibilityStrings
     /// unterscheiden.</para>
     /// </summary>
     public static string FlightPathSearching =>
-        IsGerman ? "Suche den Flugweg."
-                 : "Searching for a flight route.";
+        L("Suche den Flugweg.", "Searching for a flight route.", "Ищу воздушный путь.");
 
     /// <summary>Die Notbremse hat gezogen: vnavmesh rechnet nach
     /// <c>AutoWalkService.FlightStartTimeoutS</c> immer noch. Es wird NICHT auf den
     /// Bodenweg ausgewichen - eine laufende Suche laesst sich nicht abbrechen und
     /// wuerde spaeter in den Bodenlauf hineinsteuern.</summary>
     public static string FlightSearchTooSlow =>
-        IsGerman ? "Die Suche nach dem Flugweg dauert zu lange. Ich breche ab."
-                 : "The flight route search is taking too long. Stopping.";
+        L("Die Suche nach dem Flugweg dauert zu lange. Ich breche ab.", "The flight route search is taking too long. Stopping.", "Поиск воздушного пути слишком долгий. Прекращаю.");
 
     /// <summary>Eine Wegsuche laeuft noch, eine zweite nimmt vnavmesh nicht an
     /// (<c>AsyncMoveRequest.MoveTo</c> gibt dann false zurueck). Der Spieler wird
     /// darum gebeten, es gleich noch einmal zu versuchen.</summary>
     public static string PathSearchStillBusy =>
-        IsGerman ? "Die Wegsuche läuft noch. Gleich noch einmal versuchen."
-                 : "A path search is still running. Try again in a moment.";
+        L("Die Wegsuche läuft noch. Gleich noch einmal versuchen.", "A path search is still running. Try again in a moment.", "Поиск пути ещё идёт. Попробуй чуть позже.");
 
     // ── Update über das Menü (V5.97) ──────────────────────────────────────────
     // Bis hierher hiess ein Update: Spiel beenden, Installer starten. Das Plugin
@@ -2851,41 +2766,35 @@ public static partial class AccessibilityStrings
 
     /// <summary>Menuepunkt und Titel der Update-Ebene.</summary>
     public static string UpdateTitle =>
-        IsGerman ? "Aktualisierung" : "Update";
+        L("Aktualisierung", "Update", "Обновление");
 
     /// <summary>Zeile, die die laufende Fassung nennt.</summary>
     public static string UpdateInstalledVersion(string version) =>
-        IsGerman ? $"Installiert: Fassung {version}"
-                 : $"Installed: version {version}";
+        L($"Installiert: Fassung {version}", $"Installed: version {version}", $"Установлена версия {version}");
 
     /// <summary>Menuepunkt: beim Server nachfragen.</summary>
     public static string UpdateCheckNow =>
-        IsGerman ? "Nach Aktualisierung suchen" : "Check for update";
+        L("Nach Aktualisierung suchen", "Check for update", "Проверить обновление");
 
     /// <summary>Quittung beim Start der Abfrage.</summary>
     public static string UpdateChecking =>
-        IsGerman ? "Suche nach einer neuen Fassung."
-                 : "Checking for a new version.";
+        L("Suche nach einer neuen Fassung.", "Checking for a new version.", "Ищу новую версию.");
 
     /// <summary>Es gibt nichts Neues.</summary>
     public static string UpdateUpToDate(string version) =>
-        IsGerman ? $"Fassung {version} ist die neueste."
-                 : $"Version {version} is the latest.";
+        L($"Fassung {version} ist die neueste.", $"Version {version} is the latest.", $"Версия {version} самая новая.");
 
     /// <summary>Es gibt etwas Neues.</summary>
     public static string UpdateAvailable(string version) =>
-        IsGerman ? $"Fassung {version} ist verfügbar."
-                 : $"Version {version} is available.";
+        L($"Fassung {version} ist verfügbar.", $"Version {version} is available.", $"Версия {version} доступна.");
 
     /// <summary>Menuepunkt: die gefundene Fassung einspielen.</summary>
     public static string UpdateInstallNow(string version) =>
-        IsGerman ? $"Fassung {version} jetzt einspielen"
-                 : $"Install version {version} now";
+        L($"Fassung {version} jetzt einspielen", $"Install version {version} now", $"Установить версию {version}");
 
     /// <summary>Quittung beim Start des Einspielens.</summary>
     public static string UpdateInstalling(string version) =>
-        IsGerman ? $"Lade Fassung {version}. Einen Moment."
-                 : $"Downloading version {version}. One moment.";
+        L($"Lade Fassung {version}. Einen Moment.", $"Downloading version {version}. One moment.", $"Загружаю версию {version}. Секунду.");
 
     /// <summary>
     /// Fertig geschrieben. Das Neuladen macht Dalamud danach von selbst - deshalb
@@ -2893,23 +2802,23 @@ public static partial class AccessibilityStrings
     /// Spieler hoert, ist die des frisch geladenen Plugins.
     /// </summary>
     public static string UpdateInstalledRestarting(string version) =>
-        IsGerman ? $"Fassung {version} eingespielt. Das Plugin lädt sich jetzt neu."
-                 : $"Version {version} installed. The plugin is reloading now.";
+        L($"Fassung {version} eingespielt. Das Plugin lädt sich jetzt neu.", $"Version {version} installed. The plugin is reloading now.", $"Версия {version} установлена. Плагин сейчас перезагрузится.");
 
     /// <summary>Die Abfrage oder das Einspielen ist gescheitert.</summary>
     public static string UpdateFailed =>
-        IsGerman ? "Die Aktualisierung hat nicht geklappt. Einzelheiten stehen im Log."
-                 : "The update failed. Details are in the log.";
+        L("Die Aktualisierung hat nicht geklappt. Einzelheiten stehen im Log.", "The update failed. Details are in the log.", "Обновление не удалось. Подробности в логе.");
 
     /// <summary>
     /// Die neue Fassung aendert Tolk oder die NVDA-Bruecke. Beide haengen im
     /// Spielprozess und lassen sich nicht ersetzen, solange es laeuft.
     /// </summary>
     public static string UpdateNeedsInstaller =>
-        IsGerman ? "Diese Aktualisierung ändert Dateien, die das laufende Spiel " +
-                   "festhält. Bitte das Spiel beenden und den Installer benutzen."
-                 : "This update changes files the running game holds open. " +
-                   "Please close the game and use the installer.";
+        L("Diese Aktualisierung ändert Dateien, die das laufende Spiel " +
+                     "festhält. Bitte das Spiel beenden und den Installer benutzen.",
+                     "This update changes files the running game holds open. " +
+                     "Please close the game and use the installer.",
+                     "Это обновление меняет файлы, которые держит открытым запущенная игра. " +
+                     "Закрой игру и запусти установщик.");
 
     /// <summary>
     /// Das Plugin stammt aus dem Dalamud-Repository, nicht vom Installer. Dort
@@ -2917,19 +2826,21 @@ public static partial class AccessibilityStrings
     /// Buchfuehrung ueberschreiben.
     /// </summary>
     public static string UpdateNotSelfManaged =>
-        IsGerman ? "Diese Installation wird von Dalamud verwaltet und kann sich " +
-                   "nicht selbst aktualisieren."
-                 : "This installation is managed by Dalamud and cannot update itself.";
+        L("Diese Installation wird von Dalamud verwaltet und kann sich " +
+                     "nicht selbst aktualisieren.",
+                     "This installation is managed by Dalamud and cannot update itself.",
+                     "Этой установкой управляет Dalamud, сама она обновиться не может.");
 
     /// <summary>
     /// Im Kampf oder waehrend eines Auto-Laufs wird nicht eingespielt: das
     /// Neuladen reisst mitten in der Bewegung alle Tasten und Ansagen weg.
     /// </summary>
     public static string UpdateBusyNow =>
-        IsGerman ? "Nicht im Kampf oder während einer Laufstrecke. " +
-                   "Bitte danach noch einmal."
-                 : "Not during combat or while a walk is running. " +
-                   "Please try again afterwards.";
+        L("Nicht im Kampf oder während einer Laufstrecke. " +
+                     "Bitte danach noch einmal.",
+                     "Not during combat or while a walk is running. " +
+                     "Please try again afterwards.",
+                     "Не во время боя и не во время перехода. Попробуй после.");
 
     /// <summary>
     /// Der Flug hat vor dem Ziel aufgegeben. Bewusst NICHT der Wortlaut des
@@ -2939,14 +2850,15 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string FlightEndedRemaining(float distance, string direction, float rise) =>
         MathF.Abs(rise) >= 5f
-            ? (IsGerman
-                ? $"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}, " +
-                  $"{(rise > 0 ? "das Ziel liegt höher" : "das Ziel liegt tiefer")}."
-                : $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}, " +
-                  $"{(rise > 0 ? "the target is higher up" : "the target is further down")}.")
-            : (IsGerman
-                ? $"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}."
-                : $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}.");
+            ? L($"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}, " +
+                $"{(rise > 0 ? "das Ziel liegt höher" : "das Ziel liegt tiefer")}.",
+                $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}, " +
+                $"{(rise > 0 ? "the target is higher up" : "the target is further down")}.",
+                $"Полёт окончен, приземлился. Осталось {MetersRemaining(distance)} на {direction}, " +
+                $"{(rise > 0 ? "цель выше" : "цель ниже")}.")
+            : L($"Flug beendet und gelandet. Noch {MetersRemaining(distance)} nach {direction}.",
+                $"Flight ended and landed. {MetersRemaining(distance)} to the {direction}.",
+                $"Полёт окончен, приземлился. Осталось {MetersRemaining(distance)} на {direction}.");
 
     /// <summary>
     /// Warum hier nicht geflogen wird. Nur auf Nachfrage gesprochen (siehe
@@ -2955,31 +2867,31 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string FlightBlockedReason(FlightBlock reason) => reason switch
     {
-        FlightBlock.NoVolume => IsGerman
-            ? "Hier kann nicht geflogen werden. In Städten, Dungeons und Innenräumen gibt es keine Flugstrecken."
-            : "Flying is not possible here. Cities, dungeons and interiors have no air routes.",
-        FlightBlock.NoMount => IsGerman
-            ? "Hier sind keine Reittiere erlaubt, also wird auch nicht geflogen."
-            : "Mounts are not allowed here, so there is no flying either.",
-        FlightBlock.AetherCurrents => IsGerman
-            ? "Laut Spielstand fehlen dir hier noch Ätherströme."
-            : "According to your progress you are still missing aether currents here.",
-        _ => IsGerman ? "Hier gibt es Flugstrecken." : "There are air routes here.",
+        FlightBlock.NoVolume => L("Hier kann nicht geflogen werden. In Städten, Dungeons und Innenräumen gibt es keine Flugstrecken.",
+            "Flying is not possible here. Cities, dungeons and interiors have no air routes.",
+            "Здесь летать нельзя. В городах, подземельях и помещениях воздушных путей нет."),
+        FlightBlock.NoMount => L("Hier sind keine Reittiere erlaubt, also wird auch nicht geflogen.",
+            "Mounts are not allowed here, so there is no flying either.",
+            "Здесь маунты запрещены, поэтому и полёта нет."),
+        FlightBlock.AetherCurrents => L("Laut Spielstand fehlen dir hier noch Ätherströme.",
+            "According to your progress you are still missing aether currents here.",
+            "Судя по прогрессу, здесь тебе ещё не хватает эфирных потоков."),
+        _ => L("Hier gibt es Flugstrecken.", "There are air routes here.", "Здесь есть воздушные пути."),
     };
 
     /// <summary>Die angeforderte Landung laeuft (<c>/acc land</c>). Gesprochen
     /// beim Start, weil der Sinkflug je nach Hoehe ein paar Sekunden dauert und
     /// ohne Ansage nichts zu passieren scheint.</summary>
     public static string Landing =>
-        IsGerman ? "Lande." : "Landing.";
+        L("Lande.", "Landing.", "Сажусь.");
 
     /// <summary>Unten und abgestiegen.</summary>
     public static string Landed =>
-        IsGerman ? "Gelandet." : "Landed.";
+        L("Gelandet.", "Landed.", "Приземлился.");
 
     /// <summary>Landen angefordert, ohne auf einem Reittier zu sitzen.</summary>
     public static string NotFlying =>
-        IsGerman ? "Du sitzt auf keinem Reittier." : "You are not on a mount.";
+        L("Du sitzt auf keinem Reittier.", "You are not on a mount.", "Ты не на маунте.");
 
     /// <summary>
     /// Zustandsansage des Umschalters (<c>/acc fly</c>). Sagt beim Einschalten
@@ -2987,41 +2899,40 @@ public static partial class AccessibilityStrings
     /// wartet er auf einen Flug, den das Plugin nie anfaengt.
     /// </summary>
     public static string FlightToggled(bool enabled) =>
-        IsGerman
-            ? (enabled
-                ? "Fliegen beim Auto-Lauf ein. Ruf dein Reittier und heb selbst ab, dann fliegt der Auto-Lauf."
-                : "Fliegen beim Auto-Lauf aus. Es wird immer gelaufen.")
-            : (enabled
-                ? "Flying during auto-walk on. Summon a mount and take off yourself, then auto-walk flies."
-                : "Flying during auto-walk off. It will always walk.");
+        L(enabled
+              ? "Fliegen beim Auto-Lauf ein. Ruf dein Reittier und heb selbst ab, dann fliegt der Auto-Lauf."
+              : "Fliegen beim Auto-Lauf aus. Es wird immer gelaufen.",
+          enabled
+              ? "Flying during auto-walk on. Summon a mount and take off yourself, then auto-walk flies."
+              : "Flying during auto-walk off. It will always walk.",
+          enabled
+              ? "Полёт при автопередвижении включён. Вызови маунта и взлетай сам, дальше автопередвижение полетит."
+              : "Полёт при автопередвижении выключен. Всегда иду пешком.");
 
     public static string AutoWalkStopped =>
-        IsGerman ? "Auto-Lauf gestoppt." : "Auto-walk stopped.";
+        L("Auto-Lauf gestoppt.", "Auto-walk stopped.", "Автобег остановлен.");
     public static string ArrivedNewZone =>
-        IsGerman ? "Angekommen, neues Gebiet erreicht." : "Arrived, reached a new area.";
+        L("Angekommen, neues Gebiet erreicht.", "Arrived, reached a new area.", "Прибыл, новая местность.");
     public static string AutoWalkAbortedNoResponse =>
-        IsGerman ? "Auto-Lauf abgebrochen, vnavmesh antwortet nicht." : "Auto-walk aborted, vnavmesh not responding.";
+        L("Auto-Lauf abgebrochen, vnavmesh antwortet nicht.", "Auto-walk aborted, vnavmesh not responding.", "Автобег прерван, vnavmesh не отвечает.");
 
     /// <summary>Distance-remaining fragment: metres, or an "unknown" phrase for NaN.</summary>
     public static string MetersRemaining(float distance) =>
         float.IsNaN(distance)
-            ? (IsGerman ? "Ziel unbekannt" : "target unknown")
-            : (IsGerman ? $"{distance:F0} Meter" : $"{distance:F0} meters");
+            ? (L("Ziel unbekannt", "target unknown", "цель неизвестна"))
+            : (L($"{distance:F0} Meter", $"{distance:F0} meters", $"{distance:F0} метров"));
     public static string StillToGo(float distance) =>
-        IsGerman ? $"Noch {MetersRemaining(distance)}." : $"{MetersRemaining(distance)} remaining.";
+        L($"Noch {MetersRemaining(distance)}.", $"{MetersRemaining(distance)} remaining.", $"Осталось {MetersRemaining(distance)}.");
     public static string AutoWalkEndedRemaining(float distance) =>
-        IsGerman ? $"Auto-Lauf beendet, noch {MetersRemaining(distance)}."
-                 : $"Auto-walk ended, {MetersRemaining(distance)} remaining.";
+        L($"Auto-Lauf beendet, noch {MetersRemaining(distance)}.", $"Auto-walk ended, {MetersRemaining(distance)} remaining.", $"Автобег завершён, осталось {MetersRemaining(distance)}.");
     public static string StuckRemaining(float distance) =>
-        IsGerman ? $"Ich stecke fest, noch {MetersRemaining(distance)}. Auto-Lauf beendet."
-                 : $"I'm stuck, {MetersRemaining(distance)} remaining. Auto-walk ended.";
+        L($"Ich stecke fest, noch {MetersRemaining(distance)}. Auto-Lauf beendet.", $"I'm stuck, {MetersRemaining(distance)} remaining. Auto-walk ended.", $"Я застрял, осталось {MetersRemaining(distance)}. Автобег завершён.");
     /// <summary>Same, with the culprit named (see <see cref="ObstacleService"/>).
     /// "Ich stecke fest" says nothing about what to do; the blocker does.</summary>
     public static string StuckBehind(string blocker, float distance) =>
-        IsGerman ? $"Ich komme nicht weiter, {blocker} steht im Weg. Noch {MetersRemaining(distance)}. Auto-Lauf beendet."
-                 : $"I cannot get any further, {blocker} is in the way. {MetersRemaining(distance)} remaining. Auto-walk ended.";
+        L($"Ich komme nicht weiter, {blocker} steht im Weg. Noch {MetersRemaining(distance)}. Auto-Lauf beendet.", $"I cannot get any further, {blocker} is in the way. {MetersRemaining(distance)} remaining. Auto-walk ended.", $"Дальше не пройти, {blocker} мешает. Осталось {MetersRemaining(distance)}. Автобег завершён.");
     public static string NoPathTo(string name, string hint) =>
-        IsGerman ? $"Kein Weg zu {name} gefunden.{hint}" : $"No path to {name} found.{hint}";
+        L($"Kein Weg zu {name} gefunden.{hint}", $"No path to {name} found.{hint}", $"Путь к {name} не найден.{hint}");
     /// <summary>
     /// Appended to the stuck message in a housing ward. Names the cause AND the
     /// one-line remedy, because neither is the player's doing: the mesh vnavmesh
@@ -3034,19 +2945,14 @@ public static partial class AccessibilityStrings
     /// knows the houses. Says WHY the wait happens - a build starting by itself
     /// would otherwise be an unexplained ten seconds of progress numbers.
     /// </summary>
-    public static string HousingMeshRebuilding => IsGerman
-        ? "Wohngebiet. Wegenetz wird neu gebaut, damit die Häuser darin stehen."
-        : "Housing ward. Rebuilding the navigation mesh so it includes the houses.";
+    public static string HousingMeshRebuilding => L("Wohngebiet. Wegenetz wird neu gebaut, damit die Häuser darin stehen.", "Housing ward. Rebuilding the navigation mesh so it includes the houses.", "Жилой район. Навигационная сетка строится заново, чтобы в неё вошли дома.");
 
-    public static string HousingFenceHint => IsGerman
-        ? " Das Wegenetz ist hier älter als die Häuser. Mit dem Befehl vnav rebuild neu bauen lassen."
-        : " The navigation mesh here is older than the houses. Rebuild it with the vnav rebuild command.";
+    public static string HousingFenceHint => L(" Das Wegenetz ist hier älter als die Häuser. Mit dem Befehl vnav rebuild neu bauen lassen.", " The navigation mesh here is older than the houses. Rebuild it with the vnav rebuild command.", " Навигационная сетка здесь старше домов. Перестрой её командой vnav rebuild.");
     /// <summary>The walk ran as far as the walkable mesh goes. Says the direction
     /// too, because "still 454 metres" without a bearing leaves the player with
     /// nothing to do next.</summary>
     public static string WalkMeshEndsHere(float distance, string direction) =>
-        IsGerman ? $"Weiter komme ich nicht, hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}."
-                 : $"This is as far as the walkable path goes. {MetersRemaining(distance)} to the {direction}.";
+        L($"Weiter komme ich nicht, hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}.", $"This is as far as the walkable path goes. {MetersRemaining(distance)} to the {direction}.", $"Дальше не пройду, здесь кончается проходимый путь. Осталось {MetersRemaining(distance)} на {direction}.");
 
     /// <summary>
     /// Same dead end, but the remaining metres are mostly VERTICAL. Without this
@@ -3059,167 +2965,130 @@ public static partial class AccessibilityStrings
     {
         var flat = WalkMeshEndsHere(distance, direction);
         var metres = MathF.Abs(rise);
-        return IsGerman
-            ? $"{flat} Davon {metres:F0} Meter {(rise > 0 ? "nach oben" : "nach unten")} - " +
-              $"das Ziel liegt {(rise > 0 ? "ueber" : "unter")} dir."
-            : $"{flat} {metres:F0} meters of that {(rise > 0 ? "up" : "down")} - " +
-              $"the target is {(rise > 0 ? "above" : "below")} you.";
+        return L($"{flat} Davon {metres:F0} Meter {(rise > 0 ? "nach oben" : "nach unten")} - " +
+                 $"das Ziel liegt {(rise > 0 ? "ueber" : "unter")} dir.",
+                 $"{flat} {metres:F0} meters of that {(rise > 0 ? "up" : "down")} - " +
+                 $"the target is {(rise > 0 ? "above" : "below")} you.",
+                 $"{flat} Из них {metres:F0} метров {(rise > 0 ? "вверх" : "вниз")} - " +
+                 $"цель {(rise > 0 ? "над тобой" : "под тобой")}.");
     }
     /// <summary>Refuses a walk that would not move the character at all.</summary>
     public static string AlreadyAtTarget(string name) =>
-        IsGerman ? $"Du bist schon bei {name}." : $"You are already at {name}.";
+        L($"Du bist schon bei {name}.", $"You are already at {name}.", $"Ты уже у {name}.");
 
     /// <summary>The "no path, near &lt;aetheryte&gt;" hint appended to a no-path
     /// announcement (empty when no aetheryte is close). The aetheryte name is
     /// game text; only the frame is translated.</summary>
     public static string NoPathAetheryteHint(string aetheryteName) =>
-        IsGerman
-            ? $" Das Ziel liegt nahe dem Ätheryt {aetheryteName}. Reise per Aethernet dorthin."
-            : $" The destination is near the aetheryte {aetheryteName}. Travel there via the aethernet.";
+        L($" Das Ziel liegt nahe dem Ätheryt {aetheryteName}. Reise per Aethernet dorthin.", $" The destination is near the aetheryte {aetheryteName}. Travel there via the aethernet.", $" Цель рядом с эфиритом {aetheryteName}. Доберись туда через эфирную сеть.");
 
     // ── Orts-Namen (PlacesService) - der gesprochene Name, NICHT der interne
     //    TypeLabel (der bleibt als Identität deutsch, siehe PlacesService). ──
     /// <summary>Spoken name of the map flag waypoint.</summary>
-    public static string FlagName => IsGerman ? "Markierung" : "Flag";
+    public static string FlagName => L("Markierung", "Flag", "Метка");
     /// <summary>Spoken name of a zone transition to a named map.</summary>
     public static string TransitionToName(string name) =>
-        IsGerman ? $"Übergang nach {name}" : $"Transition to {name}";
+        L($"Übergang nach {name}", $"Transition to {name}", $"Переход в {name}");
     /// <summary>Fallback spoken name for an unnamed aetheryte.</summary>
-    public static string AetheryteFallbackName => IsGerman ? "Ätheryt" : "Aetheryte";
+    public static string AetheryteFallbackName => L("Ätheryt", "Aetheryte", "Эфирит");
 
     // ════════════════════════════════════════════════════════════════
     //  NavigationService - Gehhilfe (walk guide)
     // ════════════════════════════════════════════════════════════════
     public static string WalkGuideEnded =>
-        IsGerman ? "Gehhilfe beendet." : "Walk guide ended.";
+        L("Gehhilfe beendet.", "Walk guide ended.", "Подсказки при ходьбе завершены.");
     public static string WalkGuideOff =>
-        IsGerman ? "Gehhilfe aus." : "Walk guide off.";
+        L("Gehhilfe aus.", "Walk guide off.", "Подсказки при ходьбе выключены.");
     public static string WalkGuideOn(string name) =>
-        IsGerman ? $"Gehhilfe an: {name}." : $"Walk guide on: {name}.";
+        L($"Gehhilfe an: {name}.", $"Walk guide on: {name}.", $"Подсказки при ходьбе включены: {name}.");
 
     /// <summary>Gehhilfe startet auf einen Ersatzpunkt, weil das Ziel unter etwas
     /// Begehbarem steht. Eine einzige Zeile - ein zweiter Interrupt gleich danach
     /// wuerde die erste abschneiden.</summary>
     public static string WalkGuideOnBelowLedge(string name, float metres) =>
-        IsGerman ? $"Gehhilfe an: {name}. Liegt unter einem Vorsprung, führe bis auf {metres:F0} Meter heran."
-                 : $"Walk guide on: {name}. It is under an overhang, guiding to within {metres:F0} meters of it.";
+        L($"Gehhilfe an: {name}. Liegt unter einem Vorsprung, führe bis auf {metres:F0} Meter heran.", $"Walk guide on: {name}. It is under an overhang, guiding to within {metres:F0} meters of it.", $"Подсказки при ходьбе включены: {name}. Цель под выступом, подойду на {metres:F0} метров.");
     public static string NoPathStraightLine(string hint) =>
-        IsGerman ? $"Kein Weg gefunden, führe in Luftlinie.{hint}" : $"No path found, guiding in a straight line.{hint}";
+        L($"Kein Weg gefunden, führe in Luftlinie.{hint}", $"No path found, guiding in a straight line.{hint}", $"Путь не найден, веду по прямой.{hint}");
     // ════════════════════════════════════════════════════════════════
     //  TrailService - selbst abgelaufene Spuren ueber Netzluecken
     // ════════════════════════════════════════════════════════════════
-    public static string TrailRecordingStarted => IsGerman
-        ? "Spur wird aufgezeichnet. Lauf die Stelle jetzt ab und drueck die Taste am Ende noch einmal."
-        : "Recording a trail. Walk the stretch now and press the key again at the end.";
-    public static string TrailRecordingCancelledZone => IsGerman
-        ? "Spur verworfen, du hast das Gebiet verlassen."
-        : "Trail discarded, you left the area.";
-    public static string TrailTooShort => IsGerman
-        ? "Zu kurz, keine Spur gespeichert."
-        : "Too short, no trail saved.";
-    public static string TrailSaved(string name, float length) => IsGerman
-        ? $"Spur gespeichert: {name}, {MetersRemaining(length)}."
-        : $"Trail saved: {name}, {MetersRemaining(length)}.";
+    public static string TrailRecordingStarted => L("Spur wird aufgezeichnet. Lauf die Stelle jetzt ab und drueck die Taste am Ende noch einmal.", "Recording a trail. Walk the stretch now and press the key again at the end.", "Записываю дорожку. Пройди этот участок сейчас и нажми клавишу в конце ещё раз.");
+    public static string TrailRecordingCancelledZone => L("Spur verworfen, du hast das Gebiet verlassen.", "Trail discarded, you left the area.", "Дорожка отброшена, ты покинул местность.");
+    public static string TrailTooShort => L("Zu kurz, keine Spur gespeichert.", "Too short, no trail saved.", "Слишком коротко, дорожка не сохранена.");
+    public static string TrailSaved(string name, float length) => L($"Spur gespeichert: {name}, {MetersRemaining(length)}.", $"Trail saved: {name}, {MetersRemaining(length)}.", $"Дорожка сохранена: {name}, {MetersRemaining(length)}.");
     /// <summary>Said out loud, not just logged: a trail that only works downhill
     /// is a promise the plugin cannot keep in reverse, and being stranded on the
     /// far side is exactly what happened in-game on 2026-08-09.</summary>
-    public static string TrailOneWayOnly(float drop) => IsGerman
-        ? $"Achtung, diese Spur ueberwindet {MetersRemaining(drop)} Hoehe und gilt deshalb nur in Laufrichtung. Fuer den Rueckweg zeichne bitte eine eigene Spur auf."
-        : $"Careful: this trail covers {MetersRemaining(drop)} of height, so it only counts in the direction you walked it. Record a separate trail for the way back.";
-    public static string TrailDefaultName(int number) => IsGerman
-        ? $"Verbindung {number}" : $"Crossing {number}";
-    public static string TrailNoneHere => IsGerman
-        ? "Keine Spuren in diesem Gebiet." : "No trails in this area.";
-    public static string TrailCount(int count) => IsGerman
-        ? $"{count} Spuren in diesem Gebiet." : $"{count} trails in this area.";
-    public static string TrailListEntry(int number, string name, float length, bool bothWays) => IsGerman
-        ? $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "in beide Richtungen" : "nur in Laufrichtung")}."
-        : $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "both ways" : "one way only")}.";
-    public static string TrailUnknownNumber => IsGerman
-        ? "Diese Nummer gibt es hier nicht." : "No trail with that number here.";
-    public static string TrailDeleted(string name) => IsGerman
-        ? $"Spur geloescht: {name}." : $"Trail deleted: {name}.";
-    public static string TrailCommandHelp => IsGerman
-        ? "Sag Schrägstrich acc trails zum Auflisten, oder Schrägstrich acc trail del und die Nummer zum Löschen."
-        : "Use slash acc trails to list them, or slash acc trail del and the number to delete one.";
+    public static string TrailOneWayOnly(float drop) => L($"Achtung, diese Spur ueberwindet {MetersRemaining(drop)} Hoehe und gilt deshalb nur in Laufrichtung. Fuer den Rueckweg zeichne bitte eine eigene Spur auf.", $"Careful: this trail covers {MetersRemaining(drop)} of height, so it only counts in the direction you walked it. Record a separate trail for the way back.", $"Внимание, эта дорожка идёт через перепад высоты {MetersRemaining(drop)} и работает только в одну сторону. Для обратного пути запиши отдельную дорожку.");
+    public static string TrailDefaultName(int number) => L($"Verbindung {number}", $"Crossing {number}", $"Переход {number}");
+    public static string TrailNoneHere => L("Keine Spuren in diesem Gebiet.", "No trails in this area.", "В этой местности нет дорожек.");
+    public static string TrailCount(int count) => L($"{count} Spuren in diesem Gebiet.", $"{count} trails in this area.", $"{count} дорожек в этой местности.");
+    public static string TrailListEntry(int number, string name, float length, bool bothWays) =>
+        L($"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "in beide Richtungen" : "nur in Laufrichtung")}.",
+          $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "both ways" : "one way only")}.",
+          $"{number}: {name}, {MetersRemaining(length)}, {(bothWays ? "в обе стороны" : "только в одну сторону")}.");
+    public static string TrailUnknownNumber => L("Diese Nummer gibt es hier nicht.", "No trail with that number here.", "Такого номера здесь нет.");
+    public static string TrailDeleted(string name) => L($"Spur geloescht: {name}.", $"Trail deleted: {name}.", $"Дорожка удалена: {name}.");
+    public static string TrailCommandHelp => L("Sag Schrägstrich acc trails zum Auflisten, oder Schrägstrich acc trail del und die Nummer zum Löschen.", "Use slash acc trails to list them, or slash acc trail del and the number to delete one.", "Скажи слэш acc trails для списка, или слэш acc trail del и номер для удаления.");
     /// <summary>The auto-walk ran out of mesh and is taking a recorded trail.</summary>
-    public static string TrailTaking(string name) => IsGerman
-        ? $"Hier endet das Wegenetz, ich nehme {name}."
-        : $"The navmesh ends here; taking {name}.";
-    public static string TrailFinished => IsGerman
-        ? "Spur zu Ende, ich laufe normal weiter."
-        : "End of the trail, continuing normally.";
+    public static string TrailTaking(string name) => L($"Hier endet das Wegenetz, ich nehme {name}.", $"The navmesh ends here; taking {name}.", $"Здесь кончается навигационная сетка, беру {name}.");
+    public static string TrailFinished => L("Spur zu Ende, ich laufe normal weiter.", "End of the trail, continuing normally.", "Дорожка кончилась, иду дальше как обычно.");
     /// <summary>Crossing a measured gap in the mesh (MeshBridgeService). Named
     /// separately from a recorded trail because the player did not record it and
     /// would otherwise wonder which trail is meant.</summary>
-    public static string BridgeCrossing(string name) => IsGerman
-        ? $"Das Wegenetz hat hier eine Luecke, ich gehe ueber {name}."
-        : $"There is a gap in the navmesh here; crossing at {name}.";
+    public static string BridgeCrossing(string name) => L($"Das Wegenetz hat hier eine Luecke, ich gehe ueber {name}.", $"There is a gap in the navmesh here; crossing at {name}.", $"Здесь в навигационной сетке разрыв, перехожу через {name}.");
     /// <summary>The push into a zone line achieved nothing. Says what is true -
     /// something is in the way - rather than leaving the player guessing why
     /// nothing happened.</summary>
-    public static string TransitionNudgeFailed(string name) => IsGerman
-        ? $"Ich komme nicht in {name} hinein, da steht etwas im Weg."
-        : $"I cannot get into {name}; something is in the way.";
+    public static string TransitionNudgeFailed(string name) => L($"Ich komme nicht in {name} hinein, da steht etwas im Weg.", $"I cannot get into {name}; something is in the way.", $"Не могу войти в {name}, что-то мешает.");
 
     /// <summary>Same, but the culprit is known (see <see cref="ObstacleService"/>).
     /// Knowing WHAT blocks decides what to do: another player moves on by
     /// themselves, a barrier never will.</summary>
-    public static string TransitionNudgeBlocked(string name, string blocker) => IsGerman
-        ? $"Ich komme nicht in {name} hinein, {blocker} steht im Weg."
-        : $"I cannot get into {name}; {blocker} is in the way.";
+    public static string TransitionNudgeBlocked(string name, string blocker) => L($"Ich komme nicht in {name} hinein, {blocker} steht im Weg.", $"I cannot get into {name}; {blocker} is in the way.", $"Не могу войти в {name}, {blocker} мешает.");
 
     /// <summary>An obstacle named for its own sake, without a walk around it.</summary>
-    public static string BlockedBy(string blocker) => IsGerman
-        ? $"{blocker} steht im Weg."
-        : $"{blocker} is in the way.";
+    public static string BlockedBy(string blocker) => L($"{blocker} steht im Weg.", $"{blocker} is in the way.", $"{blocker} мешает.");
 
     /// <summary>A switched-on collision box that pushes the player out. Deliberately
     /// not called a wall: it is invisible and has no model, and the point of saying
     /// it at all is that it will not move - turn around.</summary>
-    public static string ObstacleBarrier => IsGerman
-        ? "eine unsichtbare Absperrung"
-        : "an invisible barrier";
+    public static string ObstacleBarrier => L("eine unsichtbare Absperrung", "an invisible barrier", "невидимое ограждение");
 
     /// <summary>Scenery carrying collision - a crate, a fence, a gate. The game
     /// keeps no speakable name for these (measured with zone-probe 2026-08-22:
     /// only model and collision file names such as f1t0_a0_taru1.mdl), and
     /// inventing one would be a guess. The abbreviation goes to the log instead.</summary>
-    public static string ObstacleScenery => IsGerman
-        ? "ein festes Hindernis"
-        : "solid scenery";
+    public static string ObstacleScenery => L("ein festes Hindernis", "solid scenery", "прочное препятствие");
     /// <summary>vnavmesh threw our fixed point list away and started routing on
     /// its own (OnStuck + RetryOnStuck) - from here on nothing is under our
     /// control, so the walk ends honestly instead of drifting off.</summary>
-    public static string TrailLost => IsGerman
-        ? "Ich komme auf der Spur nicht durch, Lauf beendet."
-        : "I cannot get through on the trail; walk ended.";
+    public static string TrailLost => L("Ich komme auf der Spur nicht durch, Lauf beendet.", "I cannot get through on the trail; walk ended.", "По дорожке не пройти, бег завершён.");
 
     /// <summary>The walk guide ran out of walkable mesh. Unlike the auto-walk
     /// nothing is stopped - the player does the walking - so the line says what
     /// actually changes: guidance continues as the crow flies.</summary>
     public static string GuideMeshEndsHere(float distance, string direction) =>
-        IsGerman ? $"Hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}, ich führe ab jetzt in Luftlinie."
-                 : $"This is where the walkable path ends. {MetersRemaining(distance)} to the {direction}; guiding in a straight line from here.";
+        L($"Hier endet der begehbare Weg. Noch {MetersRemaining(distance)} nach {direction}, ich führe ab jetzt in Luftlinie.", $"This is where the walkable path ends. {MetersRemaining(distance)} to the {direction}; guiding in a straight line from here.", $"Здесь кончается проходимый путь. Осталось {MetersRemaining(distance)} на {direction}, дальше веду по прямой.");
 
     // ════════════════════════════════════════════════════════════════
     //  HotbarService - Aktionsleiste & Skill-Browser
     // ════════════════════════════════════════════════════════════════
     public static string HotbarUnavailable =>
-        IsGerman ? "Aktionsleiste nicht verfügbar." : "Hotbar not available.";
+        L("Aktionsleiste nicht verfügbar.", "Hotbar not available.", "Панель действий недоступна.");
     public static string HotbarEmpty(int bar) =>
-        IsGerman ? $"Aktionsleiste {bar} ist leer." : $"Hotbar {bar} is empty.";
+        L($"Aktionsleiste {bar} ist leer.", $"Hotbar {bar} is empty.", $"Панель действий {bar} пуста.");
     public static string HotbarPrefix(int bar) =>
-        IsGerman ? $"Aktionsleiste {bar}. " : $"Hotbar {bar}. ";
+        L($"Aktionsleiste {bar}. ", $"Hotbar {bar}. ", $"Панель действий {bar}. ");
     /// <summary>Spoken name of a keyboard modifier, including the joining plus.
     /// The game's keybind table carries only modifier FLAGS (KeyModifierFlag),
     /// never a display name, so KeybindService builds the label itself - and it
     /// has to follow "/acc lang" like everything else that is spoken. Before
     /// 2026-09-05 these were hardcoded German and leaked "Strg" into English
     /// announcements (user report).</summary>
-    public static string ModifierCtrl => IsGerman ? "Strg+" : "Ctrl+";
-    public static string ModifierShift => IsGerman ? "Umschalt+" : "Shift+";
-    public static string ModifierAlt => IsGerman ? "Alt+" : "Alt+";
+    public static string ModifierCtrl => L("Strg+", "Ctrl+", "Ctrl+");
+    public static string ModifierShift => L("Umschalt+", "Shift+", "Shift+");
+    public static string ModifierAlt => L("Alt+", "Alt+", "Alt+");
 
     /// <summary>
     /// Every part of a configured hotkey that is German only because the config
@@ -3261,7 +3130,10 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string SpokenKeyLabel(string configKey)
     {
-        if (IsGerman || string.IsNullOrEmpty(configKey)) return configKey;
+        // Key names stay ENGLISH for German AND Russian (report 2026-09-10: the
+        // Russian layer must not run them through the German word map - "Entfernen"
+        // read out for Delete is the same defect as a German key name).
+        if (IsGerman || Loc.IsRussian || string.IsNullOrEmpty(configKey)) return configKey;
         var parts = configKey.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         for (var i = 0; i < parts.Length; i++)
             parts[i] = GermanKeyWords.GetValueOrDefault(parts[i], parts[i]);
@@ -3270,119 +3142,114 @@ public static partial class AccessibilityStrings
 
     /// <summary>Slot label: main bar is "key X", other bars name bar+slot/key.</summary>
     public static string SlotMainKey(string key) =>
-        IsGerman ? $"Taste {key}" : $"key {key}";
+        L($"Taste {key}", $"key {key}", $"Клавиша {key}");
     public static string SlotBarKey(int bar, string key) =>
-        IsGerman ? $"Leiste {bar}, Taste {key}" : $"bar {bar}, key {key}";
+        L($"Leiste {bar}, Taste {key}", $"bar {bar}, key {key}", $"Панель {bar}, клавиша {key}");
     public static string SlotBarSlot(int bar, int slot) =>
-        IsGerman ? $"Leiste {bar}, Slot {slot}" : $"bar {bar}, slot {slot}";
+        L($"Leiste {bar}, Slot {slot}", $"bar {bar}, slot {slot}", $"Панель {bar}, слот {slot}");
     public static string TargetSlotCurrent(string slotLabel, string current) =>
-        IsGerman ? $"Ziel-{slotLabel}: {current}" : $"Target {slotLabel}: {current}";
+        L($"Ziel-{slotLabel}: {current}", $"Target {slotLabel}: {current}", $"Цель: {slotLabel}, {current}");
     public static string NoSkillSelected =>
-        IsGerman ? "Kein Skill gewählt. Erst mit dem Skill-Browser blättern." : "No skill selected. Browse with the skill browser first.";
+        L("Kein Skill gewählt. Erst mit dem Skill-Browser blättern.", "No skill selected. Browse with the skill browser first.", "Умение не выбрано. Сначала пролистай список умений.");
     public static string NoTargetSlot =>
-        IsGerman ? "Keine Ziel-Taste gewählt. Erst die Ziel-Taste wählen." : "No target slot selected. Select the target slot first.";
+        L("Keine Ziel-Taste gewählt. Erst die Ziel-Taste wählen.", "No target slot selected. Select the target slot first.", "Целевая клавиша не выбрана. Сначала выбери целевую клавишу.");
     public static string AssignFailed =>
-        IsGerman ? "Belegen fehlgeschlagen." : "Assignment failed.";
+        L("Belegen fehlgeschlagen.", "Assignment failed.", "Не удалось назначить.");
+    /// <summary>
+    /// Header of the crafting tab in the assignment menu (user request
+    /// 2026-09-26: her own tab for the craft actions, apart from the battle
+    /// skills). Same shape as the other list headers so the menu sounds
+    /// consistent.
+    /// </summary>
+    public static string CraftActionNeedsReassignment(string name) =>
+        L($"{name} (Aktion neu zuweisen)", $"{name} (reassign this action)", $"{name} (переназначьте навык)");
+
+    public static string CraftActionMenuOpened(int count) =>
+        L($"Handwerks-Aktionen, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 5 sagt die Beschreibung, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Crafting actions, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 5 reads the description, Numpad 0 selects, Numpad decimal to go back.", $"Действия крафта, {count} записей. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 5 читает описание, Numpad 0 выбирает, Numpad точка назад.");
     public static string SkillAssigned(string name, string slotLabel) =>
-        IsGerman ? $"{name} liegt jetzt auf {slotLabel}." : $"{name} is now on {slotLabel}.";
+        L($"{name} liegt jetzt auf {slotLabel}.", $"{name} is now on {slotLabel}.", $"{name} теперь на {slotLabel}.");
     public static string AssignFailedNoChange =>
-        IsGerman ? "Belegen fehlgeschlagen, die Taste hat sich nicht geändert." : "Assignment failed, the key did not change.";
+        L("Belegen fehlgeschlagen, die Taste hat sich nicht geändert.", "Assignment failed, the key did not change.", "Не удалось назначить, клавиша не изменилась.");
     public static string PlayerDataNotReady =>
-        IsGerman ? "Spielerdaten noch nicht bereit." : "Player data not ready yet.";
+        L("Spielerdaten noch nicht bereit.", "Player data not ready yet.", "Данные игрока ещё не готовы.");
     public static string NoSkillsFound =>
-        IsGerman ? "Keine Skills gefunden." : "No skills found.";
+        L("Keine Skills gefunden.", "No skills found.", "Умения не найдены.");
     /// <summary>Bare "slot N" label (no bar), used in the hotbar read-out.</summary>
     public static string SlotNumberWord(int slot) =>
-        IsGerman ? $"Slot {slot}" : $"slot {slot}";
+        L($"Slot {slot}", $"slot {slot}", $"Слот {slot}");
     /// <summary>Target-bar summary: how many slots are filled, plus a warning
     /// when the bar has no keys bound.</summary>
     public static string TargetBarSummary(int bar, int filled, int total, bool anyKey) =>
-        IsGerman
-            ? $"Ziel-Leiste {bar}, {filled} von {total} belegt{(anyKey ? "" : ", keine Tasten zugewiesen")}."
-            : $"Target bar {bar}, {filled} of {total} filled{(anyKey ? "" : ", no keys assigned")}.";
+        L($"Ziel-Leiste {bar}, {filled} von {total} belegt{(anyKey ? "" : ", keine Tasten zugewiesen")}.",
+          $"Target bar {bar}, {filled} of {total} filled{(anyKey ? "" : ", no keys assigned")}.",
+          $"Панель цели {bar}: занято {filled} из {total}{(anyKey ? "" : ", клавиши не назначены")}.");
     /// <summary>One browsed skill: name, level, where it currently sits (optional)
     /// and its position in the list.</summary>
     public static string SkillBrowseEntry(string name, int level, string? location, int index, int count) =>
-        IsGerman
-            ? $"{name}, Stufe {level}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
-            : $"{name}, level {level}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+        L($"{name}, Stufe {level}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}",
+          $"{name}, level {level}{(location != null ? $", on {location}" : "")}, {index} of {count}",
+          $"{name}, уровень {level}{(location != null ? $", стоит на {location}" : "")}, {index} из {count}");
 
     /// <summary>One browsed item: name, stack size, quality, where it currently
     /// sits (optional) and its position in the list. The count is spoken because
     /// a stack of one is a different decision than a stack of twenty.</summary>
     public static string ItemBrowseEntry(string name, int quantity, bool isHq, string? location, int index, int count) =>
-        IsGerman
-            ? $"{name}{(isHq ? HighQuality : "")}, {quantity} Stück{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
-            : $"{name}{(isHq ? HighQuality : "")}, {quantity}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+        L($"{name}{(isHq ? HighQuality : "")}, {quantity} Stück{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}",
+          $"{name}{(isHq ? HighQuality : "")}, {quantity}{(location != null ? $", on {location}" : "")}, {index} of {count}",
+          $"{name}{(isHq ? HighQuality : "")}, {quantity} шт.{(location != null ? $", стоит на {location}" : "")}, {index} из {count}");
 
     // ── Skill-Zuweisungs-Menü (modal, Nummernblock) ──
     /// <summary>Spoken when the modal skill menu opens, with the browse hint.</summary>
     public static string SkillMenuOpened(int count) =>
-        IsGerman
-            ? $"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Skill-Zuweisung, {count} Skills. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Skill assignment, {count} skills. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Назначение умений, {count} умений. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 0 выбирает, Numpad точка назад.");
 
     /// <summary>Spoken when the menu switches to the carried-item list.</summary>
     public static string ItemMenuOpened(int count) =>
-        IsGerman
-            ? $"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Предметы, {count} записей. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 0 выбирает, Numpad точка назад.");
 
     /// <summary>Spoken when the menu switches to the general-action list
     /// (Absteigen, Reittier-Roulette, Sprint, Teleport ...).</summary>
     public static string GeneralActionMenuOpened(int count) =>
-        IsGerman
-            ? $"Allgemeine Aktionen, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"General actions, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Allgemeine Aktionen, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"General actions, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Общие действия, {count} записей. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 0 выбирает, Numpad точка назад.");
 
     /// <summary>Spoken when the menu switches to the mount list.</summary>
     public static string MountMenuOpened(int count) =>
-        IsGerman
-            ? $"Reittiere, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Mounts, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Reittiere, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Mounts, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Маунты, {count} записей. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 0 выбирает, Numpad точка назад.");
 
     /// <summary>Spoken when the menu switches to companion commands
     /// (Heilen, Warten, Folgen, Haltungen, Kunststücke …).</summary>
     public static string BuddyActionMenuOpened(int count) =>
-        IsGerman
-            ? $"Chocobo-Kommandos, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Chocobo commands, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Chocobo-Kommandos, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Chocobo commands, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Команды чокобо, записей {count}. Numpad 8 и 2 листают, 4 или 6 меняют список, Numpad 0 выбирает, Numpad запятая назад.");
 
     /// <summary>One browsed entry that has nothing but a name: general actions
     /// and mounts. Same shape as the other browse entries so the menu sounds
     /// consistent no matter which list is open.</summary>
     public static string PlainBrowseEntry(string name, string? location, int index, int count) =>
-        IsGerman
-            ? $"{name}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
-            : $"{name}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+        L($"{name}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}",
+          $"{name}{(location != null ? $", on {location}" : "")}, {index} of {count}",
+          $"{name}{(location != null ? $", стоит на {location}" : "")}, {index} из {count}");
 
     /// <summary>Spoken when the menu switches to the quest-item list.</summary>
     public static string QuestItemMenuOpened(int count) =>
-        IsGerman
-            ? $"Quest-Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück."
-            : $"Quest items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.";
+        L($"Quest-Gegenstände, {count} Einträge. Nummernblock 8 und 2 blättern, 4 oder 6 wechselt die Liste, Nummernblock 0 wählt, Nummernblock Komma zurück.", $"Quest items, {count} entries. Numpad 8 and 2 to browse, 4 or 6 switches the list, Numpad 0 selects, Numpad decimal to go back.", $"Предметы задания, {count} записей. Numpad 8 и 2 листают, Numpad 4 и 6 меняют список, Numpad 0 выбирает, Numpad точка назад.");
 
     /// <summary>One browsed quest item: name, how many are left, its cast time
     /// and where it already sits. The cast time matters in a fight - three
     /// seconds of standing still is a decision.</summary>
     public static string QuestItemBrowseEntry(string name, int quantity, byte castTime, string? location, int index, int count) =>
-        IsGerman
-            ? $"{name}, {quantity} Stück{(castTime > 0 ? $", Wirkzeit {castTime} Sekunden" : "")}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}"
-            : $"{name}, {quantity}{(castTime > 0 ? $", cast time {castTime} seconds" : "")}{(location != null ? $", on {location}" : "")}, {index} of {count}";
+        L($"{name}, {quantity} Stück{(castTime > 0 ? $", Wirkzeit {castTime} Sekunden" : "")}{(location != null ? $", liegt auf {location}" : "")}, {index} von {count}",
+          $"{name}, {quantity}{(castTime > 0 ? $", cast time {castTime} seconds" : "")}{(location != null ? $", on {location}" : "")}, {index} of {count}",
+          $"{name}, {quantity} шт.{(castTime > 0 ? $", применение {castTime} с" : "")}{(location != null ? $", стоит на {location}" : "")}, {index} из {count}");
 
     /// <summary>Spoken when stepping the source list finds nothing else with
     /// entries - the player stays where they are.</summary>
     public static string SkillMenuNoOtherSource =>
-        IsGerman
-            ? "Keine andere Liste verfügbar."
-            : "No other list available.";
+        L("Keine andere Liste verfügbar.", "No other list available.", "Другого списка нет.");
 
     /// <summary>Announced when usable quest items arrive. Says what the loot
     /// channel does not: that they DO something, and how to reach them.</summary>
     public static string QuestItemReceived(string joined) =>
-        IsGerman
-            ? $"Quest-Gegenstand zum Benutzen: {joined}. Mit Strg und Nummernblock 0 auf die Leiste legen."
-            : $"Usable quest item: {joined}. Put it on a bar with Ctrl and Numpad 0.";
+        L($"Quest-Gegenstand zum Benutzen: {joined}. Mit Strg und Nummernblock 0 auf die Leiste legen.", $"Usable quest item: {joined}. Put it on a bar with Ctrl and Numpad 0.", $"Предмет задания для использования: {joined}. Положи его на панель через Ctrl и Numpad 0.");
 
     // ── Zugang zum Ziel (Aufgangs-Erkennung) ─────────────────────────
     // Wenn das Ziel auf einer Fläche liegt, die im Wegenetz nicht an unserer
@@ -3391,25 +3258,19 @@ public static partial class AccessibilityStrings
 
     /// <summary>Approach search: nothing selected to check.</summary>
     public static string ApproachNoTarget =>
-        IsGerman
-            ? "Kein Ziel gewählt. Erst ein Ziel anvisieren oder im Objekt-Browser auswählen."
-            : "No destination selected. Target something first, or pick it in the object browser.";
+        L("Kein Ziel gewählt. Erst ein Ziel anvisieren oder im Objekt-Browser auswählen.", "No destination selected. Target something first, or pick it in the object browser.", "Цель не выбрана. Сначала наведись на цель или выбери её в списке объектов.");
 
     /// <summary>Approach search: started (it takes a moment, so say so).</summary>
     public static string ApproachChecking(string target) =>
-        IsGerman ? $"Prüfe den Weg zu {target}." : $"Checking the route to {target}.";
+        L($"Prüfe den Weg zu {target}.", $"Checking the route to {target}.", $"Проверяю путь к {target}.");
 
     /// <summary>Approach search: a continuous route exists.</summary>
     public static string ApproachReachable(string target, float distance) =>
-        IsGerman
-            ? $"Zu {target} führt ein durchgehender Weg, {distance:F0} Meter."
-            : $"There is a continuous route to {target}, {distance:F0} meters.";
+        L($"Zu {target} führt ein durchgehender Weg, {distance:F0} Meter.", $"There is a continuous route to {target}, {distance:F0} meters.", $"К {target} ведёт непрерывный путь, {distance:F0} метров.");
 
     /// <summary>Approach search: no route, and no reachable spot nearby either.</summary>
     public static string ApproachNone(string target) =>
-        IsGerman
-            ? $"Zu {target} führt kein Weg, und in der Nähe gibt es keinen erreichbaren Punkt. Der Zugang liegt weiter weg."
-            : $"No route to {target}, and no reachable spot nearby either. The way in is further off.";
+        L($"Zu {target} führt kein Weg, und in der Nähe gibt es keinen erreichbaren Punkt. Der Zugang liegt weiter weg.", $"No route to {target}, and no reachable spot nearby either. The way in is further off.", $"К {target} пути нет, и рядом нет достижимой точки. Вход дальше отсюда.");
 
     /// <summary>Approach search: names the closest reachable spot, how to get
     /// there and how the destination sits relative to it.</summary>
@@ -3418,78 +3279,69 @@ public static partial class AccessibilityStrings
     {
         var hoehe = heightDiff switch
         {
-            >= 1f => IsGerman ? $", {heightDiff:F0} Meter über dir" : $", {heightDiff:F0} meters above you",
-            <= -1f => IsGerman ? $", {-heightDiff:F0} Meter unter dir" : $", {-heightDiff:F0} meters below you",
+            >= 1f => L($", {heightDiff:F0} Meter ueber dir", $", {heightDiff:F0} meters above you",
+                        $", {heightDiff:F0} метров над тобой"),
+            <= -1f => L($", {-heightDiff:F0} Meter unter dir", $", {-heightDiff:F0} meters below you",
+                        $", {-heightDiff:F0} метров под тобой"),
             _ => string.Empty,
         };
-        return IsGerman
-            ? $"Kein durchgehender Weg zu {target}. Ich laufe zum nächstmöglichen Punkt, " +
-              $"{walkDistance:F0} Meter nach {compass}. Von dort ist das Ziel noch " +
-              $"{gapDistance:F0} Meter entfernt{hoehe}."
-            : $"No continuous route to {target}. Walking to the closest spot instead, " +
-              $"{walkDistance:F0} meters {compass}. From there the destination is " +
-              $"{gapDistance:F0} meters away{hoehe}.";
+        return L(
+            $"Kein durchgehender Weg zu {target}. Ich laufe zum naechstmoeglichen Punkt, " +
+            $"{walkDistance:F0} Meter nach {compass}. Von dort ist das Ziel noch " +
+            $"{gapDistance:F0} Meter entfernt{hoehe}.",
+            $"No continuous route to {target}. Walking to the closest spot instead, " +
+            $"{walkDistance:F0} meters {compass}. From there the destination is " +
+            $"{gapDistance:F0} meters away{hoehe}.",
+            $"Сквозного пути к цели {target} нет. Иду к ближайшей точке, " +
+            $"{walkDistance:F0} метров на {compass}. Оттуда до цели ещё " +
+            $"{gapDistance:F0} метров{hoehe}.");
     }
 
     /// <summary>Destination name for the walk to the near side of a gap.</summary>
     public static string GapCrossSpotName =>
-        IsGerman ? "Übergangsstelle" : "crossing point";
+        L("Übergangsstelle", "crossing point", "точка перехода");
 
     /// <summary>Now crossing a gap the navigation mesh does not cover.</summary>
     public static string GapCrossing =>
-        IsGerman
-            ? "Übergangsstelle erreicht. Überquere die Lücke."
-            : "Crossing point reached. Crossing the gap now.";
+        L("Übergangsstelle erreicht. Überquere die Lücke.", "Crossing point reached. Crossing the gap now.", "Точка перехода достигнута. Пересекаю разрыв.");
 
     /// <summary>The game's collision module could not be reached.</summary>
     public static string GroundProbeUnavailable =>
-        IsGerman
-            ? "Die Kollisionsabfrage des Spiels ist nicht erreichbar."
-            : "The game's collision query is unavailable.";
+        L("Die Kollisionsabfrage des Spiels ist nicht erreichbar.", "The game's collision query is unavailable.", "Запрос столкновений игры недоступен.");
 
     /// <summary>Result of the ground probe: how much floor was found and how
     /// much of it the navigation mesh does not cover.</summary>
     public static string GroundProbeResult(int hits, int withoutMesh) =>
-        IsGerman
-            ? $"Bodenmessung fertig. {hits} Treffer, davon {withoutMesh} ohne Wegenetz."
-            : $"Ground probe done. {hits} hits, {withoutMesh} of them without navigation mesh.";
+        L($"Bodenmessung fertig. {hits} Treffer, davon {withoutMesh} ohne Wegenetz.", $"Ground probe done. {hits} hits, {withoutMesh} of them without navigation mesh.", $"Измерение земли завершено. {hits} попаданий, из них {withoutMesh} без навигационной сетки.");
 
     /// <summary>The crossing was surveyed for one zone only and we are elsewhere.</summary>
     public static string GapCrossWrongZone =>
-        IsGerman
-            ? "Diesen Übergang gibt es nur auf den Unteren Decks."
-            : "This crossing only exists on the Lower Decks.";
+        L("Diesen Übergang gibt es nur auf den Unteren Decks.", "This crossing only exists on the Lower Decks.", "Этот переход есть только на Нижних палубах.");
 
     /// <summary>Neither side of the gap can be walked to from where we stand.</summary>
     public static string GapCrossNoSide =>
-        IsGerman
-            ? "Von hier aus führt kein Weg zur Übergangsstelle."
-            : "No route to the crossing point from here.";
+        L("Von hier aus führt kein Weg zur Übergangsstelle.", "No route to the crossing point from here.", "Отсюда к точке перехода пути нет.");
 
     /// <summary>The walk to the crossing point did not arrive, so no crossing.</summary>
     public static string GapCrossTooFar =>
-        IsGerman
-            ? "Übergang abgebrochen - die Übergangsstelle wurde nicht erreicht."
-            : "Crossing cancelled - the crossing point was not reached.";
+        L("Übergang abgebrochen - die Übergangsstelle wurde nicht erreicht.", "Crossing cancelled - the crossing point was not reached.", "Переход отменён — точка перехода не достигнута.");
 
     /// <summary>Name for the walk to an approach spot - the walk announcements
     /// must not claim we are heading for the destination itself.</summary>
     public static string ApproachSpotName(string target) =>
-        IsGerman ? $"Zugang zu {target}" : $"way in to {target}";
+        L($"Zugang zu {target}", $"way in to {target}", $"подход к {target}");
 
     /// <summary>Name for the walk to the near side of a crossing. Like
     /// <see cref="ApproachSpotName"/> this only ever surfaces in a failure
     /// announcement - a crossing that works stays silent, the same way the
     /// near-miss redirect does.</summary>
     public static string CrossingSpotName(string target) =>
-        IsGerman ? $"Übergang zu {target}" : $"crossing to {target}";
+        L($"Übergang zu {target}", $"crossing to {target}", $"переход к {target}");
 
     /// <summary>Auto-walk refused to start: the destination hangs on a separate
     /// patch of the navigation mesh, so walking there is impossible.</summary>
     public static string TargetUnreachable(string target) =>
-        IsGerman
-            ? $"{target} ist nicht erreichbar - dorthin führt kein Weg."
-            : $"{target} cannot be reached - no route leads there.";
+        L($"{target} ist nicht erreichbar - dorthin führt kein Weg.", $"{target} cannot be reached - no route leads there.", $"К {target} не добраться — пути туда нет.");
 
     // Es gab hier drei Ansagen rund um den Fall "Weg endet kurz vorm Ziel"
     // (Umleitung, Restfahrt, Restweg). Der User hat sie am 2026-08-07 direkt
@@ -3499,332 +3351,341 @@ public static partial class AccessibilityStrings
 
     /// <summary>Debug probe: the slot it wants to test is not free.</summary>
     public static string ProbeSlotOccupied =>
-        IsGerman
-            ? "Sonde braucht Taste 12 der ersten Leiste frei."
-            : "Probe needs key 12 on the first bar to be free.";
+        L("Sonde braucht Taste 12 der ersten Leiste frei.", "Probe needs key 12 on the first bar to be free.", "Для зонда нужна свободная клавиша 12 на первой панели.");
 
     /// <summary>Debug probe: finished, results are in the log.</summary>
     public static string ProbeDone =>
-        IsGerman ? "Sonde fertig, Ergebnis im Log." : "Probe finished, results in the log.";
+        L("Sonde fertig, Ergebnis im Log.", "Probe finished, results in the log.", "Зонд завершён, результат в логе.");
 
     /// <summary>Spoken when the player carries nothing that can go on a bar.</summary>
     public static string NoUsableItems =>
-        IsGerman
-            ? "Keine benutzbaren Gegenstände in der Tasche."
-            : "No usable items in your bag.";
+        L("Keine benutzbaren Gegenstände in der Tasche.", "No usable items in your bag.", "В сумке нет предметов, которые можно использовать.");
     /// <summary>One browsed target key: its label, what is on it now, position
     /// in list. No "currently" filler word: this fires on every single press of
     /// Numpad 8/2 while looking for a free key, and the word carries nothing the
     /// position in the sentence does not already say (user 2026-09-05).</summary>
     public static string SkillMenuTargetEntry(string slotLabel, string current, int index, int count) =>
-        IsGerman
-            ? $"{slotLabel}, {current}, {index} von {count}"
-            : $"{slotLabel}, {current}, {index} of {count}";
+        L($"{slotLabel}, {current}, {index} von {count}", $"{slotLabel}, {current}, {index} of {count}", $"{slotLabel}, {current}, {index} из {count}");
     public static string SkillMenuClosed =>
-        IsGerman ? "Zuweisungs-Menü geschlossen." : "Assignment menu closed.";
+        L("Zuweisungs-Menü geschlossen.", "Assignment menu closed.", "Меню назначения закрыто.");
     public static string SkillMenuNoTargets =>
-        IsGerman ? "Keine belegbaren Tasten gefunden." : "No assignable keys found.";
+        L("Keine belegbaren Tasten gefunden.", "No assignable keys found.", "Клавиш для назначения не найдено.");
 
     /// <summary>Spoken when the assignment menu opens on the KEY list - the menu
     /// asks which key to fill first and what goes on it second (user choice
     /// 2026-09-05, the reverse of the original order).</summary>
     public static string SkillMenuSlotsOpened(int count) =>
-        IsGerman
-            ? $"Tastenbelegung, {count} Tasten. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt die Taste, Nummernblock Komma schließt."
-            : $"Key assignment, {count} keys. Numpad 8 and 2 to browse, Numpad 0 picks the key, Numpad decimal closes.";
+        L($"Tastenbelegung, {count} Tasten. Nummernblock 8 und 2 blättern, Nummernblock 0 wählt die Taste, Nummernblock Komma schließt.", $"Key assignment, {count} keys. Numpad 8 and 2 to browse, Numpad 0 picks the key, Numpad decimal closes.", $"Назначение клавиш, {count} клавиш. Numpad 8 и 2 листают, Numpad 0 выбирает клавишу, Numpad точка закрывает.");
 
     /// <summary>Spoken after a key is chosen: which key is being filled and what
     /// is on it now, right before the list of things that can go on it. No
     /// "currently" filler, same reasoning as <see cref="SkillMenuTargetEntry"/>
     /// (user 2026-09-05).</summary>
     public static string SkillMenuPickEntry(string slotLabel, string current) =>
-        IsGerman
-            ? $"{slotLabel} gewählt, {current}. Was soll darauf?"
-            : $"{slotLabel} selected, {current}. What goes on it?";
+        L($"{slotLabel} gewählt, {current}. Was soll darauf?", $"{slotLabel} selected, {current}. What goes on it?", $"{slotLabel} выбрана, {current}. Что на неё повесить?");
 
     /// <summary>Spoken when the menu returns to the key list - after a placement
     /// (the menu no longer closes) or when stepping back out of the lists.</summary>
     public static string SkillMenuBackAtSlots(int count) =>
-        IsGerman
-            ? $"Zurück zur Tastenauswahl, {count} Tasten."
-            : $"Back to key selection, {count} keys.";
+        L($"Zurück zur Tastenauswahl, {count} Tasten.", $"Back to key selection, {count} keys.", $"Назад к выбору клавиши, {count} клавиш.");
 
     /// <summary>Spoken when the chosen key cannot be filled because not one of
     /// the sources has an entry to offer.</summary>
     public static string SkillMenuNothingToAssign =>
-        IsGerman ? "Nichts zum Belegen verfügbar." : "Nothing available to assign.";
+        L("Nichts zum Belegen verfügbar.", "Nothing available to assign.", "Нечего назначить.");
 
     // ── CooldownService: Fähigkeit wieder bereit ──
     public static string SkillReady(string name) =>
-        IsGerman ? $"{name} bereit." : $"{name} ready.";
+        L($"{name} bereit.", $"{name} ready.", $"{name} готово.");
+    public static string JobProcReady(string name) =>
+        L($"Effekt: {name}.", $"Effect: {name}.", $"Эффект: {name}.");
     public static string SkillChargeReady(string name, uint charges, ushort maxCharges) =>
-        IsGerman
-            ? $"{name} bereit, {charges} von {maxCharges} Ladungen."
-            : $"{name} ready, {charges} of {maxCharges} charges.";
+        L($"{name} bereit, {charges} von {maxCharges} Ladungen.", $"{name} ready, {charges} of {maxCharges} charges.", $"{name} готово, {charges} из {maxCharges} зарядов.");
     public static string SkillReadyAnnounceOn =>
-        IsGerman ? "Fähigkeit-bereit-Ansage an." : "Ability-ready announcements on.";
+        L("Fähigkeit-bereit- und Effekt-Ansagen an.", "Ability-ready and effect announcements on.", "Оповещения о готовности умений и эффектах включены.");
     public static string SkillReadyAnnounceOff =>
-        IsGerman ? "Fähigkeit-bereit-Ansage aus." : "Ability-ready announcements off.";
+        L("Fähigkeit-bereit- und Effekt-Ansagen aus.", "Ability-ready and effect announcements off.", "Оповещения о готовности умений и эффектах выключены.");
 
     // ── JobGaugeService: Job-Anzeige, etwas ist wieder verfügbar ──
     // Karfunkel-Arten (Rubin/Topas/Smaragd) und Primae (Ifrit/Titan/Garuda)
     // teilen dieselben Ready-Bits; der Name folgt der nutzbaren Aktion.
     public static string GaugeRubyReady =>
-        IsGerman ? "Rubin bereit" : "Ruby ready";
+        L("Rubin bereit", "Ruby ready", "Рубин готов");
     public static string GaugeTopazReady =>
-        IsGerman ? "Topas bereit" : "Topaz ready";
+        L("Topas bereit", "Topaz ready", "Топаз готов");
     public static string GaugeEmeraldReady =>
-        IsGerman ? "Smaragd bereit" : "Emerald ready";
+        L("Smaragd bereit", "Emerald ready", "Изумруд готов");
     public static string GaugeAllGemsReady =>
-        IsGerman ? "alle drei bereit" : "all three ready";
+        L("alle drei bereit", "all three ready", "все три готовы");
     // Die Namen der Primae sind Eigennamen und in beiden Sprachen gleich; die
     // Sätze drumherum nicht.
     public static string GaugeIfritReady =>
-        IsGerman ? "Ifrit bereit" : "Ifrit ready";
+        L("Ifrit bereit", "Ifrit ready", "Ифрит готов");
     public static string GaugeTitanReady =>
-        IsGerman ? "Titan bereit" : "Titan ready";
+        L("Titan bereit", "Titan ready", "Титан готов");
     public static string GaugeGarudaReady =>
-        IsGerman ? "Garuda bereit" : "Garuda ready";
+        L("Garuda bereit", "Garuda ready", "Гаруда готова");
     // Bewusst ohne Stapelzahl: wie das Spiel die Zahl kodiert, ist noch nicht
     // gemessen (siehe JobGaugeService.CollectSummoner).
     public static string GaugeAetherflowReady =>
-        IsGerman ? "Ätherfluss bereit" : "Aetherflow ready";
+        L("Ätherfluss bereit", "Aetherflow ready", "Поток эфира готов");
     public static string GaugeAttunementType(byte type) => type switch
     {
-        1 => IsGerman ? "Rubin"   : "Ruby",
-        2 => IsGerman ? "Topas"   : "Topaz",
-        3 => IsGerman ? "Smaragd" : "Emerald",
-        _ => IsGerman ? "Einstimmung" : "attunement",
+        1 => L("Rubin", "Ruby", "Рубин"),
+        2 => L("Topas", "Topaz", "Топаз"),
+        3 => L("Smaragd", "Emerald", "Изумруд"),
+        _ => L("Einstimmung", "attunement", "Настройка"),
     };
     public static string GaugeAttunement(string type, byte count) =>
-        IsGerman ? $"{type} {count}" : $"{type} {count}";
+        L($"{type} {count}", $"{type} {count}", $"{type} {count}");
     public static string GaugeNothingReady =>
-        IsGerman ? "Nichts bereit." : "Nothing ready.";
+        L("Nichts bereit.", "Nothing ready.", "Ничего не готово.");
     public static string GaugeNoneForJob =>
-        IsGerman
-            ? "Für diesen Job gibt es keine Anzeige."
-            : "This job has no gauge.";
+        L("Für diesen Job gibt es keine Anzeige.", "This job has no gauge.", "Для этого джоба нет индикатора.");
 
     // Samurai (SAMGauge): Sen / Kenki / Meditation / Kaeshi. Rising-edge labels
     // match the Summoner style ("… bereit" / "… full") so the warning voice stays
     // short during a fight.
     public static string GaugeGetsuReady =>
-        IsGerman ? "Getsu bereit" : "Getsu ready";
+        L("Getsu bereit", "Getsu ready", "Гэцу готов");
     public static string GaugeKaReady =>
-        IsGerman ? "Ka bereit" : "Ka ready";
+        L("Ka bereit", "Ka ready", "Ка готов");
     public static string GaugeSetsuReady =>
-        IsGerman ? "Setsu bereit" : "Setsu ready";
+        L("Setsu bereit", "Setsu ready", "Сэцу готов");
     public static string GaugeThreeSenReady =>
-        IsGerman ? "drei Sen" : "three Sen";
+        L("drei Sen", "three Sen", "три сэн");
     public static string GaugeKenkiFull =>
-        IsGerman ? "Kenki voll" : "Kenki full";
+        L("Kenki voll", "Kenki full", "Кэнки полон");
     public static string GaugeMeditationFull =>
-        IsGerman ? "Meditation voll" : "Meditation full";
+        L("Meditation voll", "Meditation full", "Медитация полна");
     public static string GaugeTsubameReady =>
-        IsGerman ? "Tsubame bereit" : "Tsubame ready";
+        L("Tsubame bereit", "Tsubame ready", "Цубамэ готов");
     public static string GaugeKenkiAmount(byte kenki) =>
-        IsGerman ? $"Kenki {kenki}" : $"Kenki {kenki}";
+        L($"Kenki {kenki}", $"Kenki {kenki}", $"Кэнки: {kenki}");
     public static string GaugeMeditationAmount(byte stacks) =>
-        IsGerman ? $"Meditation {stacks}" : $"Meditation {stacks}";
+        L($"Meditation {stacks}", $"Meditation {stacks}", $"Стеки медитации: {stacks}");
 
     /// <summary>Short "X full" / "X voll" for gauge capacity edges.</summary>
     public static string GaugeFull(string name) =>
-        IsGerman ? $"{name} voll" : $"{name} full";
+        L($"{name} voll", $"{name} full", $"{name}: максимум");
     /// <summary>Short "X ready" / "X bereit" for ready-flag edges.</summary>
     public static string GaugeReady(string name) =>
-        IsGerman ? $"{name} bereit" : $"{name} ready";
+        L($"{name} bereit", $"{name} ready", $"{name}: готово");
     /// <summary>On-demand amount readout.</summary>
     public static string GaugeAmount(string name, int value) =>
         $"{name} {value}";
 
     // Resource display names (DE/EN). Used by every Collect*/Announce* path.
-    public static string GaugeNameBeast => IsGerman ? "Zorn" : "Beast";
-    public static string GaugeNameOath => IsGerman ? "Eid" : "Oath";
-    public static string GaugeNameBlood => IsGerman ? "Blut" : "Blood";
-    public static string GaugeNameDarkArts => IsGerman ? "Dunkle Künste" : "Dark Arts";
-    public static string GaugeNameAmmo => IsGerman ? "Patronen" : "Cartridge";
-    public static string GaugeNameChakra => IsGerman ? "Chakra" : "Chakra";
-    public static string GaugeNameBeastChakra => IsGerman ? "Tierchakra" : "Beast Chakra";
-    public static string GaugeNameNadiLunar => IsGerman ? "Mond-Nadi" : "Lunar Nadi";
-    public static string GaugeNameNadiSolar => IsGerman ? "Sonnen-Nadi" : "Solar Nadi";
-    public static string GaugeNameNadiBoth => IsGerman ? "beide Nadi" : "both Nadi";
-    public static string GaugeNameNinki => IsGerman ? "Ninki" : "Ninki";
-    public static string GaugeNameKazematoi => IsGerman ? "Kazematoi" : "Kazematoi";
-    public static string GaugeNameSoul => IsGerman ? "Seele" : "Soul";
-    public static string GaugeNameShroud => IsGerman ? "Schleier" : "Shroud";
-    public static string GaugeNameEnshroud => IsGerman ? "Schleierform" : "Enshroud";
-    public static string GaugeNameVoidShroud => IsGerman ? "Leerenschleier" : "Void Shroud";
-    public static string GaugeNameLemureShroud => IsGerman ? "Lemurenschleier" : "Lemure Shroud";
-    public static string GaugeNameEyes => IsGerman ? "Drachenaugen" : "Dragon eyes";
-    public static string GaugeNameFirstminds => IsGerman ? "Erster Sinn" : "Firstminds' Focus";
-    public static string GaugeNameLotd => IsGerman ? "Leben des Drachen" : "Life of the Dragon";
-    public static string GaugeNameSoulVoice => IsGerman ? "Seelenstimme" : "Soul Voice";
-    public static string GaugeNameRepertoire => IsGerman ? "Repertoire" : "Repertoire";
-    public static string GaugeNameCodaMage => IsGerman ? "Coda Ballade" : "Mage's Coda";
-    public static string GaugeNameCodaArmy => IsGerman ? "Coda Paean" : "Army's Coda";
-    public static string GaugeNameCodaWanderer => IsGerman ? "Coda Menuett" : "Wanderer's Coda";
-    public static string GaugeNameHeat => IsGerman ? "Hitze" : "Heat";
-    public static string GaugeNameBattery => IsGerman ? "Batterie" : "Battery";
-    public static string GaugeNameOverheat => IsGerman ? "Überhitze" : "Overheat";
-    public static string GaugeNameRobot => IsGerman ? "Automat" : "Automaton";
-    public static string GaugeNameFeathers => IsGerman ? "Federn" : "Feathers";
-    public static string GaugeNameEsprit => IsGerman ? "Esprit" : "Esprit";
-    public static string GaugeNamePolyglot => IsGerman ? "Polyglott" : "Polyglot";
-    public static string GaugeNameParadox => IsGerman ? "Paradoxon" : "Paradox";
-    public static string GaugeNameAstralSoul => IsGerman ? "Astralseele" : "Astral Soul";
-    public static string GaugeNameUmbralHearts => IsGerman ? "Umbralherzen" : "Umbral Hearts";
-    public static string GaugeNameWhiteMana => IsGerman ? "weißes Mana" : "White Mana";
-    public static string GaugeNameBlackMana => IsGerman ? "schwarzes Mana" : "Black Mana";
-    public static string GaugeNameManaStacks => IsGerman ? "Manastapel" : "Mana stacks";
-    public static string GaugeNamePalette => IsGerman ? "Palette" : "Palette";
-    public static string GaugeNamePaint => IsGerman ? "Farbe" : "Paint";
-    public static string GaugeNameCreatureMotif => IsGerman ? "Kreaturmotiv" : "Creature motif";
-    public static string GaugeNameWeaponMotif => IsGerman ? "Waffenmotiv" : "Weapon motif";
-    public static string GaugeNameLandscapeMotif => IsGerman ? "Landschaftsmotiv" : "Landscape motif";
-    public static string GaugeNameMooglePortrait => IsGerman ? "Mogry-Porträt" : "Moogle portrait";
-    public static string GaugeNameMadeenPortrait => IsGerman ? "Madeen-Porträt" : "Madeen portrait";
-    public static string GaugeNameLily => IsGerman ? "Lilie" : "Lily";
-    public static string GaugeNameBloodLily => IsGerman ? "Blutlilie" : "Blood Lily";
-    public static string GaugeNameAetherflow => IsGerman ? "Ätherfluss" : "Aetherflow";
-    public static string GaugeNameFairy => IsGerman ? "Feenanzeige" : "Fairy Gauge";
-    public static string GaugeNameAddersgall => IsGerman ? "Addersgall" : "Addersgall";
-    public static string GaugeNameAddersting => IsGerman ? "Addersting" : "Addersting";
-    public static string GaugeNameEukrasia => IsGerman ? "Eukrasie" : "Eukrasia";
-    public static string GaugeNameCard => IsGerman ? "Karte" : "Card";
-    public static string GaugeNameCrownCard => IsGerman ? "Kronenkarte" : "Crown card";
-    public static string GaugeNameRattlingCoil => IsGerman ? "Rasseln" : "Rattling Coil";
-    public static string GaugeNameSerpentOffering => IsGerman ? "Schlangenopfer" : "Serpent Offerings";
-    public static string GaugeNameSerpentFollowUp => IsGerman ? "Schlangenschwanz" : "Serpent's Tail";
+    public static string GaugeNameBeast => L("Zorn", "Beast", "Зверь");
+    public static string GaugeNameOath => L("Eid", "Oath", "Клятва");
+    public static string GaugeNameBlood => L("Blut", "Blood", "Кровь");
+    public static string GaugeNameDarkArts => L("Dunkle Künste", "Dark Arts", "Тёмное искусство");
+    public static string GaugeNameAmmo => L("Patronen", "Cartridge", "Патрон");
+    public static string GaugeNameChakra => L("Chakra", "Chakra", "Чакра");
+    public static string GaugeNameBeastChakra => L("Tierchakra", "Beast Chakra", "Чакра зверя");
+    public static string GaugeNameNadiLunar => L("Mond-Nadi", "Lunar Nadi", "Лунная нади");
+    public static string GaugeNameNadiSolar => L("Sonnen-Nadi", "Solar Nadi", "Солнечная нади");
+    public static string GaugeNameNadiBoth => L("beide Nadi", "both Nadi", "обе нади");
+    public static string GaugeNameNinki => L("Ninki", "Ninki", "Нинки");
+    public static string GaugeNameKazematoi => L("Kazematoi", "Kazematoi", "Кадзэматои");
+    public static string GaugeNameSoul => L("Seele", "Soul", "Душа");
+    public static string GaugeNameShroud => L("Schleier", "Shroud", "Покров");
+    public static string GaugeNameEnshroud => L("Schleierform", "Enshroud", "Облачение");
+    public static string GaugeNameVoidShroud => L("Leerenschleier", "Void Shroud", "Покров пустоты");
+    public static string GaugeNameLemureShroud => L("Lemurenschleier", "Lemure Shroud", "Покров лемура");
+    public static string GaugeNameEyes => L("Drachenaugen", "Dragon eyes", "Глаза дракона");
+    public static string GaugeNameFirstminds => L("Erster Sinn", "Firstminds' Focus", "Сосредоточие перворождённых");
+    public static string GaugeNameLotd => L("Leben des Drachen", "Life of the Dragon", "Жизнь дракона");
+    public static string GaugeNameSoulVoice => L("Seelenstimme", "Soul Voice", "Голос души");
+    public static string GaugeNameRepertoire => L("Repertoire", "Repertoire", "Репертуар");
+    public static string GaugeNameCodaMage => L("Coda Ballade", "Mage's Coda", "Кода мага");
+    public static string GaugeNameCodaArmy => L("Coda Paean", "Army's Coda", "Кода войска");
+    public static string GaugeNameCodaWanderer => L("Coda Menuett", "Wanderer's Coda", "Кода странника");
+    public static string GaugeNameHeat => L("Hitze", "Heat", "Нагрев");
+    public static string GaugeNameBattery => L("Batterie", "Battery", "Батарея");
+    public static string GaugeNameOverheat => L("Überhitze", "Overheat", "Перегрев");
+    public static string GaugeNameRobot => L("Automat", "Automaton", "Автомат");
+    public static string GaugeNameFeathers => L("Federn", "Feathers", "Перья");
+    public static string GaugeNameEsprit => L("Esprit", "Esprit", "Эспри");
+    public static string GaugeNamePolyglot => L("Polyglott", "Polyglot", "Полиглот");
+    public static string GaugeNameParadox => L("Paradoxon", "Paradox", "Парадокс");
+    public static string GaugeNameAstralSoul => L("Astralseele", "Astral Soul", "Астральная душа");
+    public static string GaugeNameUmbralHearts => L("Umbralherzen", "Umbral Hearts", "Сердца умбры");
+    public static string GaugeNameWhiteMana => L("weißes Mana", "White Mana", "Белая мана");
+    public static string GaugeNameBlackMana => L("schwarzes Mana", "Black Mana", "Чёрная мана");
+    public static string GaugeNameManaStacks => L("Manastapel", "Mana stacks", "Стеки маны");
+    public static string GaugeNamePalette => L("Palette", "Palette", "Палитра");
+    public static string GaugeNamePaint => L("Farbe", "Paint", "Краска");
+    public static string GaugeNameCreatureMotif => L("Kreaturmotiv", "Creature motif", "Мотив существа");
+    public static string GaugeNameWeaponMotif => L("Waffenmotiv", "Weapon motif", "Мотив оружия");
+    public static string GaugeNameLandscapeMotif => L("Landschaftsmotiv", "Landscape motif", "Мотив пейзажа");
+    public static string GaugeNameMooglePortrait => L("Mogry-Porträt", "Moogle portrait", "Портрет мугла");
+    public static string GaugeNameMadeenPortrait => L("Madeen-Porträt", "Madeen portrait", "Портрет Мадин");
+    public static string GaugeNameLily => L("Lilie", "Lily", "Лилия");
+    public static string GaugeNameBloodLily => L("Blutlilie", "Blood Lily", "Кровавая лилия");
+    public static string GaugeNameAetherflow => L("Ätherfluss", "Aetherflow", "Поток эфира");
+    public static string GaugeNameFairy => L("Feenanzeige", "Fairy Gauge", "Шкала феи");
+    public static string GaugeNameAddersgall => L("Addersgall", "Addersgall", "Аддерсгалл");
+    public static string GaugeNameAddersting => L("Addersting", "Addersting", "Аддерстинг");
+    public static string GaugeNameEukrasia => L("Eukrasie", "Eukrasia", "Эйкразия");
+    public static string GaugeNameCard => L("Karte", "Card", "Карта");
+    public static string GaugeNameCrownCard => L("Kronenkarte", "Crown card", "Королевская карта");
+    public static string GaugeNameRattlingCoil => L("Rasseln", "Rattling Coil", "Гремящая спираль");
+    public static string GaugeNameSerpentOffering => L("Schlangenopfer", "Serpent Offerings", "Подношения змея");
+    public static string GaugeNameSerpentFollowUp => L("Schlangenschwanz", "Serpent's Tail", "Хвост змея");
     public static string GaugeNameThreeBeastChakra =>
-        IsGerman ? "drei Tierchakra" : "three Beast Chakra";
+        L("drei Tierchakra", "three Beast Chakra", "три чакры зверя");
 
     // ════════════════════════════════════════════════════════════════
     //  EmoteService
     // ════════════════════════════════════════════════════════════════
     public static string NoEmoteSelected =>
-        IsGerman ? "Kein Emote gewählt. Erst durchblättern." : "No emote selected. Browse first.";
+        L("Kein Emote gewählt. Erst durchblättern.", "No emote selected. Browse first.", "Эмоция не выбрана. Сначала пролистай список.");
     public static string EmoteUnavailable =>
-        IsGerman ? "Emote nicht verfügbar." : "Emote not available.";
+        L("Emote nicht verfügbar.", "Emote not available.", "Эмоция недоступна.");
     public static string EmoteFailed =>
-        IsGerman ? "Emote fehlgeschlagen." : "Emote failed.";
+        L("Emote fehlgeschlagen.", "Emote failed.", "Эмоция не сработала.");
     public static string EmotesNotReady =>
-        IsGerman ? "Emotes noch nicht bereit." : "Emotes not ready yet.";
+        L("Emotes noch nicht bereit.", "Emotes not ready yet.", "Эмоции ещё не готовы.");
     public static string NoEmotesAvailable =>
-        IsGerman ? "Keine Emotes verfügbar." : "No emotes available.";
+        L("Keine Emotes verfügbar.", "No emotes available.", "Эмоции недоступны.");
     /// <summary>One browsed emote: name, chat command (optional), list position.</summary>
     public static string EmoteBrowseEntry(string name, string command, int index, int count) =>
-        IsGerman
-            ? $"{name}{(command.Length > 0 ? $", Befehl {command}" : "")}, {index} von {count}"
-            : $"{name}{(command.Length > 0 ? $", command {command}" : "")}, {index} of {count}";
+        L($"{name}{(command.Length > 0 ? $", Befehl {command}" : "")}, {index} von {count}",
+          $"{name}{(command.Length > 0 ? $", command {command}" : "")}, {index} of {count}",
+          $"{name}{(command.Length > 0 ? $", команда {command}" : "")}, {index} из {count}");
 
     // ════════════════════════════════════════════════════════════════
     //  DalamudPluginsService - Plugin-Liste
     // ════════════════════════════════════════════════════════════════
     public static string NoPluginSelected =>
-        IsGerman ? "Kein Plugin gewählt. Erst durchblättern." : "No plugin selected. Browse first.";
+        L("Kein Plugin gewählt. Erst durchblättern.", "No plugin selected. Browse first.", "Плагин не выбран. Сначала пролистай список.");
     public static string PluginNoSettings(string name) =>
-        IsGerman ? $"{name} hat keine Einstellungen." : $"{name} has no settings.";
+        L($"{name} hat keine Einstellungen.", $"{name} has no settings.", $"У плагина {name} нет настроек.");
     public static string PluginSettingsOpened(string name) =>
-        IsGerman ? $"Einstellungen von {name} geöffnet. Das Fenster ist nicht vorlesbar."
-                 : $"Opened settings of {name}. The window cannot be read aloud.";
+        L($"Einstellungen von {name} geöffnet. Das Fenster ist nicht vorlesbar.", $"Opened settings of {name}. The window cannot be read aloud.", $"Настройки плагина {name} открыты. Окно не читается вслух.");
     public static string PluginSettingsCantOpen(string name) =>
-        IsGerman ? $"Einstellungen von {name} lassen sich nicht öffnen." : $"Cannot open settings of {name}.";
+        L($"Einstellungen von {name} lassen sich nicht öffnen.", $"Cannot open settings of {name}.", $"Настройки плагина {name} не открываются.");
     public static string PluginListUnavailable =>
-        IsGerman ? "Plugin-Liste nicht verfügbar." : "Plugin list not available.";
+        L("Plugin-Liste nicht verfügbar.", "Plugin list not available.", "Список плагинов недоступен.");
     public static string NoPluginsInstalled =>
-        IsGerman ? "Keine Plugins installiert." : "No plugins installed.";
+        L("Keine Plugins installiert.", "No plugins installed.", "Плагины не установлены.");
     // Plugin-Zustandswörter (Describe / BuildOverview)
     public static string PluginVersionLabel(string version) =>
-        IsGerman ? $"Version {version}" : $"version {version}";
-    public static string PluginLoaded    => IsGerman ? "geladen" : "loaded";
-    public static string PluginNotLoaded => IsGerman ? "nicht geladen" : "not loaded";
-    public static string PluginOutdated  => IsGerman ? "veraltet" : "outdated";
-    public static string PluginBanned    => IsGerman ? "gesperrt" : "banned";
-    public static string PluginDev       => IsGerman ? "Entwickler-Plugin" : "dev plugin";
-    public static string PluginHasConfig => IsGerman ? "hat Einstellungen" : "has settings";
-    public static string PluginAllLoaded => IsGerman ? "alle geladen" : "all loaded";
-    public static string PluginCountNotLoaded(int n) => IsGerman ? $"{n} nicht geladen" : $"{n} not loaded";
-    public static string PluginCountOutdated(int n)  => IsGerman ? $"{n} veraltet" : $"{n} outdated";
-    public static string PluginCountBanned(int n)    => IsGerman ? $"{n} gesperrt" : $"{n} banned";
+        L($"Version {version}", $"version {version}", $"Версия {version}");
+    public static string PluginLoaded    => L("geladen", "loaded", "загружен");
+    public static string PluginNotLoaded => L("nicht geladen", "not loaded", "не загружен");
+    public static string PluginOutdated  => L("veraltet", "outdated", "устарел");
+    public static string PluginBanned    => L("gesperrt", "banned", "заблокирован");
+    public static string PluginDev       => L("Entwickler-Plugin", "dev plugin", "плагин разработчика");
+    public static string PluginHasConfig => L("hat Einstellungen", "has settings", "есть настройки");
+    public static string PluginAllLoaded => L("alle geladen", "all loaded", "все загружены");
+    public static string PluginCountNotLoaded(int n) => L($"{n} nicht geladen", $"{n} not loaded", $"{n} не загружено");
+    public static string PluginCountOutdated(int n)  => L($"{n} veraltet", $"{n} outdated", $"{n} устарело");
+    public static string PluginCountBanned(int n)    => L($"{n} gesperrt", $"{n} banned", $"{n} заблокировано");
     public static string PluginOverview(int total, string state) =>
-        IsGerman ? $"{total} Plugins, {state}." : $"{total} plugins, {state}.";
+        L($"{total} Plugins, {state}.", $"{total} plugins, {state}.", $"{total} плагинов, {state}.");
 
     // ════════════════════════════════════════════════════════════════
     //  FishingService (spoken parts; the /acc fishobj probe stays German)
     // ════════════════════════════════════════════════════════════════
     public static string FishingSpotsList(int count, string joined) =>
-        IsGerman ? $"{count} Angelplätze: {joined}." : $"{count} fishing spots: {joined}.";
+        L($"{count} Angelplätze: {joined}.", $"{count} fishing spots: {joined}.", $"{count} мест для рыбалки: {joined}.");
     public static string NoFishingSpotNearEnough(string name, float distance) =>
-        IsGerman ? $"Kein Angelplatz nah genug. Nächster: {name}, {distance:F0} Meter. Stell dich an die Angelstelle und drück erneut."
-                 : $"No fishing spot close enough. Nearest: {name}, {distance:F0} meters. Stand at the fishing spot and press again.";
+        L($"Kein Angelplatz nah genug. Nächster: {name}, {distance:F0} Meter. Stell dich an die Angelstelle und drück erneut.", $"No fishing spot close enough. Nearest: {name}, {distance:F0} meters. Stand at the fishing spot and press again.", $"Поблизости нет подходящего места для рыбалки. Ближайшее: {name}, {distance:F0} метров. Встань на место для рыбалки и нажми ещё раз.");
     public static string MapUnknownCantRemember =>
-        IsGerman ? "Aktuelle Karte unbekannt, kann die Stelle nicht merken." : "Current map unknown, cannot remember this spot.";
+        L("Aktuelle Karte unbekannt, kann die Stelle nicht merken.", "Current map unknown, cannot remember this spot.", "Текущая карта неизвестна, не могу запомнить это место.");
     public static string FishingSpotRemembered(string name, float mapX, float mapY) =>
-        IsGerman ? $"Angelplatz {name} hier gemerkt: Karte {mapX:F1}, {mapY:F1}."
-                 : $"Fishing spot {name} remembered here: map {mapX:F1}, {mapY:F1}.";
+        L($"Angelplatz {name} hier gemerkt: Karte {mapX:F1}, {mapY:F1}.", $"Fishing spot {name} remembered here: map {mapX:F1}, {mapY:F1}.", $"Место для рыбалки {name} запомнено здесь: карта {mapX:F1}, {mapY:F1}.");
 
     // ════════════════════════════════════════════════════════════════
     //  GatheringService
     // ════════════════════════════════════════════════════════════════
     public static string GatheringSpotsList(int count, string joined) =>
-        IsGerman ? $"{count} Sammelstellen: {joined}." : $"{count} gathering spots: {joined}.";
+        L($"{count} Sammelstellen: {joined}.", $"{count} gathering spots: {joined}.", $"{count} мест сбора: {joined}.");
 
     // ════════════════════════════════════════════════════════════════
     //  InventoryService
     // ════════════════════════════════════════════════════════════════
     public static string InventoryEmpty =>
-        IsGerman ? "Inventar ist leer." : "Inventory is empty.";
+        L("Inventar ist leer.", "Inventory is empty.", "Инвентарь пуст.");
     public static string GilUnavailable =>
-        IsGerman ? "Gil-Stand nicht verfügbar." : "Gil amount not available.";
+        L("Gil-Stand nicht verfügbar.", "Gil amount not available.", "Сумма гила недоступна.");
+    public static string ArmouryBulkUnavailable =>
+        L("Das Inventar oder die Arsenaltruhe ist noch nicht verfügbar.",
+          "The inventory or Armoury Chest is not available yet.",
+          "Инвентарь или оружейный сундук пока недоступен.");
+    public static string ArmouryBulkOpenInventory =>
+        L("Bitte das Inventar öffnen und Alt+F3 erneut drücken.",
+          "Open the inventory and press Alt+F3 again.",
+          "Откройте инвентарь и снова нажмите Alt+F3.");
+    public static string ArmouryBulkEmpty =>
+        L("Im Inventar liegt keine Ausrüstung für die Arsenaltruhe.",
+          "There is no gear in the inventory for the Armoury Chest.",
+          "В инвентаре нет экипировки для оружейного сундука.");
+    public static string ArmouryBulkInProgress =>
+        L("Die Ausrüstung wird bereits in die Arsenaltruhe gelegt.",
+          "Gear is already being moved to the Armoury Chest.",
+          "Экипировка уже переносится в оружейный сундук.");
+    public static string ArmouryBulkStarted(int count) =>
+        L($"Ich lege {count} Ausrüstungsteile in die Arsenaltruhe.",
+          $"Moving {count} gear pieces to the Armoury Chest.",
+          $"Переношу экипировку в оружейный сундук: {count} предметов.");
+    public static string ArmouryBulkDone(int moved, int skipped) =>
+        L($"In die Arsenaltruhe gelegt: {moved}. Im Inventar geblieben: {skipped}.",
+          $"Moved to the Armoury Chest: {moved}. Left in the inventory: {skipped}.",
+          $"Перенесено в оружейный сундук: {moved}. Осталось в инвентаре: {skipped}.");
+    public static string ArmouryBulkUnconfirmed(int moved) =>
+        L($"Transfer angehalten. Bestätigt: {moved}. Bitte Inventar und Arsenaltruhe prüfen.",
+          $"Transfer stopped. Confirmed moves: {moved}. Please check the inventory and Armoury Chest.",
+          $"Перенос остановлен. Подтверждено перемещений: {moved}. Проверьте инвентарь и оружейный сундук.");
     /// <summary>Elemental shards, crystals and clusters. The game keeps them in
     /// a container of their own, outside the bag pages - the player asked where
     /// her shards are at all (2026-09-12, msg 9212): the Ctrl+F3 readout never
     /// mentioned them because it only walked the bag and the key items.</summary>
     public static string CrystalsLabel(int count, string joined) =>
-        IsGerman ? $"Kristalle, {count} Sorten: {joined}" : $"Crystals, {count} kinds: {joined}";
+        L($"Kristalle, {count} Sorten: {joined}", $"Crystals, {count} kinds: {joined}", $"Кристаллы, {count} видов: {joined}");
     public static string KeyItemsLabel(string joined) =>
-        IsGerman ? $"Schlüsselgegenstände: {joined}" : $"Key items: {joined}";
+        L($"Schlüsselgegenstände: {joined}", $"Key items: {joined}", $"Ключевые предметы: {joined}");
     public static string BagLabel(int count, string joined) =>
-        IsGerman ? $"Tasche, {count} Gegenstände: {joined}" : $"Bag, {count} items: {joined}";
+        L($"Tasche, {count} Gegenstände: {joined}", $"Bag, {count} items: {joined}", $"Сумка, {count} предметов: {joined}");
     /// <summary>A stacked item: "&lt;name&gt; times &lt;count&gt;" plus an optional
     /// HQ suffix. Single items are announced by the caller without this frame.</summary>
     public static string ItemStack(string name, int quantity, string hqSuffix) =>
-        IsGerman ? $"{name} mal {quantity}{hqSuffix}" : $"{name} times {quantity}{hqSuffix}";
+        L($"{name} mal {quantity}{hqSuffix}", $"{name} times {quantity}{hqSuffix}", $"{name}, {quantity} штук{hqSuffix}");
     public static string KeyItemFallback(uint id) =>
-        IsGerman ? $"Schlüsselgegenstand {id}" : $"Key item {id}";
+        L($"Schlüsselgegenstand {id}", $"Key item {id}", $"Ключевой предмет {id}");
 
     // ════════════════════════════════════════════════════════════════
     //  LootRollService - Beute auswuerfeln (Bedarf / Gier / Passen)
     // ════════════════════════════════════════════════════════════════
     /// <summary>Announced the moment a roll opens.</summary>
     public static string LootRollStarted(string name, int count, string options) =>
-        IsGerman
-            ? $"Verlosung: {name}{(count > 1 ? $" mal {count}" : "")}. {options}"
-            : $"Loot roll: {name}{(count > 1 ? $" times {count}" : "")}. {options}";
+        L($"Verlosung: {name}{(count > 1 ? $" mal {count}" : "")}. {options}",
+          $"Loot roll: {name}{(count > 1 ? $" times {count}" : "")}. {options}",
+          $"Розыгрыш: {name}{(count > 1 ? $", {count} штук" : "")}. {options}");
 
     /// <summary>Spoken after the roll window was handed the keyboard focus.</summary>
     public static string LootRollFocused =>
-        IsGerman
-            ? "Verlosungs-Fenster im Fokus. Mit dem Nummernblock auswählen."
-            : "Loot roll window focused. Use the numpad to choose.";
+        L("Verlosungs-Fenster im Fokus. Mit dem Nummernblock auswählen.", "Loot roll window focused. Use the numpad to choose.", "Окно розыгрыша в фокусе. Выбирай на цифровом блоке.");
 
     /// <summary>Spoken when the focus key is pressed without a roll window up.</summary>
     public static string LootRollNoWindow =>
-        IsGerman ? "Kein Verlosungs-Fenster offen." : "No loot roll window open.";
+        L("Kein Verlosungs-Fenster offen.", "No loot roll window open.", "Окно розыгрыша не открыто.");
 
     /// <summary>Spoken when the player asks and nothing is being rolled for.</summary>
     public static string LootRollNone =>
-        IsGerman ? "Zurzeit wird nichts verlost." : "Nothing is being rolled for.";
+        L("Zurzeit wird nichts verlost.", "Nothing is being rolled for.", "Сейчас ничего не разыгрывается.");
 
     /// <summary>Header of the on-demand readout.</summary>
     public static string LootRollList(int count, string joined) =>
-        IsGerman ? $"{count} Verlosungen. {joined}" : $"{count} loot rolls. {joined}";
+        L($"{count} Verlosungen. {joined}", $"{count} loot rolls. {joined}", $"{count} розыгрышей. {joined}");
 
     /// <summary>One entry of the on-demand readout.</summary>
     public static string LootRollEntry(string name, int count, string options, string ownRoll) =>
-        IsGerman
-            ? $"{name}{(count > 1 ? $" mal {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}"
-            : $"{name}{(count > 1 ? $" times {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}";
+        L($"{name}{(count > 1 ? $" ×{count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}",
+          $"{name}{(count > 1 ? $" times {count}" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}",
+          $"{name}{(count > 1 ? $", {count} штук" : "")}, {options}{(ownRoll.Length > 0 ? $", {ownRoll}" : "")}");
 
     /// <summary>
     /// One row of the roll window while stepping through the list. The gear
@@ -3833,41 +3694,44 @@ public static partial class AccessibilityStrings
     /// for everything that is not equipment.
     /// </summary>
     public static string LootRollRow(string name, int count, string gear, string options, string remaining) =>
-        IsGerman
-            ? $"{name}{(count > 1 ? $" mal {count}" : "")}" +
+        L($"{name}{(count > 1 ? $" mal {count}" : "")}" +
               $"{(gear.Length      > 0 ? $", {gear}"      : "")}" +
               $"{(options.Length  > 0 ? $", {options}"  : "")}" +
-              $"{(remaining.Length > 0 ? $", {remaining}" : "")}"
-            : $"{name}{(count > 1 ? $" times {count}" : "")}" +
+              $"{(remaining.Length > 0 ? $", {remaining}" : "")}",
+          $"{name}{(count > 1 ? $" times {count}" : "")}" +
               $"{(gear.Length      > 0 ? $", {gear}"      : "")}" +
               $"{(options.Length  > 0 ? $", {options}"  : "")}" +
-              $"{(remaining.Length > 0 ? $", {remaining}" : "")}";
+              $"{(remaining.Length > 0 ? $", {remaining}" : "")}",
+          $"{name}{(count > 1 ? $", {count} штук" : "")}" +
+              $"{(gear.Length      > 0 ? $", {gear}"      : "")}" +
+              $"{(options.Length  > 0 ? $", {options}"  : "")}" +
+              $"{(remaining.Length > 0 ? $", {remaining}" : "")}");
 
     /// <summary>Seconds left before the roll expires.</summary>
     public static string LootRollRemaining(int seconds) =>
-        IsGerman ? $"noch {seconds} Sekunden" : $"{seconds} seconds left";
+        L($"noch {seconds} Sekunden", $"{seconds} seconds left", $"ещё {seconds} секунд");
 
     /// <summary>What the player may still do - the game's RollState in words.</summary>
     public static string LootOptionsNeedGreedPass =>
-        IsGerman ? "Bedarf, Gier oder Passen möglich" : "need, greed or pass";
+        L("Bedarf, Gier oder Passen möglich", "need, greed or pass", "можно Надо, Жадность или Отказ");
     public static string LootOptionsGreedPass =>
-        IsGerman ? "nur Gier oder Passen möglich" : "greed or pass only";
+        L("nur Gier oder Passen möglich", "greed or pass only", "можно только Жадность или Отказ");
     public static string LootOptionsPassOnly =>
-        IsGerman ? "nur Passen möglich" : "pass only";
+        L("nur Passen möglich", "pass only", "можно только Отказ");
     public static string LootOptionsDone =>
-        IsGerman ? "schon gewürfelt" : "already rolled";
+        L("schon gewürfelt", "already rolled", "уже брошено");
     public static string LootOptionsUnavailable =>
-        IsGerman ? "nicht verfügbar" : "unavailable";
+        L("nicht verfügbar", "unavailable", "недоступно");
 
     /// <summary>What the player already did, with the rolled number.</summary>
     public static string LootRolledNeed(byte value) =>
-        IsGerman ? $"du hast Bedarf gewürfelt, {value}" : $"you rolled need, {value}";
+        L($"du hast Bedarf gewürfelt, {value}", $"you rolled need, {value}", $"ты бросил Надо, {value}");
     public static string LootRolledGreed(byte value) =>
-        IsGerman ? $"du hast Gier gewürfelt, {value}" : $"you rolled greed, {value}";
+        L($"du hast Gier gewürfelt, {value}", $"you rolled greed, {value}", $"ты бросил Жадность, {value}");
     public static string LootRolledPass =>
-        IsGerman ? "du hast gepasst" : "you passed";
+        L("du hast gepasst", "you passed", "ты отказался");
     public static string LootRolledWon =>
-        IsGerman ? "du hast den Gegenstand erhalten" : "you were awarded the item";
+        L("du hast den Gegenstand erhalten", "you were awarded the item", "ты получил предмет");
 
     // ════════════════════════════════════════════════════════════════
     //  MessageHistoryService - Nachlese-Kanäle
@@ -3885,15 +3749,15 @@ public static partial class AccessibilityStrings
     // wie vorher.
     public static string LegacyChatCategoryName(LegacyChatHistoryService.Category category) => category switch
     {
-        LegacyChatHistoryService.Category.Dialogue     => IsGerman ? "Dialoge"            : "Dialogue",
-        LegacyChatHistoryService.Category.Say          => IsGerman ? "Sagen"              : "Say",
-        LegacyChatHistoryService.Category.Shout        => IsGerman ? "Rufen"              : "Shout",
-        LegacyChatHistoryService.Category.Party        => IsGerman ? "Gruppe"             : "Party",
-        LegacyChatHistoryService.Category.Alliance     => IsGerman ? "Allianz"            : "Alliance",
-        LegacyChatHistoryService.Category.Tell         => IsGerman ? "Flüstern"           : "Tell",
-        LegacyChatHistoryService.Category.FreeCompany  => IsGerman ? "Freie Gesellschaft" : "Free Company",
-        LegacyChatHistoryService.Category.System       => IsGerman ? "System"             : "System",
-        LegacyChatHistoryService.Category.Loot         => IsGerman ? "Beute"              : "Loot",
+        LegacyChatHistoryService.Category.Dialogue     => L("Dialoge", "Dialogue", "Диалоги"),
+        LegacyChatHistoryService.Category.Say          => L("Sagen", "Say", "Сказать"),
+        LegacyChatHistoryService.Category.Shout        => L("Rufen", "Shout", "Крик"),
+        LegacyChatHistoryService.Category.Party        => L("Gruppe", "Party", "Группа"),
+        LegacyChatHistoryService.Category.Alliance     => L("Allianz", "Alliance", "Альянс"),
+        LegacyChatHistoryService.Category.Tell         => L("Flüstern", "Tell", "Шёпот"),
+        LegacyChatHistoryService.Category.FreeCompany  => L("Freie Gesellschaft", "Free Company", "Свободная компания"),
+        LegacyChatHistoryService.Category.System       => L("System", "System", "Система"),
+        LegacyChatHistoryService.Category.Loot         => L("Beute", "Loot", "Добыча"),
         _                                              => category.ToString(),
     };
 
@@ -3901,49 +3765,44 @@ public static partial class AccessibilityStrings
 
     /// <summary>Menu row that switches between the two chat systems.</summary>
     public static string OptChatSystem =>
-        IsGerman ? "Chatsystem" : "Chat system";
+        L("Chatsystem", "Chat system", "Система чата");
 
     /// <summary>The old system's name, as the player knows it from v5.83.</summary>
     public static string ChatSystemLegacyName =>
-        IsGerman ? "gewohnt, feste Kanäle" : "classic, fixed channels";
+        L("gewohnt, feste Kanäle", "classic, fixed channels", "привычная, фиксированные каналы");
 
     /// <summary>The PR #5 system's name: buffers follow the game's own tabs.</summary>
     public static string ChatSystemNewName =>
-        IsGerman ? "neu, Register des Spiels" : "new, the game's tabs";
+        L("neu, Register des Spiels", "new, the game's tabs", "новая, вкладки игры");
 
     /// <summary>The menu row's label, naming the system in force.</summary>
     public static string OptChatSystemRow(bool legacy) =>
-        IsGerman
-            ? $"Chatsystem: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}"
-            : $"Chat system: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}";
+        L($"Chatsystem: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}", $"Chat system: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}", $"Система чата: {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}");
 
     /// <summary>Spoken the moment the switch is flipped. Says that nothing was
     /// lost, because that is the first thing a player wonders about a buffer
     /// they cannot see.</summary>
     public static string ChatSystemSwitched(bool legacy) =>
-        IsGerman
-            ? $"Chatsystem {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Beide Nachlesen laufen mit, es ist nichts verloren."
-            : $"Chat system {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Both histories keep recording, nothing was lost.";
+        L($"Chatsystem {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Beide Nachlesen laufen mit, es ist nichts verloren.", $"Chat system {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Both histories keep recording, nothing was lost.", $"Система чата {(legacy ? ChatSystemLegacyName : ChatSystemNewName)}. Обе истории продолжают записываться, ничего не потеряно.");
 
     /// <summary>Spoken when a key belonging to the OTHER system is pressed.
     /// Silence would read as a broken key - the player cannot see that the key
     /// simply has no counterpart in the system they switched to.</summary>
     public static string ChatKeyOnlyInNewSystem =>
-        IsGerman
-            ? "Diese Taste gehört zum neuen Chatsystem."
-            : "That key belongs to the new chat system.";
+        L("Diese Taste gehört zum neuen Chatsystem.", "That key belongs to the new chat system.", "Эта клавиша относится к новой системе чата.");
 
     public static string CategoryEmpty(string category) =>
-        IsGerman ? $"{category}, leer" : $"{category}, empty";
+        L($"{category}, leer", $"{category}, empty", $"{category}, пусто");
     public static string CategorySummary(string category, int count) =>
         count == 0
-            ? (IsGerman ? $"{category}, leer" : $"{category}, empty")
-            : (IsGerman ? $"{category}, {count} {(count == 1 ? "Nachricht" : "Nachrichten")}"
-                        : $"{category}, {count} {(count == 1 ? "message" : "messages")}");
+            ? (L($"{category}, leer", $"{category}, empty", $"{category}, пусто"))
+            : L($"{category}, {count} {(count == 1 ? "Nachricht" : "Nachrichten")}",
+                $"{category}, {count} {(count == 1 ? "message" : "messages")}",
+                $"{category}, {count} {(count == 1 ? "сообщение" : "сообщений")}");
     public static string HistoryStart =>
-        IsGerman ? "Anfang des Verlaufs." : "Start of history.";
+        L("Anfang des Verlaufs.", "Start of history.", "Начало истории.");
     public static string HistoryEnd =>
-        IsGerman ? "Ende des Verlaufs." : "End of history.";
+        L("Ende des Verlaufs.", "End of history.", "Конец истории.");
 
     // ════════════════════════════════════════════════════════════════
     //  ChatReaderService - gesprochene Kanal-Präfixe
@@ -3952,57 +3811,57 @@ public static partial class AccessibilityStrings
     /// <summary>Channel prefix for an incoming chat line ("" = no prefix).</summary>
     public static string ChatPrefix(XivChatType type) => type switch
     {
-        XivChatType.Say           => IsGerman ? "Sagt"        : "Says",
-        XivChatType.Shout         => IsGerman ? "Ruft"        : "Shouts",
-        XivChatType.Party         => IsGerman ? "Gruppe"      : "Party",
-        XivChatType.Alliance      => IsGerman ? "Allianz"     : "Alliance",
-        XivChatType.TellIncoming  => IsGerman ? "Flüstert"    : "Tells",
-        XivChatType.FreeCompany   => IsGerman ? "FC"          : "FC",
-        XivChatType.SystemMessage => IsGerman ? "System"      : "System",
-        XivChatType.ErrorMessage  => IsGerman ? "Fehler"      : "Error",
-        XivChatType.TellOutgoing  => IsGerman ? "Flüstert an" : "Tells",
-        XivChatType.Yell          => IsGerman ? "Brüllt"      : "Yells",
-        XivChatType.CrossParty    => IsGerman ? "Gruppe"      : "Party",
-        XivChatType.Echo          => IsGerman ? "Echo"        : "Echo",
+        XivChatType.Say           => L("Sagt", "Says", "Говорит"),
+        XivChatType.Shout         => L("Ruft", "Shouts", "Кричит"),
+        XivChatType.Party         => L("Gruppe", "Party", "Группа"),
+        XivChatType.Alliance      => L("Allianz", "Alliance", "Альянс"),
+        XivChatType.TellIncoming  => L("Flüstert", "Tells", "Шёпот"),
+        XivChatType.FreeCompany   => L("FC", "FC", "СК"),
+        XivChatType.SystemMessage => L("System", "System", "Система"),
+        XivChatType.ErrorMessage  => L("Fehler", "Error", "Ошибка"),
+        XivChatType.TellOutgoing  => L("Flüstert an", "Tells", "Шёпот кому-то"),
+        XivChatType.Yell          => L("Brüllt", "Yells", "Вопит"),
+        XivChatType.CrossParty    => L("Gruppe", "Party", "Группа"),
+        XivChatType.Echo          => L("Echo", "Echo", "Эхо"),
         XivChatType.Gathering     => "",   // full sentence, no channel prefix
         XivChatType.LootNotice    => "",   // full sentence, no channel prefix
         // An NPC speaking needs no channel word - the name in front of the line
         // says everything "Chat von ..." would have said, only shorter.
         XivChatType.NPCDialogue   => "",
         XivChatType.NPCDialogueAnnouncements => "",
-        _                         => IsGerman ? "Chat"        : "Chat",
+        _                         => L("Chat", "Chat", "Чат"),
     };
 
     /// <summary>Prefix for the player's OWN messages ("You say: ...").</summary>
     public static string OwnChatPrefix(XivChatType type) => type switch
     {
-        XivChatType.Say          => IsGerman ? "Du sagst"      : "You say",
-        XivChatType.Shout        => IsGerman ? "Du rufst"      : "You shout",
-        XivChatType.Yell         => IsGerman ? "Du brüllst"    : "You yell",
-        XivChatType.Party        => IsGerman ? "Du zur Gruppe" : "You to party",
-        XivChatType.CrossParty   => IsGerman ? "Du zur Gruppe" : "You to party",
-        XivChatType.Alliance     => IsGerman ? "Du zur Allianz": "You to alliance",
-        XivChatType.FreeCompany  => IsGerman ? "Du zur FC"     : "You to FC",
-        XivChatType.TellOutgoing => IsGerman ? "Du flüsterst"  : "You tell",
-        _                        => IsGerman ? "Du"            : "You",
+        XivChatType.Say          => L("Du sagst", "You say", "Ты говоришь"),
+        XivChatType.Shout        => L("Du rufst", "You shout", "Ты кричишь"),
+        XivChatType.Yell         => L("Du brüllst", "You yell", "Ты вопишь"),
+        XivChatType.Party        => L("Du zur Gruppe", "You to party", "Ты группе"),
+        XivChatType.CrossParty   => L("Du zur Gruppe", "You to party", "Ты группе"),
+        XivChatType.Alliance     => L("Du zur Allianz", "You to alliance", "Ты альянсу"),
+        XivChatType.FreeCompany  => L("Du zur FC", "You to FC", "Ты СК"),
+        XivChatType.TellOutgoing => L("Du flüsterst", "You tell", "Ты шепчешь"),
+        _                        => L("Du", "You", "Ты"),
     };
 
     /// <summary>Outgoing-tell addressee clause (" to X"), appended after the prefix.</summary>
     public static string ChatAddressee(string name) =>
-        IsGerman ? $" an {name}" : $" to {name}";
+        L($" an {name}", $" to {name}", $" — {name}");
 
     /// <summary>A chat line with a named sender: "&lt;prefix&gt; from &lt;sender&gt;: &lt;message&gt;".
     /// Empty prefix (NPC dialogue) yields "&lt;sender&gt;: &lt;message&gt;" — never a dangling " von "/" from ".</summary>
     public static string ChatFromLine(string prefix, string sender, string message) =>
         string.IsNullOrEmpty(prefix)
             ? $"{sender}: {message}"
-            : IsGerman ? $"{prefix} von {sender}: {message}" : $"{prefix} from {sender}: {message}";
+            : L($"{prefix} von {sender}: {message}", $"{prefix} from {sender}: {message}", $"{prefix} от {sender}: {message}");
 
     // ════════════════════════════════════════════════════════════════
     //  BeaconService
     // ════════════════════════════════════════════════════════════════
     public static string BeaconUnavailable =>
-        IsGerman ? "Ton-Beacon nicht verfügbar." : "Audio beacon not available.";
+        L("Ton-Beacon nicht verfügbar.", "Audio beacon not available.", "Звуковой маяк недоступен.");
 
     // ════════════════════════════════════════════════════════════════
     //  UIReaderService - Restpunkte (Benachrichtigung, Countdown)
@@ -4010,11 +3869,9 @@ public static partial class AccessibilityStrings
     /// <summary>Notification popup hint; <paramref name="key"/> is the configured
     /// accept hotkey so it stays correct after a rebind.</summary>
     public static string NotificationAccept(string key) =>
-        IsGerman
-            ? $"Benachrichtigung. Mit {SpokenKeyLabel(key)} annehmen."
-            : $"Notification. Press {SpokenKeyLabel(key)} to accept.";
+        L($"Benachrichtigung. Mit {SpokenKeyLabel(key)} annehmen.", $"Notification. Press {SpokenKeyLabel(key)} to accept.", $"Уведомление. Нажми {SpokenKeyLabel(key)}, чтобы принять.");
     public static string SecondsToJoin(int seconds) =>
-        IsGerman ? $"Noch {seconds} Sekunden zum Beitreten." : $"{seconds} seconds left to join.";
+        L($"Noch {seconds} Sekunden zum Beitreten.", $"{seconds} seconds left to join.", $"Осталось {seconds} секунд до присоединения.");
 
     // ════════════════════════════════════════════════════════════════
     //  Nachzuegler aus dem Sprach-Audit 2026-08-03
@@ -4029,11 +3886,11 @@ public static partial class AccessibilityStrings
     //  gehen unveraendert durch - hier stehen nur die Bindewoerter.
     /// <summary>Header of the effects answer, e.g. "Wirkungen (3)".</summary>
     public static string StatusEffectsHeader(int count) =>
-        IsGerman ? $"Wirkungen ({count})" : $"Effects ({count})";
+        L($"Wirkungen ({count})", $"Effects ({count})", $"Эффекты ({count})");
     public static string StatusEffectsNone =>
-        IsGerman ? "Keine Wirkungen auf dir." : "No effects on you.";
+        L("Keine Wirkungen auf dir.", "No effects on you.", "На тебе нет эффектов.");
     public static string StatusEffectsNoPlayer =>
-        IsGerman ? "Spieler nicht gefunden." : "Player not found.";
+        L("Spieler nicht gefunden.", "Player not found.", "Игрок не найден.");
     /// <summary>Remaining time of an effect; the wording is the one of the task line.</summary>
     public static string StatusEffectTimeLeft(int seconds) => TodoTimeLeft(seconds);
     /// <summary>Name+time plus the effect's own tooltip text. The separator is a
@@ -4044,14 +3901,14 @@ public static partial class AccessibilityStrings
 
     // ── Sammel-Fenster (Gathering) ──────────────────────────────────
     public static string GatherChance(string percent) =>
-        IsGerman ? $"Chance {percent} Prozent" : $"Chance {percent} percent";
+        L($"Chance {percent} Prozent", $"Chance {percent} percent", $"Шанс {percent} процентов");
     public static string GatherBonus(string percent) =>
-        IsGerman ? $"Bonus {percent} Prozent" : $"Bonus {percent} percent";
-    public static string GatherRare   => IsGerman ? "rar" : "rare";
-    public static string GatherHidden => IsGerman ? "verborgen" : "hidden";
+        L($"Bonus {percent} Prozent", $"Bonus {percent} percent", $"Бонус {percent} процентов");
+    public static string GatherRare   => L("rar", "rare", "редкий");
+    public static string GatherHidden => L("verborgen", "hidden", "скрытый");
     /// <summary>Remaining uses of a gathering node ("Belastbarkeit 4 von 4").</summary>
     public static string GatherIntegrity(string current, string max) =>
-        IsGerman ? $"Belastbarkeit {current} von {max}" : $"Integrity {current} of {max}";
+        L($"Belastbarkeit {current} von {max}", $"Integrity {current} of {max}", $"Прочность {current} из {max}");
 
     // ── Sammel-Journal (GatheringNote) ──────────────────────────────
     //  Der Zustand einer Zeile steckt im Spiel NUR in der Grafik: ein Haken
@@ -4060,11 +3917,10 @@ public static partial class AccessibilityStrings
     //  ein Gegenstand noch den Bonus fuer die erste Ernte bringt.
     /// <summary>Row state: the item carries the game's check mark.</summary>
     public static string GatherNoteGathered =>
-        IsGerman ? "schon gesammelt" : "already gathered";
+        L("schon gesammelt", "already gathered", "уже собрано");
     /// <summary>Row state: no check mark - the first-gather bonus is still open.</summary>
     public static string GatherNoteNew =>
-        IsGerman ? "noch nie gesammelt, Bonus für die erste Ernte"
-                 : "not gathered yet, first-time bonus";
+        L("noch nie gesammelt, Bonus für die erste Ernte", "not gathered yet, first-time bonus", "ещё не собрано, бонус за первый сбор");
 
     /// <summary>
     /// Appends fishing-spot place and territory after a journal row.
@@ -4076,11 +3932,10 @@ public static partial class AccessibilityStrings
         if (string.IsNullOrWhiteSpace(place)
             || string.Equals(place, area, StringComparison.CurrentCultureIgnoreCase))
         {
-            return IsGerman ? $"Gebiet {area}" : $"area {area}";
+            return L($"Gebiet {area}", $"area {area}", $"район {area}");
         }
-        return IsGerman
-            ? $"Ort {place}, Gebiet {area}"
-            : $"place {place}, area {area}";
+        return L($"Ort {place}, Gebiet {area}", $"place {place}, area {area}",
+                 $"место {place}, район {area}");
     }
 
     //  Filter des Journals: ihr Zustand wird NICHT hier gesprochen, sondern am
@@ -4093,9 +3948,7 @@ public static partial class AccessibilityStrings
     /// second half names the cause without naming a key: rows disappear when a
     /// filter hides them, and the filter is switched where it stands.</summary>
     public static string GatherNoteEmpty(string clientText) =>
-        IsGerman
-            ? $"{clientText} Keine Zeilen in der Liste - ein Filter kann sie ausblenden."
-            : $"{clientText} No rows in the list - a filter may be hiding them.";
+        L($"{clientText} Keine Zeilen in der Liste - ein Filter kann sie ausblenden.", $"{clientText} No rows in the list - a filter may be hiding them.", $"{clientText} В списке нет строк — их может скрывать фильтр.");
 
     // ── Handwerker-Notizbuch (RecipeNote) ───────────────────────────
     //  Die Werte selbst (Klasse, "Stufe 5", Zahlen) sind GELESENER Client-Text
@@ -4103,52 +3956,48 @@ public static partial class AccessibilityStrings
     /// <summary>Spoken once when the crafting log opens: window plus the class
     /// whose recipes are shown ("Handwerker-Notizbuch, Alchemist, Stufe 5").</summary>
     public static string RecipeNoteOpened(string jobAndLevel) =>
-        IsGerman ? $"Handwerker-Notizbuch, {jobAndLevel}"
-                 : $"Crafting log, {jobAndLevel}";
+        L($"Handwerker-Notizbuch, {jobAndLevel}", $"Crafting log, {jobAndLevel}", $"Журнал ремесленника, {jobAndLevel}");
     /// <summary>A list row with its position ("Destilliertes Wasser, Stufe 1, 3 von 12").</summary>
     public static string RowWithPosition(string row, int index, int total) =>
-        IsGerman ? $"{row}, {index} von {total}" : $"{row}, {index} of {total}";
+        L($"{row}, {index} von {total}", $"{row}, {index} of {total}", $"{row}, {index} из {total}");
     /// <summary>Recipe row whose craft has never been performed: the one-off
     /// bonus for the first craft is still open (counterpart of the gathering
     /// log's "noch nie gesammelt").</summary>
     public static string RecipeRowNew =>
-        IsGerman ? "noch nie hergestellt, Bonus für das erste Mal"
-                 : "not crafted yet, first-time bonus";
+        L("noch nie hergestellt, Bonus für das erste Mal", "not crafted yet, first-time bonus", "ещё не изготовлено, бонус за первый раз");
     /// <summary>Recipe row that has been crafted at least once before.</summary>
     public static string RecipeRowCrafted =>
-        IsGerman ? "schon hergestellt" : "already crafted";
+        L("schon hergestellt", "already crafted", "уже изготовлено");
     /// <summary>Progress needed to finish the craft (client label "Fertig mit").</summary>
     public static string RecipeDifficulty(string value) =>
-        IsGerman ? $"Fertig mit {value}" : $"Progress needed {value}";
+        L($"Fertig mit {value}", $"Progress needed {value}", $"Прогресс нужен {value}");
     /// <summary>Durability the craft starts with (client label "Belastbar bis").</summary>
     public static string RecipeDurability(string value) =>
-        IsGerman ? $"Belastbar bis {value}" : $"Durability {value}";
+        L($"Belastbar bis {value}", $"Durability {value}", $"Прочность {value}");
     public static string RecipeMaxQuality(string value) =>
-        IsGerman ? $"Qualität maximal {value}" : $"Maximum quality {value}";
+        L($"Qualität maximal {value}", $"Maximum quality {value}", $"Максимум качества {value}");
     /// <summary>Starting quality granted by HQ materials - only said when it is not zero.</summary>
     public static string RecipeStartQuality(string value) =>
-        IsGerman ? $"Startqualität {value}" : $"Starting quality {value}";
+        L($"Startqualität {value}", $"Starting quality {value}", $"Начальное качество {value}");
     /// <summary>How many can be made from what the player carries.</summary>
     public static string RecipeCraftable(string value) =>
-        IsGerman ? $"Herstellbar {value}" : $"Craftable {value}";
+        L($"Herstellbar {value}", $"Craftable {value}", $"Можно сделать {value}");
     /// <summary>How many of the RESULT item the player already owns.</summary>
     public static string RecipeInBag(string value) =>
-        IsGerman ? $"Im Beutel {value}" : $"In bag {value}";
+        L($"Im Beutel {value}", $"In bag {value}", $"В сумке {value}");
     /// <summary>One material line. NQ and HQ are always both named (user decision
     /// 2026-08-08): HQ material raises starting quality, so a silent zero would
     /// hide a real choice.</summary>
     public static string RecipeMaterial(string name, string needed, string nq, string hq) =>
-        IsGerman ? $"{name}, {needed} benötigt, {nq} NQ, {hq} HQ"
-                 : $"{name}, {needed} needed, {nq} NQ, {hq} HQ";
+        MaterialWithStock(name, needed, nq, hq);
     /// <summary>A crystal row. The window shows crystals as icons only - it
     /// carries no name node (ilspycmd 2026-08-08: CrystalNodes has Image but no
     /// Name), so the element stays unnamed rather than guessed.</summary>
     public static string RecipeCrystal(string needed, string owned) =>
-        IsGerman ? $"Kristall, {needed} benötigt, {owned} im Beutel"
-                 : $"Crystal, {needed} needed, {owned} in bag";
+        L($"Kristall, {CraftingCount(needed)} benötigt, vorhanden {CraftingCount(owned)}", $"Crystal, need {CraftingCount(needed)}, have {CraftingCount(owned)}", $"Кристалл, нужно {CraftingCount(needed)}, есть {CraftingCount(owned)}");
     /// <summary>Said instead of the values when no recipe is selected yet.</summary>
     public static string RecipeNoSelection =>
-        IsGerman ? "Kein Rezept ausgewählt." : "No recipe selected.";
+        L("Kein Rezept ausgewählt.", "No recipe selected.", "Рецепт не выбран.");
 
     // ── Laufendes Handwerk: das Synthese-Fenster vorlesen ───────────
     /// <summary>Opening line of a craft (and the answer to the on-demand read):
@@ -4159,18 +4008,20 @@ public static partial class AccessibilityStrings
         string hqPercent, string progress, string maxProgress, string durability,
         string maxDurability, string step, string effects)
     {
-        var head = item.Length == 0 ? string.Empty : IsGerman ? $"{item}. " : $"{item}. ";
+        var head = item.Length == 0 ? string.Empty : L($"{item}. ", $"{item}. ", $"{item}. ");
         var effectsPart = effects.Length == 0
             ? string.Empty
-            : IsGerman ? $" Wirkt: {effects}." : $" Active: {effects}.";
+            : L($" Wirkt: {effects}.", $" Active: {effects}.", $" Действует: {effects}.");
         return head
-             + (IsGerman
-                ? $"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
+             + L($"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
                   + $"Fortschritt {progress} von {maxProgress}, Haltbarkeit {durability} von "
-                  + $"{maxDurability}, Schritt {step}."
-                : $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
+                  + $"{maxDurability}, Schritt {step}.",
+                 $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
                   + $"progress {progress} of {maxProgress}, durability {durability} of "
-                  + $"{maxDurability}, step {step}.")
+                  + $"{maxDurability}, step {step}.",
+                 $"Качество {quality} из {maxQuality}, шанс HQ {hqPercent} процентов, "
+                  + $"прогресс {progress} из {maxProgress}, прочность {durability} из "
+                  + $"{maxDurability}, шаг {step}.")
              + effectsPart;
     }
 
@@ -4180,39 +4031,37 @@ public static partial class AccessibilityStrings
     /// is left).</summary>
     public static string SynthesisProgress(string quality, string maxQuality, string hqPercent,
         string progress, string maxProgress, string durability, string maxDurability)
-        => IsGerman
-            ? $"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
-              + $"Fortschritt {progress} von {maxProgress}, Haltbarkeit {durability} von {maxDurability}."
-            : $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
-              + $"progress {progress} of {maxProgress}, durability {durability} of {maxDurability}.";
+        => L($"Qualität {quality} von {maxQuality}, HQ-Chance {hqPercent} Prozent, "
+              + $"Fortschritt {progress} von {maxProgress}, Haltbarkeit {durability} von {maxDurability}.",
+             $"Quality {quality} of {maxQuality}, HQ chance {hqPercent} percent, "
+              + $"progress {progress} of {maxProgress}, durability {durability} of {maxDurability}.",
+             $"Качество {quality} из {maxQuality}, шанс HQ {hqPercent} процентов, "
+              + $"прогресс {progress} из {maxProgress}, прочность {durability} из {maxDurability}.");
 
     /// <summary>Only spoken when the condition CHANGES - the game's own word
     /// ("Normal", "Good", "Excellent", "Poor"), passed through as read. The mod
     /// does not translate or classify it: on Good and Excellent a quality action
     /// does more, and that decision is the player's.</summary>
     public static string SynthesisCondition(string condition) =>
-        IsGerman ? $"Zustand: {condition}." : $"Condition: {condition}.";
+        L($"Zustand: {condition}.", $"Condition: {condition}.", $"Состояние: {condition}.");
 
     /// <summary>Answer of the on-demand read outside a craft - so the user can
     /// tell "no window" apart from "the mod did not answer".</summary>
     public static string SynthesisNoWindow =>
-        IsGerman ? "Kein Synthese-Fenster offen." : "No synthesis window is open.";
+        L("Kein Synthese-Fenster offen.", "No synthesis window is open.", "Окно синтеза не открыто.");
 
     // ── "Was ist mit dem Beutelinhalt jetzt machbar?" (/acc craftable) ──
     /// <summary>The list is assembled from the RUNNING game's recipe list, so it
     /// only exists while the notebook is open.</summary>
     public static string RecipeBagNoLog =>
-        IsGerman ? "Dafür muss das Handwerker-Notizbuch offen sein."
-                 : "The crafting log has to be open for that.";
+        L("Dafür muss das Handwerker-Notizbuch offen sein.", "The crafting log has to be open for that.", "Для этого нужен открытый журнал ремесленника.");
     /// <summary>Header of the list: how many of the recipes in this log can be
     /// made from what the player carries right now.</summary>
     public static string RecipeBagHeader(int count, int total) =>
-        IsGerman ? $"Jetzt herstellbar: {count} von {total} Rezepten"
-                 : $"Craftable now: {count} of {total} recipes";
+        L($"Jetzt herstellbar: {count} von {total} Rezepten", $"Craftable now: {count} of {total} recipes", $"Сейчас можно сделать: {count} из {total} рецептов");
     /// <summary>Not a single recipe of the open log is makeable right now.</summary>
     public static string RecipeBagNone(int total) =>
-        IsGerman ? $"Keins von {total} Rezepten ist mit dem Beutelinhalt herstellbar"
-                 : $"None of {total} recipes can be made from the bag";
+        L($"Keins von {total} Rezepten ist mit dem Beutelinhalt herstellbar", $"None of {total} recipes can be made from the bag", $"Ни один из {total} рецептов не сделать из содержимого сумки");
     /// <summary>One makeable recipe; the first-craft bonus is named in the same
     /// words as the row mark (<see cref="RecipeRowNew"/>) when the recipe has
     /// never been crafted.
@@ -4225,20 +4074,18 @@ public static partial class AccessibilityStrings
     /// <see cref="RecipeBagHqHint"/> first.</summary>
     public static string RecipeBagEntry(string name, bool firstTime, bool needsHq = false)
     {
-        var hq = needsHq ? (IsGerman ? ", nur mit HQ-Materialien" : ", only with HQ materials") : string.Empty;
+        var hq = needsHq ? (L(", nur mit HQ-Materialien", ", only with HQ materials", ", только с HQ-материалами")) : string.Empty;
         return firstTime ? $"{name}{hq}, {RecipeRowNew}" : $"{name}{hq}";
     }
     /// <summary>Trailing count when more recipes are makeable than are spoken.</summary>
     public static string RecipeBagMore(int count) =>
-        IsGerman ? $"dazu {count} weitere Rezepte" : $"plus {count} more recipes";
+        L($"dazu {count} weitere Rezepte", $"plus {count} more recipes", $"и ещё {count} рецептов");
     /// <summary>How to get at the HQ materials the marked recipes need. Both ways
     /// are named: the log's own HQ key and Quick Synthesis, which is the one the
     /// user found on her own (2026-09-11, after the log's HQ column would not
     /// take her clicks).</summary>
     public static string RecipeBagHqHint(string key) =>
-        IsGerman
-            ? $"Dafür sind HQ-Materialien nötig: im Notizbuch {key} drücken oder Schnellsynthese mit HQ-Materialien."
-            : $"These need HQ materials: press {key} in the crafting log, or use Quick Synthesis with HQ materials.";
+        L($"Dafür sind HQ-Materialien nötig: im Notizbuch {key} drücken oder Schnellsynthese mit HQ-Materialien.", $"These need HQ materials: press {key} in the crafting log, or use Quick Synthesis with HQ materials.", $"Для этого нужны HQ-материалы: нажми {key} в журнале или быстрый синтез с HQ-материалами.");
     // ── HQ-Materialien im Rezeptbuch nehmen (Einfg) ────────────────
     /// <summary>Spoken only AFTER the window itself shows the change: the mod
     /// presses the game's own "take HQ" button, then re-reads the material rows
@@ -4247,7 +4094,7 @@ public static partial class AccessibilityStrings
     /// rows stayed exactly as they were: the announcement claimed a success the
     /// game never performed.</summary>
     public static string HqFillDone =>
-        IsGerman ? "HQ-Materialien übernommen." : "HQ materials taken.";
+        L("HQ-Materialien übernommen.", "HQ materials taken.", "HQ-материалы взяты.");
     /// <summary>For the case the BUTTON is missing - and only for that. 6.08.16
     /// said here "Dieses Rezept hat keine HQ-Materialien": a claim about the
     /// RECIPE, while the code had measured nothing but the button. The user's
@@ -4255,82 +4102,75 @@ public static partial class AccessibilityStrings
     /// (node 4, visible, with MouseOver/Down/Up/Click) - the sentence told her
     /// something false about her recipe. This one states only what was read.</summary>
     public static string HqFillNoButton =>
-        IsGerman ? "In diesem Fenster finde ich keinen HQ-Knopf."
-                 : "I cannot find an HQ button in this window.";
+        L("In diesem Fenster finde ich keinen HQ-Knopf.", "I cannot find an HQ button in this window.", "В этом окне я не нахожу кнопку HQ.");
     /// <summary>The click went out but the window did not change - said instead of
     /// <see cref="HqFillDone"/> so silence and a false "done" can be told apart.</summary>
     public static string HqFillFailed =>
-        IsGerman
-            ? "HQ-Materialien ließen sich nicht übernehmen - im Notizbuch hat sich nichts geändert."
-            : "Could not take HQ materials - nothing changed in the crafting log.";
+        L("HQ-Materialien ließen sich nicht übernehmen - im Notizbuch hat sich nichts geändert.", "Could not take HQ materials - nothing changed in the crafting log.", "HQ-материалы не удалось взять — в журнале ничего не изменилось.");
     /// <summary>Nothing changed, but the craft ALREADY had HQ material in it before
     /// the press (starting quality above zero) - the button simply had nothing
     /// left to fill. Test 2026-09-12 04:15: the first press took quality 0 -> 132,
     /// every later press left 132 standing. Calling that a failure would say
     /// something false about her craft, the mistake 6.08.16 made.</summary>
     public static string HqAlreadyTaken =>
-        IsGerman ? "HQ-Materialien stehen schon - nichts zu ändern."
-                 : "HQ materials are already in - nothing to change.";
+        L("HQ-Materialien stehen schon - nichts zu ändern.", "HQ materials are already in - nothing to change.", "HQ-материалы уже стоят — менять нечего.");
     // ── Inventar / Gegenstands-Slots ────────────────────────────────
     /// <summary>An item with its stack count. German needs the "mal" connector,
     /// English just puts the number first.</summary>
     public static string ItemQuantity(string qty, string name) =>
-        IsGerman ? $"{qty} mal {name}" : $"{qty} {name}";
+        L($"{qty} mal {name}", $"{qty} {name}", $"{name}, {qty} штук");
     /// <summary>A visible but empty inventory/equipment slot.</summary>
-    public static string EmptySlot => IsGerman ? "Leer" : "Empty";
+    public static string EmptySlot => L("Leer", "Empty", "Пусто");
     /// <summary>Durability of a piece of gear, as the game's tooltip line gives it:
     /// the percentage alone, because the slot's own sentence already says which
     /// item it is ("Bronzegladius, Stufe 5, tragbar, Zustand 87 Prozent").</summary>
     public static string ItemCondition(int percent) =>
-        IsGerman ? $"Zustand {percent} Prozent" : $"condition {percent} percent";
+        L($"Zustand {percent} Prozent", $"condition {percent} percent", $"прочность {percent} процентов");
 
     // ── Listen / Reiter ohne eigene Beschriftung ────────────────────
     /// <summary>Icon-only tab: position alone, no label to announce.</summary>
     public static string TabPositionOnly(int index, int count) =>
-        IsGerman ? $"Reiter {index} von {count}." : $"Tab {index} of {count}.";
-    public static string EmptyList => IsGerman ? "Leere Liste." : "Empty list.";
-    public static string DialogWord => IsGerman ? "Dialog." : "Dialog.";
+        L($"Reiter {index} von {count}.", $"Tab {index} of {count}.", $"Вкладка {index} из {count}.");
+    public static string EmptyList => L("Leere Liste.", "Empty list.", "Список пуст.");
+    public static string DialogWord => L("Dialog.", "Dialog.", "Диалог.");
 
     // ── Weltenwahl (TitleDCWorldMap) ────────────────────────────────
     public static string DataCenterRegions(string regions) =>
-        IsGerman ? $"Datenzentrum wählen. Regionen: {regions}"
-                 : $"Choose a data center. Regions: {regions}";
+        L($"Datenzentrum wählen. Regionen: {regions}", $"Choose a data center. Regions: {regions}", $"Выбери дата-центр. Регионы: {regions}");
 
     // ── Gil-Depot (Bank / Gehilfen-Truhe) ───────────────────────────
-    public static string BankTitle    => IsGerman ? "Gil-Depot" : "Gil storage";
-    public static string BankDeposit  => IsGerman ? "Hinterlegen" : "Deposit";
-    public static string BankWithdraw => IsGerman ? "Entnehmen" : "Withdraw";
+    public static string BankTitle    => L("Gil-Depot", "Gil storage", "Хранилище гила");
+    public static string BankDeposit  => L("Hinterlegen", "Deposit", "Положить");
+    public static string BankWithdraw => L("Entnehmen", "Withdraw", "Забрать");
     public static string BankAmount(string amount) =>
-        IsGerman ? $"Betrag {amount}." : $"Amount {amount}.";
+        L($"Betrag {amount}.", $"Amount {amount}.", $"Сумма {amount}.");
     /// <summary>One balance line: who, the balance now, the balance afterwards.</summary>
     public static string BankBalance(string owner, string now, string after) =>
-        IsGerman ? $"{owner}: derzeit {now}, danach {after}."
-                 : $"{owner}: currently {now}, then {after}.";
+        L($"{owner}: derzeit {now}, danach {after}.", $"{owner}: currently {now}, then {after}.", $"{owner}: сейчас {now}, потом {after}.");
     /// <summary>Label of the storage side of the window (the retainer's chest).</summary>
     public static string BankChestOwner(string name) =>
-        IsGerman ? $"Truhe {name}" : $"Chest {name}";
+        L($"Truhe {name}", $"Chest {name}", $"Сундук {name}");
     /// <summary>Typing echo: the amount plus the balance it would leave behind.</summary>
     public static string BankAmountWithBalance(string amount, string owner, string after) =>
-        IsGerman ? $"Betrag {amount}, {owner} danach {after}."
-                 : $"Amount {amount}, {owner} then {after}.";
+        L($"Betrag {amount}, {owner} danach {after}.", $"Amount {amount}, {owner} then {after}.", $"Сумма {amount}, {owner} потом {after}.");
 
     // ── Chat-Eingabezeile ───────────────────────────────────────────
-    public static string ChatInput => IsGerman ? "Chat-Eingabe" : "Chat input";
+    public static string ChatInput => L("Chat-Eingabe", "Chat input", "Ввод чата");
     public static string ChatInputWithChannel(string channel) =>
-        IsGerman ? $"Chat-Eingabe, {channel}" : $"Chat input, {channel}";
+        L($"Chat-Eingabe, {channel}", $"Chat input, {channel}", $"Ввод чата, {channel}");
 
     // ── Quest-Detailfenster ─────────────────────────────────────────
     public static string QuestObjectiveText(string objectives) =>
-        IsGerman ? $"Ziel: {objectives}. " : $"Objective: {objectives}. ";
+        L($"Ziel: {objectives}. ", $"Objective: {objectives}. ", $"Цель: {objectives}. ");
 
     // ── Bestiarium: Lebensraum ──────────────────────────────────────
     // The habitat clause itself is LivesIn (further up) - one wording for both
     // the list overview and the single-row announcement.
     /// <summary>Connector between the spawn areas of one monster.</summary>
-    public static string HabitatJoin => IsGerman ? ", oder " : ", or ";
+    public static string HabitatJoin => L(", oder ", ", or ", ", или ");
 
     // ── Plugin-Liste ────────────────────────────────────────────────
-    public static string UnnamedPlugin => IsGerman ? "Unbenanntes Plugin" : "Unnamed plugin";
+    public static string UnnamedPlugin => L("Unbenanntes Plugin", "Unnamed plugin", "Плагин без названия");
 
     // -- Charaktererstellung: Schritt "Aussehen" ---------------------
     // Die Menue-Namen und die Namen der einzelnen Eintraege kommen aus dem
@@ -4350,7 +4190,7 @@ public static partial class AccessibilityStrings
         var head = string.IsNullOrEmpty(label) ? string.Empty : label + ", ";
         var body = string.IsNullOrEmpty(name) ? string.Empty : name + ", ";
         if (index <= 0)
-            return IsGerman ? $"{head}{body}Auswahl unbekannt" : $"{head}{body}selection unknown";
+            return L($"{head}{body}Auswahl unbekannt", $"{head}{body}selection unknown", $"{head}{body}выбор неизвестен");
         var text = $"{head}{body}" + Counter(index, count);
         return string.IsNullOrEmpty(shape) ? text : $"{text}, {shape}";
     }
@@ -4365,8 +4205,7 @@ public static partial class AccessibilityStrings
     /// es informiert.
     /// </summary>
     public static string CharaMakeAuthoredNote =>
-        IsGerman ? "Die Bildbeschreibungen stammen vom Mod, nicht vom Spiel."
-                 : "The picture descriptions come from the mod, not from the game.";
+        L("Die Bildbeschreibungen stammen vom Mod, nicht vom Spiel.", "The picture descriptions come from the mod, not from the game.", "Описания изображений написал мод, а не игра.");
 
     /// <summary>
     /// Was Eintrag 1 eines Typ-0-Form-Menues IST. User: *"every type 1 ... had no
@@ -4386,7 +4225,7 @@ public static partial class AccessibilityStrings
     /// bewusst nicht von <see cref="CharaMakeAuthoredNote"/> abgedeckt.
     /// </summary>
     public static string CharaMakeShapeBase =>
-        IsGerman ? "unverändert" : "unmodified";
+        L("unverändert", "unmodified", "не изменено");
 
     /// <summary>Welches Auge eine Farbe betrifft - nur gesprochen, wenn die beiden
     /// sich unterscheiden. Das Spiel hat dafuer keinen eigenen Text: das Lobby-Sheet
@@ -4394,10 +4233,10 @@ public static partial class AccessibilityStrings
     /// Fensters. Die Worte sind also mod-eigen, und das ist richtig - einem sehenden
     /// Spieler wird die Trennung ausschliesslich dadurch vermittelt, in welche
     /// Haelfte des Fensters er schaut.</summary>
-    public static string EyeLeft  => IsGerman ? "linkes Auge" : "left eye";
+    public static string EyeLeft  => L("linkes Auge", "left eye", "левый глаз");
 
     /// <summary>Siehe <see cref="EyeLeft"/>.</summary>
-    public static string EyeRight => IsGerman ? "rechtes Auge" : "right eye";
+    public static string EyeRight => L("rechtes Auge", "right eye", "правый глаз");
 
     /// <summary>Eine Farbe OHNE Label und OHNE Position, fuer den Fall dass der
     /// Fokus-Leser die Position schon gesagt hat und dies dahinter eingereiht wird.
@@ -4405,9 +4244,7 @@ public static partial class AccessibilityStrings
     public static string CharaMakeColourOnly(string colour, int group, int shade, string eye)
     {
         var head = string.IsNullOrEmpty(eye) ? string.Empty : eye + ", ";
-        return IsGerman
-            ? $"{head}{colour}, Gruppe {group} Ton {shade}"
-            : $"{head}{colour}, group {group} shade {shade}";
+        return L($"{head}{colour}, Gruppe {group} Ton {shade}", $"{head}{colour}, group {group} shade {shade}", $"{head}{colour}, группа {group}, тон {shade}");
     }
 
     /// <summary>Ein Farbmenue, dessen SCHALTER AUS ist - die Lippenfarbe ohne
@@ -4431,9 +4268,7 @@ public static partial class AccessibilityStrings
         if (colour == null)
             return head + Counter(index, count);
         var pos = $"{Counter(index, count)}, ";
-        return IsGerman
-            ? $"{head}{colour}, {pos}Gruppe {group} Ton {shade}"
-            : $"{head}{colour}, {pos}group {group} shade {shade}";
+        return L($"{head}{colour}, {pos}Gruppe {group} Ton {shade}", $"{head}{colour}, {pos}group {group} shade {shade}", $"{head}{colour}, {pos}группа {group}, тон {shade}");
     }
 
     /// <summary>Ein 0-100-Schieberegler. Die beiden Endbezeichnungen sind die Worte
@@ -4444,10 +4279,8 @@ public static partial class AccessibilityStrings
         // Die Endbezeichnungen fallen weg, sobald der Spieler in EINEM Regler
         // arbeitet: "Klein bis Gross" braucht man einmal, nicht bei jedem Schritt.
         if (string.IsNullOrEmpty(low) || string.IsNullOrEmpty(high))
-            return IsGerman ? $"{label}, {value} von 100" : $"{label}, {value} of 100";
-        return IsGerman
-            ? $"{label}, {value} von 100, {low} bis {high}"
-            : $"{label}, {value} of 100, {low} to {high}";
+            return L($"{label}, {value} von 100", $"{label}, {value} of 100", $"{label}, {value} из 100");
+        return L($"{label}, {value} von 100, {low} bis {high}", $"{label}, {value} of 100, {low} to {high}", $"{label}, {value} из 100, от {low} до {high}");
     }
 
     /// <summary>Ein Schalter der Gesichtsmerkmals-Bitmaske. Die Zahl ist das BIT,
@@ -4455,8 +4288,8 @@ public static partial class AccessibilityStrings
     /// Typ-4-Menue gehoert, also wird nichts zugeschrieben, was sich nicht belegen
     /// laesst.</summary>
     public static string CharaMakeFeatureBit(string label, int number, bool on) =>
-        IsGerman ? $"{label} {number}, {(on ? "an" : "aus")}"
-                 : $"{label} {number}, {(on ? "on" : "off")}";
+        L($"{label} {number}, {(on ? "an" : "aus")}", $"{label} {number}, {(on ? "on" : "off")}",
+          $"{label} {number}, {(on ? "вкл" : "выкл")}");
 
     /// <summary>Derselbe Schalter, aber mit NAMEN statt Nummer. User: *"facial
     /// features have no descriptions, and neither do tattoos. those need descriptions
@@ -4465,22 +4298,23 @@ public static partial class AccessibilityStrings
     /// Gesichtsmerkmale, Eintrag "1 von 5", kippte Bit 0 - also Reihe i = Bit
     /// i-1.</summary>
     public static string CharaMakeFeatureNamed(string label, int number, string what, bool on) =>
-        IsGerman ? $"{label} {number}, {what}, {(on ? "an" : "aus")}"
-                 : $"{label} {number}, {what}, {(on ? "on" : "off")}";
+        L($"{label} {number}, {what}, {(on ? "an" : "aus")}", $"{label} {number}, {what}, {(on ? "on" : "off")}",
+          $"{label} {number}, {what}, {(on ? "вкл" : "выкл")}");
 
     /// <summary>Eine Typ-4-Reihe beim MARKIEREN: was sie ist und ob sie gerade an
     /// ist. Die Position spricht der Fokus-Leser bereits, hier stehen nur die beiden
     /// Teile, die er nicht wissen kann.</summary>
     public static string CharaMakeFeatureRow(string what, bool on) =>
-        IsGerman ? $"{what}, {(on ? "an" : "aus")}" : $"{what}, {(on ? "on" : "off")}";
+        L($"{what}, {(on ? "an" : "aus")}", $"{what}, {(on ? "on" : "off")}",
+          $"{what}, {(on ? "вкл" : "выкл")}");
 
     /// <summary>Nur der Zustand, fuer ein Merkmal ohne geschriebene Beschreibung -
     /// "aus" ist auch dann die Ansage wert, wenn sich die Sache nicht benennen
     /// laesst.</summary>
     public static string CharaMakeFeatureState(bool on) =>
-        IsGerman ? (on ? "an" : "aus") : (on ? "on" : "off");
+        L(on ? "an" : "aus", on ? "on" : "off", on ? "вкл" : "выкл");
 
-    public static string CharaMakeFeatureLabel => IsGerman ? "Merkmal" : "Feature";
+    public static string CharaMakeFeatureLabel => L("Merkmal", "Feature", "Черта");
 
     /// <summary>Eine Aussehen-Kategorie, deren aktueller Wert sich nicht als EINE
     /// Position benennen laesst - die Typ-4-Bitmasken-Menues, bei denen das Sheet
@@ -4488,7 +4322,7 @@ public static partial class AccessibilityStrings
     /// ehrlich sagen laesst, und der User hat genau danach gefragt: *"the total number
     /// of selections per value is useful information to have"*.</summary>
     public static string CharaMakeCategory(string label, int count) =>
-        IsGerman ? $"{label}, {count} Einträge" : $"{label}, {count} entries";
+        L($"{label}, {count} Einträge", $"{label}, {count} entries", $"{label}, {count} пунктов");
 
     /// <summary>
     /// Die ZWEITE Achse des Stimmen-Waehlers - die Hoerprobe, die das Spiel abspielt,
@@ -4506,20 +4340,22 @@ public static partial class AccessibilityStrings
     /// </summary>
     public static string CharaMakeVoiceSample(string name, int index, int count)
     {
-        var head = IsGerman ? "Hörprobe" : "Sample";
+        var head = L("Hörprobe", "Sample", "Проба");
         var lead = string.IsNullOrEmpty(name) ? head : $"{head}, {name}";
         return $"{lead}, {Counter(index, count)}";
     }
 
-    /// <summary>Die Klasse, die die Erstellungs-Vorschau gerade zeigt. Nur der Name -
-    /// die BESCHREIBUNG der Klasse liegt wie bei jedem anderen Erstellungsschritt auf
-    /// der Vorlese-Taste.</summary>
+    /// <summary>The class currently equipped on the creation preview.</summary>
     public static string CharaMakeClass(string name) => name;
+    public static string CharaMakeClassUnavailable => L(
+        "Die ausgewählte Klasse ist noch nicht verfügbar.",
+        "The selected class is not available yet.",
+        "Выбранный класс пока недоступен для чтения.");
 
     /// <summary>Ersatzbezeichnung fuer den Stimmen-Waehler. Normal wird das
     /// Lobby-Label des Spiels benutzt; das hier deckt eine Zeile ohne Stimmen-Menue
     /// ab.</summary>
-    public static string CharaMakeVoiceLabel => IsGerman ? "Stimme" : "Voice";
+    public static string CharaMakeVoiceLabel => L("Stimme", "Voice", "Голос");
 
     /// <summary>
     /// Markiert in der Aussehen-Zusammenfassung einen Wert, den das SPIEL selbst
@@ -4531,14 +4367,13 @@ public static partial class AccessibilityStrings
     /// zwar ueber ein Menue, in dem er gar nicht ist.
     /// </summary>
     public static string CharaMakeChangedByGame =>
-        IsGerman ? "vom Spiel geändert" : "changed by the game";
+        L("vom Spiel geändert", "changed by the game", "изменено игрой");
 
     /// <summary>Gesagt, wenn das Aussehen nicht gelesen werden kann, weil das
     /// Vorschau-Modell nicht eindeutig ist. Niemals Schweigen: der Spieler koennte
     /// das nicht von "nichts zu melden" unterscheiden.</summary>
     public static string CharaMakeNoPreview =>
-        IsGerman ? "Vorschau-Modell nicht eindeutig, Aussehen nicht lesbar."
-                 : "Preview model not identifiable, appearance cannot be read.";
+        L("Vorschau-Modell nicht eindeutig, Aussehen nicht lesbar.", "Preview model not identifiable, appearance cannot be read.", "Модель для предпросмотра неоднозначна, внешность прочитать нельзя.");
 
     // ── Tiefes Gewoelbe ─────────────────────────────────────────────
     //
@@ -4547,22 +4382,22 @@ public static partial class AccessibilityStrings
     // darum: welche Art von Wirkung eine Zeile ist, wo ein Platz sitzt, ob er leer ist.
 
     /// <summary>Ein ebenenweiter Zustand (DeepDungeonStatus).</summary>
-    public static string DeepKindFloor => IsGerman ? "Ebene" : "Floor";
+    public static string DeepKindFloor => L("Ebene", "Floor", "Этаж");
 
     /// <summary>Ein ebenenweites Verbot (DeepDungeonBan).</summary>
-    public static string DeepKindBan => IsGerman ? "Verbot" : "Restriction";
+    public static string DeepKindBan => L("Verbot", "Restriction", "Запрет");
 
     /// <summary>Eine ebenenweite Gefahr (DeepDungeonDanger).</summary>
-    public static string DeepKindDanger => IsGerman ? "Gefahr" : "Hazard";
+    public static string DeepKindDanger => L("Gefahr", "Hazard", "Опасность");
 
     /// <summary>Pilgerpfad: die auf dieser Ebene laufende Besonderheit.</summary>
-    public static string DeepKindGimmick => IsGerman ? "Diese Ebene" : "This floor";
+    public static string DeepKindGimmick => L("Diese Ebene", "This floor", "Этот этаж");
 
     /// <summary>Pilgerpfad: die fuer die naechste Ebene vorgemerkte Besonderheit.</summary>
-    public static string DeepKindGimmickNext => IsGerman ? "Nächste Ebene" : "Next floor";
+    public static string DeepKindGimmickNext => L("Nächste Ebene", "Next floor", "Следующий этаж");
 
     /// <summary>Eine laufende Pomander-Wirkung.</summary>
-    public static string DeepKindItemEffect => IsGerman ? "Gegenstand" : "Item effect";
+    public static string DeepKindItemEffect => L("Gegenstand", "Item effect", "Предмет");
 
     /// <summary>Eine Zeile der Gewoelbe-Wirkungen: woher sie kommt und wie das Spiel sie
     /// nennt. Nur der NAME, nicht die Beschreibung - diese Zeilen haengen an der
@@ -4590,25 +4425,25 @@ public static partial class AccessibilityStrings
     /// Taste wird aus Gewohnheit gedrueckt, sobald ein Lauf vorbei ist.
     /// </summary>
     public static string DeepFloorOutside =>
-        IsGerman ? "Kein Tiefes Gewölbe." : "Not in a deep dungeon.";
+        L("Kein Tiefes Gewölbe.", "Not in a deep dungeon.", "Ты не в Глубоком подземелье.");
 
     /// <summary>Kategorie-Bezeichnung fuer die Raumliste im Tiefen Gewoelbe.</summary>
-    public static string DeepCategoryRooms => IsGerman ? "Räume" : "Rooms";
+    public static string DeepCategoryRooms => L("Räume", "Rooms", "Комнаты");
 
     /// <summary>Kategorie-Bezeichnung fuer die Truhen einer Ebene.</summary>
-    public static string DeepCategoryTreasure => IsGerman ? "Schätze" : "Treasure";
+    public static string DeepCategoryTreasure => L("Schätze", "Treasure", "Сокровища");
 
     /// <summary>Kategorie-Bezeichnung fuer die beiden Leuchten.</summary>
-    public static string DeepCategoryCairns => IsGerman ? "Leuchten" : "Cairns";
+    public static string DeepCategoryCairns => L("Leuchten", "Cairns", "Огни");
 
     /// <summary>Ein Raum, nach dem spieleigenen Index dafuer.</summary>
-    public static string DeepRoomName(int index) => IsGerman ? $"Raum {index}" : $"Room {index}";
+    public static string DeepRoomName(int index) => L($"Raum {index}", $"Room {index}", $"Комната {index}");
 
     /// <summary>Markiert den Raum, in dem der Spieler steht.</summary>
-    public static string DeepRoomYouAreHere => IsGerman ? "hier" : "you are here";
+    public static string DeepRoomYouAreHere => L("hier", "you are here", "здесь");
 
     /// <summary>Markiert den Startraum der Ebene (RoomFlags.Home).</summary>
-    public static string DeepRoomStart => IsGerman ? "Startraum" : "starting room";
+    public static string DeepRoomStart => L("Startraum", "starting room", "стартовая комната");
 
     /// <summary>Wie viele Truhen der Director in einen Raum legt, im spieleigenen Wort
     /// fuer eine Truhe.</summary>
@@ -4617,12 +4452,12 @@ public static partial class AccessibilityStrings
 
     /// <summary>Wohin ein Raum sich oeffnet, aus seinen eigenen Verbindungs-Flags.</summary>
     public static string DeepRoomExits(System.Collections.Generic.IEnumerable<string> directions) =>
-        (IsGerman ? "Ausgänge " : "exits ") + string.Join(", ", directions);
+        (L("Ausgänge ", "exits ", "Выходы ")) + string.Join(", ", directions);
 
-    public static string DirNorth => IsGerman ? "Norden" : "north";
-    public static string DirEast  => IsGerman ? "Osten"  : "east";
-    public static string DirSouth => IsGerman ? "Süden"  : "south";
-    public static string DirWest  => IsGerman ? "Westen" : "west";
+    public static string DirNorth => L("Norden", "north", "север");
+    public static string DirEast  => L("Osten", "east", "восток");
+    public static string DirSouth => L("Süden", "south", "юг");
+    public static string DirWest  => L("Westen", "west", "запад");
 
     /// <summary>
     /// Ein aufgedeckter Raum, fuer den es keinen begehbaren Punkt gibt.
@@ -4634,17 +4469,17 @@ public static partial class AccessibilityStrings
     /// keine Koordinaten, der einzige begehbare Punkt ist also einer, auf dem es den
     /// Spieler stehen gesehen hat.
     /// </summary>
-    public static string DeepRoomNoRoute => IsGerman ? "kein Weg bekannt" : "no route known";
+    public static string DeepRoomNoRoute => L("kein Weg bekannt", "no route known", "путь неизвестен");
 
     /// <summary>Ein Teil der Ebene, den das Spiel nicht als aufgedeckt fuehrt. Traegt ein
     /// Ziel und NICHTS darueber, was darin ist.</summary>
     public static string DeepRoomUnexplored(int index) =>
-        IsGerman ? $"Unerforscht {index}" : $"Unexplored {index}";
+        L($"Unerforscht {index}", $"Unexplored {index}", $"Не исследовано {index}");
 
     /// <summary>Gesagt, wenn die Raumliste abgefragt wird und die Ebene keine hergibt -
     /// ausserhalb eines Gewoelbes, oder solange den Raumdaten nicht zu trauen ist.</summary>
     public static string DeepNoRooms =>
-        IsGerman ? "Keine Raumdaten." : "No room data.";
+        L("Keine Raumdaten.", "No room data.", "Нет данных о комнатах.");
 
     /// <summary>
     /// Wo ein Platz in seinem Abschnitt sitzt ("3 von 16"), oder "", wenn der Spieler
@@ -4661,7 +4496,7 @@ public static partial class AccessibilityStrings
     public static string DeepGearStrength(string name, int strength) => $"{name} +{strength}";
 
     /// <summary>Ein Platz, den dieses Gewoelbe gar nicht benutzt.</summary>
-    public static string DeepSlotEmpty => IsGerman ? "leerer Platz" : "empty slot";
+    public static string DeepSlotEmpty => L("leerer Platz", "empty slot", "пустой слот");
 
     /// <summary>
     /// Ein Platz, den das Gewoelbe SEHR WOHL benutzt, mit der Anzahl im Besitz -
@@ -4670,14 +4505,14 @@ public static partial class AccessibilityStrings
     /// also, WOFUER der Platz ist, bevor er einen besitzt.
     /// </summary>
     public static string DeepSlotCount(string name, int count) =>
-        IsGerman ? $"{name} mal {count}" : $"{name} times {count}";
+        L($"{name} mal {count}", $"{name} times {count}", $"{name}, {count} штук");
 
     /// <summary>Ein Pomander, dessen Wirkung gerade laeuft.</summary>
-    public static string DeepEffectActive => IsGerman ? "aktiv" : "active";
+    public static string DeepEffectActive => L("aktiv", "active", "действует");
 
     /// <summary>Ein Pomander, dessen Wirkung nicht laeuft.</summary>
-    public static string DeepEffectInactive => IsGerman ? "nicht aktiv" : "not active";
+    public static string DeepEffectInactive => L("nicht aktiv", "not active", "не действует");
 
     /// <summary>Ein Pomander, den das Spiel gerade verweigert (Items[i].IsUsable false).</summary>
-    public static string DeepItemUnusable => IsGerman ? "nicht verwendbar" : "not usable";
+    public static string DeepItemUnusable => L("nicht verwendbar", "not usable", "нельзя использовать");
 }

@@ -1,10 +1,9 @@
 {
   "Author": "FF14 Accessibility Project",
   "Name": "FF14 Accessibility",
-  "Punchline": "FF14 für blinde Spieler via NVDA und Tastatur zugänglich machen.",
-  "Description": "Macht FF14 für blinde Spieler zugänglich via NVDA/TOLK Integration, Audio-Navigation und vollständiger Tastatursteuerung.",
+  "Punchline": "Доступность FFXIV для незрячих игроков: озвучка и управление с клавиатуры.",
+  "Description": "Озвучка интерфейса через NVDA и другие программы экранного доступа, звуковая навигация и управление с клавиатуры. Встроены русские названия и описания предметов и умений, а также описания внешности персонажа.",
   "InternalName": "FF14Accessibility",
-  "AssemblyVersion": "4.58.0.0",
   "RepoUrl": "https://github.com/derbruedi/ff14-accessibility",
   "ApplicableVersion": "any",
   "Tags": ["accessibility", "blind", "screenreader", "nvda"],

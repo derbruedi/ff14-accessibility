@@ -39,14 +39,13 @@ internal sealed unsafe class GrandCompanyRankText
         _log  = log;
     }
 
-    /// <summary>Number of shop tiers the rank sheet knows (3 in every expansion so
-    /// far). Read from the sheet rather than hardcoded, so a new rank tier would be
-    /// counted instead of silently mislabelling the buttons.</summary>
+    /// <summary>Number of tiers actually used by the seal shop. The rank sheet
+    /// also contains later ranks that have no shop tier/button.</summary>
     public int TierCount()
     {
         var max = 0;
-        foreach (var rank in _data.GetExcelSheet<GrandCompanyRank>())
-            if (rank.RowId > 0 && rank.Tier > max) max = rank.Tier;
+        foreach (var category in _data.GetExcelSheet<GCScripShopCategory>())
+            if (category.RowId > 0 && category.Tier > max) max = category.Tier;
         return max;
     }
 

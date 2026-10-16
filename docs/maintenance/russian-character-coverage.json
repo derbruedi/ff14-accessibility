@@ -1,0 +1,17 @@
+{
+  "catalog_sha256": "7833034d3a1c02d9a7a4a7f6c5411fd519b55ed2891310ebf85f71c4226ca54d",
+  "unique_source_phrases": 3813,
+  "translated_phrases": 3813,
+  "tables": {
+    "Icon": {
+      "total": 2650,
+      "translated": 2650,
+      "remaining": []
+    },
+    "Shape": {
+      "total": 1163,
+      "translated": 1163,
+      "remaining": []
+    }
+  }
+}

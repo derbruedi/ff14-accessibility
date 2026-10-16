@@ -427,7 +427,7 @@ public sealed unsafe class GameChatFilters
             // Categories 1 and 2: the row IS the channel and it names itself.
             var id = (uint)rowId;
             name = () => _data.GetExcelSheet<LogFilter>().TryGetRow(id, out var r)
-                ? r.Name.ExtractText().Trim()
+                ? RussianGameText.Name(_data, r, x => x.Name).Trim()
                 : $"#{id}";
             sort = category * 1000 + displayOrder;
         }
@@ -779,7 +779,7 @@ public sealed unsafe class GameChatFilters
         if (rowId < 0) return $"#{rowId}";
         var sheet = _data.GetExcelSheet<LogFilter>();
         return sheet.TryGetRow((uint)rowId, out var row)
-            ? row.Name.ExtractText().Trim()
+            ? RussianGameText.Name(_data, row, x => x.Name).Trim()
             : $"#{rowId}";
     }
 
@@ -1042,7 +1042,7 @@ public sealed unsafe class GameChatFilters
                 values.Add($"Satz{tab.SetIndex}={block[tab.SetIndex * _stride + row.Id]}");
 
             var name = _data.GetExcelSheet<LogFilter>().TryGetRow((uint)row.Id, out var r)
-                ? r.Name.ExtractText().Trim()
+                ? RussianGameText.Name(_data, r, x => x.Name).Trim()
                 : "?";
             parts.Add($"Zeile {row.Id} '{name}' {string.Join(" ", values)}");
         }

@@ -85,7 +85,7 @@ public sealed class LiftProbe
         if (IsTracking)
         {
             _trackUntil = DateTime.MinValue;
-            _tolk.SpeakInterrupt("Aufzug-Sonde abgebrochen.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LiftProbeCancelled);
             _log.Info("[LiftProbe] Mitschrift abgebrochen.");
             return;
         }
@@ -93,7 +93,7 @@ public sealed class LiftProbe
         var player = _objectTable.LocalPlayer;
         if (player == null)
         {
-            _tolk.SpeakInterrupt("Aufzug-Sonde: kein Spieler.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LiftProbeNoPlayer);
             return;
         }
 
@@ -103,8 +103,7 @@ public sealed class LiftProbe
         _nextSample = DateTime.UtcNow;
         _lastSample = player.Position;
         _movedAnnounced = false;
-        _tolk.SpeakInterrupt($"Aufzug-Sonde laeuft, {TrackDuration.TotalSeconds:F0} Sekunden. "
-                             + "Jetzt auf den Aufzug stellen und ihn ausloesen.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.LiftProbeStarted(TrackDuration.TotalSeconds));
     }
 
     /// <summary>Eine Zeile der Mitschrift, wenn es Zeit dafuer ist. Jeden Frame aufrufbar.</summary>
@@ -116,7 +115,7 @@ public sealed class LiftProbe
             if (_trackUntil != DateTime.MinValue && _trackUntil != default)
             {
                 _trackUntil = DateTime.MinValue;
-                _tolk.SpeakInterrupt("Aufzug-Sonde fertig.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.LiftProbeFinished);
                 _log.Info("[LiftProbe] === Mitschrift beendet ===");
             }
             return;
@@ -157,7 +156,7 @@ public sealed class LiftProbe
         if (!_movedAnnounced && MathF.Abs(moved.Y) > 0.3f && Flat(moved, Vector3.Zero) < 0.3f)
         {
             _movedAnnounced = true;
-            _tolk.SpeakInterrupt($"Du faehrst. Hoehe {(moved.Y > 0 ? "steigt" : "faellt")}.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.LiftProbeMoving(moved.Y > 0));
             _log.Info($"[LiftProbe] >>> SENKRECHTE FAHRT erkannt: dY={moved.Y:F2} m in einem Schritt.");
         }
     }

@@ -53,13 +53,13 @@ public static class CharaMakeShapeText
     /// <summary>The full description, or null when this entry has none.</summary>
     public static string? Describe(uint faceIcon, uint customizeByte, int entry)
         => faceIcon != 0 && Text.TryGetValue(Key(faceIcon, customizeByte, entry), out var t)
-            ? (Loc.IsGerman ? t.De : t.En)
+            ? AccessibilityStrings.LocText(t.De, t.En)
             : null;
 
     /// <summary>The one- or two-word form for the cursor move (61e).</summary>
     public static string? Summarize(uint faceIcon, uint customizeByte, int entry)
         => faceIcon != 0 && Text.TryGetValue(Key(faceIcon, customizeByte, entry), out var t)
-            ? (Loc.IsGerman ? t.BriefDe : t.BriefEn)
+            ? AccessibilityStrings.LocText(t.BriefDe, t.BriefEn)
             : null;
 
     /// <summary>True when this entry has a description.</summary>

@@ -43,7 +43,9 @@ public sealed class EmoteService
         if (!EnsureList()) return;
 
         _index = ((_index + direction) % _emotes.Count + _emotes.Count) % _emotes.Count;
-        var (_, name, command) = _emotes[_index];
+        var (id, name, command) = _emotes[_index];
+        if (_data.GetExcelSheet<LuminaEmote>().TryGetRow(id, out var row))
+            name = RussianGameText.Name(_data, row, x => x.Name);
         _tolk.SpeakInterrupt(AccessibilityStrings.EmoteBrowseEntry(name, command, _index + 1, _emotes.Count));
     }
 
@@ -54,6 +56,8 @@ public sealed class EmoteService
         if (_index < 0) { _tolk.SpeakInterrupt(AccessibilityStrings.NoEmoteSelected); return; }
 
         var (id, name, _) = _emotes[_index];
+        if (_data.GetExcelSheet<LuminaEmote>().TryGetRow(id, out var row))
+            name = RussianGameText.Name(_data, row, x => x.Name);
         var agent = AgentEmote.Instance();
         if (agent == null) { _tolk.SpeakInterrupt(AccessibilityStrings.EmoteUnavailable); return; }
 

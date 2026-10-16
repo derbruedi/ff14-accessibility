@@ -1,3 +1,7 @@
+> **Справочный материал исходного проекта.** Этот документ описывает разработку
+> модов или прежний установщик автора. Для установки текущей русской версии
+> FF14 Accessibility используйте [актуальную инструкцию](../docs/installation.md).
+
 # Setup-Anleitung für neue Accessibility-Mod-Projekte
 
 Diese Anleitung wird nur beim ersten Projektstart benötigt.

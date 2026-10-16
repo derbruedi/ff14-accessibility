@@ -107,7 +107,7 @@ public sealed class ActionSignalProbe
         if (am == null || hotbars == null || ps == null)
         {
             _log.Warning("[ActionProbe] ActionManager/Hotbars/PlayerState nicht verfuegbar.");
-            _tolk.Speak("Sonde nicht moeglich.");
+            _tolk.Speak(AccessibilityStrings.ProbeUnavailable);
             return;
         }
 
@@ -142,7 +142,7 @@ public sealed class ActionSignalProbe
 
         foreach (var line in lines) _log.Info(line);
         _log.Info($"[ActionProbe] {lines.Count} Aktionen auf den Leisten.");
-        _tolk.Speak($"Sonde: {lines.Count} Aktionen ins Log geschrieben.");
+        _tolk.Speak(AccessibilityStrings.ActionProbeSaved(lines.Count));
     }
 
     private unsafe string Describe(ActionManager* am, uint id, ulong targetId)

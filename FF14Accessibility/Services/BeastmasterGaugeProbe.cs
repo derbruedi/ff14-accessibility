@@ -60,7 +60,7 @@ public sealed unsafe class BeastmasterGaugeProbe
         if (ps == null)
         {
             _log.Warning("[BstGaugeProbe] PlayerState nicht verfuegbar.");
-            _tolk.SpeakInterrupt("Sonde nicht moeglich.");
+            _tolk.SpeakInterrupt(AccessibilityStrings.ProbeUnavailable);
             return;
         }
 
@@ -81,9 +81,7 @@ public sealed unsafe class BeastmasterGaugeProbe
         var statusHits = DumpPlayerStatuses();
 
         _log.Info("[BstGaugeProbe] ===================================================");
-        _tolk.SpeakInterrupt(
-            $"Bestienbaendiger-Sonde. Job {job}, Stufe {level}. " +
-            $"{addonHits} Addon-Treffer, {statusHits} Statuszeilen. Rest im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterProbeSaved(job, level, addonHits, statusHits));
     }
 
     private void DumpJobGaugeManager()

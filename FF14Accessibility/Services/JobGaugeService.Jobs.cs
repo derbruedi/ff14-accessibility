@@ -105,7 +105,9 @@ public sealed partial class JobGaugeService
         EdgeAtCap("mnk.chakra", ActionSteelPeak, level, g.Chakra, CapChakra,
             AccessibilityStrings.GaugeFull(AccessibilityStrings.GaugeNameChakra), GaugeReadyCueId.Chakra);
 
-        var beasts = g.BeastChakra.Count(c => c != BeastChakra.None);
+        var beasts = (g.BeastChakra1 != BeastChakra.None ? 1 : 0)
+                   + (g.BeastChakra2 != BeastChakra.None ? 1 : 0)
+                   + (g.BeastChakra3 != BeastChakra.None ? 1 : 0);
         Edge("mnk.beast.any", ActionPerfectBalance, level, beasts > 0,
             AccessibilityStrings.GaugeReady(AccessibilityStrings.GaugeNameBeastChakra), GaugeReadyCueId.BeastChakra);
         EdgeAtCap("mnk.beast.3", ActionMasterfulBlitz, level, beasts, CapStacks3,
@@ -128,7 +130,9 @@ public sealed partial class JobGaugeService
         var parts = new List<string>();
         if (Usable(ActionSteelPeak, level))
             parts.Add(AccessibilityStrings.GaugeAmount(AccessibilityStrings.GaugeNameChakra, g.Chakra));
-        var beasts = g.BeastChakra.Count(c => c != BeastChakra.None);
+        var beasts = (g.BeastChakra1 != BeastChakra.None ? 1 : 0)
+                   + (g.BeastChakra2 != BeastChakra.None ? 1 : 0)
+                   + (g.BeastChakra3 != BeastChakra.None ? 1 : 0);
         if (Usable(ActionPerfectBalance, level) && beasts > 0)
             parts.Add(AccessibilityStrings.GaugeAmount(AccessibilityStrings.GaugeNameBeastChakra, beasts));
         var nadi = g.Nadi;
@@ -531,7 +535,7 @@ public sealed partial class JobGaugeService
     {
         var g = _gauges.Get<ASTGauge>();
         if (g == null) return;
-        var hasCard = g.DrawnCards.Any(c => c != CardType.None);
+        var hasCard = g.Card1 != CardType.None || g.Card2 != CardType.None || g.Card3 != CardType.None;
         Edge("ast.card", ActionAstralDraw, level, hasCard,
             AccessibilityStrings.GaugeReady(AccessibilityStrings.GaugeNameCard), GaugeReadyCueId.Card);
         Edge("ast.crown", ActionMinorArcana, level, g.DrawnCrownCard != CardType.None,
@@ -545,7 +549,7 @@ public sealed partial class JobGaugeService
         var parts = new List<string>();
         if (Usable(ActionAstralDraw, level))
         {
-            foreach (var card in g.DrawnCards)
+            foreach (var card in new[] { g.Card1, g.Card2, g.Card3 })
             {
                 if (card == CardType.None) continue;
                 parts.Add(AccessibilityStrings.GaugeReady(CardName(card)));
@@ -559,14 +563,14 @@ public sealed partial class JobGaugeService
 
     private static string CardName(CardType card) => card switch
     {
-        CardType.Balance => Loc.IsGerman ? "Waage" : "Balance",
-        CardType.Bole    => Loc.IsGerman ? "Baum" : "Bole",
-        CardType.Arrow   => Loc.IsGerman ? "Pfeil" : "Arrow",
-        CardType.Spear   => Loc.IsGerman ? "Speer" : "Spear",
-        CardType.Ewer    => Loc.IsGerman ? "Krug" : "Ewer",
-        CardType.Spire   => Loc.IsGerman ? "Turm" : "Spire",
-        CardType.Lord    => Loc.IsGerman ? "Lord" : "Lord",
-        CardType.Lady    => Loc.IsGerman ? "Lady" : "Lady",
+        CardType.Balance => AccessibilityStrings.L("Waage", "Balance", "Весы"),
+        CardType.Bole    => AccessibilityStrings.L("Baum", "Bole", "Древо"),
+        CardType.Arrow   => AccessibilityStrings.L("Pfeil", "Arrow", "Стрела"),
+        CardType.Spear   => AccessibilityStrings.L("Speer", "Spear", "Копьё"),
+        CardType.Ewer    => AccessibilityStrings.L("Krug", "Ewer", "Кувшин"),
+        CardType.Spire   => AccessibilityStrings.L("Turm", "Spire", "Шпиль"),
+        CardType.Lord    => AccessibilityStrings.L("Lord", "Lord", "Лорд"),
+        CardType.Lady    => AccessibilityStrings.L("Lady", "Lady", "Леди"),
         _                => card.ToString(),
     };
 }

@@ -298,6 +298,16 @@ public sealed class LevequestEnemyService
         if (!_data.GetExcelSheet<ENpcResident>().TryGetRow(level.Object.RowId, out var npc))
             return string.Empty;
         var name = npc.Singular.ExtractText().Trim();
+        if (Loc.IsRussian)
+        {
+            try
+            {
+                var english = _data.GetExcelSheet<ENpcResident>(Dalamud.Game.ClientLanguage.English)
+                    .GetRow(npc.RowId);
+                name = RussianAuthorText.Translate("ENpcResidentName", npc.RowId, english.Singular.Data.Span, name);
+            }
+            catch { /* Missing or changed source keeps the actual NPC name. */ }
+        }
         return name;
     }
 

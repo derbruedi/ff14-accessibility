@@ -1,0 +1,44 @@
+{
+  "Item": {
+    "Total": 20849,
+    "Matched": 20849,
+    "Missing": [],
+    "Changed": []
+  },
+  "Action": {
+    "Total": 3406,
+    "Matched": 3406,
+    "Missing": [],
+    "Changed": []
+  },
+  "CraftAction": {
+    "Total": 432,
+    "Matched": 432,
+    "Missing": [],
+    "Changed": []
+  },
+  "Trait": {
+    "Total": 682,
+    "Matched": 682,
+    "Missing": [],
+    "Changed": []
+  },
+  "BuddyAction": {
+    "Total": 6,
+    "Matched": 6,
+    "Missing": [],
+    "Changed": []
+  },
+  "AozDescription": {
+    "Total": 124,
+    "Matched": 124,
+    "Missing": [],
+    "Changed": []
+  },
+  "AozStats": {
+    "Total": 124,
+    "Matched": 124,
+    "Missing": [],
+    "Changed": []
+  }
+}

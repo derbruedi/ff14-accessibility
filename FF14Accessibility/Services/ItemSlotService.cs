@@ -69,7 +69,7 @@ public enum SlotWait
     AgentOpening,
 }
 
-public sealed unsafe class ItemSlotService
+public sealed unsafe partial class ItemSlotService
 {
     private readonly IDataManager _data;
 
@@ -134,8 +134,17 @@ public sealed unsafe class ItemSlotService
 
         // The agent keeps the HQ/collectible offset applied; sheet lookups need the
         // base id. Dalamud owns that mapping - the same call DescribeGearsetMark uses.
-        var itemId = Dalamud.Utility.ItemUtil.GetBaseId(agent->ItemId).ItemId;
+        var itemId = GetBaseItemId(agent->ItemId);
         if (itemId == 0) return 0;
+
+        // First verify the drawing even when Index matches: it is only an index
+        // inside one window and can also belong to a different bag or tooltip.
+        var slotIcon = IsHighQuality(iconId) ? iconId - HqIconOffset : iconId;
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(itemId, out var row) || row.Icon != slotIcon)
+        {
+            wait = SlotWait.AgentBehind;
+            return 0;
+        }
 
         // PROOF 1, the strong one: the agent's Index is the slot's position in its
         // addon's slot array, and that array we can read. Measured equal on every
@@ -148,13 +157,6 @@ public sealed unsafe class ItemSlotService
         // An HQ slot draws its icon a million higher (measured: HQ Honey on icon
         // 1025102, the sheet row carries 25102), and the sheet has no such rows -
         // so without stripping that offset every HQ item would count as a mismatch.
-        var slotIcon = IsHighQuality(iconId) ? iconId - HqIconOffset : iconId;
-        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(itemId, out var row) || row.Icon != slotIcon)
-        {
-            wait = SlotWait.AgentBehind;   // live agent, wrong slot - it catches up next frame
-            return 0;
-        }
-
         // The icon alone cannot separate a caught-up agent from a stale one when
         // both slots share an icon - which is exactly the branches. So while there
         // is still time to wait, an item equal to the one just announced counts as

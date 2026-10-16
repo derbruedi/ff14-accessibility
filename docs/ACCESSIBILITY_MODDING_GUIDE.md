@@ -1,3 +1,7 @@
+> **Справочный материал исходного проекта.** Этот документ описывает разработку
+> модов или прежний установщик автора. Для установки текущей русской версии
+> FF14 Accessibility используйте [актуальную инструкцию](installation.md).
+
 # Accessibility Modding Guide for Screen Reader Users
 
 A guide for creating game accessibility mods that enable blind players to play using screen readers (NVDA, JAWS, etc.).

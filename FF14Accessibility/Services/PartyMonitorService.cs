@@ -153,7 +153,7 @@ public sealed class PartyMonitorService : IDisposable
 
             var position = slot.Position;
             var id       = slot.Key;
-            var percent  = (int)(slot.CurrentHp * 100u / slot.MaxHp);
+            var percent  = VitalPercent.Floor(slot.CurrentHp, slot.MaxHp);
             var step     = StepFor(percent);
             var role     = RoleFor(slot.JobId);
             _seen.Add(id);
@@ -198,7 +198,7 @@ public sealed class PartyMonitorService : IDisposable
             if (slot.MaxHp == 0) continue;
 
             var position = slot.Position;
-            var percent  = (int)(slot.CurrentHp * 100u / slot.MaxHp);
+            var percent  = VitalPercent.Floor(slot.CurrentHp, slot.MaxHp);
             var role     = RoleFor(slot.JobId);
             var alarmAt  = Setting(_config.PartyMonitorContinuousStartAt, role, 70);
 
@@ -631,7 +631,7 @@ public sealed class PartyMonitorService : IDisposable
             var name = slot.Name;
             if (_data.GetExcelSheet<ClassJob>().TryGetRow(slot.JobId, out var job))
             {
-                var jobName = job.Name.ExtractText();
+                var jobName = RussianGameText.Name(_data, job, x => x.Name);
                 if (!string.IsNullOrWhiteSpace(jobName)) name = $"{jobName} {name}";
             }
 

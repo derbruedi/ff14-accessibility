@@ -28,16 +28,15 @@ public static partial class AccessibilityStrings
     /// <summary>Alle veränderten Werte sind besser. <paramref name="changed"/> von
     /// <paramref name="total"/> verglichenen Werten.</summary>
     public static string CompareBetter(int changed, int total) =>
-        IsGerman ? $"Besser in {changed} von {total}." : $"Better in {changed} of {total}.";
+        L($"Besser in {changed} von {total}.", $"Better in {changed} of {total}.", $"Лучше в {changed} из {total}.");
 
     /// <summary>Alle veränderten Werte sind schlechter.</summary>
     public static string CompareWorse(int changed, int total) =>
-        IsGerman ? $"Schlechter in {changed} von {total}." : $"Worse in {changed} of {total}.";
+        L($"Schlechter in {changed} von {total}.", $"Worse in {changed} of {total}.", $"Хуже в {changed} из {total}.");
 
     /// <summary>Gemischt: manche Werte besser, manche schlechter.</summary>
     public static string CompareMixed(int better, int worse, int total) =>
-        IsGerman ? $"Besser in {better}, schlechter in {worse}, von {total}."
-                 : $"Better in {better}, worse in {worse}, of {total}.";
+        L($"Besser in {better}, schlechter in {worse}, von {total}.", $"Better in {better}, worse in {worse}, of {total}.", $"Лучше в {better}, хуже в {worse}, из {total}.");
 
     /// <summary>
     /// Kein einziger Wert verändert sich.
@@ -47,7 +46,7 @@ public static partial class AccessibilityStrings
     /// 2026-08-30 an einem Teil, das mit dem getragenen identisch war). Ohne
     /// diesen Satz wäre "gleich gut" von "keine Daten" nicht zu unterscheiden.
     /// </summary>
-    public static string CompareSame => IsGerman ? "Gleich wie angelegt." : "Same as equipped.";
+    public static string CompareSame => L("Gleich wie angelegt.", "Same as equipped.", "Ничем не отличается от надетого.");
 
     // ── Die Zeilen der Tabelle ────────────────────────────────────
     //
@@ -61,14 +60,12 @@ public static partial class AccessibilityStrings
     /// <summary>Eine Zeile mit eigenem Spaltennamen: Wert, Tasche, angelegt.
     /// Der Doppelpunkt trennt den Namen hörbar vom ersten Wert.</summary>
     public static string CompareRow(string name, string mine, string equipped) =>
-        IsGerman ? $"{name}: {mine}, angelegt {equipped}"
-                 : $"{name}: {mine}, equipped {equipped}";
+        L($"{name}: {mine}, angelegt {equipped}", $"{name}: {mine}, equipped {equipped}", $"{name}: {mine}, надето {equipped}");
 
     /// <summary>Eine Zeile, deren beide Seiten das Spiel schon vollständig
     /// beschriftet hat ("Item Level 27") - hier wird nichts davorgesetzt.</summary>
     public static string CompareRowVerbatim(string mine, string equipped) =>
-        IsGerman ? $"{mine}, angelegt {equipped}"
-                 : $"{mine}, equipped {equipped}";
+        L($"{mine}, angelegt {equipped}", $"{mine}, equipped {equipped}", $"{mine}, надето {equipped}");
 
     /// <summary>
     /// Der Unterschied, hinten an die Zeile gehängt.
@@ -80,8 +77,8 @@ public static partial class AccessibilityStrings
     /// Zahlenformat verlorengeht (Verzögerung steht dort mit Nachkommastellen).
     /// </summary>
     public static string CompareDelta(bool up, string amount) =>
-        up ? (IsGerman ? $", plus {amount}"  : $", plus {amount}")
-           : (IsGerman ? $", minus {amount}" : $", minus {amount}");
+        up ? (L($", plus {amount}", $", plus {amount}", $", плюс {amount}"))
+           : (L($", minus {amount}", $", minus {amount}", $", минус {amount}"));
 
     /// <summary>
     /// Eine Seite, die es nicht gibt - kein angelegtes Teil, ein Wert, den nur
@@ -91,7 +88,7 @@ public static partial class AccessibilityStrings
     /// zu welcher der beiden Spalten sie gehört - und das ist genau die Frage, für
     /// die die Tabelle da ist.
     /// </summary>
-    public static string CompareCellNone => IsGerman ? "nichts" : "none";
+    public static string CompareCellNone => L("nichts", "none", "нет");
 
     // ── Eigene Spaltennamen ───────────────────────────────────────
     //
@@ -100,15 +97,15 @@ public static partial class AccessibilityStrings
 
     /// <summary>Die erste Zeile: die zwei Gegenstände selbst. Sie ist die
     /// Kopfzeile der beiden Spalten - alles darunter ist "dieser gegen jenen".</summary>
-    public static string CompareRowItem => IsGerman ? "Gegenstand" : "Item";
+    public static string CompareRowItem => L("Gegenstand", "Item", "Предмет");
 
     /// <summary>Die Materia-Zeile: was eingesetzt ist, und wie viele Plätze das
     /// Teil überhaupt hat.</summary>
-    public static string CompareRowMateria => IsGerman ? "Materia" : "Materia";
+    public static string CompareRowMateria => L("Materia", "Materia", "Материя");
 
     /// <summary>Das Teil kann gar keine Materia aufnehmen.</summary>
     public static string CompareMateriaNoSockets =>
-        IsGerman ? "keine Plätze" : "no sockets";
+        L("keine Plätze", "no sockets", "нет слотов");
 
     /// <summary>
     /// Plätze vorhanden, aber nichts eingesetzt.
@@ -119,19 +116,21 @@ public static partial class AccessibilityStrings
     /// kaputt" nicht zu unterscheiden. Genau so wurde der Fehler auch gemeldet.
     /// </summary>
     public static string CompareMateriaEmpty(int sockets) =>
-        IsGerman ? (sockets == 1 ? "1 freier Platz" : $"{sockets} freie Plätze")
-                 : (sockets == 1 ? "1 empty socket" : $"{sockets} empty sockets");
+        L(sockets == 1 ? "1 freier Platz" : $"{sockets} freie Plaetze",
+          sockets == 1 ? "1 empty socket" : $"{sockets} empty sockets",
+          sockets == 1 ? "1 свободный слот" : $"свободных слотов: {sockets}");
 
     /// <summary>Eingesetzte Materia, dazu die Zahl der Plätze. Die Namen kommen
     /// wörtlich aus dem Fenster - ihre Form ist nie gemessen worden, also wird
     /// nichts daran zerlegt.</summary>
     public static string CompareMateriaMelded(string melded, int sockets) =>
-        IsGerman ? (sockets > 0 ? $"{melded}, {sockets} Plätze" : melded)
-                 : (sockets > 0 ? $"{melded}, {sockets} sockets" : melded);
+        L(sockets > 0 ? $"{melded}, {sockets} Plaetze" : melded,
+          sockets > 0 ? $"{melded}, {sockets} sockets" : melded,
+          sockets > 0 ? $"{melded}, слотов: {sockets}" : melded);
 
     /// <summary>Die Klassenliste, wie das Spiel sie führt. Das ist die
     /// ABKÜRZUNGSLISTE ("ARC BRD") - siehe <see cref="CompareRowYourClasses"/>.</summary>
-    public static string CompareRowClasses => IsGerman ? "Klassen" : "Classes";
+    public static string CompareRowClasses => L("Klassen", "Classes", "Классы");
 
     /// <summary>
     /// Die ausgeschriebenen Klassennamen für das Teil in der Tasche.
@@ -142,7 +141,7 @@ public static partial class AccessibilityStrings
     /// nur eine veröffentlicht: die des Teils unter dem Zeiger.
     /// </summary>
     public static string CompareRowYourClasses(string classes) =>
-        IsGerman ? $"Tragbar {classes}." : $"Wearable {classes}.";
+        L($"Tragbar {classes}.", $"Wearable {classes}.", $"Можно носить: {classes}.");
 
     // ── Rahmen ────────────────────────────────────────────────────
 
@@ -153,10 +152,10 @@ public static partial class AccessibilityStrings
     /// 2026-08-30).
     /// </summary>
     public static string CompareOtherRing(string name) =>
-        IsGerman ? $"Anderer Ring: {name}." : $"Other ring: {name}.";
+        L($"Anderer Ring: {name}.", $"Other ring: {name}.", $"Другое кольцо: {name}.");
 
     /// <summary>Kein Vergleichsfenster offen - der Spieler steht nicht auf einem
     /// Ausrüstungsteil.</summary>
     public static string CompareUnavailable =>
-        IsGerman ? "Kein Ausrüstungs-Vergleich offen." : "No gear comparison open.";
+        L("Kein Ausrüstungs-Vergleich offen.", "No gear comparison open.", "Сравнение снаряжения не открыто.");
 }

@@ -1,0 +1,9 @@
+[
+  "tests/CrossHotbar.Tests/CrossHotbar.Tests.csproj",
+  "tests/Installer.Tests/Installer.Tests.csproj",
+  "tests/Localization.Tests/Localization.Tests.csproj",
+  "tests/Navigation.Tests/Navigation.Tests.csproj",
+  "tests/Regression.Tests/Regression.Tests.csproj",
+  "tests/RussianDescriptions.Tests/RussianDescriptions.Tests.csproj",
+  "tests/SpeechLocalization.Tests/SpeechLocalization.Tests.csproj"
+]

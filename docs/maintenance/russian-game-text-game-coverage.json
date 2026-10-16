@@ -1,0 +1,188 @@
+{
+  "GameVersion": "2026.09.15.0000.0000",
+  "Tables": {
+    "ItemName": {
+      "SourceRows": 50880,
+      "AcceptedRows": 50880,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "EventItemName": {
+      "SourceRows": 3531,
+      "AcceptedRows": 3531,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "ActionName": {
+      "SourceRows": 45518,
+      "AcceptedRows": 45400,
+      "UnresolvedServerKeys": 118,
+      "MissingRows": []
+    },
+    "CraftActionName": {
+      "SourceRows": 433,
+      "AcceptedRows": 433,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "GeneralActionName": {
+      "SourceRows": 43,
+      "AcceptedRows": 43,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "BuddyActionName": {
+      "SourceRows": 6,
+      "AcceptedRows": 6,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "TraitName": {
+      "SourceRows": 682,
+      "AcceptedRows": 682,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "PetActionName": {
+      "SourceRows": 41,
+      "AcceptedRows": 41,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "MountName": {
+      "SourceRows": 369,
+      "AcceptedRows": 369,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "CompanionName": {
+      "SourceRows": 590,
+      "AcceptedRows": 590,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "StatusName": {
+      "SourceRows": 4791,
+      "AcceptedRows": 4780,
+      "UnresolvedServerKeys": 11,
+      "MissingRows": []
+    },
+    "StatusDescription": {
+      "SourceRows": 4771,
+      "AcceptedRows": 4760,
+      "UnresolvedServerKeys": 11,
+      "MissingRows": []
+    },
+    "EmoteName": {
+      "SourceRows": 305,
+      "AcceptedRows": 305,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "BaseParamName": {
+      "SourceRows": 73,
+      "AcceptedRows": 73,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "ClassJobName": {
+      "SourceRows": 43,
+      "AcceptedRows": 43,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "ItemUICategoryName": {
+      "SourceRows": 113,
+      "AcceptedRows": 113,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "GrandCompanyName": {
+      "SourceRows": 4,
+      "AcceptedRows": 4,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "MainCommandName": {
+      "SourceRows": 99,
+      "AcceptedRows": 99,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "GatheringTypeName": {
+      "SourceRows": 6,
+      "AcceptedRows": 6,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "LogFilterName": {
+      "SourceRows": 235,
+      "AcceptedRows": 235,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonItemName": {
+      "SourceRows": 38,
+      "AcceptedRows": 38,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonItemTooltip": {
+      "SourceRows": 38,
+      "AcceptedRows": 38,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonMagicStoneName": {
+      "SourceRows": 5,
+      "AcceptedRows": 5,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonMagicStoneTooltip": {
+      "SourceRows": 5,
+      "AcceptedRows": 5,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonEquipmentName": {
+      "SourceRows": 8,
+      "AcceptedRows": 8,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonEquipmentDescription": {
+      "SourceRows": 8,
+      "AcceptedRows": 8,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonFloorEffectUIName": {
+      "SourceRows": 15,
+      "AcceptedRows": 15,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeonFloorEffectUIDescription": {
+      "SourceRows": 15,
+      "AcceptedRows": 15,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeon4GimmickEffectTransientName": {
+      "SourceRows": 10,
+      "AcceptedRows": 10,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    },
+    "DeepDungeon4GimmickEffectTransientDescription": {
+      "SourceRows": 10,
+      "AcceptedRows": 10,
+      "UnresolvedServerKeys": 0,
+      "MissingRows": []
+    }
+  },
+  "StaleOrInvalid": [],
+  "InGameVerified": false,
+  "CatalogSHA256": "96FFD77BAA075994879DC6B6AC3AD4D8CE03CEBEF222FAFEB50806672CE4240E"
+}

@@ -50,7 +50,7 @@ internal static class PlayerInfo
 
         if (!data.GetExcelSheet<ClassJob>().TryGetRow(jobId, out var job)) return string.Empty;
 
-        return job.Name.ExtractText().Trim();
+        return RussianGameText.Name(data, job, x => x.Name).Trim();
     }
 
     /// <summary>

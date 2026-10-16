@@ -6,21 +6,40 @@
          um Updates im Custom-Repo zu erkennen - bei JEDEM Release erhÃ¶hen, sonst
          zieht der Plugin-Installer keine neue Version. MUSS mit der PluginVersion-
          Konstante in Plugin.cs synchron bleiben (dort speist sie die Sprachansage). -->
-    <Version>6.08.35</Version>
-    <AssemblyVersion>6.08.35.0</AssemblyVersion>
-    <FileVersion>6.08.35.0</FileVersion>
+    <Version>6.08.120</Version>
+    <AssemblyVersion>6.08.120.0</AssemblyVersion>
+    <FileVersion>6.08.120.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
-    <NoWarn>1705</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Baut auf Linux (Container). NAudio 2.2.1 zielt auf net6.0-windows7.0,
+         deshalb erklaert NuGet es als TRANSITIVEN FrameworkReference auf
+         Microsoft.WindowsDesktop.App.WindowsForms. ProcessFrameworkReferences
+         wirft den auf Nicht-Windows korrekt weg ("Ignoring framework reference
+         ... as it is Windows-only and the current platform is not Windows"),
+         ResolveTargetingPackAssets findet danach aber keinen Targeting-Pack
+         fuer den transitiven Eintrag und bricht mit NETSDK1073 ab. Das Flag
+         unterdrueckt genau diesen Fehler. Ungefaehrlich: das Plugin nutzt
+         kein WinForms (0 Treffer fuer "Windows.Forms" in der Release-DLL, von
+         Dalamud/ImGui gezeichnet), und der Fehler betrifft nur die
+         Uebersetzung, die sonst gar nicht zustande kaeme. -->
+    <GenerateErrorForMissingTargetingPacks>false</GenerateErrorForMissingTargetingPacks>
     <!-- Klassenbibliotheken kopieren NuGet-DLLs (NAudio) sonst NICHT in den
          Output - Dalamud lÃ¤dt AbhÃ¤ngigkeiten aber aus dem Plugin-Verzeichnis. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\RussianDescriptions.json.gz" />
+    <EmbeddedResource Include="Resources\RussianCharacterText.json.gz" />
+    <EmbeddedResource Include="Resources\RussianCharaMakeClasses.json" />
+    <EmbeddedResource Include="Resources\RussianActionNames.json.gz" />
+    <EmbeddedResource Include="Resources\RussianAuthorText.json.gz" />
+    <EmbeddedResource Include="Resources\RussianLotteryLabels.json" />
+    <EmbeddedResource Include="Resources\RussianDescriptionTerms.json.gz" />
     <PackageReference Include="DalamudPackager" Version="15.0.0" />
     <!-- Audio-Beacon (Gehhilfe): erzeugter Sinuston mit Panning/Pitch -->
     <PackageReference Include="NAudio" Version="2.2.1" />

@@ -14,7 +14,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 
 namespace FF14Accessibility;
 
-public sealed class Plugin : IDalamudPlugin
+public sealed partial class Plugin : IDalamudPlugin
 {
     [PluginService] private IDalamudPluginInterface PluginInterface { get; init; } = null!;
     [PluginService] private ICommandManager         CommandManager  { get; init; } = null!;
@@ -60,11 +60,14 @@ public sealed class Plugin : IDalamudPlugin
     private readonly EscapeRouteService _escape;
     private readonly CueService         _cue;
     private readonly CooldownService    _cooldown;
+    private readonly ReadyAnnouncementBatch _readyAnnouncements = new();
     private readonly JobGaugeService    _jobGauge;
     private readonly DutyActionService  _dutyActions;
     private readonly NocturneWarpService _nocturneWarp;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
+    private readonly ArmouryTransferService _armouryTransfer;
+    private readonly ArmouryListService _armouryList;
     // Sagt, welcher Gegenstand WIRKLICH im Platz unter dem Cursor liegt -
     // ueber Behaelter und Platznummer statt ueber das Symbol.
     private readonly ItemSlotService    _itemSlots;
@@ -74,6 +77,9 @@ public sealed class Plugin : IDalamudPlugin
     // [Ausruestungs-Vergleich] Sagt das Vergleichsfenster des Spiels an.
     private readonly ItemCompareService _itemCompare;
     private readonly QuestMarkerService _questMarkers;
+    private readonly QuestObjectiveAnnouncer _questObjectives;
+    private readonly PenumbraIpc _penumbra;
+    private readonly ModSwitchService _mods;
     private readonly PlacesService      _places;
     private readonly FishingService     _fishing;
     private readonly FateService        _fates;
@@ -146,7 +152,7 @@ public sealed class Plugin : IDalamudPlugin
     // Gehoert zum alten System: Enter schreibt in den Kanal, dessen Nachlese
     // gerade gelesen wurde (v5.67). PR #5 hatte das mitgeloescht.
     private readonly ChatChannelService _chatChannel;
-    // [Chat-Absender] KontextmenÃ¼ / Anvisieren aus der Nachlese-Zeile.
+    // [Chat-Absender] Kontextmenü / Anvisieren aus der Nachlese-Zeile.
     private readonly ChatPlayerService _chatPlayer;
     // [Chat-Puffer] Die eigenen Filterzeilen und Register des Spiels. Der Chat-Leser
     // fragt sie, welche Register eine eingehende Zeile zeigen wuerden.
@@ -166,10 +172,14 @@ public sealed class Plugin : IDalamudPlugin
     // [Einstellungsmenue] Das gesprochene Menue und seine Tastenabfrage.
     private readonly SpokenMenu         _menu;
     private readonly MenuInput          _menuInput;
+    private readonly MenuInput          _shopQuantityInput;
+    private readonly MenuInput          _systemVolumeInput;
+    private readonly MenuInput          _tableInput;
     private readonly OptionsMenu        _options;
     private readonly ToastService       _toasts;
     private readonly CombatService      _combat;
     private readonly AoeWarningService  _aoeWarn;
+    private readonly AoeAutoTurnService _aoeAutoTurn;
     // [Warnstimme] Zweiter Sprachkanal fuer die vier Kampfwarnungen.
     private readonly WarningVoiceService _warnVoice;
     // [Chatstimme] Eigener Sprachkanal fuer den Chat, je Kanal mit eigener Stimme.
@@ -182,7 +192,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DalamudPluginsService _dalamudPlugins;
     private readonly TooltipService _tooltips;
     private readonly TripleTriadService _tripleTriad;
-    // â”€â”€ [Tiefes Gewoelbe] â”€â”€
+    // ── [Tiefes Gewoelbe] ──
     private readonly DeepDungeonText    _deepText;
     private readonly DeepDungeonState   _deepState;
     private readonly DeepDungeonRoomMap _deepRoomMap;
@@ -195,20 +205,23 @@ public sealed class Plugin : IDalamudPlugin
     // 5.86 macht das Jagdtagebuch benutzbar: die Rang-Zeilen sagen endlich, was
     // sie sind, und der Objekt-Browser fuehrt zu den Monstern, die der aktuelle
     // Rang noch verlangt - auch in andere Gebiete.
-    // 6.08.8: Tastenliste im Belegen-MenÃ¼: Beschreibung nach â€žTaste X, Skillâ€œ.
-    // 6.08.12: Mitstreiter-Fenster (Buddy) â€” Zusammenfassung + Reiter.
-    // 6.08.7: Aktionsleisten-Vorlesen nannte Beschreibungen â€” zurÃ¼ckgenommen,
-    // gemeint war die Tastenliste im ZuweisungsmenÃ¼.
+    // 6.08.8: Tastenliste im Belegen-Menü: Beschreibung nach „Taste X, Skill“.
+    // 6.08.12: Mitstreiter-Fenster (Buddy) — Zusammenfassung + Reiter.
+    // 6.08.7: Aktionsleisten-Vorlesen nannte Beschreibungen — zurückgenommen,
+    // gemeint war die Tastenliste im Zuweisungsmenü.
     // 6.08.6: Skill-Belegen liest die ActionTransient-Beschreibung nach dem Namen
     // (Dwell + Speak ohne Interrupt, wie ActionMenu).
     // 6.08: Events = Yo-kai-Zonen (+ Collab-Event-FATEs ab 2026-09-24).
     // 6.07: Event-Gebiete (AdventEvent/MoonFaire/SpecialFate + planevent.lgb).
-    // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem Ã¶ffentlichen Stand nicht enthalten.
-    // 6.08.18 lokal: Chat-Absender KontextmenÃ¼ (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
-    // 6.08.19: Charakterauswahl â€” eine Ansage (Name, Job, Ort) statt Scan-Sturm.
-    // 6.08.20: Mitstreiter-Taste (PR 27 Port) â€” Strg+Umschalt+C Ã¶ffnet/vorliest.
-    private const string PluginVersion    = "6.08.35";
-    private const string PluginVersionTag = "DoH Skills";
+    // Craft-Kategorie (Rezepte) bleibt lokal und ist in diesem öffentlichen Stand nicht enthalten.
+    // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
+    // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
+    // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
+    private const string PluginVersion    = "6.08.120";
+    // Der Tag nennt, was diese Fassung MITBRINGT, nicht woher sie stammt: die
+    // russische Schicht auf dem Stand des Autors 6.08.35 (Auftragstext im
+    // Quest-Tracker des Autors, siehe package-Schritt).
+    private const string PluginVersionTag = "RU / DE / EN";
 
     public Plugin()
     {
@@ -363,17 +376,44 @@ public sealed class Plugin : IDalamudPlugin
         {
             // ItemCompare und PartyRoster lagen beide auf Strg+Umschalt+F12.
             // Die Zeile hing kurz in Version 13, die bei vielen schon gelaufen
-            // war â€” deshalb eigener Schritt, sonst blieb ItemCompare auf F12.
+            // war — deshalb eigener Schritt, sonst blieb ItemCompare auf F12.
             if (_config.KeyItemCompare == "Strg+Umschalt+F12")
                 _config.KeyItemCompare = "Strg+Umschalt+Einfg";
             _config.Version = 14;
             PluginInterface.SavePluginConfig(_config);
         }
+        if (_config.MigrateFollowTargetKey())
+            PluginInterface.SavePluginConfig(_config);
+
         // Language for all mod announcements (Auto = follow Windows). Must be set
         // before the first Speak below.
         Loc.Mode = _config.Language;
+        Loc.TranslateItemsAndActions = _config.TranslateItemsAndActions;
+
+        DateTime? displayFrame = null;
+        var harmoniaIsLoaded = false;
+        bool HarmoniaLoaded()
+        {
+            // A sheet-name index can visit thousands of rows in one frame.
+            // Enumerate the installed plugins only once during that frame.
+            var frame = Framework.LastUpdateUTC;
+            if (displayFrame != frame)
+            {
+                displayFrame = frame;
+                harmoniaIsLoaded = PluginInterface.InstalledPlugins.Any(p => p.InternalName == "HarmoniaEngine" && p.IsLoaded);
+            }
+            return harmoniaIsLoaded;
+        }
+        var displayText = new NativeGameDisplayText(DataManager, () => Framework.IsInFrameworkUpdateThread && HarmoniaLoaded(), Log);
+        GameDisplayText.Configure(DataManager, displayText.Read, HarmoniaLoaded);
 
         TolkNative.Initialize(PluginInterface.AssemblyLocation.DirectoryName!);
+        // Das Dalamud-Log ist eine wachsende Datei (heute 4,7 MB im eigenen
+        // Testlauf) und wird als Ringpuffer gehalten: die Zeile, die ein
+        // Spieler braucht, kann zwischen zwei Starts herausgerollt sein. Fuer
+        // Meldungen wie "Skill-Liste gebaut" wird deshalb ein eigenes, kleines
+        // Log im Plugin-Ordner gefuehrt, neben dem Plugin selbst.
+        PluginFileLog.Open(PluginInterface.AssemblyLocation.DirectoryName!, PluginVersion);
         _tolk       = new TolkService(Log);
         // Cue VOR Beacon: der Peil-Ton braucht ihn fuer den Einrast-Ton, der
         // erklaert, warum er beim richtigen Stand schweigt.
@@ -390,14 +430,22 @@ public sealed class Plugin : IDalamudPlugin
         _escape       = new EscapeRouteService(PluginInterface, Log);
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
-        _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log);
+        var descriptions = new GameDescriptionService(DataManager, SeStringEval, Log);
+        _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log, descriptions);
         // Braucht nur das Item-Sheet: die Antwort kommt aus dem Detail-Agenten
         // des Spiels, den Fokus-Knoten holt er sich selbst (siehe ItemSlotService).
         _itemSlots       = new ItemSlotService(DataManager);
-        _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log);
+        _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log, descriptions, SeStringEval);
         _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, _inventoryReader, DataManager, _gearInfo, _tolk, Log);
         _questMarkers = new QuestMarkerService(ClientState, DataManager, Log);
+        _questObjectives = new QuestObjectiveAnnouncer(AddonLifecycle, _questMarkers, _tolk, Log)
+        {
+            IsEnabled = () => _config.AnnounceQuestObjectiveChanges,
+            Suppress = () => !ClientState.IsLoggedIn || _textInputActive || _menu?.IsOpen == true,
+        };
+        _penumbra = new PenumbraIpc(PluginInterface, Log);
+        _mods = new ModSwitchService(_penumbra, _config, Log);
         _places       = new PlacesService(DataManager, ClientState, Log);
         _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);
         _fates        = new FateService(ClientState);
@@ -432,13 +480,13 @@ public sealed class Plugin : IDalamudPlugin
         // Misst, welches Spiel-Signal ehrlich sagt, ob eine Aktion einsetzbar ist -
         // Grundlage fuer die Job-Anzeigen UND die Kombo-Ansage, siehe ActionSignalProbe.
         _actionProbe = new ActionSignalProbe(DataManager, TargetManager, JobGauges, _tolk, Log);
-        // Bestienbaendiger: wo liegt TP / Instinkt? Kein BSTGauge in Dalamud â€”
+        // Bestienbaendiger: wo liegt TP / Instinkt? Kein BSTGauge in Dalamud —
         // siehe BeastmasterGaugeProbe.
         _bstGaugeProbe = new BeastmasterGaugeProbe(ObjectTable, _tolk, Log);
 #endif
         // Echte Zonengrenzen statt Kartensymbol - nur als Zielgeber, siehe ZoneBorderService.
         _zoneBorders = new ZoneBorderService(DataManager, ClientState, Log);
-        // Gegner des gerade LAUFENDEN Freibriefs, fÃ¼r die Freibrief-Kategorie
+        // Gegner des gerade LAUFENDEN Freibriefs, für die Freibrief-Kategorie
         // des Objekt-Browsers (Spielerwunsch 2026-08-18).
         _leveEnemies  = new LevequestEnemyService(DataManager, Log);
         // Die Aufgabenliste, die ein sehender Spieler am Bildschirmrand liest -
@@ -466,8 +514,8 @@ public sealed class Plugin : IDalamudPlugin
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _xbmSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
         _gatherLog    = new GatherLogService(DataManager, ClientState, _places, Log);
-        // Selbst abgelaufene Spuren Ã¼ber LÃ¼cken im Wegenetz - der Auto-Lauf
-        // greift darauf zurÃ¼ck, wo das Netz endet (siehe TrailService).
+        // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
+        // greift darauf zurück, wo das Netz endet (siehe TrailService).
         _trails     = new TrailService(PluginInterface, ObjectTable, ClientState, _tolk, _config, Log);
         // Gemessene Netzluecken und der Vorwaerts-Impuls in eine Zonengrenze.
         // Beide werden VOR dem Auto-Lauf gebaut, weil er sie benutzt; beide sind
@@ -489,7 +537,7 @@ public sealed class Plugin : IDalamudPlugin
         // Spieler tut: ein Spieler geht gleich weiter, eine Absperrung nie.
         _obstacles   = new ObstacleService(ObjectTable, _objectNames, Log);
         _autoWalk.Obstacles = _obstacles;
-        // Freilauf-AnstoÃŸ und KantentÃ¶ne (Sprung/Absturz). Nach ObstacleService und
+        // Freilauf-Anstoß und Kantentöne (Sprung/Absturz). Nach ObstacleService und
         // AutoWalk, weil er beide braucht; vor dem Framework-Tick verdrahtet.
         _movementAudio = new MovementAudioService(
             ObjectTable, Condition, _obstacles, _autoWalk.Navmesh, _cue, _config, Log,
@@ -543,8 +591,11 @@ public sealed class Plugin : IDalamudPlugin
         // und liefert dem Fokus-Leser an einer Stelle den Satz zur Kategorie bzw.
         // zum Waehler-Eintrag.
         _charaMake  = new CharaMakeReader(ObjectTable, DataManager, GameGui, _tolk, Log, _tooltips);
-        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots, _gatherLog);
-        _synthesis   = new SynthesisService(GameGui, _tolk, Log);
+        _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots, _gatherLog, descriptions);
+        _armouryTransfer = new ArmouryTransferService(DataManager, ClientState, GameGui, _uiReader, _tolk, Log);
+        _armouryList = new ArmouryListService(GameGui, ClientState, KeyState, _inventoryReader, _gearInfo, _tolk, Log);
+        _chatPlayer = new ChatPlayerService(ObjectTable, DataManager, GameGui, _navigation, _tolk, Log);
+        _synthesis   = new SynthesisService(GameGui, _tolk, Log, ObjectTable);
         // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte
         // Rezept beantwortet: was ist mit dem Beutelinhalt jetzt herstellbar. Der
         // Bestandsleser liefert die Mengen, die Sheets die fehlenden Kristall-Ids.
@@ -622,9 +673,10 @@ public sealed class Plugin : IDalamudPlugin
         _toasts     = new ToastService(ToastGui, TargetManager, _tolk, _config, Log);
         _aoeWarn    = new AoeWarningService(_config, Log);
         _warnVoice  = new WarningVoiceService(_config, Log);
-        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _warnVoice, _leveEnemies, Log);
-        _cooldown   = new CooldownService(ClientState, DataManager, _cue, _tolk, _warnVoice, _config, Log);
-        _jobGauge   = new JobGaugeService(JobGauges, ObjectTable, DataManager, _warnVoice, _tolk, _cue, _config, Log);
+        _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _warnVoice, _leveEnemies, Log, descriptions);
+        _aoeAutoTurn = new AoeAutoTurnService(_config, ObjectTable, ClientState, Condition, _combat, Log, _warnVoice, _tolk);
+        _cooldown   = new CooldownService(ClientState, DataManager, _cue, _config, Log, ObjectTable);
+        _jobGauge   = new JobGaugeService(JobGauges, ObjectTable, DataManager, _tolk, _cue, _config, Log);
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _nocturneWarp = new NocturneWarpService(
             ClientState, ObjectTable, TargetManager, _cue, _config, Log);
@@ -653,6 +705,9 @@ public sealed class Plugin : IDalamudPlugin
         // also fragt er denselben Leser wie der Chat-Router.
         _menu       = new SpokenMenu(_tolk, Log);
         _menuInput  = new MenuInput(KeyState, Log, SpokenMenu.AllKeys());
+        _shopQuantityInput = new MenuInput(KeyState, Log, UIReaderService.ShopQuantityKeys);
+        _systemVolumeInput = new MenuInput(KeyState, Log, UIReaderService.ShopQuantityKeys);
+        _tableInput = new MenuInput(KeyState, Log, UIReaderService.TableKeys);
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
                                       _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice, _chatVoice, _cue,
                                       // [Reihenfolge] Die drei Dienste, die die
@@ -669,7 +724,7 @@ public sealed class Plugin : IDalamudPlugin
                                       // Handlungen gehen ans Plugin zurueck.
                                       _updates, CheckForUpdate, InstallUpdate);
 
-        // â”€â”€ [Tiefes Gewoelbe] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── [Tiefes Gewoelbe] ──────────────────────────────────────────
         // Jede Beschreibung geht durch DeepDungeonText: der Sheet-Text traegt Makros
         // (darunter das Wort, das das jeweilige Gewoelbe fuer eine Ebene benutzt), die
         // ExtractText() wegwirft - der Auswerter des Spiels loest sie auf.
@@ -721,7 +776,7 @@ public sealed class Plugin : IDalamudPlugin
             BeginDungeonPathFetch(announceStart: false);
     }
 
-    // â”€â”€ [Dungeon-Wege] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── [Dungeon-Wege] ────────────────────────────────────────────────
 
     /// <summary>Vom Optionsmenue ausgeloest: laedt die Wegdateien neu, mit
     /// gesprochener Quittung schon beim Start.</summary>
@@ -791,7 +846,7 @@ public sealed class Plugin : IDalamudPlugin
         });
     }
 
-    // â”€â”€ [Aktualisierung] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── [Aktualisierung] ──────────────────────────────────────────────────────
 
     /// <summary>
     /// Fragt GitHub nach einer neueren Fassung und sagt das Ergebnis an.
@@ -905,21 +960,81 @@ public sealed class Plugin : IDalamudPlugin
 
     private void RegisterCommands()
     {
-        // /acc nav  Ã¢â€ â€™ Richtung zum Ziel
-        // /acc set  Ã¢â€ â€™ Aktuelles Spielziel verfolgen
-        // /acc near Ã¢â€ â€™ Objekte in der NÃ¤he
-        // /acc stop Ã¢â€ â€™ Sprache stoppen
+        // /acc nav  â†’ Richtung zum Ziel
+        // /acc set  â†’ Aktuelles Spielziel verfolgen
+        // /acc near â†’ Objekte in der Nähe
+        // /acc stop â†’ Sprache stoppen
+        // /acc diag â†’ Diagnosedatei auf den Desktop (Fehlerbericht)
         CommandManager.AddHandler("/acc", new CommandInfo(OnCommand)
         {
-            HelpMessage = "FF14 Accessibility: nav, set, near, keys, stop, help"
+            HelpMessage = "FF14 Accessibility: nav, set, near, translate, aoeturn, mods, fps, perform, spawn, keys, diag, stop, help"
         });
+    }
+
+    /// <summary>
+    /// Writes the skill menu's current contents plus the plugin's own log to a
+    /// single file on the desktop.
+    /// <para>
+    /// Why a named command instead of only the hidden log: a report from a blind
+    /// player has to be one action, not a walk through install folders. The user
+    /// types <c>/acc diag</c>, hears the path, and attaches that file.
+    /// </para>
+    /// </summary>
+    private void WriteDiagnosticsFile()
+    {
+        _tolk.SpeakInterrupt(AccessibilityStrings.DiagnoseRunning);
+
+        // Log only, as it was: the actual skill list is written by the Hotbar
+        // service into the same file, so the report carries both halves.
+        var entries = _hotbar.WriteSkillDiagnostics();
+
+        var path = PluginFileLog.CopyToDesktop("FF14Accessibility-Diagnose.txt");
+        if (path == null)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.DiagnoseFailed);
+            return;
+        }
+
+        // The class name, not the internal job id: a blind player comparing our
+        // number against what the game calls their class cannot be asked to
+        // translate "11" into "Goldsmith" (build 6.08.39 logged exactly that).
+        var className = ObjectTable.LocalPlayer is { } me
+            ? PlayerInfo.JobName(DataManager, me)
+            : string.Empty;
+        if (className.Length == 0) className = _hotbar.SkillCount.ToString();
+
+        _tolk.SpeakInterrupt(AccessibilityStrings.DiagnoseSaved(className, path, entries));
+    }
+
+    private void ReadCraftOrCurrentFocus()
+    {
+        if (_synthesis.IsWindowOpen())
+            _tolk.SpeakInterrupt(_synthesis.DescribeNow());
+        else
+            _uiReader.ReadCurrentFocus();
     }
 
     private void OnCommand(string command, string args)
     {
         var trimmed = args.Trim();
 
-        // "dump" nimmt einen optionalen Addon-Namen Ã¢â‚¬â€ muss vor dem switch geprÃ¼ft werden
+        var autoTurnReply = AoeAutoTurn.HandleCommand(trimmed, _config,
+            () => PluginInterface.SavePluginConfig(_config));
+        if (autoTurnReply != null)
+        {
+            _tolk.SpeakInterrupt(autoTurnReply);
+            return;
+        }
+
+        var translationReply = GameTextTranslation.HandleCommand(trimmed, _config,
+            () => PluginInterface.SavePluginConfig(_config));
+        if (translationReply != null)
+        {
+            _tolk.SpeakInterrupt(translationReply);
+            return;
+        }
+
+        // "dump" nimmt einen optionalen Addon-Namen â€” muss vor dem switch geprüft werden
         if (trimmed.StartsWith("dump", StringComparison.OrdinalIgnoreCase))
         {
             var dumpArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
@@ -927,8 +1042,8 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        // "trail loeschen <nr>" nimmt eine Nummer - vor dem switch prÃ¼fen.
-        // Die Nummer ist die aus "/acc trails", also pro Gebiet gezÃ¤hlt.
+        // "trail loeschen <nr>" nimmt eine Nummer - vor dem switch prüfen.
+        // Die Nummer ist die aus "/acc trails", also pro Gebiet gezählt.
         if (trimmed.StartsWith("trail ", StringComparison.OrdinalIgnoreCase))
         {
             var arg = trimmed[6..].Trim();
@@ -936,7 +1051,7 @@ public sealed class Plugin : IDalamudPlugin
             if (parts.Length == 2 &&
                 (parts[0].Equals("del", StringComparison.OrdinalIgnoreCase) ||
                  parts[0].Equals("loesch", StringComparison.OrdinalIgnoreCase) ||
-                 parts[0].Equals("lÃ¶schen", StringComparison.OrdinalIgnoreCase)) &&
+                 parts[0].Equals("löschen", StringComparison.OrdinalIgnoreCase)) &&
                 int.TryParse(parts[1], out var number))
             {
                 _trails.DeleteTrail(number);
@@ -948,11 +1063,22 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        // "lang" nimmt ein Sprach-Argument (de/en/auto) - vor dem switch prÃ¼fen
+        // "lang" nimmt ein Sprach-Argument (de/en/auto) - vor dem switch prüfen
         if (trimmed.StartsWith("lang", StringComparison.OrdinalIgnoreCase))
         {
             var langArg = trimmed.Length > 4 ? trimmed[4..].Trim() : string.Empty;
             SetLanguage(langArg);
+            return;
+        }
+
+        if (TryHandleModsCommand(trimmed)) return;
+
+        if (trimmed.StartsWith("spawn", StringComparison.OrdinalIgnoreCase))
+        {
+            var lines = _huntingLog.DumpSpawnProbe();
+            _tolk.SpeakInterrupt(lines > 0
+                ? AccessibilityStrings.SpawnProbeResult(lines)
+                : AccessibilityStrings.SpawnProbeFailed);
             return;
         }
 
@@ -971,6 +1097,8 @@ public sealed class Plugin : IDalamudPlugin
                 _navigation.AnnounceNearbyObjects(_config.NearbyDistance);
                 break;
             case "stop":
+                _aoeAutoTurn.Cancel();
+                _warnVoice.Silence();
                 _tolk.Silence();
                 _chatVoice.Silence();
                 break;
@@ -978,13 +1106,33 @@ public sealed class Plugin : IDalamudPlugin
                 _combat.AnnounceStatus();
                 break;
             case "ui":
-                _uiReader.ReadCurrentFocus();
+                ReadCraftOrCurrentFocus();
                 break;
             case "win":
                 _uiReader.AnnounceActiveWindow();
                 break;
             case "keys":
                 _keybinds.DumpKeybinds(GetPluginKeys());
+                break;
+            case "fps": case "кадры": case "кадров":
+            case "bilder": case "frames": case "bildrate":
+                AnnounceFrameRate();
+                break;
+            case "auftritt": case "perform": case "выступление": case "выступлен":
+                _uiReader.DumpPerformanceDetail();
+                break;
+            case "spur": case "речь": case "запись":
+            case "sprache": case "spurtrace":
+                ToggleSpeechTrace();
+                break;
+            // Russian aliases: the whole interface is Russian, so a blind player
+            // should not have to switch keyboard layout mid-report (she asked
+            // for exactly this on 2026-09-26).
+            case "diag":
+            case "diagnose":
+            case "диаг":
+            case "диагностика":
+                WriteDiagnosticsFile();
                 break;
             case "fish":
                 _fishing.AnnounceSpotsInCurrentZone();
@@ -1003,6 +1151,10 @@ public sealed class Plugin : IDalamudPlugin
                 _tolk.SpeakInterrupt(_gatherLog.Probe());
                 break;
 #endif
+            // Die Handwerks-Probe hat bewusst KEINEN eigenen Befehl: sie laeuft
+            // in /acc diag mit. Ein DEBUG-gegateter Befehl existiert in der
+            // Release-Auslieferung nicht - 6.08.48 hat genau das getan und der
+            // Spieler bekam "Unbekannter Befehl" (siehe ProbeCraftDescriptions).
             case "gathergo":
                 GatherWalkToNearest();
                 break;
@@ -1011,6 +1163,13 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "crossbar":
                 _hotbar.ToggleSkillMenu(controllerMode: true);
+                break;
+            // The same skill menu without the bar picker: for keyboard hotbars
+            // the game already knows the key, so choosing a bar first is a step
+            // that leads nowhere (her report 2026-09-26).
+            case "skills":
+            case "умения":
+                _hotbar.OpenSkillMenuDirect();
                 break;
             case "crossread":
                 _hotbar.ReadCrossHotbar();
@@ -1043,7 +1202,7 @@ public sealed class Plugin : IDalamudPlugin
             case "enemies":
                 _tolk.SpeakInterrupt(_enemyMarkers.DescribeField());
                 break;
-            // Mitgliedschaft vs. Agent-Tab vs. RankData-Slots â€” wenn Kategorie
+            // Mitgliedschaft vs. Agent-Tab vs. RankData-Slots — wenn Kategorie
             // und Bestiarium verschiedene Gesellschaften nennen (User 2026-09-20).
             case "huntprobe":
             case "jagdsond":
@@ -1051,8 +1210,8 @@ public sealed class Plugin : IDalamudPlugin
                 break;
 #if DEBUG
             // Objekt-Sonde per Befehl: auf Strg+F5 kommt sie nur ans Ruder, wenn
-            // KEIN Fenster offen ist (der MenÃ¼-Dump gewinnt dort) - in der freien
-            // Welt mit sichtbaren HUD-Addons war sie praktisch nicht auslÃ¶sbar.
+            // KEIN Fenster offen ist (der Menü-Dump gewinnt dort) - in der freien
+            // Welt mit sichtbaren HUD-Addons war sie praktisch nicht auslösbar.
             case "objprobe":
                 _navigation.DumpNearbyObjects();
                 break;
@@ -1098,7 +1257,7 @@ public sealed class Plugin : IDalamudPlugin
                 _aozProbe.Dump();
                 break;
             // Bestienbaendiger-Jobanzeige: Rohbytes + Addon-Kandidaten + Status.
-            // Collect erst nach Messung â€” siehe BeastmasterGaugeProbe.
+            // Collect erst nach Messung — siehe BeastmasterGaugeProbe.
             case "bst":
             case "bstprobe":
                 _bstGaugeProbe.Dump();
@@ -1138,7 +1297,7 @@ public sealed class Plugin : IDalamudPlugin
     /// (UIState.IsInstanceContentUnlocked, ilspycmd 2026-08-14) instead of guessing
     /// from quest knowledge. The four entry contents and their names come from the
     /// offline sheet dump of the same day (ContentFinderCondition, ContentType
-    /// "Tiefe GewÃ¶lbe"); only the FIRST tier of each dungeon is asked, since that
+    /// "Tiefe Gewölbe"); only the FIRST tier of each dungeon is asked, since that
     /// is the one an entry requires.
     /// </summary>
     private unsafe void ProbeDeepDungeonUnlock()
@@ -1146,7 +1305,7 @@ public sealed class Plugin : IDalamudPlugin
         (uint Id, string Name)[] entries =
         {
             (60001, "Palast der Toten"),
-            (60021, "HimmelssÃ¤ule"),
+            (60021, "Himmelssäule"),
             (60031, "Eureka Orthos"),
             (60041, "Pilgers Pfad"),
         };
@@ -1163,7 +1322,7 @@ public sealed class Plugin : IDalamudPlugin
             }
             catch (Exception ex)
             {
-                Log.Error($"[DeepDungeon] Abfrage fÃ¼r {name} ({id}) fehlgeschlagen: {ex.Message}");
+                Log.Error($"[DeepDungeon] Abfrage für {name} ({id}) fehlgeschlagen: {ex.Message}");
                 continue;
             }
 
@@ -1173,7 +1332,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var msg = parts.Count > 0
             ? $"Freigeschaltet: {string.Join(", ", parts)}."
-            : "Kein Tiefes GewÃ¶lbe freigeschaltet.";
+            : "Kein Tiefes Gewölbe freigeschaltet.";
         Log.Info($"[DeepDungeon] {msg}");
         _tolk.SpeakInterrupt(msg);
     }
@@ -1199,14 +1358,16 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.SavePluginConfig(_config);
 
         // Name the resolved language; "auto" also reports which one Windows picked.
-        var languageName = Loc.IsGerman ? AccessibilityStrings.LanguageGerman : AccessibilityStrings.LanguageEnglish;
+        var languageName = Loc.IsRussian ? AccessibilityStrings.LanguageRussian
+                         : Loc.IsGerman ? AccessibilityStrings.LanguageGerman
+                         : AccessibilityStrings.LanguageEnglish;
         _tolk.SpeakInterrupt(mode.Value == LanguageMode.Auto
             ? AccessibilityStrings.LanguageAuto(languageName)
             : AccessibilityStrings.LanguageSet(languageName));
     }
 
     /// <summary>
-    /// All plugin hotkeys from the config as (function, key label, VK code) Ã¢â‚¬â€
+    /// All plugin hotkeys from the config as (function, key label, VK code) â€”
     /// input for the keybind conflict check (/acc keys).
     /// </summary>
     private List<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> GetPluginKeys()
@@ -1215,10 +1376,10 @@ public sealed class Plugin : IDalamudPlugin
         foreach (var (function, keyName) in new[]
         {
             ("Hilfe",             _config.KeyHelp),
-            ("NÃ¤chstes Objekt",   _config.KeyNextObject),
+            ("Nächstes Objekt",   _config.KeyNextObject),
             ("Vorheriges Objekt", _config.KeyPrevObject),
             ("Kategorie",         _config.KeyCategory),
-            ("Kategorie zurÃ¼ck",  _config.KeyCategoryPrev),
+            ("Kategorie zurück",  _config.KeyCategoryPrev),
             ("Gehhilfe",          _config.KeyWalkGuide),
             ("Auto-Lauf",         _config.KeyAutoWalk),
             ("Ziel folgen",       _config.KeyFollowTarget),
@@ -1226,14 +1387,16 @@ public sealed class Plugin : IDalamudPlugin
             ("Zur Wegrichtung drehen", _config.KeyFaceWaypoint),
             ("Zu Koordinaten",    _config.KeyGotoCoords),
             ("Koordinaten kopieren", _config.KeyCopyCoords),
-            ("MenÃ¼ vorlesen",  _config.KeyReadUI),
+            ("Menü vorlesen",  _config.KeyReadUI),
+            ("Чтение по строкам", _config.KeyReadTable),
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("Ziel-HP",        _config.KeyTargetStatus),
             ("SP-Stand",       _config.KeySpStatus),
             ("Wirkungen",      _config.KeyStatusEffects),
+            ("Spielermenue",   _config.KeyPlayerMenu),
             ("Himmelsrichtung an/aus", _config.KeyToggleHeading),
-            ("FlÃ¤chenwarnung an/aus", _config.KeyToggleAoeWarning),
+            ("Flächenwarnung an/aus", _config.KeyToggleAoeWarning),
             ("Peil-Ton an/aus", _config.KeyToggleBeacon),
             ("Sonderaktion 1", _config.KeyDutyAction1),
             ("Sonderaktion 2", _config.KeyDutyAction2),
@@ -1245,36 +1408,38 @@ public sealed class Plugin : IDalamudPlugin
             ("Aktionsleiste",  _config.KeyReadHotbar),
             ("Inventar",       _config.KeyReadInventory),
             ("Gil",            _config.KeyReadGil),
+            ("Alle Ausrüstungsteile in Arsenaltruhe legen", _config.KeyMoveToArmoury),
+            ("Количество покупки", _config.KeyShopQuantity),
             ("Stufe",          _config.KeyLevelExp),
             ("Erholungsbonus", _config.KeyRestedStatus),
             ("Chocobo-Rang",   _config.KeyChocoboRank),
             ("Mitstreiter-Fenster", _config.KeyCompanionWindow),
             ("Emote weiter",   _config.KeyEmoteNext),
-            ("Emote zurÃ¼ck",   _config.KeyEmotePrev),
-            ("Emote ausfÃ¼hren", _config.KeyEmoteDo),
+            ("Emote zurück",   _config.KeyEmotePrev),
+            ("Emote ausführen", _config.KeyEmoteDo),
             ("Bestiarium, im Rezeptbuch herstellbar", _config.KeyBestiary),
-            ("HQ-Materialien im Rezeptbuch Ã¼bernehmen", _config.KeyTakeHqMaterials),
+            ("HQ-Materialien im Rezeptbuch übernehmen", _config.KeyTakeHqMaterials),
             ("Benachrichtigung", _config.KeyNotification),
-            ("AusrÃ¼stung",     _config.KeyReadEquipment),
-            ("AusrÃ¼stung vergleichen", _config.KeyItemCompare),
-            ("Beste AusrÃ¼stung", _config.KeyEquipBest),
-            ("ZufÃ¤lliges Aussehen", _config.KeyRandomLook),
-            ("Skill-MenÃ¼",     _config.KeySkillMenu),
+            ("Ausrüstung",     _config.KeyReadEquipment),
+            ("Ausrüstung vergleichen", _config.KeyItemCompare),
+            ("Beste Ausrüstung", _config.KeyEquipBest),
+            ("Zufälliges Aussehen", _config.KeyRandomLook),
+            ("Skill-Menü",     _config.KeySkillMenu),
             ("Job-Anzeige",    _config.KeyJobGauge),
-            ("Nachlese Kategorie zurÃ¼ck", _config.KeyChatCatPrev),
+            ("Nachlese Kategorie zurück", _config.KeyChatCatPrev),
             ("Nachlese Kategorie vor",    _config.KeyChatCatNext),
-            ("Nachlese Ã¤lter", _config.KeyChatReadOlder),
+            ("Nachlese älter", _config.KeyChatReadOlder),
             ("Nachlese neuer", _config.KeyChatReadNewer),
             // [Chat-Puffer] Mit in der Konfliktpruefung, damit ein Patch, der eine
             // dieser Kombis belegt, im Keybind-Dump auffaellt statt im Spiel.
             ("Nachlese Anfang", _config.KeyChatReadOldest),
             ("Nachlese Ende",   _config.KeyChatReadNewest),
-            ("Chat-Registerkarte zurÃ¼ck", _config.KeyChatTabPrev),
+            ("Chat-Registerkarte zurück", _config.KeyChatTabPrev),
             ("Chat-Registerkarte vor",    _config.KeyChatTabNext),
-            ("Chat-Absender MenÃ¼",        _config.KeyChatPlayerMenu),
+            ("Chat-Absender Menü",        _config.KeyChatPlayerMenu),
             ("Einstellungen",   _config.KeyOptionsMenu), // [Einstellungsmenue]
             ("Plugin-Liste weiter",  _config.KeyPluginsNext),
-            ("Plugin-Liste zurÃ¼ck",  _config.KeyPluginsPrev),
+            ("Plugin-Liste zurück",  _config.KeyPluginsPrev),
             ("Plugin-Einstellungen", _config.KeyPluginsConfig),
             ("Kartenspiel Brett", _config.KeyReadBoard),
             ("Kartenspiel Hand",  _config.KeyReadHand),
@@ -1401,7 +1566,27 @@ public sealed class Plugin : IDalamudPlugin
         return parsed;
     }
 
-    private bool IsJustPressed(string keySpec)
+    private readonly NativeButtonKeyOwnership _nativeButtonKeys = new();
+    private static readonly int[] NativeButtonConfirmVks = [0x60, 0x2D, 0x0D]; // Num0, Insert, Enter
+
+    private void SuppressOwnedNativeButtonHold()
+    {
+        foreach (var vk in NativeButtonConfirmVks)
+            if (_nativeButtonKeys.Suppress(vk, _keyWasDown[vk]))
+                KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk] = false;
+    }
+
+    private void ClaimNativeButtonConfirmKeys()
+    {
+        foreach (var vk in NativeButtonConfirmVks)
+            if (_keyWasDown[vk])
+            {
+                _nativeButtonKeys.Claim(vk);
+                KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk] = false;
+            }
+    }
+
+    private bool IsJustPressed(string keySpec, bool allowTextInput = false, bool consume = false)
     {
         // While a game text field has focus (chat, search box, name entry, ...)
         // every keystroke belongs to that field. Standing down here suppresses
@@ -1411,15 +1596,21 @@ public sealed class Plugin : IDalamudPlugin
         // authority on when a field is receiving input. The per-frame Update()
         // calls in OnFrameworkUpdate do NOT go through here, so the walk guide,
         // beacon and focus reader keep working while typing.
-        if (_textInputActive) return false;
+        if (_textInputActive && !allowTextInput) return false;
 
         var (vk, ctrl, shift, alt) = ParseKeySpec(keySpec);
-        if (vk < 0 || !_keyJustPressed[vk]) return false;
+        if (vk < 0 || (!_keyJustPressed[vk] && (!consume || !_keyWasDown[vk]))) return false;
         // Exact modifier match: bare "N" must NOT fire while Alt is held,
         // because the game binds Alt+N (Neulingschat) itself.
-        return KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL] == ctrl
-            && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]   == shift
-            && KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU]    == alt;
+        if (KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL] != ctrl
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT] != shift
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU] != alt) return false;
+
+        // An owning command consumes its chord, including held frames. Text
+        // input and other modifiers still pass through.
+        if (consume && _keyWasDown[vk])
+            KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk] = false;
+        return _keyJustPressed[vk];
     }
 
     // Numpad keys that drive the modal assignment menu. All are game-bound
@@ -1429,7 +1620,7 @@ public sealed class Plugin : IDalamudPlugin
     // been picked; they are game-bound too (turn left/right), so they join the
     // swallow list - the menu ignores them in the key step, but the game must
     // not see them there either.
-    private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E, 0x64, 0x66 };
+    private static readonly int[] SkillMenuVks = { 0x68, 0x62, 0x60, 0x6E, 0x64, 0x66, 0x65 };
 
     /// <summary>
     /// While the modal assignment menu is open (key first, then what goes on
@@ -1450,6 +1641,7 @@ public sealed class Plugin : IDalamudPlugin
         else if (IsJustPressed("Numpad4"))     _hotbar.SkillMenuSwitchSource(-1);
         else if (IsJustPressed("Numpad6"))     _hotbar.SkillMenuSwitchSource(+1);
         else if (IsJustPressed("Numpad0"))     _hotbar.SkillMenuConfirm();
+        else if (IsJustPressed("Numpad5"))     _hotbar.SkillMenuRepeatEntry();
         else if (IsJustPressed("NumpadKomma")) _hotbar.SkillMenuBack();
 
         // Swallow the keys from the game for as long as the menu is open.
@@ -1462,8 +1654,8 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Turns the player towards the walk guide's next waypoint and takes the key
-    /// away from the game.
+    /// Turns the player towards the walk guide's next waypoint. Without a guide,
+    /// only reads the selected target. Takes the key away from the game in both cases.
     /// <para>
     /// Bare NUMPAD5 is CAMERA_FOCUS in the keybind dump. The user chose to give
     /// that up (it is purely visual) because NUMPAD5 carries the raised dot and
@@ -1474,9 +1666,32 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void HandleFaceWaypointKey()
     {
+        // Numpad 5 belongs to the assignment menu while it is open.
+        if (_hotbar.IsSkillMenuOpen) return;
         if (!IsJustPressed(_config.KeyFaceWaypoint)) return;
 
-        _navigation.FaceGuideDirection();
+        if (_navigation.IsWalkGuideActive)
+        {
+            _navigation.FaceGuideDirection();
+        }
+        else
+        {
+            // A browser selection can be a map position, not a game target.
+            // Reading it must not start a walk, retarget a monster or advance
+            // the hunt search. Use the same selection order as Numpad3.
+            switch (TryResolveSelectedDestination(out var position, out var name, out _,
+                        out var heightIsGuess, out _, readout: true))
+            {
+                case MarkerResolve.Resolved:
+                    _navigation.AnnounceDestinationDirection(name, position, heightIsGuess);
+                    break;
+                case MarkerResolve.None:
+                    _navigation.FaceGuideDirection();
+                    break;
+                case MarkerResolve.Failed:
+                    break; // The selected destination's specific reason was read.
+            }
+        }
 
         const int vkNumpad5 = 0x65;
         var key = (Dalamud.Game.ClientState.Keys.VirtualKey)vkNumpad5;
@@ -1558,7 +1773,7 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>
     /// When Numpad0 (game OK) is pressed and a ContextMenu row has focus but no
     /// list selection, select that row so the game can confirm it. Never swallows
-    /// Numpad0 â€” quest accept and other OK actions must reach the game
+    /// Numpad0 — quest accept and other OK actions must reach the game
     /// (regression 2026-09-21 after swallowing).
     /// </summary>
     private void PrepareContextMenuForGameOk()
@@ -1649,34 +1864,60 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Mitstreiter window key: closed â†’ open via the game's <c>/companion</c>
-    /// text command; open â†’ re-read the existing Buddy summary. Neither
-    /// IGameGui nor ClientStructs expose an Open for AddonBuddy (PR 27 /
-    /// game-api Mitstreiter); the Character-window button is mouse-only.
-    /// The spoken "opening" line is intentional â€” a failed command must not
-    /// look like a silent mod.
+    /// Mitstreiter window key: closed → open through the game's main command;
+    /// open → re-read the existing Buddy summary. ICommandManager only dispatches
+    /// plugin commands, so ProcessCommand("/companion") never reached the game.
     /// </summary>
-    private void ToggleCompanionWindow()
+    private unsafe void ToggleCompanionWindow()
     {
         if (_uiReader.IsCompanionWindowOpen)
         {
+            _companionOpenPending = false;
             _uiReader.AnnounceCompanionWindow();
             return;
         }
 
-        _tolk.Speak(AccessibilityStrings.CompanionOpening);
         try
         {
-            if (!CommandManager.ProcessCommand("/companion"))
+            var ui = UIModule.Instance();
+            if (ui == null)
             {
-                Log.Warning("[Buddy] /companion ProcessCommand false");
-                _tolk.Speak(AccessibilityStrings.CompanionWindowEmpty);
+                Log.Warning("[Buddy] UIModule.Instance() ist null");
+                _tolk.SpeakInterrupt(AccessibilityStrings.CompanionOpenFailed);
+                return;
             }
+            // MainCommand sheet row 42 is Companion. Execute the same game action
+            // as the main menu, without routing a text command through Dalamud.
+            ui->ExecuteMainCommand(42);
+            _companionOpenPending = true;
+            _companionOpenUntil = DateTime.UtcNow.AddSeconds(2);
+            Log.Info("[Buddy] ExecuteMainCommand(42) angefordert");
+            _tolk.Speak(AccessibilityStrings.CompanionOpening);
         }
         catch (Exception ex)
         {
-            Log.Warning($"[Buddy] /companion fehlgeschlagen: {ex.Message}");
-            _tolk.Speak(AccessibilityStrings.CompanionWindowEmpty);
+            _companionOpenPending = false;
+            Log.Warning($"[Buddy] Hauptkommando fehlgeschlagen: {ex.Message}");
+            _tolk.SpeakInterrupt(AccessibilityStrings.CompanionOpenFailed);
+        }
+    }
+
+    private bool _companionOpenPending;
+    private DateTime _companionOpenUntil;
+
+    private void CheckCompanionWindowOpen()
+    {
+        if (!_companionOpenPending) return;
+        if (_uiReader.IsCompanionWindowOpen)
+        {
+            _companionOpenPending = false;
+            Log.Info("[Buddy] Fenster nach Hauptkommando sichtbar");
+        }
+        else if (DateTime.UtcNow >= _companionOpenUntil)
+        {
+            _companionOpenPending = false;
+            Log.Warning("[Buddy] Fenster nach Hauptkommando nicht sichtbar");
+            _tolk.SpeakInterrupt(AccessibilityStrings.CompanionOpenFailed);
         }
     }
 
@@ -2046,9 +2287,8 @@ public sealed class Plugin : IDalamudPlugin
         finally { CloseClipboard(); }
     }
 
-    // Keybind dump runs automatically once per session: the user cannot open
-    // the chat yet, so /acc keys would be unreachable for them.
-    private bool _keybindsDumped;
+    // Check key conflicts once per login; desktop export requires /acc keys.
+    private bool _keybindsChecked;
 
     // True while a game text field has keyboard focus. Cached once per frame
     // (IsJustPressed is called ~60x per frame - one native call is enough) and
@@ -2175,6 +2415,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        FocusTimingProbe.MarkFrame();
         // Window focus first: every mod tone / SAPI channel gates on this.
         GameWindowFocus.Update(Log);
         if (GameWindowFocus.JustBecameInactive)
@@ -2186,6 +2427,11 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         UpdateKeyEdges();
+        SuppressOwnedWorldConfirmHold();
+        SuppressOwnedNativeButtonHold();
+        _shopQuantityInput.Poll();
+        _systemVolumeInput.Poll();
+        _tableInput.Poll();
         _hotbar.UpdateCrossHotbar(GameGui, IsControllerMode());
 #if DEBUG
         // UNGEGATTERT, mit Absicht: die Sonde sagt am Ende der Messung "fertig",
@@ -2203,8 +2449,12 @@ public sealed class Plugin : IDalamudPlugin
         _charaMake.Update();
 
         // Skill-Belegen: Beschreibung nach dem Namen (Dwell), solange die
-        // Skill-Liste offen ist â€” sonst sofort wieder raus.
+        // Skill-Liste offen ist — sonst sofort wieder raus.
         _hotbar.UpdateSkillDescDwell();
+        _uiReader.UpdatePlayerMenuProbe();
+        CheckCompanionWindowOpen();
+        _uiReader.YesNoPressTick();
+        _uiReader.YesNoHoldTick();
 
         // Sample the text-input state once for this frame. Log only on change so
         // the in-game test can confirm it flips exactly when the chat opens/closes.
@@ -2215,12 +2465,15 @@ public sealed class Plugin : IDalamudPlugin
             Log.Info($"[TextInput] active={_textInputActive} - mod hotkeys {(_textInputActive ? "suppressed" : "live")}");
         }
 
-        if (!_keybindsDumped && ClientState.IsLoggedIn && _keybinds.IsReady())
+        _armouryList.Update(GameWindowFocus.IsActive, textInputActive,
+            _menu.IsOpen || _hotbar.IsSkillMenuOpen || _uiReader.IsTableReading
+            || _uiReader.IsShopQuantityEditing || _uiReader.IsSystemVolumeEditing,
+            _uiReader.BlockingFocusedAddonForPlayerMenu());
+
+        if (!_keybindsChecked && ClientState.IsLoggedIn && _keybinds.IsReady())
         {
-            _keybindsDumped = true;
-            // Silent: the spoken "Tastenbelegung gespeichert" at every login was
-            // noise (user 2026-07-13); conflicts are still announced.
-            _keybinds.DumpKeybinds(GetPluginKeys(), announce: false);
+            _keybindsChecked = true;
+            _keybinds.CheckConflicts(GetPluginKeys());
         }
 
         // [Chat-Puffer] Dem Register des Spiels folgen und, einmal je Sitzung, den vom
@@ -2228,6 +2481,90 @@ public sealed class Plugin : IDalamudPlugin
         // eine Blaettertaste in diesem Frame schon die richtige Liste sieht.
         FollowChatTab();
         _chatBackfill.Update();
+
+        // A modal table or quantity editor can return from this frame below.
+        // Native movement still runs then, so supervision and the stop guard
+        // must keep receiving every frame, including while a menu owns keys.
+        _autoWalk.Update();
+        _transitions.Update();
+        PollSelectedQuest();
+        PollWalkingObject();
+        FacingService.Tick(ObjectTable.LocalPlayer);
+        _armouryTransfer.Update(GameWindowFocus.IsActive && !_uiReader.IsTableReading
+            && !_uiReader.IsShopQuantityEditing && !_uiReader.IsSystemVolumeEditing
+            && !_armouryList.OwnsInput && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen);
+
+        var readingInput = _uiReader.IsTableReading || _uiReader.IsShopQuantityEditing || _uiReader.IsSystemVolumeEditing
+            || _armouryList.OwnsInput;
+        if (HandleNavigationStopKeys(readingInput))
+        {
+            _aoeAutoTurn.Cancel();
+            return;
+        }
+        HandleAoeTurnCancelKeys(readingInput);
+        _combat.UpdateAreaWarnings();
+        _aoeAutoTurn.Update(_config.AutoTurnAoe && _combat.AutoTurnInDanger
+            && !textInputActive && !readingInput && !_armouryList.IsOpen && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen
+            && !_uiReader.HasActiveMenu && _uiReader.BlockingFocusedAddonForPlayerMenu() == null
+            && !_autoWalk.IsActive && !_autoWalk.IsFollowing
+            && !IsJustPressed(_config.KeyAutoWalk) && !IsJustPressed(_config.KeyFollowTarget)
+            && !IsJustPressed(_config.KeyFaceWaypoint) && !IsJustPressed(_config.KeyToggleAoeWarning)
+            && !IsJustPressed(_config.KeyOptionsMenu) && !IsJustPressed(_config.KeySkillMenu)
+            && !IsJustPressed(_config.KeyReadTable) && !IsJustPressed(_config.KeyShopQuantity),
+            !_config.AutoTurnAoe || !_combat.AutoTurnInDanger ? null
+            : textInputActive ? "text input" : readingInput ? "reader owns input"
+            : _armouryList.IsOpen ? "ArmouryBoard" : _menu.IsOpen ? "spoken menu"
+            : _hotbar.IsSkillMenuOpen ? "skill menu" : _uiReader.HasActiveMenu ? "visible native menu"
+            : _uiReader.BlockingFocusedAddonForPlayerMenu() is { } aoeWindow ? $"focused addon={aoeWindow}"
+            : _autoWalk.IsActive || _autoWalk.IsFollowing ? "navigation running" : "control key pressed");
+        if (readingInput && IsJustPressed(_config.KeySilence)) { _tolk.Silence(); _chatVoice.Silence(); }
+        if (readingInput && !_armouryList.OwnsInput && IsJustPressed(_config.KeyHelp)) _uiReader.AnnounceContextHelp();
+        if (_armouryList.OwnsInput)
+        {
+            if (IsJustPressed(_config.KeyReadUI, consume: true)) { _armouryList.ReadSelected(description: true); return; }
+            if (IsJustPressed(_config.KeyHelp, consume: true)) { _tolk.SpeakInterrupt(AccessibilityStrings.ArmouryListHelp); return; }
+            var armouryModifiers = KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL]
+                || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]
+                || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU];
+            if (_armouryList.HandleKeys(armouryModifiers)) return;
+        }
+        if (_uiReader.HandleTableKeys(_tableInput, GameWindowFocus.IsActive, textInputActive,
+                KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL],
+                KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT],
+                KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU])) return;
+        var volumeModifiers = KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU];
+        if (_uiReader.HandleSystemVolumeKeys(_systemVolumeInput, GameWindowFocus.IsActive, volumeModifiers)) return;
+        if (!_menu.IsOpen && !_hotbar.IsSkillMenuOpen && !_uiReader.IsShopQuantityEditing
+            && GameWindowFocus.IsActive && IsJustPressed("Ctrl+Return", allowTextInput: true)
+            && _uiReader.BeginSystemVolume())
+        {
+            _systemVolumeInput.ConsumeAll();
+            return;
+        }
+        if (!_menu.IsOpen && !_hotbar.IsSkillMenuOpen && !_uiReader.IsShopQuantityEditing
+            && GameWindowFocus.IsActive && IsJustPressed(_config.KeyReadTable))
+        {
+            if (_uiReader.BeginTableReading()) _tableInput.ConsumeAll();
+            return;
+        }
+
+        var quantityModifiers = KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]
+            || KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU];
+        if (_uiReader.HandleShopQuantityKeys(_shopQuantityInput, GameWindowFocus.IsActive, quantityModifiers)) return;
+        if (!_menu.IsOpen && !_hotbar.IsSkillMenuOpen && GameWindowFocus.IsActive
+            && IsJustPressed(_config.KeyShopQuantity, allowTextInput: true))
+        {
+            // Numeric fields can mark text input active too. The reader admits
+            // only a live buy-list row and explicitly excludes chat/dialogs.
+            if (_uiReader.BeginShopQuantity(reportUnavailable: !textInputActive))
+            {
+                _shopQuantityInput.ConsumeAll();
+                return;
+            }
+        }
 
         // [Einstellungsmenue] Ein offenes Menue besitzt die Tastatur. Ein Textfeld
         // besitzt sie ebenfalls - dann koennen keine Tasten gelesen werden, das Menue
@@ -2247,8 +2584,10 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         if (IsJustPressed(_config.KeyHelp))          _uiReader.AnnounceContextHelp();
-        if (IsJustPressed(_config.KeyNextObject))    _navigation.CycleObject(+1);
-        if (IsJustPressed(_config.KeyPrevObject))    _navigation.CycleObject(-1);
+        // The browser owns these presses. Page Up/Down also drive the game's
+        // page navigation and camera zoom; one press must have one owner.
+        if (IsJustPressed(_config.KeyNextObject, consume: ClientState.IsLoggedIn)) _navigation.CycleObject(+1);
+        if (IsJustPressed(_config.KeyPrevObject, consume: ClientState.IsLoggedIn)) _navigation.CycleObject(-1);
         if (IsJustPressed(_config.KeyCategory))
         {
             _navigation.NextCategory();
@@ -2273,36 +2612,40 @@ public sealed class Plugin : IDalamudPlugin
             }
             // No through-point here: the walk guide steers the PLAYER, who walks
             // through the line themselves once they are told they are there.
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _, out _))
+            else switch (TryResolveSelectedDestination(out var pos, out var name, out var stop, out _, out _))
             {
                 // Marker destinations (quest objectives, map waypoints) work in
                 // the walk guide too since V4.63 - manual walking was
                 // game-target-only before.
-                case MarkerResolve.Resolved: _navigation.StartWalkGuideToPosition(pos, name, stop); break;
+                case MarkerResolve.Resolved: StartResolvedGuide(pos, name, stop); break;
                 case MarkerResolve.None:     _navigation.ToggleWalkGuide();                         break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
         }
-        if (IsJustPressed(_config.KeyAutoWalk))
+        if (IsJustPressed(_config.KeyAutoWalk, consume: ClientState.IsLoggedIn))
         {
             _navigation.StopWalkGuideQuiet();
             var bestiaryMonster = _uiReader.SelectedBestiaryMonster;
-            if (bestiaryMonster != null)
+            if (_autoWalk.IsActive)
+            {
+                _autoWalk.Toggle();
+                _walkingObject = null;
+                _awaitingQuestObject = false;
+            }
+            else if (bestiaryMonster != null)
             {
                 // Bestiary open with a monster row focused: track it - walk to
                 // the nearest live one, or tell the user where it lives.
                 TrackBestiaryMonster(bestiaryMonster);
             }
-            // The v5.74 walk takes no height-is-guess hint - that belonged to
-            // the reworked routing which has been rolled back.
-            else switch (TryResolveMarkerDestination(out var pos, out var name, out var stop, out _, out var isTransition))
+            else switch (TryResolveSelectedDestination(out var pos, out var name, out var stop, out _, out var isTransition))
             {
-                case MarkerResolve.Resolved: _autoWalk.ToggleToPosition(pos, name, stop, isTransition); break;
+                case MarkerResolve.Resolved: StartResolvedWalk(pos, name, stop, isTransition); break;
                 case MarkerResolve.None:     _autoWalk.Toggle();                          break;
                 case MarkerResolve.Failed:   break; // reason already announced
             }
         }
-        if (IsJustPressed(_config.KeyFollowTarget))
+        if (IsJustPressed(_config.KeyFollowTarget, consume: true))
         {
             // Follow the current game target continuously (own vnavmesh follow -
             // FFXIV has no plugin-callable native follow). A walk guide would fight
@@ -2314,7 +2657,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             // Speak the route (compass segments) without walking - to the
             // selected marker destination, or to the current game target.
-            switch (TryResolveMarkerDestination(out var pos, out var name, out _, out _, out _))
+            switch (TryResolveSelectedDestination(out var pos, out var name, out _, out _, out _))
             {
                 case MarkerResolve.Resolved: _navigation.PreviewRoute(pos, name); break;
                 case MarkerResolve.None:     _navigation.PreviewRouteToTarget();  break;
@@ -2331,7 +2674,7 @@ public sealed class Plugin : IDalamudPlugin
             // und keine neue Einstellung - "aktuelles Menue vorlesen" heisst hier eben
             // das.
             if (_charaMake.IsActive) _charaMake.ReadSummary();
-            else                     _uiReader.ReadCurrentFocus();
+            else                     ReadCraftOrCurrentFocus();
         }
         // [Chatstimme] Die Stopptaste leert auch deren Warteschlange - sonst liefe
         // eine lange Reihe Chatzeilen nach dem Druck einfach weiter.
@@ -2361,6 +2704,7 @@ public sealed class Plugin : IDalamudPlugin
             if (!_uiReader.TryAnnounceHandOver()) _inventoryReader.ReadInventory();
         }
         if (IsJustPressed(_config.KeyReadGil))       _inventoryReader.AnnounceGil();
+        if (IsJustPressed(_config.KeyMoveToArmoury)) _armouryTransfer.Start();
         if (IsJustPressed(_config.KeyLevelExp))      _combat.AnnounceLevelExp();
         if (IsJustPressed(_config.KeyRestedStatus))  _combat.AnnounceRestedStatus();
         if (IsJustPressed(_config.KeyChocoboRank))   _combat.AnnounceChocoboRank();
@@ -2386,9 +2730,21 @@ public sealed class Plugin : IDalamudPlugin
         // HQ-Materialien im Rezeptbuch. Einfg trug bis 6.08.17 auch die
         // Filteransage des Sammel-Journals und unterschied sie ueber "ist das
         // Journal offen" - das traegt nicht, weil FF14 beide Fenster gleichzeitig
-        // offen laesst (Spielerhinweis 2026-09-12: "Ð´Ð°Ðº Ð½Ð° Ð¸Ð½ÑÐµÑ€Ñ‚Ðµ Ð¶Ðµ ÑƒÐ¶Ðµ hq").
+        // offen laesst (Spielerhinweis 2026-09-12: "дак на инсерте же уже hq").
         // Die Filter haben seit 6.08.18 gar keine Taste mehr: ihr Zustand steht
         // am Ankreuzfeld und wird dort gesprochen.
+        // A focused native confirmation has priority over Insert/HQ and Num0
+        // world interaction. Consume exactly one press; unrelated menus keep
+        // their native confirmation path (notably JournalAccept/JournalResult).
+        if (_uiReader.CanConfirmYesNo && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen
+            && (IsJustPressed("Numpad0", consume: true) || IsJustPressed("Insert", consume: true)))
+        {
+            ClaimNativeButtonConfirmKeys();
+            _uiReader.ConfirmYesNo();
+            // Key edges are a frame snapshot. Consumption alone would still
+            // let Insert/HQ or world interaction see this same press below.
+            return;
+        }
         if (IsJustPressed(_config.KeyTakeHqMaterials)) _uiReader.TakeHqMaterials();
         if (IsJustPressed(_config.KeyPluginsNext))   _dalamudPlugins.CycleNext();
         if (IsJustPressed(_config.KeyPluginsPrev))   _dalamudPlugins.CyclePrev();
@@ -2415,9 +2771,17 @@ public sealed class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeyEquipBest))     _equipment.EquipRecommended();
         if (IsJustPressed(_config.KeyRandomLook))    _uiReader.PressRandomAppearance();
-        if (IsJustPressed(_config.KeySkillMenu))     _hotbar.ToggleSkillMenu(IsControllerMode());
-        // ContextMenu: nur Auswahl setzen, Numpad0 NICHT schlucken (Spiel-OK).
-        PrepareContextMenuForGameOk();
+        if (IsJustPressed(_config.KeySkillMenu))
+        {
+            if (_hotbar.IsSkillMenuOpen) _hotbar.CloseSkillMenu();
+            else _hotbar.OpenSkillMenuDirect();
+        }
+        if (!HandleWorldObjectConfirmKey())
+        {
+            HandlePlayerMenuKey();
+            // ContextMenu: nur Auswahl setzen, Numpad0 NICHT schlucken (Spiel-OK).
+            PrepareContextMenuForGameOk();
+        }
         // [Job-Anzeige] Zustand auf Nachfrage, ohne auf eine Flanke zu warten.
         if (IsJustPressed(_config.KeyJobGauge))      _jobGauge.AnnounceCurrent();
         HandleFaceWaypointKey();
@@ -2429,6 +2793,8 @@ public sealed class Plugin : IDalamudPlugin
         // durch die Puffer der Spielregister. Welche Bedeutung gilt, entscheidet
         // der Schalter im Optionsmenue.
         var legacyChat = _config.UseLegacyChatSystem;
+        if (IsJustPressed(_config.KeyChatPlayerMenu))
+            _chatPlayer.ActOn(legacyChat ? _legacyHistory.CurrentChatPlayer : _history.CurrentChatPlayer);
         if (IsJustPressed(_config.KeyChatCatPrev))
         {
             if (legacyChat) _legacyHistory.SwitchCategory(-1); else SwitchChatBuffer(-1);
@@ -2483,8 +2849,8 @@ public sealed class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyPartyMonitor))  TogglePartyMonitor();
         if (IsJustPressed(_config.KeyPartyRoster))   AnnouncePartyRoster();
         if (IsJustPressed("Escape"))                 _uiReader.HandleEscapeKey();
-        // F5 Ã¢â‚¬â€ UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
-        // (kein Chat-Fenster nÃ¶tig, funktioniert auch auf dem Titelbildschirm)
+        // F5 â€” UI-Dump des aktuell aktiven Addons auf den Desktop schreiben
+        // (kein Chat-Fenster nötig, funktioniert auch auf dem Titelbildschirm)
         if (IsJustPressed(_config.KeyDumpUI))
         {
             // Dump the focused menu/window first. Only when there is NO such
@@ -2494,17 +2860,19 @@ public sealed class Plugin : IDalamudPlugin
             if (!_uiReader.DumpFocusedAddon())
                 _navigation.DumpNearbyObjects();
         }
-        // F2 Ã¢â‚¬â€ aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
+        // F2 â€” aktives Fenster ansagen + alle sichtbaren Fenster ins Log ([Win])
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
         // Vergibt die Farb-Rufnamen der Gegner. VOR allem, was Ziele ansagt: die
         // Zielansage fragt gleich danach, welche Farbe der Gegner traegt.
         _enemyMarkers.Update();
-        _cooldown.Update();
+        _readyAnnouncements.Clear();
+        _cooldown.Update(_readyAnnouncements);
         // Job-eigene Ressourcenleiste: meldet nur, wenn etwas WIEDER verfuegbar
         // wird - im Kampf wie ausserhalb.
-        _jobGauge.Update();
+        _jobGauge.Update(_readyAnnouncements);
+        _readyAnnouncements.Speak(_warnVoice.Speak, text => _tolk.Speak(text));
         // Sonderaktionsleiste eines Auftrags: sagt an, wenn sie auftaucht. Das
         // Spiel bietet sie NUR per Mausklick an, ein blinder Spieler erfaehrt
         // sonst nie, dass sie da ist.
@@ -2515,7 +2883,7 @@ public sealed class Plugin : IDalamudPlugin
         // combat state on purpose: post-fight regeneration is exactly when the
         // bar refilling should be audible.
         _vitals.Update();
-        // Freilauf: AnstoÃŸ an Wesen/Kulisse und Kante (Sprung/Absturz) als Ton.
+        // Freilauf: Anstoß an Wesen/Kulisse und Kante (Sprung/Absturz) als Ton.
         _movementAudio.Update();
         // Gruppen-Heilmonitor: spricht die Gruppenposition, der Lebensstand
         // steckt in der Tonhoehe. Braucht die Frame-Zeit fuer seine
@@ -2540,13 +2908,6 @@ public sealed class Plugin : IDalamudPlugin
         // able to say "schon besucht" for the very object just walked up to.
         _objectMemory.Update();
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
-        _autoWalk.Update();
-        // Laeuft NACH dem Auto-Lauf und unabhaengig von ihm: der Impuls beginnt
-        // genau dann, wenn der Lauf zu Ende ist.
-        _transitions.Update();
-        // Has to run OUTSIDE the walk: the turn happens at the moment the walk
-        // ends, so checking whether it stuck belongs to the frames after that.
-        FacingService.Tick(ObjectTable.LocalPlayer);
         // Records the player's own line while a trail recording runs (see TrailService).
         _trails.Update();
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
@@ -2571,7 +2932,12 @@ public sealed class Plugin : IDalamudPlugin
             || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x68]  // Numpad8
             || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x62]  // Numpad2
             || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x64]  // Numpad4
-            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x66]; // Numpad6
+            || KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)0x66]  // Numpad6
+            || (IsControllerMode() && (
+                GamepadState.Raw(GamepadButtons.DpadUp) > 0
+                || GamepadState.Raw(GamepadButtons.DpadDown) > 0
+                || GamepadState.Raw(GamepadButtons.DpadLeft) > 0
+                || GamepadState.Raw(GamepadButtons.DpadRight) > 0));
         _uiReader.UpdateGlobalFocus(navKeyHeld);
         // Ergebnis der HQ-Uebernahme (Einfg) nachlesen: gesprochen wird erst,
         // wenn das Fenster die Aenderung zeigt - oder wenn sie ausbleibt.
@@ -2580,6 +2946,7 @@ public sealed class Plugin : IDalamudPlugin
         // Spielzeile "There are no items to display" ansagen, sobald sie
         // erscheint (vorher war eine leere Liste einfach Stille).
         _uiReader.GatheringNoteTick();
+        _uiReader.PerformanceModeTick();
 
 #if DEBUG
         // Debug-only auto-probe: logs focused config-menu elements while a
@@ -2589,7 +2956,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // DC-Auswahl: Nummernblock-Navigation (4=links, 6=rechts, 2=runter, 8=hoch)
         // Nummernblock-Tasten werden vom Spiel intern verarbeitet und feuern keine
-        // AddonReceiveEvent-Hooks Ã¢â‚¬â€ deshalb hier abfangen und ForceDCMapRead() aufrufen.
+        // AddonReceiveEvent-Hooks â€” deshalb hier abfangen und ForceDCMapRead() aufrufen.
         if (_uiReader.IsDCMapOpen)
         {
             var np2 = IsJustPressed("Numpad2");
@@ -2600,13 +2967,14 @@ public sealed class Plugin : IDalamudPlugin
                 _uiReader.ForceDCMapRead();
         }
 
-        // MenÃ¼-Navigation: nur wenn ein MenÃ¼ aktiv ist
+        // Menü-Navigation: nur wenn ein Menü aktiv ist
         if (_uiReader.HasActiveMenu)
         {
             var up    = IsJustPressed("Up");
             var down  = IsJustPressed("Down");
-            var left  = IsJustPressed("Left");
-            var right = IsJustPressed("Right");
+            var dialogOwnsHorizontal = _uiReader.CanConfirmYesNo;
+            var left  = IsJustPressed("Left", consume: dialogOwnsHorizontal);
+            var right = IsJustPressed("Right", consume: dialogOwnsHorizontal);
             // Probe: user pressed left/right in Ok/Cancel dialogs repeatedly
             // (their report 2026-07-11) and no Navigate line ever appeared -
             // this line settles whether IKeyState even SEES arrow keys while
@@ -2619,8 +2987,10 @@ public sealed class Plugin : IDalamudPlugin
             if (right) _uiReader.Navigate(+1, true);
         }
 
-        if (IsJustPressed("Return"))
+        var ownsEnterButton = _uiReader.OwnsEnterButton;
+        if (IsJustPressed("Return", consume: ownsEnterButton))
         {
+            if (ownsEnterButton) ClaimNativeButtonConfirmKeys();
             _uiReader.HandleConfirmKey();
             // [Chat-Puffer] HIER STAND ChatChannelService.TrySwitchToBrowsedChannel -
             // Enter stellte den SENDEKANAL auf den Puffer um, in dem der Spieler gerade
@@ -2664,9 +3034,32 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
-        // Controller D-Pad Links/Rechts: SelectYesno JaÃ¢â€ â€Nein
-        if (GamepadState.Pressed(GamepadButtons.DpadLeft)  > 0) _uiReader.NavigateGamepad(-1);
-        if (GamepadState.Pressed(GamepadButtons.DpadRight) > 0) _uiReader.NavigateGamepad(+1);
+        // Controller D-Pad Links/Rechts: SelectYesno Jaâ†”Nein
+        if (IsControllerMode())
+        {
+            if (GamepadState.Pressed(GamepadButtons.DpadLeft)  > 0) _uiReader.NavigateGamepad(-1);
+            if (GamepadState.Pressed(GamepadButtons.DpadRight) > 0) _uiReader.NavigateGamepad(+1);
+        }
+    }
+
+    private bool HandleAoeTurnCancelKeys(bool readingInput)
+    {
+        if (!_config.AutoTurnAoe || !IsJustPressed(_config.KeySilence, allowTextInput: readingInput)) return false;
+        _aoeAutoTurn.Cancel();
+        _warnVoice.Silence();
+        return true;
+    }
+
+    private bool HandleNavigationStopKeys(bool readingInput)
+    {
+        if (!_autoWalk.IsWalking) return false;
+        if (!IsJustPressed(_config.KeyAutoWalk, allowTextInput: readingInput, consume: true)
+            && !(_autoWalk.IsFollowing
+                && IsJustPressed(_config.KeyFollowTarget, allowTextInput: readingInput, consume: true))) return false;
+        _autoWalk.StopFollowQuiet();
+        _autoWalk.StopQuiet();
+        _transitions?.Stop(silent: true);
+        return true;
     }
 
     private enum MarkerResolve
@@ -3203,6 +3596,532 @@ public sealed class Plugin : IDalamudPlugin
         return MarkerResolve.None;
     }
 
+    // Read-only Num5 selection; never used to start movement.
+    private MarkerResolve TryResolveDestinationReadout(out Vector3 position, out string name, out float stopRange,
+                                                      out bool heightIsGuess, out bool isZoneTransition)
+    {
+        var forReadout = true; // This resolver is exclusively for speech.
+        // Speech needs a location, not a walkable surface. In particular it
+        // must still work while vnavmesh is unavailable or building its mesh.
+        Vector3? FloorPoint(Vector3 point) => forReadout ? point : _autoWalk.ResolveFloorPoint(point);
+        Vector3? ReachablePoint(Vector3 point) => forReadout ? point : _autoWalk.ResolveReachablePoint(point);
+        // Vorbelegen: jeder Rueckgabepfad muss den Wert setzen, und nur der
+        // Uebergangs-Zweig weiter unten setzt ihn auf true.
+        isZoneTransition = false;
+        position = default;
+        name = string.Empty;
+        stopRange = _config.AutoWalkPlaceStopRange;
+        // Map data is 2D. Everything resolved from it has a GUESSED height, and
+        // the guess uses the player's own - which picks the wrong storey when
+        // they stand far away and lower (measured 2026-08-07: aetheryte
+        // Herbstkürbis-See, mesh at Y -49 and Y -39 above the same spot, the
+        // guess took -49 and only -39 was reachable). The auto-walk needs to
+        // know this to tell a wrong storey from a genuinely unreachable target.
+        heightIsGuess = false;
+
+        var quest = _navigation.SelectedQuestDestination;
+        var place = _navigation.SelectedPlaceDestination;
+
+        if (quest != null)
+        {
+            if (quest.TerritoryTypeId != ClientState.TerritoryType)
+            {
+                // Quest is in another zone: walk to the transition that leads
+                // there (route over the static map graph) instead of refusing.
+                var hop = _places.FindFirstHopToMap(quest.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.QuestInAnotherZoneNoHop(quest.QuestName));
+                    return MarkerResolve.Failed;
+                }
+                var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var floor   = FloorPoint(hop.Position with { Y = playerY });
+                if (floor == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position = floor.Value;
+                name = hop.Name;
+                // Transition: stop almost on the marker so the zone line triggers.
+                stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            // Prefer a path-connected mesh point: NearestPoint alone can sit on a
+            // disconnected patch, then the walk ends a few metres short (log
+            // 2026-09-09 20:43: "Die Gabe der Unsterblichkeit", shortfall 3,9 m
+            // at stopRange 1; flight ended "Noch 3 Meter nach Norden").
+            position = ReachablePoint(quest.Position)
+                       ?? FloorPoint(quest.Position)
+                       ?? quest.Position;
+            name = quest.QuestName;
+            heightIsGuess = true;
+            // Aim near the centre, not the rim (rim = Radius left the player
+            // outside the trigger). Pure PlaceStop (~1 m) never "arrives" when
+            // the mesh stops ~4 m short of a large map pin. For map goal circles
+            // allow up to 5 m. EventRange walk-ins (QuestTrigger, ~5 m radius)
+            // keep the tight stop so the player actually enters the small volume.
+            stopRange = quest.Role == QuestMarkerRole.QuestTrigger
+                ? _config.AutoWalkPlaceStopRange
+                : quest.Radius > 0f
+                    ? MathF.Max(_config.AutoWalkPlaceStopRange, MathF.Min(5f, quest.Radius))
+                    : _config.AutoWalkPlaceStopRange;
+            return MarkerResolve.Resolved;
+        }
+
+        if (place != null)
+        {
+            // Map markers are 2D - resolve the walkable height via the
+            // navmesh first (player height as search origin).
+            var playerY = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+            // Fishing spots are water CENTRES: snap to the nearest bank (wide
+            // search) so the player lands at the water, not on a floor the
+            // generic 10 m snap happens to find. Fall back to the generic
+            // resolver if no bank is found (e.g. vnavmesh not ready).
+            // Named places are the CENTRE of a map symbol, not a spot to stand on:
+            // a room marker sits in the middle of the room, and there stand tables,
+            // chairs and pillars. Measured on "Rudererquartier" in Sastasha
+            // (log 2026-08-21 22:11): the marker at (-97|64) has background objects
+            // 1.1 m away and five ChairMarkers around it - the walk stopped 2.44 m
+            // short because the destination itself is not a place one can stand.
+            // ResolveReachablePoint asks vnavmesh the stronger question - a point
+            // the player can actually GET to - exactly as the deep dungeon already
+            // does for its room origins. It falls back to ResolveFloorPoint itself,
+            // so a mesh that cannot answer behaves as before.
+            // Uebergaenge zielen auf die ECHTE Grenze, nicht auf ihr Kartensymbol.
+            // Das Symbol liegt in der Mitte der Grenze, und die Mitte kann weit
+            // ausserhalb des begehbaren Netzes liegen: Neu-Gridania -> Tiefer Wald
+            // endete 18,6 m davor, waehrend der Rand der Grenze nur 2,0 m entfernt
+            // war (Log 2026-08-22, docs/game-api.md). Ohne passende Grenze - Tueren
+            // und Instanz-Eingaenge haben keine - bleibt alles wie bisher.
+            // Die Grenze ist 30 m breit, und nur ein Teil davon ist ein Durchgang:
+            // am Uebergang Neu-Gridania -> Tiefer Wald stehen Faesser und ein
+            // Torbauwerk, gemessen mit tools/zone-probe am 2026-08-22. Deshalb
+            // bekommt die Grenzsuche vnavmeshs Erreichbarkeitspruefung mit und
+            // nimmt den naechsten Punkt, den das Netz auch annimmt.
+            var borderPoint = !forReadout && place.IsZoneTransition
+                ? _zoneBorders.FindBorderPoint(place.TargetMapId, ObjectTable.LocalPlayer?.Position ?? place.Position,
+                                               _autoWalk.ProbeReachable)
+                : null;
+            var approach = borderPoint ?? place.Position with { Y = playerY };
+
+            var floor   = forReadout ? (Vector3?)approach
+                : place.IsWaterSpot
+                ? (_autoWalk.ResolveNearestBank(place.Position with { Y = playerY })
+                   ?? FloorPoint(place.Position with { Y = playerY }))
+                : place.IsZoneTransition ? ReachablePoint(approach)
+                : _autoWalk.ResolveReachablePoint(approach);
+            if (floor == null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(place.Name));
+                return MarkerResolve.Failed;
+            }
+            position = borderPoint is { } inside ? inside with { Y = floor.Value.Y } : floor.Value;
+            name = place.Name;
+            heightIsGuess = true;
+            // Transitions get an extra-tight range so the player walks right
+            // into the zone line; other places stop on the spot.
+            stopRange = place.IsZoneTransition
+                ? _config.AutoWalkTransitionStopRange
+                : _config.AutoWalkPlaceStopRange;
+            // Nur echte Zonengrenzen duerfen am Ende angeschoben werden - und nur,
+            // wenn wir wirklich die Grenze anzielen. Ohne borderPoint ist das Ziel
+            // das Kartensymbol, und das liegt nicht zwingend im Ausloeser.
+            isZoneTransition = place.IsZoneTransition && borderPoint != null;
+            return MarkerResolve.Resolved;
+        }
+
+        // Blaumagie-Zauber aus dem Browser. Gleiche Wegfuehrung wie beim
+        // Jagdziel darunter, mit einem Unterschied, der aus den Daten kommt und
+        // nicht aus einer Designentscheidung: es gibt KEIN Monster, zu dem
+        // gelaufen werden koennte. Das Spiel fuehrt fuer Blaumagie nur einen
+        // Fundort - ein Gebiet oder eine Instanz (siehe AozSpellSourceService).
+        // Also fuehrt der Weg dorthin, und im Gebiet endet er.
+        var spell = _navigation.SelectedBlueMagicTarget;
+        if (spell != null)
+        {
+            switch (spell.Kind)
+            {
+                case AozSourceKind.World when spell.MapId != 0 && spell.MapId != ClientState.MapId:
+                {
+                    // Andere Zone: zum Uebergang, exakt wie beim Jagdziel.
+                    var hop = _places.FindFirstHopToMap(spell.MapId, out _);
+                    if (hop == null)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BlueMagicNoRoute(spell.SpellName, spell.PlaceName));
+                        return MarkerResolve.Failed;
+                    }
+                    var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                    var hopWalk = FloorPoint(hop.Position with { Y = hopY });
+                    if (hopWalk == null)
+                    {
+                        _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                        return MarkerResolve.Failed;
+                    }
+                    position      = hopWalk.Value;
+                    name          = hop.Name;
+                    stopRange     = _config.AutoWalkTransitionStopRange;
+                    heightIsGuess = true;
+                    return MarkerResolve.Resolved;
+                }
+
+                case AozSourceKind.World:
+                    // Schon im richtigen Gebiet. Es gibt hier NICHTS Feineres:
+                    // das Sheet nennt nur die Zone, keinen Unterort. Ein Lauf
+                    // ins Nichts waere schlechter als die ehrliche Auskunft.
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BlueMagicHere);
+                    return MarkerResolve.Failed;
+
+                case AozSourceKind.Duty:
+                {
+                    // Instanz: Ziel ist ihr Eingang. Der steht bereits in der
+                    // weltweiten Tuerliste - dieselbe Quelle, die die Kategorie
+                    // "Alle Inhalte" benutzt, samt echter Hoehe.
+                    var door = _dutyEntrances.GetAll()
+                        .Where(d => d.ContentId == spell.InstanceContentId)
+                        .OrderBy(d => d.MapId == ClientState.MapId ? 0 : 1)
+                        .FirstOrDefault();
+                    if (door == null)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BlueMagicNoDoor(spell.SpellName, spell.PlaceName));
+                        return MarkerResolve.Failed;
+                    }
+
+                    if (door.MapId != 0 && door.MapId != ClientState.MapId)
+                    {
+                        var hop = _places.FindFirstHopToMap(door.MapId, out _);
+                        if (hop == null)
+                        {
+                            _tolk.SpeakInterrupt(
+                                AccessibilityStrings.BlueMagicNoRoute(spell.SpellName, door.ZoneName));
+                            return MarkerResolve.Failed;
+                        }
+                        var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                        var hopWalk = FloorPoint(hop.Position with { Y = hopY });
+                        if (hopWalk == null)
+                        {
+                            _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                            return MarkerResolve.Failed;
+                        }
+                        position      = hopWalk.Value;
+                        name          = hop.Name;
+                        stopRange     = _config.AutoWalkTransitionStopRange;
+                        heightIsGuess = true;
+                        return MarkerResolve.Resolved;
+                    }
+
+                    // Tuer in dieser Zone: die Position ist volle 3D mit echter
+                    // Hoehe, sie braucht keinen Boden-Schaetzer.
+                    position  = door.Position;
+                    name      = door.Name;
+                    stopRange = AutoWalkService.StopRange;
+                    return MarkerResolve.Resolved;
+                }
+
+                default:
+                    // Karneval-Belohnung oder Startzauber: kein Ort, kein Weg.
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BlueMagicNoPlace);
+                    return MarkerResolve.Failed;
+            }
+        }
+
+        // Bestie aus dem Bestienbuch-Browser. Wie Jagd: lebendes Exemplar zuerst,
+        // sonst Hop zur Zone, sonst Arealsuche / Wegpunkt des Untergebiets.
+        var beast = _navigation.SelectedBeastTarget;
+        if (beast != null)
+        {
+            var live = _xbmSources.FindNearestLive(beast.Name);
+            if (live != null)
+            {
+                var accepted = !forReadout && _navigation.TargetFromBrowser(live);
+                Log.Info($"[XbmZiel] Lebendes '{beast.Name}' in " +
+                         $"{Vector3.Distance(ObjectTable.LocalPlayer?.Position ?? live.Position, live.Position):F1} m, " +
+                         $"id={live.GameObjectId:X}, anvisiert={accepted}");
+                if (accepted) return MarkerResolve.None;
+
+                position = FloorPoint(live.Position) ?? live.Position;
+                name = beast.Name;
+                stopRange = AutoWalkService.StopRange;
+                return MarkerResolve.Resolved;
+            }
+
+            if (beast.MapId != 0 && beast.MapId != ClientState.MapId)
+            {
+                var hop = _places.FindFirstHopToMap(beast.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(
+                        AccessibilityStrings.BeastmasterNoRoute(beast.Name, beast.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = FloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position      = hopWalk.Value;
+                name          = hop.Name;
+                stopRange     = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            if (beast.MapId != 0 && beast.MapId == ClientState.MapId)
+            {
+                var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+                var searchPart = _navigation.NextHuntSearchPart(playerPos, advance: !forReadout);
+                var area = searchPart?.Position ?? beast.Position;
+                if (area is not { } areaPos)
+                {
+                    if (beast.AreaName.Length > 0)
+                    {
+                        _tolk.SpeakInterrupt(
+                            AccessibilityStrings.BeastmasterAreaUnknown(beast.Name, beast.AreaName));
+                        return MarkerResolve.Failed;
+                    }
+
+                    _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterHere);
+                    return MarkerResolve.Failed;
+                }
+
+                var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
+                var areaWalk = FloorPoint(areaSeed);
+                if (areaWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(
+                        beast.AreaName.Length > 0 ? beast.AreaName : beast.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+
+                position = areaWalk.Value;
+                name = searchPart is { Name.Length: > 0 }
+                    ? searchPart.Value.Name
+                    : beast.AreaName.Length > 0 ? beast.AreaName : beast.Name;
+                stopRange     = _config.AutoWalkPlaceStopRange;
+                heightIsGuess = searchPart == null;
+                return MarkerResolve.Resolved;
+            }
+
+            _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterNoPlace);
+            return MarkerResolve.Failed;
+        }
+
+        // Jagdziel aus dem Browser. Same routing as a quest goal, for the same
+        // reason: the monster's home area is a place on the map, and in another
+        // zone the only thing worth walking to is the transition that leads
+        // there. Zone checked FRESH here - the flag stored at selection time is
+        // stale after a teleport.
+        var hunt = _navigation.SelectedHuntTarget;
+        if (hunt != null)
+        {
+            // A live specimen in range beats every marker: the habitat marker is
+            // the middle of an area, the monster is what the player wants to
+            // reach (user request 2026-08-17). Targeting it is part of the
+            // answer - a monster is reached in order to be attacked - and once
+            // the game holds it as the hard target, MarkerResolve.None hands the
+            // walk to the TARGET path, which re-reads the position every frame.
+            // That is what makes walking to a patrolling monster work at all;
+            // a fixed position would aim at where it stood at key-press time.
+            var live = _huntingLog.FindNearestLive(hunt.MonsterName);
+            if (live != null)
+            {
+                var accepted = !forReadout && _navigation.TargetFromBrowser(live);
+                Log.Info($"[Jagd] Lebendes '{hunt.MonsterName}' in " +
+                         $"{Vector3.Distance(ObjectTable.LocalPlayer?.Position ?? live.Position, live.Position):F1} m, " +
+                         $"id={live.GameObjectId:X}, anvisiert={accepted}");
+                if (accepted) return MarkerResolve.None;
+
+                // Game refused the target (quest-locked mobs do): walk to the
+                // position it was last seen at instead of falling back to the
+                // area marker, which would be much further off.
+                position = FloorPoint(live.Position) ?? live.Position;
+                name = hunt.MonsterName;
+                stopRange = AutoWalkService.StopRange;
+                return MarkerResolve.Resolved;
+            }
+            if (!forReadout) _huntingLog.LogNearbyBattleNpcs(hunt.MonsterName);
+
+            if (hunt.MapId != 0 && hunt.MapId != ClientState.MapId)
+            {
+                var hop = _places.FindFirstHopToMap(hunt.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.HuntingNoRoute(hunt.MonsterName, hunt.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = FloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position = hopWalk.Value;
+                name = hop.Name;
+                stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            // AREAL ABSUCHEN. Der Lebensraum ist ein GEBIET, und die
+            // Kartenbeschriftung ist nur einer seiner Punkte - "Sandtor"
+            // besteht aus sechs Teilstuecken ueber rund 500 mal 400 Meter, und
+            // wer zur Beschriftung laeuft, steht am Rand und findet nichts
+            // (User 2026-09-02). Der Suchlauf fuehrt deshalb der Reihe nach
+            // durch die Teilstuecke; jeder weitere Tastendruck geht zum
+            // naechsten, sobald der Spieler am aktuellen war. Siehe
+            // AreaRangeService und NavigationService.NextHuntSearchPart.
+            var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+            var searchPart = _navigation.NextHuntSearchPart(playerPos, advance: !forReadout);
+
+            // 40 of the 647 habitats are dungeon areas the map never marks, and
+            // for some of those the layout has no named range either. Say so
+            // instead of walking somewhere arbitrary.
+            var area = searchPart?.Position ?? hunt.Position;
+            if (area is not { } areaPos)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.HuntingAreaUnknown(hunt.MonsterName, hunt.AreaName));
+                return MarkerResolve.Failed;
+            }
+
+            var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+            // Ein Teilstueck aus dem Zonen-Layout traegt eine ECHTE Hoehe, ein
+            // Kartenmarker nicht (Kartendaten sind flach). Die eigene Hoehe
+            // unterzuschieben waere dort also schlechter als das, was die Datei
+            // sagt - deshalb nur beim Marker.
+            var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
+            var areaWalk = FloorPoint(areaSeed);
+            if (areaWalk == null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(hunt.AreaName));
+                return MarkerResolve.Failed;
+            }
+            position = areaWalk.Value;
+            // Both parts are spoken: the monster is what the player picked, the
+            // area is where they are actually being taken - the marker is the
+            // centre of the area, not the monster.
+            var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
+            name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
+            heightIsGuess = searchPart == null;
+            stopRange = _config.AutoWalkPlaceStopRange;
+            if (searchPart is { } sp)
+                Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' " +
+                         $"({sp.Position.X:F0}|{sp.Position.Y:F0}|{sp.Position.Z:F0}) fuer '{hunt.MonsterName}'.");
+            return MarkerResolve.Resolved;
+        }
+
+        // Inhalts-Eingang aus der Kategorie "Alle Inhalte". Dieselbe Wegfuehrung
+        // wie beim Quest-Ziel und aus demselben Grund: die Tuer ist ein fester Ort
+        // auf der Karte, und in einer anderen Zone ist das einzig Sinnvolle der
+        // Uebergang, der dorthin fuehrt. Zone FRISCH geprueft - das Merkmal aus
+        // dem Moment der Auswahl ist nach einem Teleport veraltet.
+        var duty = _navigation.SelectedDutyEntrance;
+        if (duty != null)
+        {
+            if (duty.TerritoryTypeId != ClientState.TerritoryType)
+            {
+                var hop = _places.FindFirstHopToMap(duty.MapId, out _);
+                if (hop == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.DutyNoRouteTo(duty.Name, duty.ZoneName));
+                    return MarkerResolve.Failed;
+                }
+                var hopY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
+                var hopWalk = FloorPoint(hop.Position with { Y = hopY });
+                if (hopWalk == null)
+                {
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointAt(hop.Name));
+                    return MarkerResolve.Failed;
+                }
+                position = hopWalk.Value;
+                name = hop.Name;
+                stopRange = _config.AutoWalkTransitionStopRange;
+                heightIsGuess = true;
+                return MarkerResolve.Resolved;
+            }
+
+            // In dieser Zone: die Tuer steht mit VOLLER Hoehe im Level-Sheet, die
+            // Hoehe ist also nicht geraten (anders als bei jedem Kartenmarker).
+            // ResolveFloorPoint bleibt trotzdem davor - es setzt den Punkt auf die
+            // begehbare Flaeche, falls die Sheet-Stelle knapp daneben liegt.
+            position = FloorPoint(duty.Position) ?? duty.Position;
+            name = duty.Name;
+            // Interaktionsreichweite wie bei einem Objekt: der Spieler will die
+            // Tuer benutzen, nicht in ihrer Naehe stehenbleiben.
+            stopRange = AutoWalkService.StopRange;
+            if (!forReadout) Log.Info($"[Inhalte] Laufe zu '{duty.Name}' in Zone {duty.TerritoryTypeId} auf {position}.");
+            return MarkerResolve.Resolved;
+        }
+
+        // Station des Dungeon-Wegs. Sie steht IMMER in der aktuellen Zone - ein
+        // Weg gilt fuer genau eine Instanz, und wer sie verlaesst, verliert die
+        // Kategorie ohnehin. Deshalb keine Zonenlogik wie bei Tuer oder Quest.
+        var dungeonStep = _navigation.SelectedDungeonStep;
+        if (dungeonStep != null)
+        {
+            // Die Hoehe stammt aus der Pfaddatei und ist echt gemessen, nicht wie
+            // bei Kartenmarkern geraten. ResolveFloorPoint bleibt trotzdem davor,
+            // weil ein aufgezeichneter Punkt in der Luft stehen kann, wenn die
+            // Aufnahme im Sprung lag - und dann faende der Lauf nichts.
+            position = FloorPoint(dungeonStep.Position) ?? dungeonStep.Position;
+            var kindWord = AccessibilityStrings.DungeonStepKindWord(dungeonStep.Kind);
+            name = dungeonStep.Name.Length > 0 ? dungeonStep.Name
+                 : kindWord.Length > 0        ? kindWord
+                 : AccessibilityStrings.DungeonWaypointWord;
+
+            // Etwas zum Benutzen will in Reichweite erreicht werden, ein
+            // Wegpunkt nur ueberhaupt. Dieselbe Unterscheidung wie zwischen
+            // Objekt und Kartenmarker.
+            stopRange = dungeonStep.Kind == DungeonStepKind.Waypoint
+                ? _config.AutoWalkPlaceStopRange
+                : AutoWalkService.StopRange;
+
+            if (!forReadout) Log.Info($"[Dungeon] Laufe zu Station {dungeonStep.Number} " +
+                     $"({dungeonStep.Kind}) auf {position}.");
+            return MarkerResolve.Resolved;
+        }
+
+        var obj = _navigation.SelectedObjectDestination;
+        if (obj != null)
+        {
+            // The game took the pick as its hard target: leave it to the target
+            // path, which re-reads the position every frame - that is what makes
+            // walking to a moving NPC work. Only when the target did NOT stick
+            // (quest props are listed but not targetable) do we steer by
+            // position, which is the whole point of remembering the object.
+            if ((TargetManager.Target?.GameObjectId ?? 0) == obj.ObjectId) return MarkerResolve.None;
+
+            // Fresh position from the object table; the remembered one is the
+            // fallback for an object that has since despawned.
+            var live = ObjectTable.FirstOrDefault(o => o.GameObjectId == obj.ObjectId);
+            var raw  = live?.Position ?? obj.Position;
+            // A loaded object has a real Y. A wide map-height projection can
+            // silently replace it with the floor above or below the NPC.
+            position = raw;
+            // The browser already stored a RESOLVED name (gathering node type,
+            // sheet name, or the honest "Objekt ohne Namen"), so this only has
+            // to guard against a pick made before that resolution existed.
+            name = ObjectNameService.IsSpeakable(obj.Name)
+                ? obj.Name
+                : AccessibilityStrings.UnnamedOfKind(live?.ObjectKind ?? ObjectKind.EventObj);
+            // Interaction range, same as the auto-walk to a game target: the
+            // player has to end up close enough to actually use the object.
+            stopRange = AutoWalkService.StopRange;
+            if (!forReadout) Log.Info($"[Nav] Objekt-Auswahl '{name}' (id={obj.ObjectId:X}) nicht anvisiert - " +
+                     $"laufe zur Position {position} (Objekt {(live != null ? "da" : "weg")}).");
+            return MarkerResolve.Resolved;
+        }
+
+        return MarkerResolve.None;
+    }
+
     /// <summary>
     /// Auto-walk key while a bestiary monster row is focused: targets and walks
     /// to the nearest live specimen, or announces its habitat when none is near.
@@ -3335,17 +4254,19 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>
     /// Starts the post-login quiet period: the game builds its entire HUD here
     /// and every window would otherwise be announced (see
-    /// <see cref="UIReaderService.BeginLoginQuiet"/>). The keybind dump is also
+    /// <see cref="UIReaderService.BeginLoginQuiet"/>). The conflict check is also
     /// re-armed, so a character switch re-checks for key conflicts.
     /// </summary>
     private void OnLogin()
     {
         _uiReader.BeginLoginQuiet(_config.LoginQuietSeconds);
-        _keybindsDumped = false;
+        _keybindsChecked = false;
     }
 
     public void Dispose()
     {
+        GameDisplayText.Configure(null, null);
+        _questObjectives.Dispose();
         Framework.Update -= OnFrameworkUpdate;
         ClientState.Login -= OnLogin;
         CommandManager.RemoveHandler("/acc");
@@ -3371,4 +4292,3 @@ public sealed class Plugin : IDalamudPlugin
         _tolk.Dispose();
     }
 }
-

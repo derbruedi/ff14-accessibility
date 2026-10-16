@@ -1,0 +1,33 @@
+{
+  "version": "6.08.69",
+  "added_unique_phrases": 104,
+  "previous_translations_unchanged": true,
+  "groups": {
+    "Tail Shape": {
+      "icons": 64,
+      "unique_short_and_full_phrases": 32,
+      "missing": []
+    },
+    "Fur Pattern": {
+      "icons": 20,
+      "unique_short_and_full_phrases": 10,
+      "missing": []
+    },
+    "Ear Shape (Viera)": {
+      "icons": 16,
+      "unique_short_and_full_phrases": 10,
+      "missing": []
+    },
+    "Face Paint": {
+      "icons": 832,
+      "unique_short_and_full_phrases": 52,
+      "missing": []
+    }
+  },
+  "limits": "Static source and resource verification. Does not run FFXIV or the screen reader.",
+  "total_icons": 932,
+  "source_tables_unchanged": {
+    "CharaMakeIconText.cs": "fa2a44256512f36915d0748b5246032cf0476bc0e2462f9c16afb5b172bd090a",
+    "CharaMakeShapeText.cs": "9502fd1d635bdff1affd5223717115b4bad3be9d64ab79417753ed7c6d037a43"
+  }
+}

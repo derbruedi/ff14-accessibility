@@ -118,7 +118,10 @@ public sealed record QuestDestination(
     // mir etwas?" die eigentliche Frage, und die Markierung allein beantwortet
     // sie nicht (der Marker traegt Name, Ort und eine Id, aber keinen
     // Quest-Zeiger).
-    string Unlock = "");
+    string Unlock = "",
+    uint QuestId = 0,
+    uint ObjectiveLevelId = 0,
+    uint NativeMarkerId = 0);
 
 /// <summary>
 /// Reads the objective markers of ACCEPTED quests from the game's map
@@ -140,16 +143,21 @@ public sealed class QuestMarkerService
     private readonly IClientState _clientState;
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
+    private readonly string? _harmoniaPacks;
+    private bool _questNameRussian;
+    private Dalamud.Game.ClientLanguage _questNameLanguage;
+    private int _questNameDisplay;
+    private readonly TravelMapIdentity _mapIdentity;
 
-    public QuestMarkerService(IClientState clientState, IDataManager data, IPluginLog log)
+    public QuestMarkerService(IClientState clientState, IDataManager data, IPluginLog log, string? harmoniaPacks = null)
     {
         _clientState = clientState;
         _data = data;
         _log = log;
+        _harmoniaPacks = harmoniaPacks;
+        _mapIdentity = new(data);
     }
 
-    private Dictionary<string, QuestKind>? _questKinds;
-    private Dictionary<string, uint>? _questIds;
     private Dictionary<uint, List<EventRangeRow>>? _eventRangesByQuestId;
 
     /// <summary>One Level Type-49 row, cached once from the sheet.</summary>
@@ -157,47 +165,24 @@ public sealed class QuestMarkerService
         uint LevelId, Vector3 Position, float Radius, ushort Territory, uint MapId);
 
     /// <summary>
-    /// Quest name -> kind, built once from the Quest sheet by walking the game's
-    /// own journal taxonomy (JournalGenre -> JournalCategory -> JournalSection).
-    /// Matched against the marker label, because MarkerInfo carries no quest
-    /// pointer - only a label and an ObjectiveId.
-    /// <para>
-    /// Rows WITHOUT a journal genre are skipped, and that is what makes the name
-    /// lookup trustworthy: the sheet holds duplicate quest names whose sections
-    /// disagree (e.g. "In flagranti" as both section 0 and "UngÃ¼ltige
-    /// Kategorie"). Measured on the 2026-08-06 sheet dump: 44 of 5276 names
-    /// conflict, and skipping the genre-less rows brings that to exactly 0.
-    /// </para>
+    /// Resolve the marker's rendered name to quest rows first. The game's
+    /// English sheet name does not match a Russian translation's map label.
+    /// If a shared name belongs to different journal sections, do not guess.
     /// </summary>
-    private Dictionary<string, QuestKind> QuestKinds()
+    private QuestKind KindForLabel(string label)
     {
-        if (_questKinds != null) return _questKinds;
-
-        var kinds = new Dictionary<string, QuestKind>();
-        foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
+        var result = QuestKind.Unknown;
+        foreach (var quest in QuestRows(label))
         {
-            var name = quest.Name.ExtractText();
-            if (string.IsNullOrWhiteSpace(name)) continue;
-            if (quest.JournalGenre.RowId == 0) continue;   // "UngÃ¼ltige Kategorie" row
-
             var genre = quest.JournalGenre.ValueNullable;
             var category = genre?.JournalCategory.ValueNullable;
             if (category == null) continue;
-
             var kind = KindForSection(category.Value.JournalSection.RowId);
-            if (kind != QuestKind.Unknown)
-                kinds[name] = kind;
+            if (kind == QuestKind.Unknown) continue;
+            if (result != QuestKind.Unknown && result != kind) return QuestKind.Unknown;
+            result = kind;
         }
-
-        _questKinds = kinds;
-        _log.Info($"[Quest] Quest-Arten geladen: {kinds.Count} benannte Quests " +
-                  $"({kinds.Values.Count(k => k == QuestKind.MainStory)} Hauptszenario, " +
-                  $"{kinds.Values.Count(k => k == QuestKind.SideQuest)} Nebenauftrag, " +
-                  $"{kinds.Values.Count(k => k == QuestKind.Job)} Job, " +
-                  $"{kinds.Values.Count(k => k == QuestKind.BeastTribe)} Freundesvolk, " +
-                  $"{kinds.Values.Count(k => k == QuestKind.Chronicle)} Chronik, " +
-                  $"{kinds.Values.Count(k => k == QuestKind.Other)} Sonstiges).");
-        return kinds;
+        return result;
     }
 
     /// <summary>
@@ -210,7 +195,7 @@ public sealed class QuestMarkerService
     /// <see cref="QuestKind.Unknown"/> and stay silent rather than being folded
     /// into a neighbouring label that would misname them.
     /// </summary>
-    private static QuestKind KindForSection(uint sectionId) => sectionId switch
+    internal static QuestKind KindForSection(uint sectionId) => sectionId switch
     {
         0 or 1 => QuestKind.MainStory,
         2      => QuestKind.Chronicle,
@@ -221,55 +206,22 @@ public sealed class QuestMarkerService
         _      => QuestKind.Unknown,
     };
 
-    private Dictionary<string, int>? _questLevels;
-
     /// <summary>
-    /// Quest name -> required level, built once from the Quest sheet. Used only
-    /// as a FALLBACK: the marker carries its own RecommendedLevel, and matching
-    /// by name is imprecise (FFXIV reuses quest names, e.g. for repeatables -
-    /// the first row wins here). Level = ClassJobLevel[0], the field the journal
-    /// shows; both sources are logged per marker so a mismatch is visible.
+    /// Required level from the matching quest rows. Used only when the marker
+    /// has no RecommendedLevel. Reused names with different levels stay unknown.
     /// </summary>
-    private Dictionary<string, int> QuestLevels()
+    private int LevelForLabel(string label)
     {
-        if (_questLevels != null) return _questLevels;
-
-        var levels = new Dictionary<string, int>();
-        foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
+        var result = 0;
+        foreach (var quest in QuestRows(label))
         {
-            var name = quest.Name.ExtractText();
-            if (string.IsNullOrWhiteSpace(name) || levels.ContainsKey(name)) continue;
-            if (quest.ClassJobLevel.Count > 0)
-                levels[name] = quest.ClassJobLevel[0];
+            if (quest.ClassJobLevel.Count == 0) continue;
+            var level = quest.ClassJobLevel[0];
+            if (level <= 0) continue;
+            if (result != 0 && result != level) return 0;
+            result = level;
         }
-
-        _questLevels = levels;
-        _log.Info($"[Quest] Quest-Stufen aus dem Sheet geladen: {levels.Count}");
-        return levels;
-    }
-
-    /// <summary>
-    /// Quest name â†’ sheet RowId, built once. Same JournalGenre filter as
-    /// <see cref="QuestKinds"/> so duplicate names without a genre cannot steal
-    /// the id of a real journal quest. First matching row wins (same caveat as
-    /// levels: reused names are imperfect).
-    /// </summary>
-    private Dictionary<string, uint> QuestIds()
-    {
-        if (_questIds != null) return _questIds;
-
-        var ids = new Dictionary<string, uint>();
-        foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
-        {
-            var name = quest.Name.ExtractText();
-            if (string.IsNullOrWhiteSpace(name)) continue;
-            if (quest.JournalGenre.RowId == 0) continue;
-            ids.TryAdd(name, quest.RowId);
-        }
-
-        _questIds = ids;
-        _log.Info($"[Quest] Quest-Ids aus dem Sheet geladen: {ids.Count}");
-        return ids;
+        return result;
     }
 
     /// <summary>
@@ -323,10 +275,7 @@ public sealed class QuestMarkerService
         if (map == null) return result;
 
         var currentTerritory = _clientState.TerritoryType;
-        var questIds = QuestIds();
         var rangesByQuest = EventRangesByQuestId();
-        var kinds = QuestKinds();
-        var levels = QuestLevels();
         var seenLevel = new HashSet<uint>();
         var trace = new List<string>();
 
@@ -334,8 +283,8 @@ public sealed class QuestMarkerService
         {
             var questName = marker.Label.ToString();
             if (string.IsNullOrWhiteSpace(questName)) continue;
-            if (!questIds.TryGetValue(questName, out var questId)) continue;
-            if (!rangesByQuest.TryGetValue(questId, out var ranges)) continue;
+            var quests = QuestRows(questName);
+            if (quests.Count == 0) continue;
 
             var circles = new List<(Vector3 Centre, float Radius)>();
             var locations = marker.MarkerData.Count;
@@ -348,51 +297,53 @@ public sealed class QuestMarkerService
             }
             if (circles.Count == 0) continue;
 
-            var kind = kinds.GetValueOrDefault(questName, QuestKind.Unknown);
-            var sheetLevel = levels.GetValueOrDefault(questName, 0);
-
-            foreach (var range in ranges)
+            var kind = KindForLabel(questName);
+            var sheetLevel = LevelForLabel(questName);
+            var markerLevel = 0;
+            for (var i = 0; i < locations; i++)
             {
-                if (range.Territory != currentTerritory) continue;
-                if (!seenLevel.Add(range.LevelId)) continue;
+                var data = marker.MarkerData[i];
+                if (data.TerritoryTypeId != currentTerritory) continue;
+                if (data.RecommendedLevel > 0) { markerLevel = data.RecommendedLevel; break; }
+            }
+            var level = markerLevel > 0 ? markerLevel : sheetLevel;
 
-                var near = false;
-                foreach (var (centre, radius) in circles)
+            foreach (var quest in quests)
+            {
+                if (!rangesByQuest.TryGetValue(quest.RowId, out var ranges)) continue;
+                foreach (var range in ranges)
                 {
-                    var limit = MathF.Max(radius, 1f) + EventRangeMarkerSlack;
-                    var dx = range.Position.X - centre.X;
-                    var dz = range.Position.Z - centre.Z;
-                    if (MathF.Sqrt(dx * dx + dz * dz) <= limit)
+                    if (range.Territory != currentTerritory) continue;
+
+                    var near = false;
+                    foreach (var (centre, radius) in circles)
                     {
-                        near = true;
-                        break;
+                        var limit = MathF.Max(radius, 1f) + EventRangeMarkerSlack;
+                        var dx = range.Position.X - centre.X;
+                        var dz = range.Position.Z - centre.Z;
+                        if (MathF.Sqrt(dx * dx + dz * dz) <= limit)
+                        {
+                            near = true;
+                            break;
+                        }
                     }
+                    if (!near || !seenLevel.Add(range.LevelId)) continue;
+
+                    result.Add(new QuestDestination(
+                        questName,
+                        string.Empty,
+                        range.Position,
+                        range.Radius,
+                        range.Territory,
+                        range.MapId,
+                        InCurrentZone: true,
+                        kind,
+                        level,
+                        QuestMarkerRole.QuestTrigger));
+
+                    trace.Add($"'{questName}' QuestId={quest.RowId} LevelId={range.LevelId} " +
+                              $"pos=({range.Position.X:F0}|{range.Position.Z:F0}) r={range.Radius:F1}");
                 }
-                if (!near) continue;
-
-                var markerLevel = 0;
-                for (var i = 0; i < locations; i++)
-                {
-                    var data = marker.MarkerData[i];
-                    if (data.TerritoryTypeId != currentTerritory) continue;
-                    if (data.RecommendedLevel > 0) { markerLevel = data.RecommendedLevel; break; }
-                }
-                var level = markerLevel > 0 ? markerLevel : sheetLevel;
-
-                result.Add(new QuestDestination(
-                    questName,
-                    string.Empty,
-                    range.Position,
-                    range.Radius,
-                    range.Territory,
-                    range.MapId,
-                    InCurrentZone: true,
-                    kind,
-                    level,
-                    QuestMarkerRole.QuestTrigger));
-
-                trace.Add($"'{questName}' LevelId={range.LevelId} " +
-                          $"pos=({range.Position.X:F0}|{range.Position.Z:F0}) r={range.Radius:F1}");
             }
         }
 
@@ -406,7 +357,7 @@ public sealed class QuestMarkerService
     /// Logs every marker as ground-truth probe for the two open runtime
     /// questions: zone field correctness and marker height vs. navmesh.
     /// </summary>
-    public unsafe List<QuestDestination> GetDestinations()
+    public unsafe List<QuestDestination> GetDestinations(bool log = true)
     {
         var result = new List<QuestDestination>();
         var map = Map.Instance();
@@ -419,7 +370,7 @@ public sealed class QuestMarkerService
         var currentTerritory = _clientState.TerritoryType;
         // QuestMarkers is a fixed 30-slot span; empty slots have a blank label.
         foreach (ref var marker in map->QuestMarkers)
-            AddMarkerDestinations(result, marker, currentTerritory, "Quest");
+            AddMarkerDestinations(result, marker, currentTerritory, "Quest", log: log);
 
         return result;
     }
@@ -430,7 +381,7 @@ public sealed class QuestMarkerService
     /// (StdList) - only real entries are present, no empty slots. Lets a blind
     /// player discover what quests can be picked up in the area.
     /// </summary>
-    public unsafe List<QuestDestination> GetUnacceptedDestinations()
+    public unsafe List<QuestDestination> GetUnacceptedDestinations(bool log = true)
     {
         var result = new List<QuestDestination>();
         var map = Map.Instance();
@@ -444,7 +395,7 @@ public sealed class QuestMarkerService
         // StdList yields each MarkerInfo by value (a read-only copy); its inner
         // pointers still reference live game memory, safe to read here.
         foreach (var marker in map->UnacceptedQuestMarkers)
-            AddMarkerDestinations(result, marker, currentTerritory, "OpenQuest");
+            AddMarkerDestinations(result, marker, currentTerritory, "OpenQuest", log: log);
 
         return result;
     }
@@ -498,7 +449,7 @@ public sealed class QuestMarkerService
     /// (20000 + slot*100 + index), so objectives group under the header of the
     /// same slot. Each mapping is logged once per call for verification.
     /// </summary>
-    public unsafe Dictionary<string, string> GetQuestObjectives()
+    public unsafe Dictionary<string, string> GetQuestObjectives(bool log = true)
     {
         var map = new Dictionary<string, string>();
         var mgr = RaptureAtkUnitManager.Instance();
@@ -535,7 +486,7 @@ public sealed class QuestMarkerService
             if (!objsBySlot.TryGetValue(slot, out var objs) || objs.Count == 0) continue;
             var joined = string.Join(", ", objs);
             map[name] = joined;
-            _log.Info($"[Quest] Objective slot {slot}: '{name}' -> '{joined}'");
+            if (log) _log.Info($"[Quest] Objective slot {slot}: '{name}' -> '{joined}'");
         }
         return map;
     }
@@ -678,12 +629,14 @@ public sealed class QuestMarkerService
     /// </summary>
     private string UnlockHint(string label)
     {
+        string? result = null;
         foreach (var quest in QuestRows(label))
         {
             var hint = UnlockHint(quest);
-            if (hint.Length > 0) return hint;
+            if (result != null && result != hint) return string.Empty;
+            result = hint;
         }
-        return string.Empty;
+        return result ?? string.Empty;
     }
 
     private string UnlockHint(LuminaQuest quest)
@@ -694,11 +647,16 @@ public sealed class QuestMarkerService
         if (dungeon != 0)
             return AccessibilityStrings.QuestUnlocksDungeon(DutyName(dungeon));
 
+        // Die Blattnamen dieser vier Belohnungsarten kommen hier englisch, im
+        // Spiel stehen sie uebersetzt. Ueber die Zeilen-Id wird der russische
+        // Name geholt; die uebrigen Tabellen dieses Dienstes bleiben bewusst
+        // beim Blattnamen, weil sie ueber den Namen suchen (Label -> Zeile) -
+        // eine uebersetzte Tabelle dort wuerde die Suche brechen.
         var emote = FieldId(quest, "EmoteReward");
         if (emote != 0)
         {
             var name = _data.GetExcelSheet<LuminaEmote>().TryGetRow(emote, out var row)
-                ? row.Name.ExtractText()
+                ? RussianGameText.Name(_data, row, x => x.Name)
                 : string.Empty;
             return AccessibilityStrings.QuestUnlocksEmote(name);
         }
@@ -707,7 +665,7 @@ public sealed class QuestMarkerService
         if (action != 0)
         {
             var name = _data.GetExcelSheet<LuminaAction>().TryGetRow(action, out var row)
-                ? row.Name.ExtractText()
+                ? RussianGameText.Name(_data, row, x => x.Name)
                 : string.Empty;
             return AccessibilityStrings.QuestUnlocksAction(name);
         }
@@ -716,7 +674,7 @@ public sealed class QuestMarkerService
         if (general != 0)
         {
             var name = _data.GetExcelSheet<LuminaGeneralAction>().TryGetRow(general, out var row)
-                ? row.Name.ExtractText()
+                ? RussianGameText.Name(_data, row, x => x.Name)
                 : string.Empty;
             return AccessibilityStrings.QuestUnlocksAction(name);
         }
@@ -725,7 +683,7 @@ public sealed class QuestMarkerService
         if (classJob != 0)
         {
             var name = _data.GetExcelSheet<LuminaClassJob>().TryGetRow(classJob, out var row)
-                ? row.Name.ExtractText()
+                ? RussianGameText.Name(_data, row, x => x.Name)
                 : string.Empty;
             return AccessibilityStrings.QuestUnlocksClassJob(name);
         }
@@ -736,29 +694,54 @@ public sealed class QuestMarkerService
         return string.Empty;
     }
 
-    /// <summary>Quest-Zeilen des Blattes zu einem Markierungs-Label. Ein Name
-    /// darf auf mehrere Zeilen zeigen ("Way of the Archer" steht zweimal im
-    /// Blatt); gelesen werden dann alle, und der erste Freischalt-Hinweis
-    /// gewinnt. Zeilen ohne Journal-Gattung ("Ungueltige Kategorie") fallen
-    /// raus - dieselbe Regel, die die uebrigen Tabellen konfliktfrei macht.</summary>
+    /// <summary>Quest rows by either the game's sheet name or the Russian name
+    /// rendered by the unofficial translation. Russian names come from our
+    /// generated table and source-verified installed Harmonia packs. Keep all rows for ambiguous names so
+    /// callers can refuse conflicting kinds, levels and unlock claims.</summary>
     private List<LuminaQuest> QuestRows(string label)
     {
-        if (_questsByName == null)
+        if (_questsByName == null || _questNameRussian != Loc.IsRussian || _questNameLanguage != _data.Language
+            || _questNameDisplay != GameDisplayText.Revision)
         {
             var map = new Dictionary<string, List<LuminaQuest>>(System.StringComparer.OrdinalIgnoreCase);
+            var legacy = new Dictionary<string, List<LuminaQuest>>(System.StringComparer.OrdinalIgnoreCase);
+            var shownLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            static void AddName(Dictionary<string, List<LuminaQuest>> map, string name, LuminaQuest quest)
+            {
+                if (string.IsNullOrWhiteSpace(name)) return;
+                name = name.Trim();
+                if (!map.TryGetValue(name, out var list)) map[name] = list = new List<LuminaQuest>();
+                if (!list.Any(row => row.RowId == quest.RowId)) list.Add(quest);
+            }
+
             foreach (var quest in _data.GetExcelSheet<LuminaQuest>())
             {
-                var name = quest.Name.ExtractText();
-                if (string.IsNullOrWhiteSpace(name)) continue;
+                var displayed = GameDisplayText.Find(_data, quest, x => x.Name);
+                var shown = (displayed ?? quest.Name).ExtractText().Trim();
+                if (!string.IsNullOrEmpty(shown)) shownLabels.Add(shown);
                 if (quest.JournalGenre.RowId == 0) continue; // "Ungueltige Kategorie"
-                if (!map.TryGetValue(name, out var list)) map[name] = list = new List<LuminaQuest>();
-                list.Add(quest);
+                AddName(map, shown, quest);
+                AddName(legacy, quest.Name.ExtractText(), quest);
+                if (Loc.IsRussian && RussianQuestNames.QuestName(quest.RowId) is { } russian)
+                    AddName(legacy, russian, quest);
             }
+            if (Loc.IsRussian)
+                foreach (var entry in HarmoniaQuestNames.LoadInstalled(_harmoniaPacks, _data, _log))
+                    if (_data.GetExcelSheet<LuminaQuest>().TryGetRow(entry.RowId, out var quest) && quest.JournalGenre.RowId != 0)
+                        AddName(map, entry.Name, quest);
+            // A label currently shown by the game takes precedence over an
+            // older catalog alias belonging to a different quest. Keep every
+            // real duplicate, so conflicting current categories stay unknown.
+            foreach (var (name, rows) in legacy)
+                if (!map.ContainsKey(name) && !shownLabels.Contains(name)) map[name] = rows;
             _questsByName = map;
-            _log.Info($"[Quest] Quest-Zeilen nach Namen: {map.Count}");
+            _questNameRussian = Loc.IsRussian;
+            _questNameLanguage = _data.Language;
+            _questNameDisplay = GameDisplayText.Revision;
+            _log.Info($"[Quest] Quest-Zeilen nach Blatt- und russischen Namen: {map.Count}");
         }
 
-        return _questsByName.GetValueOrDefault(label, new List<LuminaQuest>());
+        return _questsByName.GetValueOrDefault(label.Trim(), new List<LuminaQuest>());
     }
 
     /// <summary>
@@ -844,16 +827,16 @@ public sealed class QuestMarkerService
 
     private unsafe void AddMarkerDestinations(
         List<QuestDestination> result, MarkerInfo marker, uint currentTerritory, string tag,
-        QuestMarkerRole role = QuestMarkerRole.Quest)
+        QuestMarkerRole role = QuestMarkerRole.Quest, bool log = true)
     {
         var questName = marker.Label.ToString();
         if (string.IsNullOrWhiteSpace(questName)) return; // empty slot
 
-        var kind = QuestKinds().GetValueOrDefault(questName, QuestKind.Unknown);
+        var kind = KindForLabel(questName);
         // The marker's own level beats the name lookup; the sheet only fills in
         // when the game leaves RecommendedLevel at 0 (runtime behaviour unknown,
         // hence both values in the log below).
-        var sheetLevel = QuestLevels().GetValueOrDefault(questName, 0);
+        var sheetLevel = LevelForLabel(questName);
 
         // Was die Quest freischaltet - nur fuer normale Quest-Marker (nicht Leve).
         // Bei angenommenen Quests wird der Teilsatz in der Ansage weggelassen.
@@ -871,18 +854,20 @@ public sealed class QuestMarkerService
         {
             var data = marker.MarkerData[i];
             var tooltip = data.TooltipString != null ? data.TooltipString->ToString() : string.Empty;
-            var inZone = data.TerritoryTypeId == currentTerritory;
-            _log.Info($"[{tag}] Marker '{questName}' [{i + 1}/{locations}]: tt='{tooltip}' unlock='{unlock}' " +
+            var inZone = data.TerritoryTypeId == currentTerritory && (data.MapId == 0
+                || _mapIdentity.Canonical(data.MapId) == _mapIdentity.Canonical(_clientState.MapId));
+            if (log) _log.Info($"[{tag}] Marker '{questName}' [{i + 1}/{locations}]: tt='{tooltip}' unlock='{unlock}' " +
                       $"pos=({data.Position.X:F1}|{data.Position.Y:F1}|{data.Position.Z:F1}) " +
                       $"r={data.Radius:F1} terr={data.TerritoryTypeId} (aktuell={currentTerritory}) " +
                       $"map={data.MapId} icon={data.IconId} render={marker.ShouldRender} " +
+                      $"kind={kind} questIds={string.Join(",", QuestRows(questName).Select(q => q.RowId))} " +
                       $"lvlMarker={data.RecommendedLevel} lvlSheet={sheetLevel}");
             var level = data.RecommendedLevel > 0 ? data.RecommendedLevel : sheetLevel;
 
             // The object behind THIS location, over the game's own link (the
             // same one GetQuestObjectIds uses): LevelId -> Level sheet row ->
-            // Level.Object, typed by Level.Type. Only rows of the current zone
-            // count, for the same reason as there. 0 means "pure position
+            // Level.Object, typed by Level.Type. Only rows of the marker's zone
+            // count; a foreign-zone identity is resolved only after arrival. 0 means "pure position
             // marker" - an area or a "go to X", where there is nothing to aim
             // at and the plugin must not guess one.
             var targetBaseId = 0u;
@@ -891,8 +876,10 @@ public sealed class QuestMarkerService
                 && _data.GetExcelSheet<LuminaLevel>().TryGetRow(data.LevelId, out var levelRow))
             {
                 var territory = levelRow.Territory.RowId;
-                if (levelRow.Object.RowId != 0 && (territory == 0 || territory == currentTerritory))
+                if (territory == 0 || territory == data.TerritoryTypeId)
                 {
+                    // Position-only Type-51 circles have Object=0, but their
+                    // type still distinguishes an area from an exact actor.
                     targetBaseId = levelRow.Object.RowId;
                     targetType   = levelRow.Type;
                 }
@@ -900,7 +887,9 @@ public sealed class QuestMarkerService
 
             result.Add(new QuestDestination(questName, tooltip, data.Position,
                 data.Radius, data.TerritoryTypeId, data.MapId, inZone, kind, level, role,
-                targetBaseId, targetType, unlock));
+                targetBaseId, targetType, unlock,
+                role == QuestMarkerRole.Quest && QuestRows(questName) is { Count: 1 } rows ? rows[0].RowId : 0, data.LevelId,
+                role == QuestMarkerRole.Quest ? marker.ObjectiveId : 0));
         }
     }
 }

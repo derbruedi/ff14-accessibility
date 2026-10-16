@@ -214,10 +214,9 @@ public sealed class ChatReaderService : IDisposable
             }
         }
 
-        // Same switch as CombatService.AnnounceEnemyCast: when off, mute battle-log
-        // Action lines ("setzt … ein" / "wirkt …") for party and enemies alike.
-        // Archive already ran above; only speech is gated. Damage/heal/buff kinds stay.
-        if (speak && !AllowSpeakActionLog(msg.LogKind))
+        // Action lines include every nearby player's casts and repeat the dedicated
+        // enemy warnings. Keep them in the chat archive, but never speak this flood.
+        if (speak && msg.LogKind == XivChatType.Action)
             speak = false;
 
         if (!speak) return;
@@ -654,15 +653,6 @@ public sealed class ChatReaderService : IDisposable
     /// </summary>
     private static bool IsBattleLogLine(XivChatType type) =>
         (int)type is >= BattleLogMin and <= BattleLogMax;
-
-    /// <summary>
-    /// Whether a battle-log Action line (kind 43) may be spoken.
-    /// Gated by <see cref="Configuration.AnnounceEnemyCast"/> together with the
-    /// plugin's enemy-cast warnings, so one Ansagen switch covers both sources of
-    /// "someone is casting X" spam. Non-Action battle kinds are unaffected.
-    /// </summary>
-    private bool AllowSpeakActionLog(XivChatType kind) =>
-        kind != XivChatType.Action || _config.AnnounceEnemyCast;
 
     /// <summary>
     /// Whether a tab's speech starts switched ON.

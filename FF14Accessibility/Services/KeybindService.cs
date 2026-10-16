@@ -10,7 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 namespace FF14Accessibility.Services;
 
 /// <summary>
-/// Reads the game's live keybind table and dumps it to a file for analysis.
+/// Reads the game's live keybind table, checks conflicts and exports it on request.
 /// Source of truth: UIInputData.Instance()->InputData.Keybinds (verified via
 /// ilspycmd against FFXIVClientStructs.dll, see docs/game-api.md "Keybind-System").
 /// The dump includes a conflict check: which game actions share a key with the
@@ -29,7 +29,7 @@ public sealed class KeybindService
 
     /// <summary>
     /// True once the game's keybind table is loaded and readable.
-    /// Used to defer the automatic dump until the data exists.
+    /// Used to defer the automatic conflict check until the data exists.
     /// </summary>
     public unsafe bool IsReady()
     {
@@ -46,19 +46,27 @@ public sealed class KeybindService
     /// that only share the physical key are listed as info.
     /// </summary>
     /// <param name="pluginKeys">Plugin hotkeys as (function, key label, VK code, modifiers).</param>
-    /// <param name="announce">False for the automatic post-login dump: it runs
-    /// silently (log/file only) and only speaks up when a real key conflict
-    /// exists - the success announcement was noise at every login (user
-    /// 2026-07-13). Manual /acc keys keeps full spoken feedback.</param>
-    public unsafe void DumpKeybinds(
+    public void DumpKeybinds(
+        IReadOnlyList<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> pluginKeys)
+        => CheckKeybinds(pluginKeys, exportToDesktop: true);
+
+    /// <summary>
+    /// Checks conflicts after login without creating or updating a desktop file.
+    /// Only real conflicts receive spoken feedback.
+    /// </summary>
+    public void CheckConflicts(
+        IReadOnlyList<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> pluginKeys)
+        => CheckKeybinds(pluginKeys, exportToDesktop: false);
+
+    private unsafe void CheckKeybinds(
         IReadOnlyList<(string Function, string KeyName, int VirtualKey, bool Ctrl, bool Shift, bool Alt)> pluginKeys,
-        bool announce = true)
+        bool exportToDesktop)
     {
         var uiInput = UIInputData.Instance();
         if (uiInput == null)
         {
             _log.Warning("[Keys] UIInputData.Instance() ist null.");
-            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+            if (exportToDesktop) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
             return;
         }
 
@@ -66,7 +74,7 @@ public sealed class KeybindService
         if (uiInput->InputData.Keybinds == null || numKeybinds <= 0 || numKeybinds > 4096)
         {
             _log.Warning($"[Keys] Keybind-Tabelle unplausibel: Keybinds={(nint)uiInput->InputData.Keybinds:X}, Num={numKeybinds}");
-            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+            if (exportToDesktop) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
             return;
         }
 
@@ -135,28 +143,31 @@ public sealed class KeybindService
             }
         }
 
-        var dumpFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-            "FFXIV_Keybinds.txt");
-        try
+        if (exportToDesktop)
         {
-            File.WriteAllText(dumpFile, sb.ToString(), Encoding.UTF8);
-        }
-        catch (Exception ex) // external call: file system
-        {
-            _log.Error(ex, "[Keys] Konnte Dump-Datei nicht schreiben.");
-            if (announce) _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
-            return;
-        }
+            var dumpFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                "FFXIV_Keybinds.txt");
+            try
+            {
+                File.WriteAllText(dumpFile, sb.ToString(), Encoding.UTF8);
+            }
+            catch (Exception ex) // external call: file system
+            {
+                _log.Error(ex, "[Keys] Konnte Dump-Datei nicht schreiben.");
+                _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpFailed);
+                return;
+            }
 
-        _log.Info($"[Keys] {boundCount} Aktionen mit Taste, {conflictCount} Plugin-Konflikte. Gespeichert: {dumpFile}");
-        // Conflicts are always spoken - the user must know a plugin key is dead.
-        // At login (announce: false) only the short form: the long sentence
-        // landed in the HUD build-up and was cut off anyway.
-        if (announce)
+            _log.Info($"[Keys] {boundCount} Aktionen mit Taste, {conflictCount} Plugin-Konflikte. Gespeichert: {dumpFile}");
             _tolk.SpeakInterrupt(AccessibilityStrings.KeybindDumpSaved(boundCount, conflictCount));
-        else if (conflictCount > 0)
-            _tolk.Speak(AccessibilityStrings.KeybindConflictsShort(conflictCount));
+        }
+        else
+        {
+            _log.Info($"[Keys] {boundCount} Aktionen mit Taste, {conflictCount} Plugin-Konflikte.");
+            if (conflictCount > 0)
+                _tolk.Speak(AccessibilityStrings.KeybindConflictsShort(conflictCount));
+        }
     }
 
     /// <summary>

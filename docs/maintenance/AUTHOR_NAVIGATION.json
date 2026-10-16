@@ -1,0 +1,104 @@
+{
+  "Repository": "https://github.com/derbruedi/ff14-accessibility",
+  "Commit": "e006e9de6aefc4f7b6246782f225fa52389e3b63",
+  "PreviousForkCommit": "2ae243150c9d65061c5386afdb42173f82f13983",
+  "Files": [
+    {
+      "Path": "FF14Accessibility/Services/AutoWalkService.cs",
+      "Sha256": "e79a4312ef704cbc8192606658b65cb8e20f6734b23179321d6855af707c99db"
+    },
+    {
+      "Path": "FF14Accessibility/Services/NavmeshIpc.cs",
+      "Sha256": "17e31d66a576e36e56f463642f730bd8ce228b2f5e8784b2dbf731c5a139e31c"
+    },
+    {
+      "Path": "FF14Accessibility/Services/FlightService.cs",
+      "Sha256": "a56f7b4fead7e1197fb588b367791045bfe6bbe4d1f81fdf09873e437adfabbd"
+    },
+    {
+      "Path": "FF14Accessibility/Services/TrailService.cs",
+      "Sha256": "f406fa83f3a9f923514452e6364ab933d4a3539639578a48faa85e2f895e3edf"
+    },
+    {
+      "Path": "FF14Accessibility/Services/ZoneTransitionHandler.cs",
+      "Sha256": "c39042c78853fcc731bf56dda2a0e099022c0549ab97c5f6d592b3558600ee4f"
+    },
+    {
+      "Path": "FF14Accessibility/Services/RouteService.cs",
+      "Sha256": "a4a56ca8680110142732b6d53bde3a23d115df95464a316b3c1dac8f4ee4538f"
+    },
+    {
+      "Path": "FF14Accessibility/Services/MeshBridgeService.cs",
+      "Sha256": "3b587bd39ad4eb819fbf2e25ccd4357f2980197e1cefaeedf6ae47aca1f750a8"
+    },
+    {
+      "Path": "FF14Accessibility/Services/FacingService.cs",
+      "Sha256": "0c4e37b19d088582bc4066530a605beb5567331510ca515216edea687ac825c6"
+    },
+    {
+      "Path": "FF14Accessibility/Services/ObstacleService.cs",
+      "Sha256": "69adbffc97cfd3de5f5ea5bdb0e69351c6e5a7aa730e2d7d4b051a9989d6d216"
+    },
+    {
+      "Path": "FF14Accessibility/Services/MovementAudioService.cs",
+      "Sha256": "1ece1c40191559cb81d31a54b0af9e56a855a355710163b0b693b06d8a65d695"
+    },
+    {
+      "Path": "FF14Accessibility/Services/DeepDungeonMesh.cs",
+      "Sha256": "dbc7e5368596369824de20452a258f6471e18ae7aa1dc680122e6e8dd7cdc4a2"
+    },
+    {
+      "Path": "FF14Accessibility/Services/DungeonRouteService.cs",
+      "Sha256": "e9769f540a28f363cd0b66869397516a853ab3f5eba1d54a81024a3e568ff22c"
+    }
+  ],
+  "Resolver": {
+    "Path": "FF14Accessibility/Plugin.cs",
+    "Signature": "    private MarkerResolve TryResolveMarkerDestination(",
+    "Sha256": "b60d3ed65b59b808a39ce27fe016c0eec8da10f38c0cda816376d10901e6263c"
+  },
+  "RemovedFiles": [
+    "FF14Accessibility/Services/AutoWalkService.Context.cs",
+    "FF14Accessibility/Services/AutoWalkService.HeightPath.cs",
+    "FF14Accessibility/Services/AutoWalkService.FlightPath.cs",
+    "FF14Accessibility/Services/AutoWalkService.Follow.cs",
+    "FF14Accessibility/Services/AutoWalkService.AdaptiveGround.cs",
+    "FF14Accessibility/Services/HeightPath.cs",
+    "FF14Accessibility/Services/GroundDetour.cs",
+    "FF14Accessibility/Services/GroundPathCollision.cs",
+    "FF14Accessibility/Services/GroundTraversal.cs",
+    "FF14Accessibility/Services/GroundRouteRunner.cs",
+    "FF14Accessibility/Services/AdaptiveGroundPath.cs",
+    "FF14Accessibility/Services/AccessibilityStrings.HeightPath.cs",
+    "FF14Accessibility/Services/AccessibilityStrings.NavigationSafety.cs",
+    "FF14Accessibility/Services/AccessibilityStrings.AdaptiveGround.cs",
+    "tests/Navigation.Tests/GroundDetourTests.cs",
+    "tests/Navigation.Tests/HeightPathTests.cs",
+    "tests/Navigation.Tests/NavigationLifecycleTests.cs",
+    "tests/Navigation.Tests/AdaptiveGroundPathTests.cs",
+    "tests/Navigation.Tests/GroundRouteRunnerTests.cs",
+    "tests/Navigation.Tests/AdaptiveNavigationLifecycleTests.cs",
+    "tools/ground-detour-check/GroundDetourCheck.csproj",
+    "tools/ground-detour-check/Program.cs",
+    "tools/ground-detour-check/README.md",
+    "tools/height-path-check/GuildGeometryProbe.cs",
+    "tools/height-path-check/HeightPathCheck.csproj",
+    "tools/height-path-check/Program.cs",
+    "tools/navigation-mesh-check/NavigationMeshCheck.csproj",
+    "tools/navigation-mesh-check/Program.cs",
+    "FF14Accessibility/Plugin.NavigationPathCheck.cs",
+    "FF14Accessibility/Services/NavigationPathCheck.cs"
+  ],
+  "HuntSearch": {
+    "Path": "FF14Accessibility/Services/NavigationService.cs",
+    "Signature": "    private void BuildHuntSearch(",
+    "Sha256": "dd4084cde78432ed4620f4da8da6930cf8fd739398e8da76afe186f95e5be9a2"
+  },
+  "LocalOverrides": [
+    {
+      "Path": "FF14Accessibility/Services/AutoWalkService.cs",
+      "Sha256": "b4e627a2070e24ed6d04847f05c016a7b47cc81909357e37c6f669daa49048fc",
+      "Reason": "6.08.116: по запросу пользователя цель передана в первый запуск; подхват NPC сохраняет этап перехода автора; автоматическое перечисление длины пути убрано. Алгоритмы движения сохранены."
+    }
+  ]
+}

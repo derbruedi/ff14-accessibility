@@ -85,7 +85,7 @@ public sealed class ToastService : IDisposable
     {
         if (_targets.Target is not Dalamud.Game.ClientState.Objects.Types.IBattleChara bc) return;
 
-        var hp = bc.MaxHp == 0 ? -1 : (int)(bc.CurrentHp * 100u / bc.MaxHp);
+        var hp = bc.MaxHp == 0 ? -1 : VitalPercent.Floor(bc.CurrentHp, bc.MaxHp);
         var stati = new List<string>();
         foreach (var s in bc.StatusList)
         {

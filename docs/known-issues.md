@@ -1,38 +1,40 @@
-# Known Issues & Compatibility Warnings
+# Известные проблемы и ограничения
 
-This file is checked automatically during project setup (Step 4). When the game's engine, Unity version, or mod loader is identified, Claude scans this list and warns the user about any matching issues.
+Эта страница относится к русской версии FF14 Accessibility 6.08.73.
+[Установка](installation.md) · [Сообщить об ошибке](https://github.com/pitpamyati-netizen/ff14-accessibility/issues/new/choose).
 
-**How to add entries:** Add a new item under the matching category. Include the affected version/component, a short description, and a workaround if one exists.
+## Речь и перевод
 
----
+- Остаётся сообщение о лишнем чтении умений окружающих игроков. Исправления
+  подавления речи включены, но окончательное устранение проблемы не подтверждено.
+- Переводы сверены с данными игры `2026.09.15.0000.0000`. При изменении исходного
+  текста после патча может звучать текст игры до обновления словаря.
+- Перевод озвучивания не меняет весь видимый текст игры. Имена игроков и их
+  сообщения не переводятся. Не все окна игры и сторонних плагинов доступны.
 
-## Unity + MelonLoader
+## Навигация
 
-- **Unity 6000.2.2f1**: MelonLoader fails to start. Throws null-reference errors during loader initialization. No workaround known — use BepInEx instead, or wait for a MelonLoader update.
-- **Unity 2022.3.62f2**: Crash beim Start während IL2CPP-Initialisierung. BepInEx 6 Bleeding Edge crasht ebenfalls. Kein Fix bekannt. ([GitHub Issue #1063](https://github.com/LavaGang/MelonLoader/issues/1063))
-- **Unity 2022.3.58**: UnityDependencies-Download schlägt fehl. **Fix:** MelonLoader auf die neueste Version aktualisieren — die fehlende Version wurde im Dependency-Repo nachgetragen. ([GitHub Issue #936](https://github.com/LavaGang/MelonLoader/issues/936))
-- **Unity 5.x**: MelonLoader generally does not support Unity 5. Use BepInEx 5.x instead. See `docs/legacy-unity-modding.md`.
-- **Unity 4.x and older**: Neither MelonLoader nor BepInEx work. Only assembly patching is possible. See `docs/legacy-unity-modding.md`.
+Для расчёта маршрутов нужна совместимая vnavmesh. Поиск обхода у подъёма проверен
+на сохранённых картах, но физическое прохождение этого обхода в FFXIV ещё
+не подтверждено. Автоматические прыжки для преодоления таких мест не выполняются.
 
-## Unity + BepInEx
+## Установка
 
-- **Unity 6000+**: BepInEx 5.x does not support Unity 6. BepInEx 6 (bleeding edge) may work but is not stable. Check the BepInEx GitHub for the latest status before proceeding.
+Плагин 6.08.73 рассчитан на Dalamud API 15. Обновление игры может потребовать
+нового Dalamud и новой сборки плагина. Автоустановщик требует настроенного
+XIVLauncher и закрытых игры и лаунчера перед записью файлов.
 
-## Engine-Specific Issues
+Установщик проверен автоматическими сценариями, включая скачивание и установку
+в отдельную папку. Элементы окна доступны через средства доступности Windows;
+речь NVDA и реальный проход по кнопкам клавишей Tab ещё не подтверждены.
+vnavmesh предлагается при её отсутствии; существующую копию EXE не обновляет.
 
-_(Add entries here when engine-specific compatibility problems are confirmed.)_
+## Что ещё проверять в игре
 
-## Game-Specific Issues
+Последние изменения чтения экипировки, обход подъёмов, вход персонажем и создание
+списка клавиш командой `/acc keys` требуют проверки в игровых окнах.
+Подробные результаты и сценарии находятся в [журнале проверок](maintenance/VERIFICATION.md).
 
-_(Add entries here when a specific game has known modding hurdles that aren't covered by the categories above.)_
-
----
-
-## How Claude Uses This File
-
-During setup (Step 4), after detecting the engine and version:
-
-1. Read this file
-2. Check if any entry matches the detected configuration
-3. If a match is found: warn the user immediately, explain the issue, and suggest the documented workaround
-4. Log the warning in `project_status.md` so it's not forgotten
+Прежняя страница с общими проблемами Unity и MelonLoader относилась к справочным
+материалам автора, а не к FFXIV. Она сохранена в
+[исходном проекте](https://github.com/derbruedi/ff14-accessibility/blob/b5ae7936d710058410d67b7a3ab1eee628f0c852/docs/known-issues.md).

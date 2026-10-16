@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Dalamud.Plugin.Services;
+using Dalamud.Game;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
@@ -20,7 +21,16 @@ public readonly record struct XbmPetInfo(
     string Name,
     string Habitat,
     string Description,
-    ushort PlaceNameId);
+    ushort PlaceNameId,
+    uint PetId = 0,
+    ReadOnlyMemory<byte> EnglishName = default,
+    ReadOnlyMemory<byte> EnglishDescription = default)
+{
+    public string DisplayName => RussianAuthorText.Translate("PetName", PetId, EnglishName.Span, Name);
+    public string DisplayHabitat => RussianAuthorText.PlaceName(PlaceNameId, Habitat);
+    public string DisplayDescription => RussianAuthorText.Translate(
+        "XBMPetDescription", Number, EnglishDescription.Span, Description);
+}
 
 /// <summary>
 /// Liest das Bestienbuch des Bestienbaendigers (Addon <c>XBMMonsterNotebook</c>).
@@ -95,14 +105,14 @@ public sealed class XbmNotebookService
             return AccessibilityStrings.XbmPetNumberOnly(number);
         }
 
-        return AccessibilityStrings.XbmPetTile(pet.Number, pet.Name, pet.Habitat);
+        return AccessibilityStrings.XbmPetTile(pet.Number, pet.DisplayName, pet.DisplayHabitat);
     }
 
     /// <summary>Beschreibungstext zum Verweilen, oder leer.</summary>
     public string DescribeDetails(byte number)
     {
         if (!TryGetPet(number, out var pet)) return string.Empty;
-        return pet.Description;
+        return pet.DisplayDescription;
     }
 
     /// <summary>Vollstaendiger Eintrag zur Nummer, falls bekannt.</summary>
@@ -112,6 +122,22 @@ public sealed class XbmNotebookService
         if (number == 0) return false;
         BuildCache();
         return _byNumber!.TryGetValue(number, out pet);
+    }
+
+    // A translated route label is never used as a game-object lookup key.
+    public string ResolveGameName(string name)
+    {
+        BuildCache();
+        return ResolveGameName(_byNumber!.Values, name);
+    }
+
+    internal static string ResolveGameName(IEnumerable<XbmPetInfo> pets, string name)
+    {
+        foreach (var pet in pets)
+            if (string.Equals(name, pet.Name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, pet.DisplayName, StringComparison.OrdinalIgnoreCase))
+                return pet.Name;
+        return name;
     }
 
     /// <summary>True, wenn der Text genau ein Bestienbuch-Nummernschild ist.</summary>
@@ -157,6 +183,16 @@ public sealed class XbmNotebookService
                 var placeId = SafeUInt16(row, ColPlaceName);
                 var habitat = ResolvePlaceName(placeId);
                 var desc    = Clean(SafeString(row, ColDescription));
+                byte[] englishName = [], englishDescription = [];
+                try
+                {
+                    englishName = _data.GetExcelSheet<Pet>(ClientLanguage.English)
+                        .GetRow(petId).Name.Data.ToArray();
+                    englishDescription = _data.GameData.GetExcelSheet<RawRow>(
+                        Lumina.Data.Language.English, name: SheetName)!
+                        .GetRow(row.RowId).ReadStringColumn(ColDescription).Data.ToArray();
+                }
+                catch { /* Missing or changed source keeps the actual game text. */ }
 
                 if (row.RowId == 1 && !_sheetLogged)
                 {
@@ -168,7 +204,7 @@ public sealed class XbmNotebookService
 
                 if (name.Length == 0) continue;
                 map[(byte)row.RowId] = new XbmPetInfo(
-                    (byte)row.RowId, name, habitat, desc, placeId);
+                    (byte)row.RowId, name, habitat, desc, placeId, petId, englishName, englishDescription);
             }
 
             _log.Info($"[XBM] Sheet geladen: {map.Count} Bestien (Pet+PlaceName+Beschreibung).");

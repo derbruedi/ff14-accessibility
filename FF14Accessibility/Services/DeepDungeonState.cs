@@ -121,8 +121,8 @@ public sealed class DeepDungeonState
             if (!items[slot].IsActive) continue;
             var item = ResolvePomander(dd->DeepDungeonId, slot, items[slot].ItemId);
             if (item is not { } row) continue;
-            effects.Add(new DeepEffect(row.Name.ExtractText().Trim(),
-                                       _text.Read(row.Tooltip),
+            effects.Add(new DeepEffect(RussianGameText.Name(_data, row, x => x.Name).Trim(),
+                                       _text.Read(RussianGameText.Text(_data, row, x => x.Tooltip, "Tooltip")),
                                        AccessibilityStrings.DeepKindItemEffect));
         }
 
@@ -172,10 +172,10 @@ public sealed class DeepDungeonState
         var reference = lookup(id);
         if (reference?.ValueNullable is not { } ui) return;
 
-        var name = ui.Name.ExtractText().Trim();
+        var name = RussianGameText.Name(_data, ui, x => x.Name).Trim();
         if (name.Length == 0) return;
 
-        into.Add(new DeepEffect(name, _text.Read(ui.Description), kind));
+        into.Add(new DeepEffect(name, _text.Read(RussianGameText.Text(_data, ui, x => x.Description, "Description")), kind));
     }
 
     /// <summary>Fuegt eine Ebenen-Besonderheit des Pilgerpfads hinzu, wenn die Id eine
@@ -187,10 +187,10 @@ public sealed class DeepDungeonState
         var row = _data.GetExcelSheet<DeepDungeon4GimmickEffectTransient>()?.GetRowOrDefault(id);
         if (row is not { } r) return;
 
-        var name = r.Name.ExtractText().Trim();
+        var name = RussianGameText.Name(_data, r, x => x.Name).Trim();
         if (name.Length == 0) return;
 
-        into.Add(new DeepEffect(name, _text.Read(r.Description), kind));
+        into.Add(new DeepEffect(name, _text.Read(RussianGameText.Text(_data, r, x => x.Description, "Description")), kind));
     }
 
     /// <summary>

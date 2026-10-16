@@ -78,7 +78,7 @@ public sealed record HuntingTarget(
 /// - All 30 targets per company name a habitat, so the category can always say
 ///   where to go - checked for all three.
 /// </summary>
-public sealed class HuntingLogService
+public sealed partial class HuntingLogService
 {
     private readonly IDataManager _data;
     private readonly IObjectTable _objectTable;
@@ -693,17 +693,24 @@ public sealed class HuntingLogService
         {
             var zoneRef = target.PlaceNameZone[i];
             if (zoneRef.RowId == 0) continue;
-            var zone = zoneRef.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+            // Russisch zuerst: der Lebensraum wird im Jagdtagebuch angesagt, und
+            // das Blatt liefert hier Englisch, waehrend die Karte der Spielerin
+            // den uebersetzten Namen traegt (Meldung 2026-09-14, #86-Umfeld).
+            var zone = RussianAuthorText.PlaceName(zoneRef.RowId,
+                zoneRef.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty);
 
             var areaRef = i < target.PlaceNameLocation.Count ? target.PlaceNameLocation[i] : default;
             var area = areaRef.RowId == 0
                 ? string.Empty
-                : areaRef.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty;
+                : RussianAuthorText.PlaceName(areaRef.RowId,
+                    areaRef.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty);
 
             var mapId = _places.FindMapByPlaceName(zoneRef.RowId);
             Vector3? pos = null;
             if (mapId != 0 && areaRef.RowId != 0)
-                pos = _places.FindMarkerPosition(mapId, areaRef.RowId, area);
+                // Map labels use the client's sheet language, not the spoken translation.
+                pos = _places.FindMarkerPosition(mapId, areaRef.RowId,
+                    areaRef.ValueNullable?.Name.ExtractText().Trim() ?? string.Empty);
 
             result.Add((zone, area, mapId, pos, areaRef.RowId));
         }

@@ -197,7 +197,7 @@ public sealed class DutyActionService
     {
         if (_data.GetExcelSheet<LuminaAction>().TryGetRow(actionId, out var row))
         {
-            var name = row.Name.ExtractText();
+            var name = RussianGameText.Name(_data, row, x => x.Name);
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
         return AccessibilityStrings.AnAbility;

@@ -105,7 +105,7 @@ internal sealed unsafe class CollisionProbe
         found += DumpLayout(world->ActiveLayout, "aktiv", origin, radius);
 
         _log.Info($"[CollProbe] === Ende, {found} Eintrag/Eintraege ===");
-        _tolk.SpeakInterrupt($"Kollisionssonde: {found} Einträge im Log.");
+        _tolk.SpeakInterrupt(AccessibilityStrings.CollisionProbeSaved(found));
     }
 
     private int DumpLayout(LayoutManager* layout, string which, Vector3 origin, float radius)

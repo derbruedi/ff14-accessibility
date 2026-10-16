@@ -29,7 +29,8 @@ public sealed record DutyEntrance(
     uint TerritoryTypeId,
     uint MapId,
     Vector3 Position,
-    string ZoneName);
+    string ZoneName,
+    uint TargetBaseId = 0);
 
 /// <summary>
 /// Alle Inhalts-Eingaenge der WELT - Dungeons, Pruefungen und Raids - mit Stufe
@@ -207,7 +208,7 @@ public sealed class DutyEntranceService
                 territory,
                 mapId,
                 new Vector3(level.X, level.Y, level.Z),
-                zoneName ?? string.Empty));
+                zoneName ?? string.Empty, objectRow));
         }
 
         _log.Info($"[Inhalte] {result.Count} Eingaenge zu Dungeons, Pruefungen und Raids mit Ort; "

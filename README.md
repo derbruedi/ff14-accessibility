@@ -1,728 +1,602 @@
-# FF14 Accessibility
-
-🇬🇧 English version: [README.en.md](README.en.md)
-
-Ein Dalamud-Plugin, das **FINAL FANTASY XIV für blinde Spielerinnen und
-Spieler** zugänglich macht: Menüs, Dialoge, Quests, Navigation, Inventar,
-Kampf und Aktionsleisten werden per Screenreader (NVDA) vorgelesen und mit
-Tönen unterstützt — inklusive Braillezeile und automatischem Laufen.
-
-## Funktionen
-
-### Menüs und Fenster
-
-- Titelbildschirm, Charakterauswahl und komplette Charaktererstellung
-  (Volk, Geschlecht, Volksstamm, Name) werden angesagt.
-- Charaktererstellung, Schritt **Aussehen**: die rund zwanzig Wähler
-  (Gesicht, Frisur, Farben, Statur …) werden einzeln angesagt; Strg+F10
-  liest das gesamte Aussehen am Stück zurück. Keiner dieser Wähler ist im
-  Spiel Text — ein Screenreader findet dort sonst nichts vor.
-  (Beitrag von [bladestorm360](https://github.com/bladestorm360), PR #4)
-- Listen-Navigation mit Pfeiltasten: Systemmenü, Journal, Auswahl-Dialoge,
-  Kontextmenüs — jede Zeile wird beim Fokussieren gesprochen.
-- Ok/Abbrechen-Dialoge: Links/Rechts sagt den fokussierten Knopf an.
-- Einstellungsfenster: Regler („Transparenz, Regler, 50, von 0 bis 100"),
-  Auswahllisten, Kontrollkästchen und Reiter; Enter aktiviert Reiter.
-- Fenster **Tastenbelegung**: jede Zeile wird mit Befehl **und** belegter
-  Taste angesagt („Vorwärts, Taste W").
-- Fehlermeldungen und Hinweise des Spiels (Toasts) werden gesprochen,
-  z. B. „Das Ziel ist zu weit entfernt."
-- NPC-Dialoge mit Sprechername zuerst („Miounne: …"); bei offenem Journal
-  liest Strg+F10 die Quest-Beschreibung und Ziele vor.
-- Alle Ansagen erscheinen zusätzlich auf der **Braillezeile**.
-
-### Chat
-
-- **Empfangen**: eingehende Nachrichten werden vorgelesen, je Kanal
-  abschaltbar im Einstellungsmenü (Umschalt+F9, Punkt „Chat-Kanäle") —
-  eine flache Liste, eine Zeile je Kanal. Im gewohnten Chatsystem sind das
-  Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
-  System, Sammeln und Beute; im neuen die Kanäle des Spiels selbst. Ein
-  abgeschalteter Kanal wird nur nicht mehr vorgelesen — nachlesen kannst du
-  ihn weiterhin.
-- **Schreiben**: beim Öffnen der Chat-Eingabe wird der aktive Kanal
-  angesagt („Chat-Eingabe, Sagen"), ein Kanalwechsel während des Tippens
-  ebenso. Jedes getippte Zeichen wird gesprochen, ebenso Gelöschtes —
-  denn das Eingabefeld des Spiels liest ein Screenreader nicht.
-- **Nachlesen**: ein Verlaufs-Browser mit acht getrennten Kategorien
-  (Dialoge, Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft,
-  System) — ohne Mengenbegrenzung, die ganze Sitzung bleibt erhalten. So
-  lässt sich Verpasstes in Ruhe nachhören, ohne den laufenden Chat zu stören.
-  Innerhalb einer Kategorie springt man mit einer Taste an den Anfang oder
-  ans Ende, weil ein Kampf-Verlauf in die Tausende Zeilen geht.
-- **Antworten**: Enter im Nachlese-Browser beantwortet die gerade gelesene
-  Nachricht im richtigen Kanal — ein gelesenes Flüstern wird direkt
-  beantwortet, ohne den Namen abtippen zu müssen.
-- **Zweites Chatsystem zur Wahl**: neben dem gewohnten Verlauf gibt es einen
-  zweiten, dessen Puffer den **Registerkarten und Filtern des Spiels**
-  folgen — also dem, was ein sehender Spieler in seinen Chat-Reitern
-  eingerichtet hat. Die Reiter lassen sich per Taste umschalten (das Spiel
-  selbst hat dafür keine). Umschaltbar im Einstellungsmenü (Umschalt+F9);
-  **voreingestellt ist das gewohnte System**. Mitgeschrieben wird immer in
-  beide Verläufe, ein Wechsel mitten in der Sitzung reißt also keine Lücke.
-  Zusätzlich zu „Chat-Kanäle" gibt es in diesem System den Punkt
-  „Chat-Register": dort geht es feiner — Register, darin die Kanäle, darin
-  die Filterzeilen des Spiels, wo sich etwa ausgeteilter von erlittenem
-  Schaden trennen lässt.
-  (Beitrag von [bladestorm360](https://github.com/bladestorm360), PR #5)
-
-### Navigation und Laufen
-
-- **Objekt-Browser**: mit einer Taste durch Objekte in der Nähe blättern
-  (NPCs, Händler, Gegner, **Verbündete**, Spieler, Objekte, **Inhalte**,
-  **Alle Inhalte**, Quest-Ziele, Freibriefe, FATEs, Events, Sammelpunkte,
-  Angelplätze, Ätheryten, Kartenwegpunkte wie Zonen-Ausgänge). Ansage mit
-  Name, Art, Entfernung und Richtung; das Objekt wird gleichzeitig
-  anvisiert.
-- **Die Reihenfolge der Kategorien bestimmst du selbst** (Einstellungen →
-  Reihenfolge). Die, die du am häufigsten brauchst, kommen nach vorn; die,
-  die du nie brauchst, lassen sich ganz abschalten und tauchen beim
-  Durchblättern nicht mehr auf. Dasselbe gilt für die Nachlese-Kategorien.
-  Im Sortier-Menü nimmst du eine Zeile mit **Numpad0** auf, schiebst sie mit
-  **Numpad 8/2** hoch und runter — **Pos1** und **Ende** schicken sie ganz
-  nach vorn oder ganz nach hinten — und legst sie mit **Numpad0** wieder ab.
-  Jeder Schritt sagt dir, **zwischen welchen beiden Kategorien** du gerade
-  stehst („Gegner, jetzt 3 von 21. Zwischen Händler und Verbündete."), damit
-  du nicht nach der Platznummer sortieren musst. Jeder Schritt wird sofort
-  gespeichert.
-- Bei einem **Fang-Freibrief** („besänftige das Ziel mit dem Emote
-  *Beruhigen*") sagt die Ansage **„schon gezähmt"**, wenn du diesen Gegner
-  bereits hattest, und **„rasend, nicht zähmbar"**, wenn ein Versuch an ihm
-  misslungen ist. Beide rutschen ans Ende der Liste, die noch offenen stehen
-  vorn. Das gilt für **jeden** Fang, unabhängig von Monster und Freibrief — das
-  Spiel führt dafür nur einen einzigen Zustand. Ein gezähmter Gegner
-  verschwindet nicht und sieht aus wie jeder andere; ohne den Hinweis läufst du
-  zu ihm und erfährst es erst an der Abweisung des Spiels.
-- Die Kategorie **Verbündete** sammelt alles, was auf deiner Seite kämpft:
-  Trupp-NPCs, Gruppe und Allianz, Karfunkel, Fee, Begleitchocobo.
-  **Inhalte** listet nur die Türen, die in einen Dungeon, eine Prüfung,
-  einen Raid oder eine PvP-Instanz führen — eine solche Tür ist ein Ziel,
-  kein Möbelstück. (Beitrag von
-  [bladestorm360](https://github.com/bladestorm360), PR #3)
-- Die Kategorie **Alle Inhalte** geht darüber hinaus: sie listet **jeden
-  Dungeon-, Prüfungs- und Raid-Eingang des Spiels**, nach Stufe sortiert —
-  auch die in anderen Gebieten. Angesagt werden Name, Art, Stufe und, wenn
-  der Inhalt noch nicht freigeschaltet ist, ein „gesperrt" (das fragt das
-  Spiel selbst, es wird nicht aus deiner Stufe geraten). Liegt der Eingang
-  in deinem Gebiet, kommen Entfernung und Richtung dazu, sonst der Name des
-  Gebiets und der nächste Zonenübergang dorthin. **Numpad 3 läuft hin** —
-  über Gebietsgrenzen hinweg, Übergang für Übergang, genau wie bei einem
-  Quest-Ziel in einer anderen Zone.
-- Die Kategorie **Dungeon** erscheint **nur innerhalb einer Instanz** und ist
-  die einzige, die **nicht nach Entfernung** sortiert, sondern **in
-  Laufreihenfolge**: erst das Terminal, dann der Boss, dann das Tor dahinter.
-  Sie beantwortet die Frage, die im Dungeon zählt und die keine Umgebungssuche
-  beantworten kann — *wo geht es weiter*. **Numpad 3 läuft zur gewählten
-  Station.** Es ist ein Skelett von im Schnitt sechzehn Stationen, kein
-  Raumplan: zwischen zwei Stationen läuft der Auto-Lauf wie überall sonst.
-  - Die dafür nötigen **Wegdateien holt der Installer** (309 Dateien, rund
-    750 KB) nach
-    `%AppData%\XIVLauncher\pluginConfigs\FF14Accessibility\DungeonPaths\`.
-    Wer das Plugin ohne den Installer einrichtet, bekommt sie trotzdem: das
-    **Plugin lädt sie beim ersten Start selbst nach**, wenn der Ordner leer ist.
-    Solange er leer ist, wird die Kategorie **gar nicht angeboten**.
-  - Im Einstellungsmenü (**Umschalt+F9**) sagt der Punkt **Dungeon-Wege**, wie
-    viele Wege geladen sind, lädt sie auf Wunsch neu und schaltet das
-    automatische Laden ab.
-  - Die Wegdateien stammen aus dem Projekt
-    [AutoDuty](https://github.com/erdelf/AutoDuty) und werden **von dort**
-    geladen — dieses Plugin liefert selbst keine mit.
-- Auch **Einrichtung** in Wohngebieten ist auffindbar: Chocobo-Stall,
-  Briefkasten, Beete. Objekte, die das Spiel nur mit einem Symbol statt mit
-  einem Wort beschriftet, bekommen das Wort, das die Oberfläche dafür
-  benutzt.
-- **Peil-Ton**: sobald du etwas **anvisiert** hast, zeigt ein Ton
-  die Richtung dorthin — die Seite über das Stereobild, „hinter dir" über
-  eine dunklere Tonlage, die Entfernung über die Lautstärke (näher =
-  lauter). **Jede Zielart klingt anders**: Gegner, NPC, Objekt,
-  Sammelpunkt, Übergang, Ätheryt, Quest-Ziel und Inhalts-Eingang haben je
-  einen eigenen Grundton, Gegner und Aufträge zusätzlich einen Doppelschlag.
-  Je genauer du zielst, desto weiter gehen die Schläge auseinander — und
-  **wenn du richtig stehst, verstummt er ganz**; ein kurzer Quittungston
-  beim Einrasten sagt dir, dass die Stille gewollt ist und nichts kaputt.
-  Genau dafür ist er bei Aufzügen und Plattformen da: drehen, bis es still
-  wird. Eine bloße Auswahl im Objekt-Browser löst noch keinen Ton aus —
-  erst das Anvisieren; für Ziele, die das Spiel gar nicht anvisieren lässt
-  (Quest-Ziele, Kartenmarker, Dungeon-Eingänge in der Liste), führt ihn die
-  **Gehhilfe**. Schalter: **Strg+Umschalt+F9**, Lautstärke im
-  Einstellungsmenü. Alle Töne lassen sich mit `/acc soundtest` anhören.
-- **Gehhilfe**: geführtes manuelles Laufen entlang des Wegenetzes, um
-  Hindernisse herum — mit Wegpunkt-Tönen, Richtungsansagen relativ zur
-  Blickrichtung und Ankunftston.
-- **Auto-Lauf**: automatisch zum Ziel laufen (benötigt das Fremd-Plugin
-  vnavmesh), mit Routen-Vorschau, Fortschrittsansagen und ehrlicher
-  Meldung, wenn kein Weg gefunden wird.
-- **Aufgezeichnete Spuren**: Stellen, die das Wegenetz nicht kennt, lassen
-  sich einmal selbst ablaufen und aufzeichnen. Bleibt der Auto-Lauf dort
-  später hängen, benutzt er die eigene Spur, statt aufzugeben.
-- **Wohngebiete**: dort ist das Wegenetz oft älter als die Häuser, weil es
-  gebaut wird, während das Spiel die Grundstücke noch nachlädt — der
-  Auto-Lauf lief dann in Zäune. Das Netz wird jetzt einmal je Besuch neu
-  gebaut, sobald das Spiel meldet, dass das Wohngebiet vollständig geladen
-  ist; das Warten wird angesagt.
-- **Folgen**: dem anvisierten Ziel dauerhaft hinterherlaufen — hält an,
-  wenn das Ziel stehen bleibt, und endet bei Zonenwechsel oder wenn das
-  Ziel verschwindet (benötigt ebenfalls vnavmesh).
-- **Routen-Vorschau**: den Weg ansagen lassen, ohne zu laufen
-  („Weg zu Ätheryt, 62 Meter: 25 Meter nach Norden, dann …").
-- **Himmelsrichtung**: beim Drehen wird die Blickrichtung angesagt
-  (Norden, Nordosten …), abschaltbar.
-- **Koordinaten**: eigene Karten-Koordinaten in die Zwischenablage
-  kopieren (zum Weitergeben im Chat) oder zu kopierten Koordinaten
-  hinlaufen.
-- Zielwechsel-Ansagen für die Spiel-eigenen Zieltasten (Tab, F1–F12).
-
-### Kampf
-
-- Kampfstatus auf Tastendruck: eigene HP als Zahl („HP 4523 von 5100") —
-  so, wie das Spiel sie selbst im Partyfenster anzeigt und wie sich
-  entscheiden lässt, ob ein Trank reicht. MP bleibt prozentual, weil das
-  Maximum seit Patch 5.0 für jede Klasse 10000 ist.
-- Ziel-HP in Stufen (Prozent — eine Zahl zeigt das Spiel für Gegner nie),
-  kurzer Ton beim Anvisieren eines Gegners.
-- Beim Blättern durch Gegner werden **Stufe und HP** mitgesagt; die Stufe
-  steht auf der Ziel-Leiste eines sehenden Spielers ebenfalls. Das HP-Format
-  und diese Ansage stammen aus PR #1 von
-  [bladestorm360](https://github.com/bladestorm360).
-- **Wirkfläche im Tooltip**: die Beschreibung einer Aktion nennt jetzt auch
-  die **Form** des Wirkbereichs (Kreis, Kegel, Linie …) — das Spiel nennt
-  im Text nur die Reichweite und zeichnet die Form. (Beitrag von
-  [bladestorm360](https://github.com/bladestorm360), PR #2)
-- **Zauber-Warnung**: **jeder** Zauber deines anvisierten Gegners wird
-  angesagt — im Bosskampf also der ganze Ablauf des Bosses. Dazu jeder
-  Zauber, der **auf dich** zielt, auch von einem Gegner daneben; dann fällt
-  sein Name mit. Zielt der Zauber auf dich, sagt die Ansage das ausdrücklich
-  dazu. Zauber auf andere Spieler bleiben still.
-- **Form und Grösse der Fläche**: hängt an der Zauber-Ansage, sobald der
-  Zauber eine Fläche auf den Boden legt — „Kegel, 90 Grad, 6 Meter",
-  „Linie, 30 Meter", „Kreis um dich, 5 Meter". Damit weisst du, **wohin**
-  du ausweichen musst und wie weit. Formen, die dieses Projekt nie
-  nachgemessen hat, bleiben still statt zu raten.
-- **Warnton für Schadensflächen** (AoE): ein Ton, der durchhält, solange du in
-  einer angekündigten Fläche stehst; er verstummt, sobald du heraustrittst.
-  Die Form (Kreis, Kegel, Linie) kommt aus den Daten des jeweiligen Zaubers.
-  Standardmäßig ausgeschaltet, siehe Tastenübersicht.
-- **Klang und Lautstärke der Warnung sind einstellbar** (Einstellungen →
-  Töne). Vier Klänge stehen zur Wahl: *Hell* (der frühere Ton), *Weich*,
-  *Tiefes Brummen* und *An- und abschwellend*. Jeder wird beim Anwählen
-  sofort kurz vorgespielt, du entscheidest also am Ohr. Alle vier halten
-  durch, solange die Gefahr besteht — auch der schwellende reißt nie ab, damit
-  er nicht mit den Schlägen des Peil-Tons zu verwechseln ist.
-- **Eigene Stimme für Kampfwarnungen**: Die Zauber-Warnung, „du stehst drin"
-  und die Fluchtrichtung werden **nicht mehr über den Screenreader**
-  gesprochen, sondern über eine eigene Systemstimme (SAPI). Grund: der
-  Screenreader hat nur *eine* Sprachwarteschlange — ein Zielwechsel, eine
-  Chatzeile oder deine Stopptaste löscht eine laufende Warnung mitten im
-  Satz. Auf dem eigenen Kanal kann ihr nichts dazwischenkommen. Stimme,
-  Tempo und Lautstärke stehen unter Einstellungen → Töne, jede Wahl wird
-  sofort mit einem Beispielsatz vorgehört. Bietet dein System keine
-  Sprachausgabe an oder schaltest du den Kanal ab, kommen die Warnungen
-  wieder über den Screenreader — verloren geht keine.
-- **Vorwarnung „du stehst drin"**: stehst du beim Beginn eines Zaubers in
-  seiner Fläche, sagt die Ansage es mit dazu — samt der Zeit, die dir noch
-  bleibt („Du stehst drin, 3 Sekunden."). Läufst du erst während des
-  Zaubers hinein, kommt „Achtung, du stehst drin, 2 Sekunden." Gehört zur
-  Flächenwarnung und ist deshalb mit ihr zusammen ein-/ausschaltbar.
-- **Feine Ziel-Lebenspunkte im Freibrief**: Solange ein Freibrief läuft, wird
-  unterhalb von 30 Prozent alle 5 Prozent angesagt statt nur bei 25 und 10.
-  Fang-Aufträge wollen den Gegner *geschwächt*, nicht besiegt — mit den groben
-  Stufen ist dieses Fenster kaum zu treffen. Im Einstellungsmenü abschaltbar.
-- **Sonderaktionen im Auftrag**: Manche Aufträge blenden eine kleine
-  Extra-Leiste ein (fangen, betäuben, ein Gerät auslösen), die erst
-  auftaucht, wenn sie gebraucht wird. Das Spiel bietet sie **nur per
-  Mausklick** an — im Tastenbelegungs-Dump hat sie keine einzige Belegung.
-  Der Mod sagt mit einem Ton an, sobald sie da ist, und legt sie auf
-  Umschalt+F10 und Umschalt+F11; Strg+Umschalt+F8 sagt sie noch einmal an.
-- **Gegnerfarben**: Jeder Gegner, der mit der Gruppe im Kampf steht, bekommt
-  eine Farbe als Rufnamen — Weiß, Rot, Blau, Grün, Lila, Gelb, Orange, Grau —
-  und die wird **vor seinem Namen mitgesprochen**: „Rot, Wüstenwolf". Drei
-  gleichnamige Gegner sind sonst drei gleiche Ansagen; ein sehender Spieler
-  hält sie über ihren Standort auseinander, ein blinder hat dafür nichts. Die
-  Farbe bleibt demselben Gegner den ganzen Kampf über erhalten und wird nach
-  seinem Tod **nicht neu vergeben**, solange noch eine unbenutzte da ist —
-  damit kein zweiter „Rot" auftaucht, während man noch den ersten sucht. Sind
-  in einem langen Kampf alle acht durch, kommt die am längsten zurückliegende
-  wieder in Umlauf: ein nachrückender Gegner soll lieber eine schon einmal
-  gehörte Farbe tragen als gar keine. **Setzt jemand in der Gruppe ein echtes
-  Zeichen** — „Angreifen 1", „Binden 2", „Kreis" —, dann gewinnt das: gesprochen
-  wird der Name des Zeichens statt der Farbe, und die Farbe wird wieder frei.
-  Das Zeichen ist der Name, den die ganze Gruppe benutzt; eine eigene Farbe
-  daneben wäre eine zweite, private Wahrheit. Die Namen kommen aus den Daten
-  des Spiels, sind also dieselben Wörter, die am Bildschirm stehen.
-  `/acc gegner` liest das ganze Feld vor:
-  wie viele es sind, welche Farbe wer ist, mit Leben — und wer davon auf
-  **dir** ist statt auf dem Tank. Nach dem Kampf sind alle Farben wieder frei.
-  Es wird **kein Zeichen im Spiel gesetzt**: gelesen werden sie, gesetzt nicht.
-  Die Zielzeichen gehören der Gruppenleitung, die Farbe wird nur gesprochen.
-  Das Verfahren stammt aus dem WoW-Addon Sku, die Farben und ihre Reihenfolge
-  sind von dort übernommen — dort wie hier gilt: ein echtes Zeichen wird beim
-  Namen genannt, eine eigene Vergabe bei der Farbe.
-- **Fähigkeit bereit**: Ton und Name, sobald eine Fähigkeit wieder
-  einsatzbereit ist (`/acc cd`).
-- HP und MP zusätzlich als Stereo-Töne (bei jeder 10-Prozent-Stufe zeigt
-  die Stereo-Position den Füllstand an).
-- **Heilmonitor für die Gruppe**: Wer heilt, muss acht Lebensbalken
-  gleichzeitig im Blick haben — genau das, was ein Screenreader nicht
-  leisten kann, weil er nacheinander vorliest. Der Monitor packt deshalb
-  **zwei Angaben in ein einziges kurzes Wort**: gesprochen wird die
-  Gruppennummer, und die **Tonhöhe** dieses Zahlworts sagt, wie schlimm es
-  steht. Volles Leben klingt tief und ruhig, fast tot hoch und panisch.
-  Ein Wort von einer drittel Sekunde beantwortet also „wer" und „wie
-  schlimm" zugleich. Die Nummer ist dabei gleich die Zieltaste: „fünf"
-  heißt F5 drücken. Gemeldet wird nur, was zählt — eine Änderung muss zwei
-  Schwellen zugleich reißen, sonst plappert der Monitor bei jedem
-  Regenerationstick. Wer stabil schwer verletzt bleibt, wird alle drei
-  Sekunden wiederholt, damit er nicht in der Stille verschwindet; der Tank
-  hat dabei Vorrang. **Standardmäßig aus**, der Zustand wird gespeichert.
-  Die Zahlwörter stammen aus dem WoW-Addon Sku, wo blinde Heilerinnen und
-  Heiler dasselbe Verfahren seit Jahren benutzen.
-  **NPC-Gruppenmitglieder zählen mit**: ein Dungeon mit Duty Support oder
-  einem Trust-Trupp wird genauso überwacht wie eine Gruppe aus Spielern —
-  der Monitor liest die Gruppe so, wie das HUD sie anzeigt, und fragt nicht
-  danach, ob ein Platz von einem Menschen oder einem NPC gefüllt ist.
-- Erfahrungsgewinn und Beute werden angesagt und in der Nachlese archiviert.
-- **Beute-Verlosungen**: offene Würfe der Gruppe vorlesen (mit den
-  Ausrüstungswerten des Gegenstands, damit sich Bedarf oder Gier überhaupt
-  entscheiden lässt) und per Taste in das Verlosungs-Fenster springen, um
-  dort mit dem Nummernblock zu wählen.
-- **Erholungsbonus**: „Ruhebereich. Erholungsbonus sammelt sich." beim
-  Betreten, und auf Tastendruck die Höhe in Prozent einer Stufe.
-- SP-Stand für Sammler (Sammelpunkte/GP) auf Tastendruck.
-- Stufe und fehlende Erfahrung auf Tastendruck.
-
-### Inventar und Ausrüstung
-
-- Item-Slots in Tasche, Charakterfenster und Arsenal werden mit Name,
-  Stufe und Tragbarkeit angesagt („Bronzegladius, Stufe 5, tragbar" /
-  „nicht tragbar, ab Stufe 26"); leere Felder sagen „Leer". Der Name
-  kommt aus dem Detail-Fenster des Spiels und nicht aus dem Symbol,
-  damit Gegenstände, die sich ein Symbol teilen, nicht verwechselt
-  werden; ein HQ-Teil sagt „Hoch-Qualität" mit.
-- Läden: an jede Ware wird Stufe und Tragbarkeit angehängt.
-- **Werte statt bloßer Namen**: Gegenstandsstufe, Verteidigung und
-  Attribute stehen in der Ansage; zu welchen Klassen ein Teil passt, wird
-  mit **deinen eigenen** Klassen ausgesprochen („für deine Klassen Ritter,
-  Gladiator") statt mit der Abkürzungsliste des Spiels.
-- **Warnung vor dem Verkaufen**: gehört ein Teil zu einem Ausrüstungsset,
-  sagt die Ansage beim Durchgehen „, im Ausrüstungsset" mit. Das Spiel
-  malt diesen Hinweis sonst nur als Symbol auf das Icon — ein Textleser
-  bekommt ihn nie zu sehen.
-- Angelegte Ausrüstung komplett vorlesen; empfohlene Ausrüstung mit dem
-  Spiel-eigenen Optimierer anlegen.
-- **Vergleich mit dem angelegten Teil**: das Spiel stellt neben den
-  Tooltip eine zweite Spalte und malt die Unterschiede grün und rot —
-  beides ist für einen Bildschirmleser nicht da. Auf Tastendruck wird
-  daraus eine Tabelle: zuerst das Urteil („Besser in 3 von 5"), dann ein
-  Wert je Zeile mit beiden Seiten und dem Unterschied, dazu Materia,
-  freie Plätze und wer das Teil tragen kann. Die Zahlen kommen aus dem
-  Fenster des Spiels und werden nicht nachgerechnet.
-- Inventar und Gil auf Tastendruck.
-
-### Aktionsleisten (Hotbars)
-
-- Aktionsleiste vorlesen: welche Taste löst welche Fähigkeit aus.
-- **Zuweisungs-Menü**: erst die Taste wählen — jede sagt an, was gerade
-  auf ihr liegt — und danach, was darauf soll: alle gelernten
-  Fähigkeiten des aktuellen Jobs. Geht auf jeder der 10 Leisten,
-  komplett ohne Maus. Ansagen nennen die tatsächlich gebundene Taste
-  (z. B. „Leiste 2, Taste Strg+3").
-- Im selben Menü lassen sich auch **Gegenstände** ablegen: Tränke,
-  Elixiere und Essen aus der Tasche, mit Bestand in der Ansage
-  („Heiltrank, 12 Stück").
-
-### Tiefe Gewölbe (Palast der Toten und Verwandte)
-
-Dieser ganze Abschnitt ist ein Beitrag von
-[bladestorm360](https://github.com/bladestorm360) (PR #6).
-
-Ein Tiefes Gewölbe ist in sich geschlossen, und der Objekt-Browser stellt
-sich darin um: statt sechzehn Weltkategorien gibt es fünf Antworten.
-
-- **Kategorien drinnen**: Gegner (aufgedeckte Fallen zählen mit — das Spiel
-  führt sie selbst als Gegner), Verbündete, Truhen, die beiden Leuchten und
-  die Räume. Verbündete werden auch dann angeboten, wenn gerade niemand da
-  ist — „ist jemand bei mir?" ist eine echte Frage, deren leere Antwort
-  ebenfalls echt ist.
-- **Räume statt Objekte**: Der Inhalt einer Ebene wird beim Content-Director
-  des Spiels abgefragt, nicht in der Objekttabelle. Deshalb verschwindet ein
-  Ziel nicht mehr, sobald du weit genug weggehst, dass das Spiel es entlädt —
-  und Räume lassen sich anlaufen, nicht nur benennen.
-- **Raumwechsel** wird beim Betreten angesagt; ein sehender Spieler liest
-  seine Position fortlaufend von der Gewölbe-Karte ab.
-- **Welches Gewölbe, welche Ebene** auf Tastendruck (Strg+F) — die Zahl, in
-  der der ganze Lauf gemessen wird und die das Spiel nur beiläufig nennt.
-- **Charakterinfo**: das Fenster nennt seine Plätze mit Namen, Beschreibung
-  und Anzahl. Es besteht fast nur aus Symbolen ohne Text, sagte deshalb
-  bisher nur seinen eigenen Titel an.
-- **Ebenenweite Wirkungen** (Leuchten-Effekte, Fallen, Ring-Bonus) werden
-  erfasst. Sie liegen nicht in der Statusliste der Figur, sondern auf dem
-  Director — der bisherige Effekt-Puffer konnte sie gar nicht sehen.
-
-> Die Gewölbe-Funktionen sind noch **nicht im Spiel gegengeprüft**. Falls
-> Strg+F bei dir zusätzlich die Spielfunktion „zum Ziel drehen" auslöst,
-> lässt sich die Taste in den Einstellungen ändern.
-
-### Sonstiges
-
-- Emote-Browser: Emotes durchblättern und ausführen.
-- Bestiarium (Jagdtagebuch) vorlesen, inklusive Lebensraum der Monster.
-- **Angeln**: Angelplätze im Gebiet finden und ansteuern.
-- **Sammeln**: Erz- und Holzvorkommen finden; das Sammelfenster wird
-  vorgelesen.
-- **Reittiere**, **Läden der Staatlichen Gesellschaft** und die
-  **Charakterkonfiguration** sind bedienbar.
-- **Tauschfenster** (Marken, Zertifikate): jede Zeile nennt den Gegenstand,
-  seinen Preis samt Währung, deinen eigenen Bestand und die Beschreibung.
-- **Vermögen**: jede Zeile sagt, um welche Währung es geht — „49.457 Gil",
-  „1.652/10.000 Legionstaler". Vorher standen dort nur nackte Zahlen neben
-  einem Symbol.
-- **Errungenschaften**: beim Öffnen kommen Punktestand und Zertifikate
-  („350 Errungenschaftspunkte, 1 Errungenschaftszertifikat"); dieselbe
-  Auskunft gibt es jederzeit, wenn du das Symbol im Fenster anfährst.
-- **Triple Triad**: Spielbrett und eigene Hand vorlesen.
-- Beim Anmelden bleibt es ruhig: während das Spiel seine Fenster aufbaut,
-  schweigen die automatischen Ansagen, damit sie sich nicht gegenseitig
-  abschneiden.
-- **Benachrichtigungen**: eingehende Einladungen (Freie Gesellschaft,
-  Gruppe, Freundesliste) per Taste annehmen — das Popup lässt sich sonst
-  nur mit der Maus bedienen.
-- **Plugin-Liste**: die installierten Dalamud-Plugins per Tastatur
-  durchblättern (Dalamuds eigenes Fenster ist nicht vorlesbar).
-- Nach jedem Login speichert das Plugin die Spiel-Tastenbelegung als
-  Textdatei auf dem Desktop und warnt bei Konflikten mit Plugin-Tasten.
-
-## Voraussetzungen
-
-- Windows, FINAL FANTASY XIV und [XIVLauncher](https://goatcorp.github.io/)
-  mit Dalamud.
-- **NVDA** als Screenreader (über die Tolk-Bibliothek; die nötigen DLLs
-  bringt das Plugin mit).
-- Optional: das Fremd-Plugin **vnavmesh** für Auto-Lauf und
-  Wegenetz-Führung — der Installer bietet den Download an.
-
-## Installation für blinde Nutzerinnen und Nutzer (mit Screenreader)
-
-Es gibt einen grafischen Installer mit einem einzigen Button. Er richtet
-alles ein und hält das Plugin aktuell — **ohne** dass du Dalamuds
-Plugin-Fenster (das ein Screenreader nicht vorliest) bedienen musst.
-
-### Schritt für Schritt
-
-1. Lade `FF14AccessibilityInstaller.exe` vom
-   [neuesten Release](https://github.com/derbruedi/ff14-accessibility/releases/latest)
-   herunter (Abschnitt „Assets", Link mit diesem Dateinamen).
-2. Führe die heruntergeladene Datei aus (Enter oder Doppelklick im
-   Downloads-Ordner).
-3. Windows SmartScreen zeigt möglicherweise eine Warnung, weil der Installer
-   nicht signiert ist. Aktiviere in diesem Dialog den Link oder Button
-   „Weitere Informationen" und danach den Button „Trotzdem ausführen". Beide
-   lassen sich mit Tab erreichen und mit Enter bzw. Leertaste auslösen.
-4. Im Installer-Fenster springt der Fokus automatisch auf den Button
-   „Installieren oder Aktualisieren". Falls nicht, drücke Tab, bis dieser
-   Button angesagt wird, und drücke dann Enter.
-5. Warte die Meldungen im Statusfeld ab. Am Ende erscheint eine Dialogbox mit
-   der Meldung „Vorgang abgeschlossen". Bestätige sie mit Enter.
-6. Starte XIVLauncher und logge dich ins Spiel ein — das Plugin ist aktiv und
-   meldet sich beim Login mit einer gesprochenen Versionsansage.
-
-### Update
-
-Für ein Update reicht es, `FF14AccessibilityInstaller.exe` erneut
-auszuführen und wieder den Button „Installieren oder Aktualisieren" zu
-aktivieren. Er überschreibt die Plugin-Dateien, und der nächste Spielstart
-lädt die neue Version.
-
-**Der Installer aktualisiert auch sich selbst** (ab Installer-Version 1.1).
-Liegt eine neuere Installer-Version vor, fragt er nach:
-
-1. Es erscheint eine Ja/Nein-Abfrage mit der Downloadgröße. „Ja" holt die
-   neue Version, „Nein" arbeitet mit der vorhandenen weiter.
-2. Bei „Ja" lädt er sie, schließt sich kurz und öffnet sich automatisch
-   wieder — die Datei an deinem Speicherort wird dabei ersetzt, du musst
-   also nichts von Hand herunterladen.
-3. Nach dem Neustart meldet er „Der Installer wurde auf Version … 
-   aktualisiert" und führt die Installation von selbst weiter aus. Ein
-   Bestätigen mit Enter genügt.
-
-Falls die Datei nicht ersetzt werden kann (z. B. wegen Schreibschutz),
-sagt er das und macht trotzdem normal weiter.
-
-### Was der Installer macht
-
-- Prüft, ob **XIVLauncher** installiert ist, und bietet sonst an, das
-  offizielle Setup herunterzuladen und zu starten.
-- Kopiert die Plugin-Dateien in Dalamuds `devPlugins`-Ordner und aktiviert
-  sie direkt in `dalamudConfig.json` (mit Sicherungskopie).
-- Bietet an, das **vnavmesh**-Plugin (für den Auto-Lauf) vom Original
-  herunterzuladen. vnavmesh stammt von einem anderen Autor und wird
-  **nicht** von diesem Projekt mitverteilt.
-
-## Tastenübersicht (Standard)
-
-Diese Liste ist gegen die tatsächliche Tastenbelegung im Code abgeglichen —
-alle aufgeführten Tasten sind aktiv. Die Tasten sind so gewählt, dass sie
-laut Spiel-Tastenbelegung überwiegend frei sind; einige liegen bewusst auf
-rein visuellen Kamera-Funktionen (siehe unten). Strg+F1 sagt jederzeit die
-aktuelle Hilfe an. Alle Tasten lassen sich über die Einstellungen ändern.
-
-### Objekte finden
-
-- **Bild-ab** — nächstes Objekt ansagen und anvisieren
-- **Bild-auf** — vorheriges Objekt
-- **Strg+Bild-ab** — Objekt-Kategorie vorwärts (NPCs, Händler, Gegner,
-  Verbündete, Spieler, Objekte, Inhalte, Alle Inhalte, Quest-Ziele,
-  Freibriefe, FATEs, Events, Sammelpunkte, Angelplätze, Ätheryten, Wegpunkte; im
-  Tiefen Gewölbe stattdessen nur Gegner, Verbündete, Truhen, Leuchten, Räume)
-  - **FATEs** = was in DEINER Zone gerade live ist (Name, Fortschritt). Numpad3
-    läuft hin. Beim Yo-kai-Event: FATE mit Uhr machen (Silber/Gold).
-  - **Events** (seit V6.08): Zonen für zeitliche Kollab-Events (aktuell Yo-kai).
-    Nur sichtbar mit Yo-kai-Uhr. Ansage „Yo-kai, Zonenname“; Numpad3 führt über
-    Übergänge dorthin. Dort dann Kategorie FATEs nutzen.
-  - **Sammelpunkte sind klassenbezogen und kartenübergreifend** (seit V6.00):
-    die Kategorie zeigt nur Erz-/Gestein-Vorkommen für Minenarbeiter bzw.
-    Holz-/Pflanzen-Vorkommen für Botaniker, jeweils passend zur AKTUELLEN
-    Klasse — auf jeder anderen Klasse (auch Fischer) fehlt die Kategorie ganz
-    im Durchblättern. Gelistet werden Punkte im aktuellen Gebiet UND in
-    Nachbargebieten (bis zu zwei Kartenwechsel entfernt); bei einem Punkt in
-    einer anderen Zone nennt die Ansage deren Namen und den Übergang, über
-    den man dort hinkommt. Numpad3 läuft in der eigenen Zone direkt zum
-    Punkt, in einer anderen Zone erst zum Übergang — nach dem Zonenwechsel
-    zeigt erneutes Bild-ab/-auf den eigentlichen Punkt. Strg+Numpad3
-    (Gehhilfe) funktioniert genauso für beide Fälle. Angelplätze sind davon
-    unabhängig und bleiben ihre eigene, zonenlokale Kategorie.
-- **Strg+Bild-auf** — Objekt-Kategorie zurück
-
-### Laufen und Führung
-
-- **Nummernblock 3** — Auto-Lauf zum gewählten Ziel an/aus (braucht vnavmesh)
-- **Strg+Nummernblock 3** — Gehhilfe an/aus (Ton-Führung beim manuellen
-  Laufen, folgt dem Wegenetz um Hindernisse)
-- **+** — dem anvisierten Ziel fortlaufend folgen an/aus (braucht vnavmesh).
-  Gemeint ist die normale Plus-Taste, **nicht** die des Nummernblocks
-- **Strg+Umschalt+F9** — Peil-Ton an/aus
-- **Strg+Nummernblock 5** — Routen-Vorschau: Weg ansagen, ohne zu laufen
-- **Strg+Umschalt+F1** — zu Koordinaten aus der Zwischenablage laufen
-  (z. B. „24.1 21.0" kopieren, dann Taste)
-- **Strg+Umschalt+F2** — eigene Karten-Koordinaten in die Zwischenablage
-  kopieren
-- **Nummernblock 5** — einmal in die Richtung drehen, in die die Gehhilfe
-  weist
-- **Strg+Umschalt+F6** — Spur aufzeichnen an/aus (eine Stelle, die das
-  Wegenetz nicht kennt, einmal selbst ablaufen)
-- **N** — Himmelsrichtungs-Ansage beim Drehen an/aus
-- **F** — zum Ziel hindrehen (Spiel-Taste), **W** — laufen (Spiel-Taste)
-
-### Vorlesen und Information
-
-- **Strg+F1** — Hilfe (Tasten und Befehle)
-- **Strg+F2** — aktives Fenster ansagen
-- **Strg+F10** — aktuelles Menü vorlesen; bei offenem Journal: Quest vorlesen
-- **Strg+F11** — Sprache sofort stoppen
-- **Strg+Entf** — Kampfstatus: eigene HP und MP
-- **Entf** — HP des anvisierten Ziels, in Prozent (das Spiel zeigt sie
-  auch einem sehenden Spieler nur als Balken, nie als Zahl)
-- **Strg+Ende** — SP-Stand (Sammelpunkte/GP für Sammler)
-- **Strg+L** — Stufe und fehlende Erfahrung
-- **Umschalt+L** — Ruhebereich und Erholungsbonus
-- **Strg+Umschalt+L** — Begleit-Chocobo: Rang, Sterne und fehlende
-  Erfahrung bis zum nächsten Rang
-- **Strg+F** — Tiefes Gewölbe: welches Gewölbe, welche Ebene
-- **Strg+Umschalt+F7** — Aufgabenliste des laufenden Inhalts vorlesen
-  (Freibrief, Dungeon, FATE): genau die Zeilen, die am Bildschirmrand
-  stehen, mit Zähler bzw. Restzeit
-- **Umschalt+F9** — Einstellungsmenü öffnen (gesprochen bedienbar)
-- **Strg+F3** — Inventar vorlesen (Tasche und Schlüsselgegenstände)
-- **Umschalt+F3** — Gil-Stand
-- **Strg+F4** — Bestiarium (Jagdtagebuch) vorlesen
-- **Strg+F12** — offene Benachrichtigung/Einladung annehmen
-
-### Kampf
-
-- **Strg+Umschalt+F3** — Warnton für Schadensflächen an/aus.
-  **Standardmäßig aus**, weil die Formerkennung im Spiel noch nicht
-  abschließend bestätigt ist — ein falscher Warnton im Kampf wäre
-  schlimmer als keiner
-- **Strg+Umschalt+F11** — Heilmonitor an/aus. **Standardmäßig aus**, der
-  Zustand wird gespeichert
-- **Strg+Umschalt+F12** — Gruppe mit Nummern vorlesen: welche Nummer ist
-  wer, mit Job und Namen. Die Nummer ist zugleich die Zieltaste
-- **Umschalt+F7** — offene Beute-Verlosungen vorlesen
-- **Umschalt+F8** — in das Verlosungs-Fenster springen (dort wählt der
-  Nummernblock Bedarf, Gier oder Passen). Bewusst eine eigene Taste: ein
-  Fenster, das sich mitten im Kampf den Fokus greift, würde den
-  Nummernblock schlucken, während man noch laufen muss
-
-### Ausrüstung
-
-- **Strg+F6** — angelegte Ausrüstung vorlesen (mit Stufe und Werten)
-- **Strg+Umschalt+F12** — Ausrüstungs-Vergleich als Tabelle öffnen,
-  solange der Zeiger auf einem Ausrüstungsteil steht: die Überschrift
-  sagt, ob es besser ist, darunter steht ein Wert je Zeile mit beiden
-  Seiten („Verteidigung: 19, angelegt 7, plus 12"). Nummernblock 8 und 2
-  blättern, Nummernblock 0 wiederholt eine Zeile, Nummernblock 4 oder
-  Entf schließt.
-- **Strg+F7** — empfohlene Ausrüstung anlegen (Spiel-eigener Optimierer)
-- **Strg+F8** — zufälliges Aussehen (nur in der Charaktererstellung)
-
-### Aktionsleisten belegen
-
-- **Strg+F9** — im Controller-Modus die normale Kreuzleiste, sonst Leiste 1 vorlesen
-- **Strg+Nummernblock 0** — Zuweisungs-Menü öffnen bzw. schließen
-- **`/acc crossbar`** — Kreuzleisten-Menü direkt öffnen
-- **`/acc crossread`** — alle 16 Tasten der aktuellen normalen Kreuzleiste vorlesen
-
-Das Menü fragt nach **Leiste**, **Taste** und **Inhalt**. Zur Wahl stehen
-Kreuzleisten 1–8 und Tastaturleisten. Die [Kreuzleisten-Anleitung](docs-de/controller-crossbar.md)
-erklärt Tasten, geteilte Leisten und Einschränkungen. Im
-geöffneten Menü steuert der Nummernblock; die Tasten werden so lange vom
-Spiel ferngehalten, damit die Figur nicht losläuft:
-
-- **Nummernblock 8 / 2** — in der Liste blättern; bei der Tastenauswahl sagt
-  jede Taste an, was gerade auf ihr liegt
-- **Nummernblock 0** — Leiste und Taste wählen; danach den Eintrag wählen und erneut
-  Nummernblock 0 zum Ablegen
-- **Nummernblock 4 / 6** — bei der Tastenauswahl die Leiste wechseln; beim Inhalt zwischen **Fähigkeiten**,
-  **Gegenständen** (Tränke, Elixiere, Essen aus der Tasche),
-  **Quest-Gegenständen**, **allgemeinen Aktionen**, **Reittieren** und **Mitstreiter-Kommandos**
-  wechseln
-- **Nummernblock Komma** — einen Schritt zurück bzw. Menü schließen
-
-Nach dem Ablegen bleibt das Menü offen und springt zurück zur Tastenauswahl,
-damit eine ganze Leiste in einem Durchgang belegt werden kann.
-
-### Chat nachlesen
-
-- **Alt+Bild-auf** / **Alt+Bild-ab** — Kategorie zurück / vor (Dialoge,
-  Sagen, Rufen, Gruppe, Allianz, Flüstern, Freie Gesellschaft, System,
-  Beute); angesagt wird der Name mit der Anzahl der Nachrichten
-- **Umschalt+Bild-auf** / **Umschalt+Bild-ab** — in der gewählten Kategorie
-  zur älteren / neueren Nachricht blättern („3 von 12: …")
-- **Umschalt+Pos1** / **Umschalt+Ende** — an den Anfang / ans Ende der
-  Kategorie springen
-- **Alt+Pos1** / **Alt+Ende** — Chat-Registerkarte des Spiels umschalten
-  (das Spiel selbst hat dafür keine Taste — ein Sehender klickt das
-  Register an)
-- **Enter** — die gerade gelesene Nachricht im richtigen Kanal beantworten
-
-### Emotes
-
-- **Umschalt+F4** / **Umschalt+F5** — Emote zurück / vor
-- **Umschalt+F6** — gewähltes Emote ausführen
-
-### Triple Triad (Kartenspiel)
-
-- **Strg+Umschalt+F4** — das Spielbrett vorlesen
-- **Strg+Umschalt+F5** — die eigene Hand vorlesen
-
-### Plugin-Liste
-
-- **Umschalt+F1** / **Umschalt+F2** — nächstes / vorheriges installiertes
-  Plugin ansagen
-- **Umschalt+F12** — Einstellungen des gewählten Plugins öffnen
-
-### Diagnose
-
-- **Strg+F5** — UI-Dump des aktuellen Fensters auf den Desktop speichern
-  (hilft bei Fehlerberichten)
-
-### Überschneidungen mit Spiel-Tasten
-
-Einige Plugin-Tasten liegen auf Funktionen, die das Spiel ebenfalls belegt.
-Das ist bewusst so; beim Anmelden wird die Zahl der Überschneidungen
-angesagt:
-
-- **Bild-auf / Bild-ab** sind zusätzlich Kamera-Zoom
-- **Strg+Ende** ist zusätzlich „Kamera-Einstellung speichern"
-- **Nummernblock 5** ist zusätzlich „Kamera auf das Ziel richten"; diese
-  Taste hält das Plugin vom Spiel fern, damit die Kamera nicht zusätzlich
-  springt
-
-Diese Funktionen sind rein visuell und damit für blindes Spiel folgenlos.
-Steigt die angesagte Zahl gegenüber dem, was du kennst, lohnt ein Blick in
-die Datei `FFXIV_Keybinds.txt` auf dem Desktop: dann überschneidet sich eine
-Plugin-Taste mit einer echten Spielfunktion. Der eine Punkt, der dort noch
-offen ist, ist **Strg+F** (Tiefes Gewölbe): der Tastendump führt Strg+F als
-frei, das bloße **F** ist aber „zum Ziel drehen" — ob das Spiel bei Strg+F
-trotzdem mitdreht, ist noch nicht im Spiel gemessen.
-
-## Chat-Befehle
-
-Viele Funktionen gibt es auch als Befehl:
-
-- `/acc help` — Hilfe ansagen
-- `/acc nav` — Richtung und Entfernung zum Ziel ansagen
-- `/acc set` — aktuelles Ziel verfolgen
-- `/acc clear` — Ziel aufheben
-- `/acc near` — Objekte in der Nähe auflisten
-- `/acc status` — HP und MP ansagen
-- `/acc ui` — aktuelles Menü vorlesen
-- `/acc win` — aktives Fenster ansagen
-- `/acc keys` — Spiel-Tastenbelegung auf den Desktop speichern
-- `/acc stop` — Sprache stoppen
-- `/acc fish` — Angelplätze im Gebiet ansagen
-- `/acc fishhere` — aktuellen Standort als Auswurfstelle merken
-- `/acc gather` — Sammelpunkte im Gebiet ansagen
-- `/acc gathergo` — zum nächsten Sammelpunkt laufen
-- `/acc gegner` — alle Gegner im Kampf: Anzahl, Farbe, Name, Leben, wer auf dir ist
-- `/acc trails` — aufgezeichnete Spuren im Gebiet auflisten
-- `/acc cd` (auch `/acc cooldowns`) — Ansage „Fähigkeit bereit" an/aus
-- `/acc soundtest` — die Töne des Plugins zur Probe abspielen
-- `/acc lang de|en|auto` — Sprache der Plugin-Ansagen umstellen
-- `/acc dump <Fenstername>` — Fensterstruktur auf den Desktop speichern
-
-## Sprache
-
-Die Ansagen des Plugins gibt es auf **Deutsch und Englisch**. Ohne
-Einstellung richtet sich die Sprache nach Windows; mit `/acc lang de`,
-`/acc lang en` oder `/acc lang auto` lässt sie sich jederzeit umstellen.
-Spieltexte (Dialoge, Menüs, Gegenstandsnamen) werden immer in der Sprache
-des Spiel-Clients vorgelesen. Entwickelt und getestet wird vorrangig mit dem
-deutschen Client.
-
-## Mitwirkende
-
-Sechs größere Funktionen dieses Plugins stammen von
-**[bladestorm360](https://github.com/bladestorm360)**:
-
-- **PR #1** — Stufe und HP beim Blättern durch Gegner; eigene HP wieder als
-  Zahl statt als Prozentwert
-- **PR #2** — die Form der Wirkfläche im Aktions-Tooltip (Kreis, Kegel,
-  Linie …)
-- **PR #3** — die Objekt-Kategorien **Verbündete** und **Inhalte**
-- **PR #4** — der Schritt **Aussehen** in der Charaktererstellung
-- **PR #5** — das zweite Chatsystem, dessen Puffer den Registerkarten und
-  Filtern des Spiels folgen
-- **PR #6** — die **Tiefen Gewölbe** (Räume, Truhen, Leuchten, Charakterinfo,
-  ebenenweite Wirkungen)
-
-Vielen Dank dafür.
-
-## Hinweise
-
-- Dieses Plugin läuft über **Dalamud/XIVLauncher**, das außerhalb der
-  offiziellen Nutzungsbedingungen von Square Enix liegt. Die Nutzung
-  erfolgt auf eigene Verantwortung.
-- **vnavmesh** ist ein eigenständiges Fremd-Plugin
-  ([github.com/awgil/ffxiv_navmesh](https://github.com/awgil/ffxiv_navmesh))
-  und wird hier nur verlinkt bzw. nachgeladen, nicht mitverteilt.
-
-## Lizenz
-
-Dieses Projekt steht unter der **GNU Affero General Public License, Version 3**
-(`LICENSE`) — derselben Lizenz wie Dalamud und wie die offizielle
-Plugin-Vorlage von goatcorp. Du darfst das Plugin benutzen, verändern und
-weitergeben; wer eine veränderte Fassung verbreitet oder über ein Netzwerk
-anbietet, muss deren Quellcode ebenfalls offenlegen.
-
-Mitgelieferte Fremdsoftware und ihre Lizenzen stehen in
-`THIRD-PARTY-NOTICES.md` — das sind **Tolk** (LGPL-3.0), der
-**NVDA Controller Client** (LGPL-2.1) und **NAudio** (MIT). Diese Datei liegt
-auch im heruntergeladenen Archiv und muss bei einer Weitergabe dabeibleiben.
-
-## Für Entwickler
-
-- Plugin-Quellcode: `FF14Accessibility/`
-- Installer-Quellcode: `Installer/`
-- Custom Plugin Repository (für sehende Helfer, optionaler Weg): `repo.json`
-- Projektstand und Testprotokoll: `STATUS.md`
-- Verifizierte Spiel-Interna: `docs/game-api.md`
+# FF14 Accessibility — русская версия
+
+В **6.08.120** возвращены именованные объекты окружения, скрывавшиеся при временной недоступности. Общий читатель кнопок ограничен выбранным управлением и больше не берёт подписи соседних кнопок. Добавлены проверки и сведения об исключённых объектах в журнале. [Описание выпуска и границы проверки](docs/releases/6.08.120.md).
+
+В **6.08.119** исправлено чтение обучения «Подземелья» перед Састашей:
+стрелки перелистывания получили названия, номер страницы читается перед
+текстом, абзацы больше не сливаются. **Ctrl+F10** повторяет текущую страницу;
+**Enter** нажимает выбранную кнопку игры. Исправлено направление перехода
+вперёд, когда кнопка не выбрана. Проверки и ограничения описаны в
+[6.08.119](docs/releases/6.08.119.md).
+
+В **6.08.118** добавлена совместимость с библиотеками Dalamud **15.0.3.7**
+для обновлённой игры `2026.10.06.0000.0000`; уровень API остаётся 15.
+Исправлено чтение русских текстов игры через Harmonia / Prima.
+Совместимый Dalamud уже доступен в обычном канале: обновите его штатным
+способом через XIVLauncher. Сборка и автоматические проверки прошли;
+загрузка, речь и управление в обновлённой FFXIV ещё требуют проверки.
+[Описание выпуска и границы проверки](docs/releases/6.08.118.md).
+
+В **6.08.117** исправлен отказ «Нет проходимой точки у Зов моря» после
+перехода на верхние палубы Лимсы. Допустимое место для подхода к NPC
+находилось в 2,88 м, а проверка отбрасывала всё дальше 2,5 м.
+Общий выбор подхода теперь допускает до 3 м, сохраняя проверку этажа
+и точного объекта. Это действует для автонавигации и ручного наведения.
+[Описание выпуска и границы проверки](docs/releases/6.08.117.md).
+
+В **6.08.116** убрана добавленная перед движением проверка полного пути,
+которая запрещала автонавигацию и ручное наведение к доступным целям.
+Загруженные NPC и эфириты используются по их реальному положению;
+повторный запуск к тому же объекту не сбрасывает промежуточный переход.
+Автоматическое перечисление длины пути отключено: Num5 и сообщения о
+продвижении относятся к расстоянию до цели. Описание пути можно вызвать
+отдельной командой предпросмотра.
+[Описание выпуска и сравнение с версией 93](docs/releases/6.08.116.md).
+
+В **6.08.115** исправлено чтение арсенала: при выборе вещи звучат её уровень,
+защита или урон и прибавки к характеристикам. Num5 и Ctrl+F10 повторяют
+параметры и читают дополнительное описание. Обновление невидимых данных
+вещи больше не обрывает речь. Для высокого качества и вставленной материи
+табличные числа явно названы базовыми, без этих бонусов.
+Исправлено чтение ступеней магазина великой компании и повторение
+одинаковых предупреждений в журнале.
+[Описание выпуска и границы проверки](docs/releases/6.08.115.md).
+
+Версия **6.08.112** включает исправление отказа поиска пути к кругу задания
+«Дилемма изящного вкуса» и выбор первого перехода на повторных строках карты.
+Общее правило проверяет поверхность и запасные точки внутри поисковых кругов,
+сохраняя точную высоту NPC и дверей. Поиск пути и выбор перехода используют
+одну физическую карту. Проверены все 1 231 строки карты и 31 833 пары
+с известными связями; обнаруженные шесть отказов выбора первого шага устранены.
+Движение в FFXIV и неизвестные сценарные входы ещё требуют проверки;
+гарантии прохождения любой карты нет.
+[Описание выпуска и границы проверки](docs/releases/6.08.112.md).
+
+В **6.08.110** исправлен выбор точки пешего перехода между зонами.
+Переход из Средней в Нижнюю Ла-Носкею больше не получает цель высоко
+над дорогой: ручное наведение и автоматическое движение используют
+проверенную высоту дороги и точку внутри настоящей области перехода.
+Неподтверждённая точка не запускает движение.
+[Описание исправления и границы проверки](docs/releases/6.08.110.md).
+
+В **6.08.106** перевод Project Prima через Harmonia получает приоритет
+перед собственными переводами плагина. Названия и описания берутся из строк
+самой игры; переведённые подписи предметов, умений и заданий распознаются
+с сохранением правильного игрового выбора. Проверены более 850 тысяч строк
+Prima и связанные читатели плагина на установленных игровых данных.
+[Совместимость, команды и проверка](docs/harmonia-compatibility.md).
+Проверка в запущенной FFXIV/NVDA/Tolk ещё требуется.
+
+
+Плагин для FINAL FANTASY XIV, который помогает незрячим игрокам: читает
+поддерживаемые окна и диалоги, описывает предметы и умения, позволяет управлять
+меню с клавиатуры и пользоваться звуковыми подсказками навигации.
+Речь передаётся скринридеру, в том числе NVDA, через Dalamud.
+
+**[Скачать автоустановщик для Windows](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/latest/download/FF14AccessibilityInstaller.exe)** ·
+[Все файлы выпуска](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/latest) · [Инструкция](docs/installation.md)
+
+Последний выпуск плагина — **6.08.112**, автоустановщика — **1.3.0**.
+Перевод игры и русский язык мода устанавливаются и удаляются отдельными кнопками.
+Журнал стал удобнее для чтения, время сообщений и имя пользователя скрыты.
+Полное удаление мода и перевода игры также доступно. Подробности —
+[в описании установщика 1.3.0](docs/releases/installer-1.3.0.md).
+[Описание выпуска плагина](docs/releases/6.08.112.md).
+Специальные эффекты классов, включая «Ястребиный глаз» барда, озвучиваются
+тем же голосом, что и готовность умений. Команда `/acc cooldowns` включает
+или выключает оба вида объявлений. Одновременные сообщения объединяются,
+чтобы готовность другого умения не обрывала название эффекта.
+Автонавигация с 6.08.91 использует реализацию автора; в 6.08.92 включены
+его обновления до 6.08.35 и дополнена русская речь лотерей и книги зверей.
+[Текущее состояние и ограничения](docs/maintenance/CURRENT_STATE.md).
+Проверка новой версии в самой игре ещё требуется.
+
+В локальной сборке **6.08.101** все вещи арсенала доступны без выбора
+слотов. **Ctrl+I** открывает арсенал; **Num4/6** выбирают соседнюю вещь,
+**Num2/8** переходят между строками, как в инвентаре. **Num0** открывает
+игровое меню вещи, **Num5** читает описание. **Escape/Delete** закрывают окно.
+Категория озвучивается при переключении Num7/Num9; фильтры слота не читаются.
+
+Проверены изменения версий 6.08.73–6.08.78: исправлены остановка переноса
+Alt+F3, перехват клавиш в режимах чтения и ввода количества, пропуск материалов
+в неполном рецепте и обработка ошибок Penumbra. Кристаллы читаются с названием
+и собственным запасом. Команды `/acc translate off` и `/acc translate on`
+сохраняют выбор перевода предметов и умений в озвучке.
+В выпуск входят также русские описания классов и исправления навигации
+и выбора объектов из 6.08.84. Автоматические проверки описаны отдельно
+от ещё не выполненной проверки новой сборки в FFXIV.
+Это русская версия [проекта derbruedi](https://github.com/derbruedi/ff14-accessibility).
+[English](README.en.md) · [Deutsch](README.de.md).
+
+[Горячие клавиши](#горячие-клавиши) · [Команды чата](#команды-чата) ·
+[Авторы и благодарности](#авторы-и-благодарности).
+
+## Установка и обновление
+
+Нужны Windows x64, установленная FFXIV, XIVLauncher с совместимым Dalamud
+и работающий скринридер. Эта сборка рассчитана на Dalamud API 15.
+При первой настройке XIVLauncher один раз войдите в игру с включённым Dalamud,
+затем закройте игру и лаунчер.
+
+1. Скачайте [FF14AccessibilityInstaller.exe](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/latest/download/FF14AccessibilityInstaller.exe).
+2. Закройте FFXIV и XIVLauncher и запустите скачанный EXE.
+3. Дождитесь проверки и нажмите **«Установить / обновить мод»**.
+4. Если нужна навигация по маршрутам, согласитесь на установку vnavmesh,
+   когда установщик её предложит. Уже установленную копию он сохранит.
+5. После завершения запустите игру через XIVLauncher. Для русского языка
+   плагина введите в чат `/acc lang ru`.
+
+EXE скачивает последний стабильный выпуск этой русской версии, проверяет файлы,
+включает плагин в Dalamud и сохраняет резервную копию перед заменой.
+Для следующего обновления запустите тот же EXE. Более новая установленная
+версия не заменяется старой. Отдельно устанавливать .NET не требуется.
+Подробнее о журнале, клавиатуре и резервных копиях — в [инструкции](docs/installation.md).
+
+## Ручная установка
+
+[ZIP с готовым модом](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/download/v6.08.97/FF14Accessibility-6.08.97-RU-no-source.zip) предназначен для ручного копирования и настройки
+плагина в Dalamud. Внутри — папка `plugin`, инструкция и лицензии;
+**установочных скриптов, EXE и исходного кода в этом ZIP нет**.
+[Пошаговая ручная установка](docs/installation.md#ручная-установка-из-zip).
+
+Файлы **Source code** и `FF14AccessibilityInstaller-1.3.0-source.zip` нужны
+разработчикам. Для обычной установки выбирайте EXE, для ручной — ZIP мода.
+
+## Возможности
+
+- Чтение поддерживаемых меню, диалогов, заданий, инвентаря, магазинов и наград.
+- Русские названия и описания предметов, умений и эффектов; сведения о классах
+  и местах экипировки.
+- Описание вариантов внешности при создании персонажа.
+- Выбор целей, чтение направления и расстояния, звуковая навигация.
+- Назначение боевых и ремесленных действий с клавиатуры, чтение материалов рецепта.
+- История сообщений, звуковые подсказки и управление с геймпада.
+
+Русский перевод озвучивания встроен в плагин и работает без сети.
+Визуальный перевод всей игры устанавливается отдельно. Для расчёта маршрутов
+нужна vnavmesh — её можно добавить через автоустановщик.
+
+## Горячие клавиши
+
+Здесь приведены основные клавиши самой игры и назначения команд мода
+в русской версии 6.08.78. Это два разных набора: одна клавиша может быть
+занята одновременно игрой и модом. Например, **N открывает журнал ремесла
+в английском клиенте**, хотя мод по умолчанию также назначает на N
+переключение произнесения стороны света.
+
+Игровые клавиши ниже относятся к английскому клиенту, в том числе с русским
+переводом. В немецком клиенте стандартные назначения другие: например,
+ремесло открывается на H. Поэтому назначения автора нельзя считать
+свободными клавишами для любого клиента. Команды мода сверены с его кодом
+и [памяткой автора](https://github.com/derbruedi/ff14-accessibility#tastenübersicht-standard).
+Если в игре или моде сохранены свои назначения, действуют они. Открыть
+озвучиваемые настройки мода — **Shift+F9**, услышать справку для текущего
+окна — **Ctrl+F1**.
+
+**Num** означает отдельный цифровой блок справа: например, **Num5** — его
+центральная клавиша. **Page Up**, **Page Down**, **Home**, **End**, **Insert**
+и **Delete** здесь означают отдельные клавиши над стрелками. **Num Decimal** —
+точка или запятая на цифровом блоке. Буквы **F**, **L**, **N** обозначают
+латинские клавиши. Знаки «+» внутри сочетания означают одновременное нажатие.
+
+### Основные клавиши самой игры
+
+Стандартные назначения английского клиента по
+[официальному руководству FFXIV](https://na.finalfantasyxiv.com/game_manual/operation/):
+
+| Клавиша | Действие игры |
+| --- | --- |
+| **N** | Открыть журнал ремесла: рецепты и изготовление предметов. |
+| **B** | Открыть журнал собирательства. |
+| **H** | Открыть журнал охоты. |
+| **Y** | Открыть журнал рыбалки. |
+| **Ctrl+Y** | Открыть справочник рыб. |
+| **C** | Открыть окно персонажа. |
+| **I** | Открыть инвентарь. |
+| **Ctrl+I** | Открыть оружейный сундук. |
+| **P** | Открыть действия и пассивные умения. |
+| **J** | Открыть журнал заданий. |
+| **M** | Открыть карту. |
+| **U** | Открыть поиск подземелий и испытаний. |
+| **O** | Открыть окно общения. |
+| **K** | Открыть настройки персонажа. |
+| **Ctrl+K** | Открыть системные настройки. |
+| **Num+** | Выбрать главное меню. |
+| **Num-** | Открыть меню системы. |
+| **Num0** | Подтвердить выбор или взаимодействовать. |
+| **Num Decimal** | Отменить действие или вернуться. |
+| **Num\*** | Открыть дополнительное меню выбранного элемента. |
+| **Num9** / **Num7** | Переключить вкладку вперёд / назад. |
+
+Открытие окна и чтение его содержимого — разные действия. Например,
+**N** открывает ремесло, а **Ctrl+F4** при открытом журнале ремесла читает,
+что можно изготовить из материалов в сумке. **H** открывает журнал охоты,
+а **Ctrl+F4** вне журнала ремесла читает сведения об охоте.
+
+### Поиск объектов и выбор цели
+
+- **Page Down** — следующий объект: назвать его и выбрать целью, если игра
+  позволяет это сделать.
+- **Page Up** — предыдущий объект.
+- **Ctrl+Page Down** — следующая категория объектов.
+- **Ctrl+Page Up** — предыдущая категория объектов.
+- **Num0** — открыть меню выбранного игрока, когда другое меню не активно.
+  В открытых окнах эта клавиша служит подтверждением выбора.
+
+Категории включают NPC, торговцев, противников, союзников, игроков, предметы
+окружения, входы в подземелья и другие испытания, цели заданий, поручения,
+FATE, события, места сбора, места рыбалки, эфириты и переходы между локациями.
+Их доступность зависит от места и класса персонажа; порядок можно менять
+в настройках. В глубоком подземелье используются свои категории: противники,
+союзники, сундуки, камни перехода и воскрешения, комнаты.
+
+FATE показывает текущие события в вашей локации. Категория событий содержит
+предусмотренные модом места коллабораций; например, список Yo-kai зависит от
+наличия соответствующих часов. Наличие записи само по себе не означает,
+что временное событие сейчас проводится.
+
+Места сбора подбираются для текущего шахтёра или ботаника, включая соседние
+локации на расстоянии до двух переходов. Для другого класса эта категория
+не предлагается. Если точка находится в другой локации, мод называет её
+и нужный переход; после перехода выберите точку снова. Места рыбалки
+перечисляются отдельно для текущей локации.
+
+### Движение и звуковая навигация
+
+- **Num3** — включить или остановить автоматическое движение к выбранной
+  цели. Нужна vnavmesh.
+- **Ctrl+Num3** — включить или выключить звуковое сопровождение маршрута:
+  вы идёте сами, а мод подсказывает направление по рассчитанному пути.
+- **Alt+F** — включить или выключить постоянное следование за текущей целью.
+  Нужна vnavmesh. Начиная с 6.08.80 прежнее назначение на клавишу **= / +**
+  заменяется автоматически, чтобы спринт на панели действий не включал следование.
+- **Ctrl+Shift+F9** — включить или выключить звуковой маяк направления на цель.
+- **Ctrl+Num5** — прослушать маршрут, не начиная движение.
+- **Ctrl+Shift+F1** — идти к координатам из буфера обмена, например `24.1 21.0`.
+- **Ctrl+Shift+F2** — скопировать собственные координаты карты в буфер обмена.
+- **Num5** — при активном звуковом сопровождении повернуться к следующей
+  точке маршрута; без него — назвать выбранную цель, расстояние и направление,
+  не поворачивая персонажа или камеру. В меню назначения умений действие
+  другое: оно описано ниже.
+- **Ctrl+Shift+F6** — начать или завершить запись пройденного пути. Это
+  позволяет сохранить вручную пройденный участок, которого нет в карте маршрутов.
+- **N** — в моде по умолчанию назначено переключение произнесения стороны
+  света, но в английском клиенте эта же клавиша открывает журнал ремесла.
+  Это совпадение назначений, а не отдельная свободная клавиша навигации.
+  Для изменения речевого параметра используйте настройки мода **Shift+F9**;
+  само сочетание клавиш в этом меню не меняется.
+- **F** — повернуться к цели; **W** — идти вперёд. Это стандартные клавиши
+  самой игры, поэтому ваши игровые назначения могут отличаться.
+
+### Чтение окон и сведений о персонаже
+
+- **Ctrl+F1** — прочитать справку для текущего окна.
+- **Ctrl+F2** — назвать активное окно.
+- **Ctrl+Alt+F10** — включить чтение активного окна по строкам. Стрелки или
+  Num8/2/4/6 — строки и поля, Num5 — повтор, Escape — выход. Enter в этом
+  режиме не выполняет игровые действия. [Подробнее](docs/releases/6.08.78.md).
+  В 6.08.81 характеристики C читаются отдельными парами «название: значение»,
+  Tab/Shift+Tab переключают группы атаки, защиты и другие разделы.
+  Заголовок произносится при переходе в раздел. ОЗ/ОМ включают текущий максимум.
+- **Ctrl+F10** — прочитать текущее меню; в журнале заданий — описание и цели
+  задания; при создании персонажа — сведения о выбранной внешности.
+- **Ctrl+F11** — немедленно остановить речь мода.
+- **Ctrl+L** — назвать уровень и недостающий до следующего уровня опыт.
+- **Shift+L** — сообщить о зоне отдыха и бонусе отдыха.
+- **Ctrl+Shift+L** — назвать ранг, звёзды и недостающий опыт чокобо-спутника.
+- **Ctrl+Shift+C** — открыть окно чокобо-спутника или прочитать его, если оно
+  уже открыто. Это назначение мода по умолчанию. Если в настройках сохранено
+  другое сочетание, например **Ctrl+Shift+V**, используется оно. Функция
+  должна быть доступна персонажу по условиям игры.
+- **Ctrl+F** — назвать глубокое подземелье и текущий этаж.
+- **Ctrl+Shift+F7** — прочитать список текущих задач поручения, подземелья
+  или FATE, включая показанные игрой счётчики и оставшееся время.
+- **Shift+F9** — открыть настройки мода с озвучиванием.
+- **Ctrl+F12** — активировать открытое уведомление или приглашение.
+
+### Бой и группа
+
+- **Ctrl+Delete** — назвать собственные здоровье (HP) и ману (MP).
+- **Delete** — назвать здоровье выбранной цели в процентах.
+- **Ctrl+Shift+Delete** — прочитать действующие на персонажа эффекты.
+- **Ctrl+Shift+F10** — прочитать текущие показатели шкалы профессии.
+- **Ctrl+Shift+F3** — включить или выключить предупреждение об опасной
+  области атаки. По умолчанию выключено: распознавание областей требует
+  дополнительной проверки в игре.
+- **Ctrl+Shift+F11** — включить или выключить звуковое слежение за здоровьем
+  группы. По умолчанию выключено; выбор сохраняется.
+- **Ctrl+Shift+F12** — прочитать участников группы с номерами, именами
+  и профессиями. Номер помогает выбрать участника соответствующей клавишей F1–F8.
+- **Shift+F10** — выполнить первое специальное действие текущего задания
+  или испытания, если игра его предоставила.
+- **Shift+F11** — выполнить второе специальное действие.
+- **Ctrl+Shift+F8** — прочитать доступные специальные действия.
+- **Shift+F7** — прочитать открытые розыгрыши добычи.
+- **Shift+F8** — перейти в окно розыгрыша добычи, чтобы цифровым блоком
+  выбрать «Нужно», «Не откажусь» или «Пропустить».
+
+### Инвентарь, экипировка и ремесло
+
+- **Ctrl+F3** — прочитать инвентарь, включая предметы заданий и кристаллы.
+  В окне передачи предметов читает подходящие для передачи предметы.
+- **Shift+F3** — назвать количество гил.
+- **Alt+F3** — начать перенос подходящей экипировки из сумки в оружейный
+  сундук через штатное меню игры. При неподтверждённом результате перенос
+  останавливается.
+- **Ctrl+F6** — прочитать надетую экипировку, её уровень и характеристики.
+- **Ctrl+Shift+Insert** — открыть сравнение выбранного предмета экипировки
+  с надетым. В таблице каждая строка называет оба значения и разницу.
+  **Num8** и **Num2** перебирают строки, **Num0** или **Num6** повторяет строку,
+  **Num4** или **Delete** закрывает сравнение.
+- **Ctrl+F7** — надеть рекомендованную игрой экипировку.
+- **Ctrl+F8** — выбрать случайную внешность при создании персонажа.
+- **Ctrl+End** — назвать очки собирателя (GP), расходуемые на умения сбора.
+- **Ctrl+F4** — прочитать журнал охоты. Если открыт журнал ремесла —
+  перечислить, что можно изготовить из материалов в сумке.
+- **Alt+Delete** — использовать материалы высокого качества (HQ)
+  в выбранном рецепте открытого журнала ремесла.
+- **Ctrl+F10** или `/acc ui` — прочитать выбранный рецепт: очки работы,
+  сложность, прочность, качество, материалы и требования. Материалы читаются
+  как «нужно 3, есть 12, из них обычных 10, высокого качества 2».
+  Во время изготовления эта же команда читает текущий синтез: очки работы,
+  прогресс, качество, шанс HQ, прочность, шаг, состояние и действующие эффекты.
+- `/acc synthesis` — повторить полные сведения о текущем изготовлении.
+  Изменения очков работы и показателей синтеза также читаются автоматически;
+  изменения состояния и эффектов произносятся при их смене.
+
+### Покупка нескольких штук одного товара
+
+В обычном магазине **за гил** выберите нужный товар и нажмите
+**Ctrl+Shift+B**. Мод назовёт товар, текущее количество и допустимый диапазон.
+Введите число, например **50**, затем нажмите **Enter**. Первая введённая
+цифра заменяет прежнее количество целиком. **Backspace** удаляет цифру,
+**Delete** очищает ввод, **Escape** отменяет его без изменения количества.
+Используйте цифры верхнего ряда или цифровой блок с включённым Num Lock.
+
+Enter задаёт количество. Затем подтвердите **саму покупку** обычной клавишей
+игры — как правило, **Num0** — и ответьте на подтверждение, если оно появится.
+Так не нужно десятки раз увеличивать количество по одной штуке.
+Если игра ещё скрывает поле количества, сначала откройте его обычным способом
+и повторите Ctrl+Shift+B. Справку можно повторить через **Ctrl+F1**.
+
+Неверное число не заменяется другим автоматически. При смене товара, закрытии
+магазина или переходе в другое приложение ввод отменяется. Ограничения числа
+берутся из поля игры; окончательную доступность покупки, деньги и место
+проверяет игра. Обмен за другие валюты, продажа и обратный выкуп этим способом
+не изменяются. Это новое исходное сочетание мода (`KeyShopQuantity`);
+личные назначения игры могут отличаться, проверить их можно через `/acc keys`.
+
+### Назначение умений и предметов на панели
+
+- **Ctrl+F9** — прочитать первую клавиатурную панель; в режиме геймпада —
+  текущую обычную крестовую панель из 16 кнопок.
+- **Ctrl+Num0** — открыть или закрыть выбор клавиши клавиатурной панели,
+  в том числе при включённом режиме геймпада.
+- **`/acc skills`** или **`/acc умения`** — открыть выбор клавиши клавиатурной панели.
+- **`/acc crossbar`** — открыть выбор крестовой панели для геймпада.
+- **`/acc crossread`** — прочитать 16 кнопок текущей обычной крестовой панели.
+
+При входе через Ctrl+Num0 или `/acc skills` сначала выберите клавишу,
+а затем умение или предмет для неё. Через `/acc crossbar` выбирается крестовая панель 1–8 либо
+клавиатурные панели, затем кнопка и её содержимое. Открытое меню управляется
+цифровым блоком:
+
+- **Num8** / **Num2** — предыдущая / следующая строка. В списке клавиш
+  произносится и то, что сейчас назначено.
+- **Num0** — подтвердить выбор; на выбранном умении или предмете — назначить
+  его на ранее выбранную клавишу.
+- **Num4** / **Num6** — переключить панель при выборе клавиши; при выборе
+  содержимого — переключить раздел: боевые умения, ремесленные действия,
+  предметы, предметы заданий, общие действия, маунты или команды спутника.
+- **Num5** — сразу прочитать название и описание выбранного боевого или
+  ремесленного умения. Это чтение не назначает умение и не поворачивает персонажа.
+- **Num Decimal** — вернуться на шаг назад или закрыть меню.
+
+После назначения меню возвращается к выбору клавиши: можно сразу заполнить
+следующую. Изменение общей панели геймпада затрагивает и другие профессии,
+которые её используют. Поддерживаются обычные крестовые панели; расширенные
+варианты с двойным нажатием триггеров и панель питомца этим чтением не охватываются.
+
+### История чата
+
+- **Alt+Page Up** / **Alt+Page Down** — предыдущая / следующая категория
+  истории: диалоги, речь, крик, группа, альянс, личные сообщения, свободная
+  компания, система, добыча. В новой системе чата используются настроенные
+  игровые вкладки и их фильтры.
+- **Shift+Page Up** / **Shift+Page Down** — более старое / более новое
+  сообщение в выбранной категории.
+- **Shift+Home** / **Shift+End** — первое / последнее сообщение текущей
+  категории. Доступно в новой системе чата.
+- **Alt+Home** / **Alt+End** — предыдущая / следующая игровая вкладка чата.
+  Доступно в новой системе чата.
+- **Ctrl+Shift+Page Up** — открыть меню игрока из выбранной строки истории.
+  Если игрок недоступен, мод сообщает об этом; другой одноимённый игрок
+  с другого сервера не выбирается. Для игрока, выбранного целью в мире,
+  используйте **Num0**.
+- **Enter** — в прежней системе чата перейти к ответу в поддерживаемом
+  канале прочитанного сообщения. В новой системе автоматически выбирается
+  только адресат личного сообщения; для остальных сообщений проверьте
+  текущий канал перед отправкой. Если строка ввода уже открыта, Enter
+  отправляет набранный текст как обычно.
+
+Переключение между прежней и новой системой чата находится в настройках
+**Shift+F9**. Поэтому четыре сочетания с Home и End могут сообщать, что нужна
+новая система. Отключение автоматической речи канала не удаляет его историю.
+
+### Эмоции и карточная игра Triple Triad
+
+- **Shift+F4** / **Shift+F5** — предыдущая / следующая эмоция.
+- **Shift+F6** — выполнить выбранную эмоцию.
+- **Ctrl+Shift+F4** — прочитать игровое поле открытой партии Triple Triad.
+- **Ctrl+Shift+F5** — прочитать собственные карты.
+
+### Список плагинов и диагностика
+
+- **Shift+F1** — назвать следующий установленный плагин; первое нажатие
+  даёт обзор списка.
+- **Shift+F2** — назвать предыдущий плагин.
+- **Shift+F12** — открыть настройки выбранного плагина. Озвучивание чужого
+  окна настроек зависит от его доступности.
+- **Ctrl+F5** — сохранить на рабочий стол описание элементов текущего окна
+  для разбора ошибки разработчиками.
+
+### Главное меню игры и совпадения клавиш
+
+**Num+** открывает главное меню самой игры. **Num4** и **Num6** переключают
+разделы, **Num0** открывает выбранный, **Num8** и **Num2** перемещают по его
+пунктам. В русской версии семь разделов называются: «Персонаж», «Задания и
+миссии», «Журналы», «Путешествия», «Группа», «Общение», «Система».
+Журнал собирательства находится в третьем разделе — «Журналы».
+
+В английском клиенте есть следующие совпадения с назначениями мода:
+
+- **N** — журнал ремесла в игре и переключение произнесения стороны света
+  в моде. Нажатие может затрагивать обе функции.
+- **Page Up** / **Page Down** — приближение камеры и перебор объектов.
+- **Ctrl+End** — сохранение положения камеры и чтение очков собирателя.
+- **Num5** — наведение камеры и чтение цели либо поворот по маршруту.
+  Эту клавишу мод забирает у игры, чтобы камера не срабатывала дополнительно.
+- **Num0** — игровое подтверждение; мод также использует её для своего
+  открытого меню и меню игрока. Действие зависит от открытого окна и цели.
+
+Это совпадения со стандартной схемой, а не полный список для любых личных
+настроек. Поведение Ctrl+F вместе с игровой командой поворота на F
+требует отдельной проверки в игре. Проверка назначений в исходниках сама
+по себе не подтверждает, какую команду получит игра при нажатии.
+
+Для проверки своих назначений введите **`/acc keys`**: файл
+`FFXIV_Keybinds.txt` появится на рабочем столе. С версии 6.08.73 этот файл
+создаётся только по ручной команде. Он показывает назначения игры и сравнение
+с сохранёнными клавишами мода. Если Insert используется как клавиша NVDA,
+скринридер может перехватывать сочетание сравнения экипировки.
+
+Игровые назначения меняются в меню игры «Система» → «Назначения клавиш».
+Клавиши мода хранятся в его отдельном файле настроек. В текущем меню
+**Shift+F9** можно менять речь, звуки и другие параметры, но редактора
+сочетаний клавиш там нет.
+
+## Команды чата
+
+Команды вводятся в чат игры. Они дополняют горячие клавиши:
+
+- `/acc help` — прочитать справку.
+- `/acc nav` — назвать направление и расстояние до цели.
+- `/acc set` — запомнить текущую игровую цель для навигации.
+- `/acc clear` — убрать запомненную цель навигации.
+- `/acc near` — перечислить ближайшие объекты.
+- `/acc status` — назвать HP и MP.
+- `/acc ui` — прочитать текущее меню.
+- `/acc win` — назвать активное окно.
+- `/acc keys` — сохранить назначения клавиш игры на рабочий стол.
+- `/acc stop` — остановить речь мода.
+- `/acc fish` — назвать места рыбалки в текущей локации.
+- `/acc fishhere` — запомнить текущее место как точку для заброса удочки.
+- `/acc gather` — назвать места сбора в текущей локации.
+- `/acc gathergo` — идти к ближайшему месту сбора.
+- `/acc enemies` или `/acc gegner` — прочитать противников в бою: количество,
+  условные цветовые имена, здоровье и кто атакует вас.
+- `/acc trails` — перечислить записанные пути в текущей локации.
+- `/acc skills` или `/acc умения` — открыть назначение клавиатурных панелей.
+- `/acc crossbar` — открыть назначение крестовых панелей геймпада.
+- `/acc crossread` — прочитать текущую обычную крестовую панель.
+- `/acc synthesis` — прочитать состояние текущего синтеза.
+- `/acc craftable` — перечислить доступное изготовление из материалов в сумке.
+- `/acc cd` или `/acc cooldowns` — включить или выключить объявления готовности умений и специальных эффектов класса.
+- `/acc aoeturn on` / `/acc aoeturn off` — включить или выключить поворот к проверенному прямому выходу из опасной зоны. Движением управляете сами; по умолчанию выключено. `/acc aoeturn` читает состояние. Переключатель есть и в Shift+F9.
+- `/acc soundtest` — прослушать звуки мода.
+- `/acc lang ru` — включить русский язык; `en` — английский, `de` — немецкий,
+  `auto` — автоматический выбор по языку Windows.
+- `/acc translate off` — отключить русский перевод названий и описаний предметов
+  и умений в озвучке; `/acc translate on` — вернуть. Можно также
+  `/acc перевод выкл` и `/acc перевод вкл`. `/acc translate` сообщает состояние.
+  Выбор сохраняется после перезапуска. Русские подсказки плагина остаются;
+  при отключении используется текст из игровых данных. Перевод самой игры
+  через XIV Rus/Penumbra управляется отдельно.
+- `/acc dump <название окна>` — сохранить описание указанного окна на рабочий стол;
+  вместо текста в угловых скобках укажите внутреннее название окна.
+
+## Последние изменения и ограничения
+
+В 6.08.74 меню Num+ называет разделы, которые игра действительно открывает.
+Раньше «Система» ошибочно называлась «Журнал собирательства», а другие разделы
+тоже получали названия посторонних команд. Исправлен весь набор подписей.
+Открытие окон и переходы по меню после исправления ещё требуют проверки в FFXIV.
+[История изменений](CHANGELOG.md).
+
+Остаётся замечание о лишнем чтении умений окружающих игроков. Последние изменения
+речи, обход подъёмов и поведение при входе в игру требуют отдельной проверки в FFXIV.
+Автоматические проверки сборки и установщика не подтверждают эти игровые сценарии.
+[Известные ограничения](docs/known-issues.md) · [Результаты проверок](docs/maintenance/VERIFICATION.md).
+
+## Помощь и документация
+
+[Сообщить об ошибке](https://github.com/pitpamyati-netizen/ff14-accessibility/issues/new/choose):
+укажите версию, свои действия, ожидаемый результат и то, что произошло или прозвучало.
+
+[Инструкция в обычном тексте](README-RU.txt) · [Все документы](docs/README.md) ·
+[Сборка из исходников](README-RU.md).
+
+## Авторы и благодарности
+
+**Особая благодарность [derbruedi](https://github.com/derbruedi), автору
+[исходного FF14 Accessibility](https://github.com/derbruedi/ff14-accessibility).
+Он создал основу мода и выполнил основную, самую большую часть работы над
+проектом. Благодаря его труду стали возможны и сам мод, и эта русская версия.**
+
+Спасибо всем участникам разработки:
+
+- **[derbruedi](https://github.com/derbruedi)** — создание и развитие исходного
+  мода, основная работа над доступностью игровых окон, управлением,
+  озвучиванием и навигацией.
+- **[bladestorm360](https://github.com/bladestorm360)** — сведения об уровне
+  и здоровье противников, описание формы областей действий, категории
+  союзников и испытаний, озвучивание внешности при создании персонажа,
+  история чата по игровым вкладкам и доступность глубоких подземелий.
+- **[ahmadabukhdair1](https://github.com/ahmadabukhdair1)** — доступное чтение
+  и назначение обычных крестовых панелей геймпада.
+- **[gitana83](https://github.com/gitana83)** — звуковое слежение за здоровьем
+  группы, цветовые имена противников и отдельный голос для каналов чата.
+- **[Berenion](https://github.com/Berenion)** — озвучиваемое сравнение
+  экипировки, названия ячеек предметов, выбор клавиши перед назначением
+  умения и названия клавиш на выбранном языке.
+- **[nevilika](https://github.com/nevilika)** — сведения об игроках и эффектах,
+  чтение кристаллов, журналов ремесла и собирательства, окна синтеза,
+  подсказки об открываемых заданием возможностях, ветви умений спутника
+  и исправления чтения интерфейса.
+- **[dnz3d4c](https://github.com/dnz3d4c)** — исправление названий мест
+  обитания целей журнала охоты.
+- **[pitpamyati-netizen](https://github.com/pitpamyati-netizen)** — развитие
+  и сопровождение русской версии, русское озвучивание, исправления
+  доступности, документация и установщик для русскоязычных игроков.
+
+В истории разработки также сохранены авторские имена без привязанного
+профиля GitHub: **Kesheri** — доработки чтения ремесла, эффектов, сведений
+об игроках и умений спутника, исправления выбора целей и повторяющейся речи;
+**Verdent** — [первоначальное добавление проекта](https://github.com/derbruedi/ff14-accessibility/commit/a8e413be8e4371a11b283931ca857a007e37f078).
+Эти авторские подписи также включены в благодарности, чтобы сохранить
+признание всего опубликованного вклада.
+
+Имена и вклад сверены 29 сентября 2026 года по
+[участникам исходного проекта](https://github.com/derbruedi/ff14-accessibility/graphs/contributors),
+[принятым изменениям](https://github.com/derbruedi/ff14-accessibility/pulls?q=is%3Apr+is%3Amerged)
+и [участникам русской версии](https://github.com/pitpamyati-netizen/ff14-accessibility/graphs/contributors).
+Спасибо также игрокам, которые проверяют мод, присылают журналы и помогают
+находить проблемы доступности.
+
+Отдельная благодарность команде **[XIV Rus](https://xivrus.ru/)** и участникам
+[русского перевода игры](https://github.com/xivrus/xiv_ru_weblate), разработчикам
+**[XIVLauncher и Dalamud](https://github.com/goatcorp)**,
+**[vnavmesh](https://github.com/awgil/ffxiv_navmesh)**,
+**[AutoDuty](https://github.com/erdelf/AutoDuty)**,
+**[Sku](https://github.com/Sku75/Sku-WoW-Addon-TBC)**,
+**[Tolk](https://github.com/dkager/tolk)**,
+**[NVDA](https://github.com/nvaccess/nvda)** и другим авторам используемых
+компонентов. Их код, переводы, маршруты и звуки помогают работе мода.
+Сведения об этих и остальных компонентах, их авторах и лицензиях находятся
+в [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Лицензия мода — [GNU AGPL-3.0](LICENSE). Проект не связан с Square Enix.
+
+В системных настройках звука каждый ползунок называет свой канал и процент.
+Для точного значения: выберите ползунок, Ctrl+Enter, число от 0 до 100, Enter.
+Затем сохраните настройки штатной кнопкой «Применить».

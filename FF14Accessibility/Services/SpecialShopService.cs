@@ -36,6 +36,8 @@ public sealed class SpecialShopService
     // die Id kommt mit, weil der Aufrufer damit den eigenen Bestand abfragt.
     private Dictionary<(uint Item, uint Cost), (uint Id, string Name)>? _index;
 
+    private bool _namesRussian;
+
     public SpecialShopService(IDataManager data, IPluginLog log)
     {
         _data = data;
@@ -50,7 +52,11 @@ public sealed class SpecialShopService
     public (uint Id, string Name) CurrencyFor(uint receiveItemId, uint cost)
     {
         if (receiveItemId == 0 || cost == 0) return (0, string.Empty);
-        _index ??= BuildIndex();
+        if (_index == null || _namesRussian != Loc.IsRussianItemActionText)
+        {
+            _index = BuildIndex();
+            _namesRussian = Loc.IsRussianItemActionText;
+        }
         return _index.TryGetValue((receiveItemId, cost), out var currency) ? currency : (0, string.Empty);
     }
 
@@ -82,7 +88,7 @@ public sealed class SpecialShopService
                     currencyName = costCount > 1
                         ? cost.Plural.ExtractText().Trim()
                         : cost.Singular.ExtractText().Trim();
-                    if (currencyName.Length == 0) currencyName = cost.Name.ExtractText().Trim();
+                    if (Loc.IsRussianItemActionText || currencyName.Length == 0) currencyName = RussianGameText.Name(_data, cost, x => x.Name).Trim();
                     break; // the first real cost is the one the row shows
                 }
                 if (costCount == 0 || currencyName.Length == 0) continue;

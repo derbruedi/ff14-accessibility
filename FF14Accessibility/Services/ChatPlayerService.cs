@@ -73,10 +73,14 @@ public sealed class ChatPlayerService
         var live = FindInObjectTable(player);
         if (live != null && live.Address != nint.Zero)
         {
-            var accepted = _navigation.TargetFromBrowser(live);
             var hud = AgentHUD.Instance();
-            if (hud != null)
-                hud->OpenContextMenuFromTarget((GameObject*)live.Address);
+            if (hud == null)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.ChatPlayerNotFound(player.DisplayName));
+                return;
+            }
+            var accepted = _navigation.TargetFromBrowser(live);
+            hud->OpenContextMenuFromTarget((GameObject*)live.Address);
 
             _log.Info($"[ChatPlayer] Kontextmenü + Ziel '{player.DisplayName}' " +
                       $"id={live.GameObjectId:X} anvisiert={accepted}");
@@ -105,14 +109,12 @@ public sealed class ChatPlayerService
 
         if (player.WorldId != 0)
         {
-            var byWorld = matches.FirstOrDefault(o => PlayerInfo.HomeWorldId(o) == player.WorldId);
-            if (byWorld != null) return byWorld;
-            // Named worlds that do not match any loaded PC: do not guess.
-            if (matches.Count > 1) return null;
+            // Even a single namesake from another world is a different player.
+            matches = matches.Where(o => PlayerInfo.HomeWorldId(o) == player.WorldId).ToList();
         }
 
         // Same display name twice without a world id: refuse rather than pick wrong.
-        if (matches.Count > 1) return null;
+        if (matches.Count != 1) return null;
 
         return matches[0];
     }
@@ -128,11 +130,27 @@ public sealed class ChatPlayerService
 
         var members = hud->PartyMembers;
         var count = Math.Min((int)hud->PartyMemberCount, members.Length);
+        var matched = -1;
         for (var i = 0; i < count; i++)
         {
             var member = members[i];
             var name = member.Name.ToString();
             if (!string.Equals(name, player.Name, StringComparison.Ordinal)) continue;
+
+            // An unloaded party member has no verifiable world here. The social
+            // lookup below can still report their location by name AND world.
+            if (player.WorldId != 0)
+            {
+                if (member.Object == null) continue;
+                var candidate = _objects.FirstOrDefault(o => o.Address == (nint)member.Object);
+                if (candidate == null || PlayerInfo.HomeWorldId(candidate) != player.WorldId) continue;
+            }
+            if (matched >= 0) return false;
+            matched = i;
+        }
+        if (matched >= 0)
+        {
+            var member = members[matched];
 
             if (member.Object != null)
             {

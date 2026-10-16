@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <DALAMUD_HOME Condition="'$(DALAMUD_HOME)' == ''">$(APPDATA)/XIVLauncher/addon/Hooks/dev</DALAMUD_HOME>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Using Include="Xunit" />
+    <ProjectReference Include="../../FF14Accessibility/FF14Accessibility.csproj" AdditionalProperties="Configuration=Release;DALAMUD_HOME=$(DALAMUD_HOME)" />
+    <Reference Include="Dalamud"><HintPath>$(DALAMUD_HOME)/Dalamud.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="FFXIVClientStructs"><HintPath>$(DALAMUD_HOME)/FFXIVClientStructs.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="InteropGenerator.Runtime"><HintPath>$(DALAMUD_HOME)/InteropGenerator.Runtime.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Lumina"><HintPath>$(DALAMUD_HOME)/Lumina.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Lumina.Excel"><HintPath>$(DALAMUD_HOME)/Lumina.Excel.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+</Project>

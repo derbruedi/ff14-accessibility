@@ -1,3 +1,7 @@
+> **Справка для разработчиков из исходного проекта.** Примеры могут относиться
+> к другим играм, движкам и инструментам. Для текущей русской версии используйте
+> [оглавление документации](README.md); порядок работы задают AGENTS.md и docs/maintenance.
+
 # Git and GitHub Guide for Beginners
 
 This guide explains Git and GitHub from scratch. No prior knowledge required.

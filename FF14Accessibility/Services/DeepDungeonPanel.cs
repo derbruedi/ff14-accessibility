@@ -141,8 +141,8 @@ public sealed class DeepDungeonPanel
                             items[index].IsUsable, items[index].IsActive);
 
         var row = d.PomanderSlot[index].ValueNullable;
-        var name = row is { } r && r.RowId != 0 ? r.Name.ExtractText().Trim() : string.Empty;
-        var tip  = row is { } r2 && r2.RowId != 0 ? _text.Read(r2.Tooltip) : string.Empty;
+        var name = row is { } r && r.RowId != 0 ? RussianGameText.Name(_data, r, x => x.Name).Trim() : string.Empty;
+        var tip  = row is { } r2 && r2.RowId != 0 ? _text.Read(RussianGameText.Text(_data, r2, x => x.Tooltip, "Tooltip")) : string.Empty;
 
         return new Slot(name, tip, items[index].Count, items[index].IsUsable, items[index].IsActive);
     }
@@ -168,7 +168,7 @@ public sealed class DeepDungeonPanel
         var rowId = d.MagiciteSlot[index].RowId;
         var stone = rowId == 0 ? null : _data.GetExcelSheet<DeepDungeonMagicStone>()?.GetRowOrDefault(rowId);
         return stone is { } s
-            ? new Slot(s.Name.ExtractText().Trim(), _text.Read(s.Tooltip), count, false, false)
+            ? new Slot(RussianGameText.Name(_data, s, x => x.Name).Trim(), _text.Read(RussianGameText.Text(_data, s, x => x.Tooltip, "Tooltip")), count, false, false)
             : new Slot(string.Empty, string.Empty, count, false, false);
     }
 
@@ -275,9 +275,9 @@ public sealed class DeepDungeonPanel
         var armor = d.AetherpoolArmor.ValueNullable?.Name.ExtractText().Trim();
 
         if (!string.IsNullOrEmpty(arm) && text.Equals(arm, StringComparison.OrdinalIgnoreCase))
-            return AccessibilityStrings.DeepGearStrength(text, dd->WeaponLevel);
+            return AccessibilityStrings.DeepGearStrength(RussianGameText.Name(_data, d.AetherpoolArm.Value, x => x.Name), dd->WeaponLevel);
         if (!string.IsNullOrEmpty(armor) && text.Equals(armor, StringComparison.OrdinalIgnoreCase))
-            return AccessibilityStrings.DeepGearStrength(text, dd->ArmorLevel);
+            return AccessibilityStrings.DeepGearStrength(RussianGameText.Name(_data, d.AetherpoolArmor.Value, x => x.Name), dd->ArmorLevel);
 
         return null;
     }
@@ -526,7 +526,8 @@ public sealed class DeepDungeonPanel
             if (piece is not { } p) continue;
             var name = p.Name.ExtractText().Trim();
             if (name.Length == 0 || !text.Equals(name, StringComparison.OrdinalIgnoreCase)) continue;
-            return (AccessibilityStrings.DeepGearStrength(name, strength), _text.Read(p.Description));
+            return (AccessibilityStrings.DeepGearStrength(RussianGameText.Name(_data, p, x => x.Name), strength),
+                _text.Read(RussianGameText.Text(_data, p, x => x.Description, "Description")));
         }
         return null;
     }

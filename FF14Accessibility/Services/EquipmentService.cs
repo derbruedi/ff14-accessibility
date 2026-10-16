@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Game.Inventory;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
@@ -52,10 +53,13 @@ public sealed class EquipmentService
     public void ReadEquipment()
     {
         var parts = new List<string>();
+        var labels = new List<string>();
         var empty = 0;
         var damaged = 0;
+        var slotsRead = 0;
         foreach (var item in _inventory.GetInventoryItems(GameInventoryType.EquippedItems))
         {
+            slotsRead++;
             if (item.IsEmpty || item.ItemId == 0)
             {
                 empty++;
@@ -69,12 +73,14 @@ public sealed class EquipmentService
             // worn pieces are normally wearable, only a mismatch (e.g. after a
             // class change) is worth words: "nicht tragbar, nur für ...".
             var gear = _gearInfo.DescribeGear(item.BaseItemId, briefWhenWearable: true);
-            var gearNote = gear.Length > 0 ? $", {gear}" : string.Empty;
+            var gearNote = gear;
+            if (gearNote.Length > 0) gearNote = ", " + gearNote;
             var condition = _inventoryReader.DescribeWornCondition(item.Address, item.BaseItemId, onlyWhenDamaged: true);
             var conditionNote = condition.Length > 0 ? $", {condition}" : string.Empty;
             if (condition.Length > 0) damaged++;
             _log.Info($"[Equip] slot={item.InventorySlot} id={item.ItemId} '{label}: {name}'{hq}{gearNote}{conditionNote}");
-            parts.Add($"{label}: {name}{hq}{gearNote}{conditionNote}");
+            parts.Add($"{name}{hq}{gearNote}{conditionNote}");
+            labels.Add(label);
         }
 
         if (parts.Count == 0)
@@ -82,10 +88,57 @@ public sealed class EquipmentService
             _tolk.SpeakInterrupt(AccessibilityStrings.NoEquipmentWorn);
             return;
         }
-        var emptyNote = empty > 0 ? AccessibilityStrings.SlotsFree(empty) : string.Empty;
+        var expected = WornSlots();
+        var positioned = new string?[expected.Count];
+        var unmatched = new List<string>();
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var index = -1;
+            for (var n = 0; n < expected.Count; n++)
+                if (expected[n].Label == labels[i] && positioned[n] == null) { index = n; break; }
+            if (index >= 0) positioned[index] = parts[i];
+            else unmatched.Add(parts[i]);
+        }
+        var complete = unmatched.Count == 0 && slotsRead == expected.Count;
+        if (!complete)
+            _log.Warning($"[Equip] Slotliste stimmt nicht: {slotsRead} Eintraege im Container (erwartet {expected.Count}), {unmatched.Count} ohne bekannte Beschriftung.");
+        var spoken = new List<string>();
+        var namedEmpty = 0;
+        for (var i = 0; i < expected.Count; i++)
+        {
+            if (positioned[i] is { } occupied) spoken.Add(occupied);
+            else if (complete && expected[i].AnnounceWhenEmpty)
+            {
+                spoken.Add(expected[i].Label + ": " + AccessibilityStrings.SlotEmpty);
+                namedEmpty++;
+            }
+        }
+        spoken.AddRange(unmatched);
+        var emptyNote = (complete ? namedEmpty : empty) > 0
+            ? AccessibilityStrings.SlotsFree(complete ? namedEmpty : empty) : string.Empty;
         var allFullNote = damaged == 0 ? AccessibilityStrings.EquipmentAllFullCondition : string.Empty;
-        _tolk.SpeakInterrupt(AccessibilityStrings.EquipmentList(string.Join(". ", parts), emptyNote + allFullNote));
+        _tolk.SpeakInterrupt(AccessibilityStrings.EquipmentList(string.Join(". ", spoken), emptyNote + allFullNote));
     }
+
+    private readonly record struct WornSlot(string Label, bool AnnounceWhenEmpty);
+
+    private static List<WornSlot> WornSlots() =>
+    [
+        new(AccessibilityStrings.SlotWeapon, true),
+        new(AccessibilityStrings.SlotOffHand, true),
+        new(AccessibilityStrings.SlotHead, true),
+        new(AccessibilityStrings.SlotBody, true),
+        new(AccessibilityStrings.SlotHands, true),
+        new(AccessibilityStrings.SlotWaist, false),
+        new(AccessibilityStrings.SlotLegs, true),
+        new(AccessibilityStrings.SlotFeet, true),
+        new(AccessibilityStrings.SlotEars, true),
+        new(AccessibilityStrings.SlotNeck, true),
+        new(AccessibilityStrings.SlotWrists, true),
+        new(AccessibilityStrings.SlotRing, true),
+        new(AccessibilityStrings.SlotRing, true),
+        new(AccessibilityStrings.SlotSoulCrystal, false),
+    ];
 
     /// <summary>
     /// German slot label from the item's EquipSlotCategory row: the column
@@ -119,7 +172,7 @@ public sealed class EquipmentService
     {
         if (_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row))
         {
-            var name = row.Name.ExtractText();
+            var name = EquipmentSpeech.Name(_data, row);
             if (!string.IsNullOrWhiteSpace(name)) return name;
         }
         return AccessibilityStrings.ItemFallback(baseItemId);

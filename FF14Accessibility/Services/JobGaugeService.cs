@@ -184,7 +184,6 @@ public sealed partial class JobGaugeService
     private readonly IJobGauges          _gauges;
     private readonly IObjectTable        _objectTable;
     private readonly IDataManager        _data;
-    private readonly WarningVoiceService _warnVoice;
     private readonly TolkService         _tolk;
     private readonly CueService          _cue;
     private readonly Configuration       _config;
@@ -224,7 +223,6 @@ public sealed partial class JobGaugeService
         IJobGauges gauges,
         IObjectTable objectTable,
         IDataManager data,
-        WarningVoiceService warnVoice,
         TolkService tolk,
         CueService cue,
         Configuration config,
@@ -233,7 +231,6 @@ public sealed partial class JobGaugeService
         _gauges      = gauges;
         _objectTable = objectTable;
         _data        = data;
-        _warnVoice   = warnVoice;
         _tolk        = tolk;
         _cue         = cue;
         _config      = config;
@@ -241,7 +238,7 @@ public sealed partial class JobGaugeService
     }
 
     /// <summary>Called every frame from Plugin.OnFrameworkUpdate.</summary>
-    public void Update()
+    public void Update(ReadyAnnouncementBatch announcements)
     {
         if (!_config.AnnounceJobGauge) return;
 
@@ -301,7 +298,7 @@ public sealed partial class JobGaugeService
         var text = string.Join(", ", _becameAvailable) + ".";
         foreach (var cue in _becameCues)
             _cue.PlayGaugeReadyTone(cue);
-        if (!_warnVoice.Speak(text)) _tolk.Speak(text);
+        announcements.Add(text);
         _log.Info($"[Gauge] Verfuegbar geworden: {text}");
     }
 

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <Using Include="Xunit" />
+    <Compile Include="../../FF14Accessibility/Services/RussianDescriptionCatalog.cs" Link="RussianDescriptionCatalog.cs" />
+    <Compile Include="../../FF14Accessibility/Services/RussianDescriptionTerms.cs" Link="RussianDescriptionTerms.cs" />
+    <EmbeddedResource Include="../../FF14Accessibility/Resources/RussianDescriptions.json.gz" LogicalName="FF14Accessibility.Resources.RussianDescriptions.json.gz" />
+    <EmbeddedResource Include="../../FF14Accessibility/Resources/RussianActionNames.json.gz" LogicalName="FF14Accessibility.Resources.RussianActionNames.json.gz" />
+    <EmbeddedResource Include="../../FF14Accessibility/Resources/RussianDescriptionTerms.json.gz" LogicalName="FF14Accessibility.Resources.RussianDescriptionTerms.json.gz" />
+  </ItemGroup>
+</Project>

@@ -134,6 +134,8 @@ public sealed class MenuInput
     }
 
     public bool Just(int vk) => vk is >= 0 and < 256 && _just[vk];
+    public bool Down(int vk) => vk is >= 0 and < 256 && _down[vk];
+    public bool AnyDown => _tracked.Any(vk => _down[vk]);
 
     public bool JustAny(params int[] vks)
     {

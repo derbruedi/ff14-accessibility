@@ -29,6 +29,14 @@ namespace FF14Accessibility.Services;
 /// Lives in its own class because two features read the same sheet: the hunting
 /// log (open monsters of the current rank) and the levequest category (the
 /// enemies a running battle leve asks for).
+///
+/// Russian comes from <see cref="RussianMonsterNames"/> instead of the sheet:
+/// the sheet is English in this installation (the Rusik translates what is
+/// drawn, not what the sheets hold), so the hunting log named a monster
+/// "Ixali deftalon" while the same monster's nameplate read "Иксал бронеклюв"
+/// (report 2026-09-14, msg 11139). Row 209 was checked against the English
+/// sheet: "Ixali deftalon" there, "Иксал бронеклюв" in the Rusik - same id,
+/// same monster.
 /// </summary>
 public static class MonsterNameText
 {
@@ -37,6 +45,17 @@ public static class MonsterNameText
     /// <param name="language">Client language - only German fills endings in.</param>
     public static string Resolve(BNpcName nameRow, Dalamud.Game.ClientLanguage language)
     {
+        if (language == Dalamud.Game.ClientLanguage.English
+            && GameDisplayText.Find("BNpcName", nameRow.RowId, nameRow.Singular.Data) is { } displayed)
+            return displayed.ExtractText().Trim();
+        // Russian first: the game draws the translated name on the nameplate,
+        // and FindNearestLive compares against exactly that name - so this is
+        // also what makes a hunting target findable by name again. A row the
+        // Rusik left untranslated falls through to the sheet name (English, as
+        // before) - never an invented name.
+        if (Loc.IsRussian && RussianMonsterNames.MonsterName(nameRow.RowId) is { } russian)
+            return russian;
+
         var text = nameRow.Singular.ExtractText().Trim();
         if (!text.Contains('[')) return text;
 

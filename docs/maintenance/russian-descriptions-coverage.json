@@ -1,0 +1,81 @@
+{
+  "revision": "6a2733af6df0f86b133bcbf61c553dfacf80ec2d",
+  "files": {
+    "Item.en.xlf": "e32d73025c1057174163345dd635d228d5d43cc41294e2249c7927180d9c7167",
+    "Item.xlf": "9572f174594f8fed101726fd5081b33e6a60691c64bb1ed1ee04110b2ddb3437",
+    "ActionTransient.en.xlf": "273d25576550fe693d4cc10ed80cc817d66000c9a873c00a7e2d314dc29d672d",
+    "ActionTransient.xlf": "5e36bd8da0dd23c0a0a6921a03bbc78948d116a39d20963ae5c1243acee0f9f5",
+    "CraftAction.en.xlf": "5396283841f8ad64986f46d4bef99918709c61856246f95d2f0055314d7739a1",
+    "CraftAction.xlf": "30bf05b61f7672d569284d9c48b4f4f4a97f222a81bc4d5ada3b5a111900461c",
+    "TraitTransient.en.xlf": "b3c9156f0b8134bd89ef8f90f163b04ca444cb7efd3326340f570a648dde98fb",
+    "TraitTransient.xlf": "4712cc9efc6cf3777ab67a20b70362a6cb8d8176b3542acbd723369d3e3eff8b",
+    "BuddyAction.en.xlf": "47699dcc9fdc49e0f771b7e0fba826adc30088c6dead36bb3856cb6db5605d32",
+    "BuddyAction.xlf": "7b01defedf4a0ea0c393c66a767c26aee8b6e4938a213f43ff1faca0cd3f2f50",
+    "GeneralAction.en.xlf": "b977c4e0521c64b0a168c15a70e69eacf99396a4c01045297ced672370fb8398",
+    "GeneralAction.xlf": "d3f1546b5958ea996e8f2c7519e0bc108a8ade75a77a86ff9960f60f90fc2d20",
+    "PetAction.en.xlf": "28e0e2c6d5bd3fa88ec787026fa7c6d83090dd56169662d29f1fb1159b1ff2a9",
+    "PetAction.xlf": "0d38d15a63158ebde2e762fa801c0a3d5c4da08666ae69c9cd5d60f5ca81b0e2",
+    "MainCommand.en.xlf": "d9e672c1b96a9a670cb55e9f8324d97a06d5c6aae1822700a00c9d5516c7baa3",
+    "MainCommand.xlf": "889994ff7b417fa775c7d58640e13ebed76741a17a50c509b480fe0de2d87f42",
+    "AozActionTransient.en.xlf": "a0704a110e6efc91cdcd672ebfe89e2d909ff9350000c9e43e47cb12fdd45107",
+    "AozActionTransient.xlf": "e5c109bcbc3e3e7b541ef5614df4e6864c7ceb70bc10a3fc3ada27f7cb43ba00"
+  },
+  "sheets": {
+    "Item": {
+      "included": 20849,
+      "unfinished_source": [],
+      "skipped": [],
+      "local_overrides": 494
+    },
+    "Action": {
+      "included": 3406,
+      "unfinished_source": [],
+      "skipped": [],
+      "local_overrides": 16
+    },
+    "CraftAction": {
+      "included": 432,
+      "unfinished_source": [],
+      "skipped": [],
+      "local_overrides": 212
+    },
+    "Trait": {
+      "included": 682,
+      "unfinished_source": [],
+      "skipped": [],
+      "local_overrides": 1
+    },
+    "BuddyAction": {
+      "included": 6,
+      "unfinished_source": [],
+      "skipped": []
+    },
+    "GeneralAction": {
+      "included": 43,
+      "unfinished_source": [],
+      "skipped": []
+    },
+    "PetAction": {
+      "included": 41,
+      "unfinished_source": [],
+      "skipped": []
+    },
+    "MainCommand": {
+      "included": 99,
+      "unfinished_source": [],
+      "skipped": []
+    },
+    "AozDescription": {
+      "included": 124,
+      "unfinished_source": [],
+      "skipped": []
+    },
+    "AozStats": {
+      "included": 124,
+      "unfinished_source": [],
+      "skipped": []
+    }
+  },
+  "local_game_version": "2026.09.15.0000.0000",
+  "catalog_sha256": "6659aeb6107901c64a4f32c87d21c1c6fe7faf7728f2cbe8c8c7d1953829a2d3"
+}

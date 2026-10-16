@@ -102,7 +102,17 @@ public sealed unsafe class AozSpellSourceService
     }
 
     /// <summary>Alle 124 Zauber mit ihrem Fundort, unabhaengig vom Fortschritt.</summary>
-    public IReadOnlyList<AozSpellTarget> GetAll() => _all ??= Build();
+    private (bool Russian, bool Translate) _namesLanguage;
+    public IReadOnlyList<AozSpellTarget> GetAll()
+    {
+        var language = (Loc.IsRussian, Loc.TranslateItemsAndActions);
+        if (_all == null || _namesLanguage != language)
+        {
+            _all = Build();
+            _namesLanguage = language;
+        }
+        return _all;
+    }
 
     /// <summary>
     /// Die Zauber, die dem Spieler noch FEHLEN. Leer, solange das Spiel die
@@ -242,7 +252,7 @@ public sealed unsafe class AozSpellSourceService
             var action = row.Action.ValueNullable;
             if (action is not { } act) continue;
 
-            var name = act.Name.ExtractText()?.Trim() ?? string.Empty;
+            var name = RussianGameText.Name(_data, act, x => x.Name).Trim();
             if (name.Length == 0) continue;
 
             var t = transients.GetRowOrDefault(row.RowId);

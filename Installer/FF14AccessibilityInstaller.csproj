@@ -31,6 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Russian/**/*.cs" />
     <!-- Newtonsoft mit denselben Semantiken, die Dalamud fuer dalamudConfig.json
          nutzt ($type / TypeNameHandling). JObject bewahrt Property-Reihenfolge und
          die $type-Felder beim Round-Trip - System.Text.Json wuerde die Struktur
@@ -40,7 +41,6 @@
   </ItemGroup>
 
 </Project>
-
 
 
 

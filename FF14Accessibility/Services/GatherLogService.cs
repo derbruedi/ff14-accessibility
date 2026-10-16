@@ -313,7 +313,7 @@ public sealed class GatherLogService
         EnsureIndexes();
         var lines = new List<string>
         {
-            $"GatherIndex={_gatherSpotsByItem?.Count} FishIndex={_fishSpotsByParam?.Count}",
+            AccessibilityStrings.GatherProbeIndexes(_gatherSpotsByItem?.Count, _fishSpotsByParam?.Count),
         };
 
         var div = _data.GetExcelSheet<NotebookDivision>();
@@ -323,7 +323,7 @@ public sealed class GatherLogService
             foreach (var row in div)
             {
                 if (row.GatheringOpeningLevel == 0) continue;
-                lines.Add($"NotebookDivision {row.RowId}: '{row.Name.ExtractText()}' openLvl={row.GatheringOpeningLevel}");
+                lines.Add(AccessibilityStrings.GatherProbeDivision(row.RowId, row.Name.ExtractText(), row.GatheringOpeningLevel));
                 if (++n >= 12) break;
             }
         }
@@ -335,7 +335,7 @@ public sealed class GatherLogService
             {
                 if (!lists.TryGetRow(rowId, out var list)) continue;
                 var count = list.GatheringItem.Count(i => i.RowId != 0);
-                lines.Add($"GatheringNotebookList {rowId}: {count} items");
+                lines.Add(AccessibilityStrings.GatherProbeList(rowId, count));
             }
         }
 
