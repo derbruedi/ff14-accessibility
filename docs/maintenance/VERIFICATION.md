@@ -31,7 +31,32 @@
   BlindUserAccepted=false. Проверка новой версии в FFXIV/NVDA/Tolk
   не выполнялась; все окна и все чужие случаи не считаются проверенными.
   Сценарии дальнейшей проверки: BROWSER_CONTROLS_608120.md.
-  Публикация ещё выполняется.
+  LocalPluginInstalled=false: новая версия в рабочую игру не устанавливалась.
+- После чистой предварительной проверки Publish-Release.ps1 -CheckOnly
+  опубликован последний стабильный
+  [v6.08.120](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.120),
+  16 октября в 12:34:00 (+07:00). Коммит и удалённая метка:
+  e5c519aa66cae28102ebc72b7870d9de31bec1d8.
+  Проверены draft=false, prerelease=false, Latest=true и точное описание.
+- Все четыре файла скачаны обратно. Первое скачивание GitHub CLI зависло;
+  игровой ZIP и EXE повторно получены по прямым ссылкам релиза с новым
+  параметром запроса. Все размеры, SHA-256 и суммы GitHub совпали с
+  подготовленным комплектом; все четыре строки SHA256SUMS проверены.
+  Все 141 записи игрового ZIP сверены с готовым плагином и документами,
+  все 36 записей отдельного архива исходников установщика — с локальным
+  исходным архивом. Установщик 1.3.0.0, 117 666 083 байта,
+  SHA-256 BFA3B43D78B7468262DC2E54C4AD7363030EE66CA46850B32B51B6319D397DE7.
+- Настоящий ReleaseClient.Latest через живой HTTP-запрос без входа
+  в GitHub выбрал версию 6.08.120, FF14Accessibility-6.08.120-RU-no-source.zip
+  и проверенную сумму BE8B426EAAF452C85585BA8910BA01BD6BC2059FDEF6C76307AABCD50E5700FF.
+  AnonymousVerified=true; вход в GitHub для этой проверки не понадобился.
+- Отчёты и скачанные файлы:
+  artifacts/publication-verified/608120-20261016-123419-616/round-trip/verified-assets.json;
+  release-metadata.json, installer-latest.txt и четыре файла в той же папке.
+  .local/browser-controls-608120/latest-client.json содержит выбор установщика.
+  ReleasePublished=true, PublishedAssetsVerified=true,
+  ActualReleaseClientVerified=true. InGameVerified=false,
+  BlindUserAccepted=false остаются без изменения.
 
 ## Обучение «Подземелья» — 6.08.119, 15 октября 2026
 
