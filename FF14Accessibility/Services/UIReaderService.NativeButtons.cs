@@ -97,17 +97,10 @@ public sealed partial class UIReaderService
         if (IsChatInputActive()) return null;
         var focus = LiveFocus(); var addon = FindAddonForNode(focus);
         if (addon == null || !addon->IsVisible || addon->NumBlockingAddons != 0) return null;
-        var depth = 0;
-        for (var current = focus; current != null && depth < 8; current = current->ParentNode, depth++)
-        {
-            if ((int)current->Type < 1000) continue;
-            var comp = ((AtkComponentNode*)current)->Component;
-            if (!IsReadable(comp)) return null;
-            // Stop at the nearest control; a text field/list must not click
-            // an unrelated button in an outer wrapper.
-            return comp->GetComponentType() == ComponentType.Button ? current : null;
-        }
-        return null;
+        var control = NativeControlScope.Control(addon, focus);
+        if (control == null) return null;
+        var comp = ((AtkComponentNode*)control)->Component;
+        return IsReadable(comp) && comp->GetComponentType() == ComponentType.Button ? control : null;
     }
 
     private unsafe bool TryPressFocusedButton()
@@ -116,10 +109,10 @@ public sealed partial class UIReaderService
         if (node == null) return false;
         if (!NativeDialogButtons.Available(node))
         {
-            _tolk.SpeakInterrupt(AccessibilityStrings.DisabledButton(ReadFirstTextInComponent(node)));
+            _tolk.SpeakInterrupt(AccessibilityStrings.DisabledButton(GetVisibleTextFromNodeTree(node)));
             return true;
         }
-        var label = ReadFirstTextInComponent(node);
+        var label = GetVisibleTextFromNodeTree(node);
         var addon = FindAddonForNode(node);
         var eventToSend = FindEventOfType(node, AtkEventType.ButtonClick, [], 2);
         if (eventToSend == null || !IsReadable(eventToSend->Listener))

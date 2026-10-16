@@ -7,6 +7,10 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FF14Accessibility;
 using FF14Accessibility.Services;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
+using System.Runtime.InteropServices;
+using NativeTreasure = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure;
 
 namespace Regression.Tests;
 
@@ -132,7 +136,6 @@ public sealed class WorldObjectConfirmTests
     }
 
     [Theory]
-    [InlineData(ObjectKind.EventObj)]
     [InlineData(ObjectKind.GatheringPoint)]
     public void BrowserUsesCurrentAvailabilityAndRestoresReactivatedProp(ObjectKind kind)
     {
@@ -144,6 +147,55 @@ public sealed class WorldObjectConfirmTests
         Assert.True((bool)browse.Invoke(nav, [obj])!);
         ((WorldObjectProxy)obj).Targetable = false;
         Assert.False((bool)browse.Invoke(nav, [obj])!);
+    }
+
+    [Theory]
+    [InlineData(ObjectKind.EventObj, false, "Запертая дверь", true)]
+    [InlineData(ObjectKind.EventObj, true, "Запертая дверь", true)]
+    [InlineData(ObjectKind.EventObj, false, "", false)]
+    [InlineData(ObjectKind.EventObj, true, "", true)]
+    [InlineData(ObjectKind.EventNpc, false, "Жёлтая куртка", true)]
+    [InlineData(ObjectKind.HousingEventObject, false, "Почтовый ящик", true)]
+    [InlineData(ObjectKind.GatheringPoint, false, "Месторождение", false)]
+    [InlineData(ObjectKind.GatheringPoint, true, "Месторождение", true)]
+    public void NamedWorldObjectsRemainDiscoverableWithoutClaimingTheyCanBeUsed(
+        ObjectKind kind, bool targetable, string name, bool expected)
+    {
+        var nav = (NavigationService)RuntimeHelpers.GetUninitializedObject(typeof(NavigationService));
+        var names = new ObjectNameService(QuestAreaPointTests.Proxy.Of<IDataManager>((_, _) => null));
+        typeof(NavigationService).GetField("_objectNames", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(nav, names);
+        var obj = Object(42, kind, targetable);
+        ((WorldObjectProxy)obj).Name = name;
+        var browse = typeof(NavigationService).GetMethod("IsWorthBrowsing", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.Equal(expected, browse.Invoke(nav, [obj]));
+        var targets = DispatchProxy.Create<ITargetManager, NavigationInputTests.TargetProxy>();
+        var calls = 0;
+        BrowserTargetSelection.ConfirmWorldObject(targets, obj, _ => { calls++; return 0; });
+        Assert.Equal(targetable ? 1 : 0, calls);
+    }
+
+    [Fact]
+    public unsafe void OpenedTreasureStaysOutOfTheBrowserEvenWhenNamedAndTargetable()
+    {
+        var treasure = (NativeTreasure*)NativeMemory.AllocZeroed((nuint)sizeof(NativeTreasure));
+        try
+        {
+            var nav = (NavigationService)RuntimeHelpers.GetUninitializedObject(typeof(NavigationService));
+            typeof(NavigationService).GetField("_objectNames", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(nav, new ObjectNameService(null!));
+            typeof(NavigationService).GetField("_reportedEmptyTreasures", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(nav, new HashSet<ulong>());
+            typeof(NavigationService).GetField("_log", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(nav, QuestAreaPointTests.Proxy.Of<IPluginLog>((_, _) => null));
+            var obj = Object(43, ObjectKind.Treasure); var state = (WorldObjectProxy)obj;
+            state.Name = "Сундук"; state.Address = (nint)treasure;
+            var browse = typeof(NavigationService).GetMethod("IsWorthBrowsing", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            treasure->State = NativeTreasure.TreasureState.Unopened;
+            Assert.True((bool)browse.Invoke(nav, [obj])!);
+            treasure->State = NativeTreasure.TreasureState.Opened;
+            Assert.False((bool)browse.Invoke(nav, [obj])!);
+        }
+        finally { NativeMemory.Free(treasure); }
     }
 
     [Fact]
@@ -195,11 +247,13 @@ public sealed class WorldObjectConfirmTests
         public ulong Id;
         public ObjectKind Kind;
         public bool Targetable;
+        public string Name = string.Empty;
         public nint Address = (nint)123;
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method?.Name switch
         {
             "get_GameObjectId" => Id, "get_ObjectKind" => Kind, "get_IsTargetable" => Targetable,
             "get_Address" => Address,
+            "get_Name" => new SeString(new TextPayload(Name)), "get_BaseId" => 0u,
             _ => throw new NotSupportedException(method?.Name),
         };
     }

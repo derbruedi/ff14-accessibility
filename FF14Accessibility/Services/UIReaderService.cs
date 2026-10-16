@@ -3809,26 +3809,11 @@ public sealed partial class UIReaderService : IDisposable
         }
         else
         {
-            // Sammel-Journal: jede Zeile der Stufenliste traegt einen "NEW"-
-            // Textknoten, den das Spiel nur einblendet, wenn in dem Bereich noch
-            // etwas offen ist (Dump 2026-09-12: "1-5" mit F=0x003B sichtbar,
-            // "NEW" mit F=0x0023 ohne Sichtbar-Bit). Der generische Leser prueft
-            // das Bit nicht und sprach das unsichtbare Schild mit - der Spieler
-            // hoerte "1-5, NEW", obwohl in dem Bereich alles gesammelt war. In
-            // diesem Fenster zaehlt deshalb nur, was auch gezeichnet wird; die
-            // Gegenstandszeilen selbst haben ihren eigenen Leser (oben) und
-            // laufen hier gar nicht durch.
-            var journalRows = string.Equals(FindAddonNameForNode(node), GatheringNoteAddon, StringComparison.Ordinal);
-
-            // Focus often sits on a child (collision node) of the actual
-            // control - climb up a few levels until some text resolves.
-            text = journalRows ? GetVisibleTextFromNodeTree(node) : GetTextFromNodeTree(node);
-            var cur = node;
-            for (var up = 0; string.IsNullOrEmpty(text) && up < 3 && cur->ParentNode != null; up++)
-            {
-                cur  = cur->ParentNode;
-                text = journalRows ? GetVisibleTextFromNodeTree(cur) : GetTextFromNodeTree(cur);
-            }
+            // Stay inside the actual focused control. An unlabelled button must
+            // never borrow a sibling's text by climbing into the shared window.
+            var focusAddon = FindAddonForNode(node);
+            var focusControl = NativeControlScope.Control(focusAddon, node);
+            text = NativeControlScope.Text(focusAddon, node, p => GetVisibleTextFromNodeTree((AtkResNode*)p));
 
             // LAST resort only. V5.16 had this BEFORE the generic reader, which
             // made the position win even where a real label existed - it replaced
@@ -3844,7 +3829,7 @@ public sealed partial class UIReaderService : IDisposable
             // real name rather than a substitute - but still below genuine node
             // text, so nothing that already spoke changes.
             if (string.IsNullOrEmpty(text))
-                text = _tooltips.TryGetTooltipDeep(node) ?? string.Empty;
+                text = _tooltips.TryGetTooltip(node) ?? (focusControl == null ? null : _tooltips.TryGetTooltip(focusControl)) ?? string.Empty;
 
             // Seal shop: the rank tier buttons in the left column have neither text
             // nor tooltip, so every step through them was silent (log 2026-08-19,
@@ -9410,6 +9395,8 @@ public sealed partial class UIReaderService : IDisposable
         if (ptr.IsNull) return false;
         var addon = (AtkUnitBase*)(nint)ptr;
 
+        if (FindAddonForNode(node) != addon) return false;
+
         // Der Text der Seite hat Vorrang. Feste 700 ms reichten nur fuer kurze
         // Seiten (Log 2026-09-02, 12 ms Abstand). Lange Erklaerungen - Bestien-
         // baendiger-Arena, 389 Zeichen, Log 2026-09-25 08:53:04 - liefen noch,
@@ -10984,8 +10971,9 @@ public sealed partial class UIReaderService : IDisposable
         if (!arenaPtr.IsNull && ((AtkUnitBase*)(nint)arenaPtr)->IsVisible)
         {
             var arena    = (AtkUnitBase*)(nint)arenaPtr;
-            var beginBtn = arena->GetNodeById(9);
-            if (beginBtn != null && DispatchClick(beginBtn))
+            if (arena->NumBlockingAddons != 0 || FindAddonForNode(LiveFocus()) != arena) return;
+            var beginBtn = FindTopLevelNode(arena, 9);
+            if (NativeDialogButtons.Available(beginBtn) && DispatchClick(beginBtn))
             {
                 _lastArenaText = string.Empty;
                 _tolk.SpeakInterrupt(AccessibilityStrings.ExerciseStarted);
@@ -14569,7 +14557,16 @@ public sealed partial class UIReaderService : IDisposable
             var a = mgr->AllLoadedUnitsList.Entries[i].Value;
             if (a != null && a->RootNode == root) return a;
         }
-        return null;
+        // Some internal focus nodes have no parent chain to the window root.
+        AtkUnitBase* owner = null;
+        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
+        {
+            var candidate = mgr->AllLoadedUnitsList.Entries[i].Value;
+            if (candidate == null || !candidate->IsVisible || !NativeControlScope.Owns(candidate, node)) continue;
+            if (owner != null && owner != candidate) return null;
+            owner = candidate;
+        }
+        return owner;
     }
 
     /// <summary>
@@ -14580,21 +14577,8 @@ public sealed partial class UIReaderService : IDisposable
     /// </summary>
     private unsafe string FindAddonNameForNode(AtkResNode* node)
     {
-        if (node == null) return "?";
-
-        var root = node;
-        var guard = 0;
-        while (root->ParentNode != null && guard++ < 64) root = root->ParentNode;
-
-        var mgr = RaptureAtkUnitManager.Instance();
-        if (mgr == null) return "?";
-
-        for (var i = 0; i < mgr->AllLoadedUnitsList.Count && i < 256; i++)
-        {
-            var a = mgr->AllLoadedUnitsList.Entries[i].Value;
-            if (a != null && a->RootNode == root) return a->NameString;
-        }
-        return "?";
+        var addon = FindAddonForNode(node);
+        return addon == null ? "?" : addon->NameString;
     }
 
     /// <summary>Raw node types of the ancestor chain - shows how far the text
@@ -14796,8 +14780,8 @@ public sealed partial class UIReaderService : IDisposable
         if (node->Type == NodeType.Text)
         {
             if (!IsVisibleFlag(node)) return string.Empty;
-            var t = AtkText.Read((AtkTextNode*)node).Trim();
-            return t.Length > 1 ? t : string.Empty;
+            var t = AtkText.ReadClean((AtkTextNode*)node).Trim();
+            return t.Length > 0 ? t : string.Empty;
         }
 
         // Kein Komponenten-Node (Image, Collision, Res usw.): ignorieren
@@ -14822,8 +14806,8 @@ public sealed partial class UIReaderService : IDisposable
             var btn = (AtkComponentButton*)comp;
             if (btn->ButtonTextNode != null && IsVisibleFlag((AtkResNode*)btn->ButtonTextNode))
             {
-                var t = AtkText.Read(btn->ButtonTextNode).Trim();
-                if (t.Length > 1) return t;
+                var t = AtkText.ReadClean(btn->ButtonTextNode).Trim();
+                if (t.Length > 0) return t;
             }
         }
 

@@ -3700,16 +3700,22 @@ public sealed class NavigationService
 
         var listed = inRange.Where(IsWorthBrowsing).ToList();
 
-        // One line per key press, and only when something was actually dropped:
-        // it shows in the log how much the filter takes off the list: nameless
-        // extras, emptied chests, and currently unavailable gathering/quest
-        // props (see IsWorthBrowsing).
-        if (listed.Count != inRange.Count)
-            _log.Info($"[Nav] Browser: {listed.Count} von {inRange.Count} Objekten " +
-                      $"({inRange.Count - listed.Count} nicht nutzbar ausgeblendet).");
+        // Record identities, not just a count: the old log could not tell which
+        // three objects disappeared. Only changed snapshots are logged.
+        var listedIds = listed.Select(o => o.GameObjectId).ToHashSet();
+        var snapshot = string.Join("; ", inRange.Select(o =>
+            $"id={o.GameObjectId:X} base={o.BaseId} kind={o.ObjectKind} targetable={o.IsTargetable} "
+            + $"listed={listedIds.Contains(o.GameObjectId)} name='{_objectNames.Resolve(o)}'"));
+        if (snapshot != _lastBrowserFilterSnapshot)
+        {
+            _lastBrowserFilterSnapshot = snapshot;
+            _log.Info($"[BrowserFilter] listed={listed.Count}/{inRange.Count}; {snapshot}");
+        }
 
         return listed;
     }
+
+    private string _lastBrowserFilterSnapshot = string.Empty;
 
     /// <summary>
     /// Whether an object belongs in the browser list at all.
@@ -3765,10 +3771,10 @@ public sealed class NavigationService
     /// </summary>
     private bool IsWorthBrowsing(IGameObject o)
         => !IsEmptiedTreasure(o)
-           // A named event prop can remain loaded after it has been used.
-           // Use the game's current availability, not quest ownership/name or
-           // visit history. It returns automatically if the game enables it.
-           && (o.ObjectKind is ObjectKind.GatheringPoint or ObjectKind.EventObj
+           // Targetability describes interaction, not presence. Named event
+           // objects include doors and mechanisms which are temporarily locked.
+           // Only gathering placements require the measured availability rule.
+           && (o.ObjectKind is ObjectKind.GatheringPoint
                ? o.IsTargetable
                : _objectNames.Resolve(o) != null || o.IsTargetable);
 
@@ -4196,6 +4202,9 @@ public sealed class NavigationService
         var label = name == null
             ? $"{NpcPrefix(obj)}{AccessibilityStrings.UnnamedOfKind(obj.ObjectKind)}"
             : $"{NpcPrefix(obj)}{name}{_objectNames.Qualifier(obj)}";
+
+        if (obj.ObjectKind == ObjectKind.EventObj && !obj.IsTargetable)
+            label = AccessibilityStrings.ControlUnavailable(label);
 
         // The kind word stays omitted for nameless objects - the stand-in names
         // the kind already, and "Objekt ohne Namen 2, Objekt" reads twice.

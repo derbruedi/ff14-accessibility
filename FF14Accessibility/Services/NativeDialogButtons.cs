@@ -31,7 +31,8 @@ internal static unsafe class NativeDialogButtons
         if (!AtkText.IsReadable(node) || (node->NodeFlags & NodeFlags.Enabled) == 0) return false;
         var current = node;
         for (var i = 0; i < 32 && current != null; i++, current = current->ParentNode)
-            if (!AtkText.IsReadable(current) || (current->NodeFlags & NodeFlags.Visible) == 0) return false;
+            if (!AtkText.IsReadable(current) || (current->NodeFlags & NodeFlags.Visible) == 0
+                || current->IsDrawDisabled) return false;
         return current == null;
     }
 
