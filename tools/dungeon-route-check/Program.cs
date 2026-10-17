@@ -51,6 +51,7 @@ AssemblyLoadContext.Default.Resolving += (context, name) =>
 var vnav = Assembly.LoadFrom(Path.Combine(vnavDir, "vnavmesh.dll"));
 var service = vnav.GetType("Navmesh.Service")!;
 service.GetProperty("Log", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, log);
+var rebuildCheck = DungeonCompatibilityCheck.Run(vnav, log, errors);
 var compatibility = DungeonMeshCompatibility.Apply(vnav);
 if (compatibility is not (DungeonMeshCompatibility.Result.Applied or DungeonMeshCompatibility.Result.AlreadySupported))
     errors.Add("Installed vnavmesh cannot receive the verified Dzemael compatibility.");
@@ -59,6 +60,7 @@ if (repeated != DungeonMeshCompatibility.Result.AlreadySupported) errors.Add("Co
 File.WriteAllText(args[2], JsonSerializer.Serialize(new { Passed = errors.Count == 0, Errors = errors, Zones = rows,
     NonPositionalRoutes = noStations, VnavVersion = vnav.GetName().Version?.ToString(), Compatibility = compatibility.ToString(),
     CompatibilityRepeated = repeated.ToString(),
+    RebuildCheck = rebuildCheck,
     InGameVerified = false, MeshTraversalVerified = false }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"Checked {rows.Count} dungeon territories; errors: {errors.Count}. Report: {args[2]}");
 if (errors.Count != 0) Environment.ExitCode = 1;

@@ -17,8 +17,20 @@ public sealed partial class Plugin
         if (nav.LastCallFailed) return true; // ordinary navigation reports missing IPC
         if (progress >= 0 || nav.PathfindInProgress || _autoWalk.IsActive
             || _navigation.IsWalkGuideActive || nav.IsRunning) return true;
+        ApplyDungeonMeshCompatibility();
+        if (!_dzemaelMeshNeedsRebuild) return true;
+        RebuildNavigationMesh();
+        return false;
+    }
+
+    // Both a movement request and explicit /acc navrebuild must register the
+    // door customization before rebuilding. Rebuilding the unprepared scene
+    // would reproduce the original plugin's disconnected territory-1330 mesh.
+    private void ApplyDungeonMeshCompatibility()
+    {
+        if (ClientState.TerritoryType != 1330) return;
         var assembly = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "vnavmesh");
-        if (assembly == null) return true;
+        if (assembly == null) return;
         try
         {
             var result = DungeonMeshCompatibility.Apply(assembly);
@@ -28,19 +40,10 @@ public sealed partial class Plugin
                 _dzemaelCompatibilityReported = true;
             }
             if (result == DungeonMeshCompatibility.Result.Applied) _dzemaelMeshNeedsRebuild = true;
-            if (!_dzemaelMeshNeedsRebuild) return true;
-            _autoWalk.StopQuiet();
-            _navigation.StopWalkGuideQuiet();
-            var rebuilt = nav.Rebuild();
-            if (rebuilt) _dzemaelMeshNeedsRebuild = false;
-            _tolk.SpeakInterrupt(rebuilt ? AccessibilityStrings.NavigationMeshRebuilding
-                : AccessibilityStrings.NavigationMeshRebuildFailed);
-            return false;
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "[DungeonNav] Dzemael compatibility unavailable; dependency unchanged.");
-            return true;
         }
     }
 
@@ -64,14 +67,21 @@ public sealed partial class Plugin
     {
         var nav = _autoWalk.Navmesh;
         var progress = nav.BuildProgress;
-        if (!nav.LastCallFailed && progress >= 0)
+        if (nav.LastCallFailed)
+        {
+            _tolk.SpeakInterrupt(AccessibilityStrings.NavigationMeshRebuildFailed);
+            return;
+        }
+        if (progress >= 0)
         {
             _tolk.SpeakInterrupt(AccessibilityStrings.MeshStillLoading(progress * 100));
             return;
         }
         _autoWalk.StopQuiet();
         _navigation.StopWalkGuideQuiet();
+        ApplyDungeonMeshCompatibility();
         var accepted = nav.Rebuild();
+        if (accepted && ClientState.TerritoryType == 1330) _dzemaelMeshNeedsRebuild = false;
         Log.Info($"[DungeonNav] Rebuild territory={ClientState.TerritoryType} map={ClientState.MapId} accepted={accepted}");
         _tolk.SpeakInterrupt(accepted ? AccessibilityStrings.NavigationMeshRebuilding
             : AccessibilityStrings.NavigationMeshRebuildFailed);
