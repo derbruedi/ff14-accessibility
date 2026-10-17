@@ -36,6 +36,24 @@
   Изменение реестра зависимости проверялось в отдельном процессе, файлы
   рабочей vnavmesh и конфигурации игры не менялись. Сама крепость,
   новые игровые окна и речь NVDA/Tolk требуют проверки пользователем.
+- После успешной Publish-Release.ps1 -CheckOnly опубликован последний
+  стабильный [v6.08.121](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.121)
+  17 октября в 12:59:30 (+07:00). Коммит и удалённая метка:
+  ae019cc258b546335c552482a1784e7b7b5da61d.
+  Подтверждены draft=false, prerelease=false, Latest=true и точное описание.
+  Все четыре файла скачаны обратно; размеры, SHA-256, суммы GitHub и четыре
+  строки SHA256SUMS совпали. Проверены все 141 записи игрового ZIP и 36 записей
+  отдельного ZIP исходников установщика. Установщик 1.3.0.0, 117 666 083 байта,
+  SHA-256 CEAFE3E2D579EC9C2F31B7F36446BCC3849ADDB6EF95F62B02F1B95388184E88.
+- Настоящий ReleaseClient.Latest через живой HTTP-запрос без входа в GitHub
+  выбрал 6.08.121 и сумму E66FA79F1182539776A46E7D214EABB7CD745D68686CAE1B8849CF1A0948206F.
+  AnonymousVerified=true, AuthenticatedVerified=false: вход не потребовался.
+  Итоговый отчёт и скачанные файлы:
+  artifacts/publication-verified/608121-20261017-125940/verified-assets.json;
+  release-metadata.json и installer-latest.txt в той же папке.
+  ReleasePublished=true, PublishedAssetsVerified=true,
+  ActualReleaseClientVerified=true. InGameVerified=false,
+  BlindUserAccepted=false остаются без изменения.
 
 
 ## Объекты навигатора и принадлежность кнопок — 6.08.120, 16 октября 2026
