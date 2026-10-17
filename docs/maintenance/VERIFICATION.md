@@ -40,7 +40,20 @@
 - Implemented=true; AutomatedTestsPassed=true; CompiledWithGameLibraries=true;
   InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
   Повышение ранга, списание выбранного предмета и слышимая речь новой
-  версии в FFXIV ещё не проверены. Публикация фиксируется после её выполнения.
+  версии в FFXIV ещё не проверены.
+- В 16:22:27 (+07:00) опубликован последний стабильный
+  [v6.08.125](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.125),
+  target и удалённая метка: 4d14f351173064cbda1aad26427bd8a01cc6e77d;
+  draft=false, prerelease=false, latest=true. Publish-Release -CheckOnly
+  перед публикацией прошёл. Описание совпало с docs/releases/6.08.125.md.
+- Все четыре опубликованных файла скачаны обратно. Их размеры и SHA-256
+  совпали с GitHub digest и локальными проверенными файлами. Все 141 запись
+  игрового ZIP, DLL, четыре строки SHA256SUMS и 36 файлов отдельного
+  архива исходников установщика также сверены. Настоящий ReleaseClient.Latest
+  выбрал 6.08.125 и правильную сумму архива при существующем входе в GitHub;
+  анонимный запрос ограничен сервером, токен не сохранён. Итог:
+  artifacts/publication-verified/608125-20261017-162233-119/verified-assets.json,
+  .local/dialog-audit/latest-client.json и published-check.txt.
 
 ## Дземаль и загрузка DLL в память — 6.08.124, 17 октября 2026
 
