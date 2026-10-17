@@ -20,7 +20,7 @@ public sealed partial class UIReaderService
     {
         get
         {
-            foreach (var name in new[] { "Talk", "SelectYesno", "SelectString", "SelectIconString" })
+            foreach (var name in new[] { "Talk", "SelectYesno", "SelectString", "SelectIconString", "CutSceneSelectString" })
             {
                 var ptr = _gameGui.GetAddonByName(name);
                 if (!ptr.IsNull && ((AtkUnitBase*)(nint)ptr)->IsVisible) return true;
@@ -29,7 +29,8 @@ public sealed partial class UIReaderService
         }
     }
 
-    public unsafe bool OwnsEnterButton => CanConfirmYesNo || FindFocusedButton() != null || OwnsContentsTutorialConfirm;
+    public unsafe bool OwnsEnterButton => CanConfirmYesNo || FindFocusedButton() != null
+        || OwnsContentsTutorialConfirm || TryGetFocusedContextMenuChoice(out _);
 
     private unsafe bool TrySelectYesNo(out nint address, out NativeDialogButtons.Choice choice)
     {

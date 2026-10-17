@@ -22,5 +22,8 @@ public static partial class AccessibilityStrings
         "Num8/2 and Num4/6 move the focus; Num0 or Enter presses the button. Escape goes back.",
         "Num8 и Num2, Num4 и Num6 перемещают выбор. Num0 или Enter нажимает выбранную кнопку. Escape возвращает назад.");
     public static string DisabledButton(string label) => L($"{label}, nicht verfügbar", $"{label}, unavailable", $"{label}, недоступно");
+
+    public static string DialogChoiceUnavailable => L("Diese Auswahl ist derzeit nicht verfügbar.",
+        "This choice is currently unavailable.", "Этот вариант сейчас недоступен.");
     public static string InspectGearSlot => L("Ausrüstungsplatz", "Equipment slot", "Ячейка экипировки");
 }

@@ -222,7 +222,7 @@ public sealed partial class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.124";
+    private const string PluginVersion    = "6.08.125";
     // Der Tag nennt, was diese Fassung MITBRINGT, nicht woher sie stammt: die
     // russische Schicht auf dem Stand des Autors 6.08.35 (Auftragstext im
     // Quest-Tracker des Autors, siehe package-Schritt).
@@ -1783,6 +1783,14 @@ public sealed partial class Plugin : IDalamudPlugin
         return pressed;
     }
 
+    internal bool TakeSelectionDialogConfirmKey(bool ownsChoice)
+    {
+        if (!ownsChoice || (!IsJustPressed("Numpad0") && !IsJustPressed("Einfg")
+            && !IsJustPressed("Return"))) return false;
+        ClaimNativeButtonConfirmKeys();
+        return true;
+    }
+
     private bool IsJustPressed(string keySpec, bool allowTextInput = false, bool consume = false)
     {
         // While a game text field has focus (chat, search box, name entry, ...)
@@ -2788,6 +2796,14 @@ public sealed partial class Plugin : IDalamudPlugin
             if (IsJustPressed("Escape"))
                 _uiReader.LogEscapeProbe(_menu.IsOpen);
             if (_menu.HandleKeys(_menuInput)) return;
+        }
+
+        if (!_hotbar.IsSkillMenuOpen && GameWindowFocus.IsActive
+            && NativeButtonConfirmVks.Any(vk => _keyJustPressed[vk])
+            && TakeSelectionDialogConfirmKey(_uiReader.OwnsSelectionDialogConfirm))
+        {
+            _uiReader.ConfirmSelectionDialog();
+            return;
         }
 
         if (IsJustPressed(_config.KeyHelp))          _uiReader.AnnounceContextHelp();

@@ -11154,44 +11154,36 @@ public sealed partial class UIReaderService : IDisposable
     }
 
     /// <summary>
-    /// Activates the focused <c>ContextMenu</c> list row via
-    /// <c>SelectItem(idx, dispatchEvent: true)</c> (and a click fallback).
+    /// Activates the focused <c>ContextMenu</c> row with one native list click.
     /// Used from Enter (<see cref="HandleConfirmKey"/>) only — Numpad0 must
     /// stay with the game (quest accept etc.).
     /// </summary>
     /// <returns>True when a ContextMenu row was activated.</returns>
     public unsafe bool TryActivateFocusedContextMenu()
     {
-        if (!TryGetFocusedContextMenuRow(out var list, out var idx, out var label))
-            return false;
-
-        var prevSel = list->SelectedItemIndex;
-        list->SelectItem(idx, true);
-
-        var stage = AtkStage.Instance();
-        var focus = stage != null && stage->AtkInputManager != null
-            ? stage->AtkInputManager->FocusedNode
-            : null;
-        AtkResNode* rowNode = focus;
-        var clicked = false;
-        for (var up = 0; up < 8 && rowNode != null; up++)
+        if (!TryGetFocusedContextMenuChoice(out var choice)) return false;
+        if (!choice.Available)
         {
-            if ((int)rowNode->Type >= 1000)
-            {
-                var comp = ((AtkComponentNode*)rowNode)->Component;
-                if (comp != null && comp->GetComponentType() == ComponentType.ListItemRenderer)
-                {
-                    clicked = DispatchClick(rowNode);
-                    break;
-                }
-            }
-            rowNode = rowNode->ParentNode;
+            _tolk.SpeakInterrupt(AccessibilityStrings.DialogChoiceUnavailable);
+            return true;
         }
-
-        _log.Info(
-            $"[ContextMenu] SelectItem({idx}, true) '{label}' " +
-            $"(Sel {prevSel}->{list->SelectedItemIndex}, click={clicked}).");
+        _log.Info($"[ContextMenu] native ListItemClick requested for focused row={choice.Index}.");
+        NativeSelectionDialog.Dispatch(choice);
         return true;
+    }
+
+    private unsafe bool TryGetFocusedContextMenuChoice(out NativeSelectionDialog.Choice choice)
+    {
+        choice = default;
+        if (IsChatInputActive()) return false;
+        var ptr = _gameGui.GetAddonByName("ContextMenu");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible || addon->NumBlockingAddons != 0) return false;
+        var focus = LiveFocus();
+        if (FindAddonForNode(focus) != addon) return false;
+        var list = FindListInAddon(addon);
+        return list != null && NativeSelectionDialog.TryResolveRow(addon, list, list->ListLength, focus, out choice);
     }
 
     /// <summary>
@@ -11205,44 +11197,10 @@ public sealed partial class UIReaderService : IDisposable
         idx = -1;
         label = string.Empty;
 
-        var ptr = _gameGui.GetAddonByName("ContextMenu");
-        if (ptr.IsNull) return false;
-        var addon = (AtkUnitBase*)(nint)ptr;
-        if (addon == null || !addon->IsVisible) return false;
-
-        var stage = AtkStage.Instance();
-        if (stage == null || stage->AtkInputManager == null) return false;
-        var focus = stage->AtkInputManager->FocusedNode;
-        if (focus == null) return false;
-
-        if (!string.Equals(FindAddonNameForNode(focus), "ContextMenu", StringComparison.Ordinal))
-            return false;
-
-        list = FindListInAddon(addon);
-        if (list == null) return false;
-
-        var renderer = ClimbToItemRenderer(focus);
-        if (renderer == null) return false;
-
-        var count = GetListEntryCount(list);
-        idx = renderer->ListItemIndex;
-        if (idx < 0 || (count > 0 && idx >= count))
-        {
-            idx = -1;
-            var slots = Math.Min(list->AllocatedItemRendererListLength, 64);
-            for (var i = 0; i < slots; i++)
-            {
-                if (list->ItemRendererList[i].AtkComponentListItemRenderer != renderer) continue;
-                idx = renderer->ListItemIndex >= 0 ? renderer->ListItemIndex : i;
-                break;
-            }
-        }
-
-        if (idx < 0 || (count > 0 && idx >= count)) return false;
-
+        if (!TryGetFocusedContextMenuChoice(out var choice) || !choice.Available) return false;
+        list = (AtkComponentList*)choice.List;
+        idx = choice.Index;
         label = ReadListItemText(list, idx);
-        if (string.IsNullOrWhiteSpace(label))
-            label = ReadRendererTextsClean(renderer);
         return true;
     }
 
@@ -12625,19 +12583,10 @@ public sealed partial class UIReaderService : IDisposable
 
     private unsafe string ReadListItemText(AtkComponentList* list, int idx)
     {
-        // Bound = renderer slots, NOT ListLength: TreeList (Journal) manages
-        // its rows in its own Items vector (AtkComponentTreeList.Items @432,
-        // ilspycmd 2026-07-11) and leaves the base ListLength at 0 - the old
-        // ListLength guard rejected every row, which kept the Journal silent
-        // although HoveredItemIndex2 moved (log 2026-07-11 10:35).
-        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
         try
         {
-            var rendererSlot = &list->ItemRendererList[idx];
-            if (!IsReadable(rendererSlot)) return string.Empty;
-
-            var renderer = (*rendererSlot).AtkComponentListItemRenderer;
-            if (renderer == null || !IsReadable(renderer)) return string.Empty;
+            var renderer = NativeListRows.Renderer(list, idx);
+            if (renderer == null) return string.Empty;
 
             var nodeCount = renderer->UldManager.NodeListCount;
             if (nodeCount == 0 || nodeCount > 128) return string.Empty;
@@ -12652,10 +12601,10 @@ public sealed partial class UIReaderService : IDisposable
             for (uint i = 0; i < nodeCount; i++)
             {
                 var node = nodeList[i];
-                if (node == null || node->Type != NodeType.Text || !node->IsVisible()) continue;
+                if (node == null || node->Type != NodeType.Text || !IsVisibleFlag(node)) continue;
                 var textNode = (AtkTextNode*)node;
                 if (textNode->NodeText.IsEmpty) continue;
-                var text = AtkText.Read(textNode);
+                var text = AtkText.ReadClean(textNode);
                 if (!string.IsNullOrEmpty(text)) (parts ??= []).Add(text);
             }
             if (parts != null) return JoinDistinctParts(parts);
@@ -12675,13 +12624,10 @@ public sealed partial class UIReaderService : IDisposable
     /// </summary>
     private unsafe string ReadConfigKeybindRow(AtkComponentList* list, int idx)
     {
-        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
         try
         {
-            var rendererSlot = &list->ItemRendererList[idx];
-            if (!IsReadable(rendererSlot)) return string.Empty;
-            var renderer = (*rendererSlot).AtkComponentListItemRenderer;
-            if (renderer == null || !IsReadable(renderer)) return string.Empty;
+            var renderer = NativeListRows.Renderer(list, idx);
+            if (renderer == null) return string.Empty;
             return ReadConfigKeybindRenderer((AtkComponentBase*)renderer);
         }
         catch (Exception ex) { _log.Warning($"[Accessibility] ConfigKeybind-Zeile: {ex.Message}"); }
@@ -12701,13 +12647,10 @@ public sealed partial class UIReaderService : IDisposable
     /// </summary>
     private unsafe string ReadGrandCompanyRow(AtkComponentList* list, int idx)
     {
-        if (idx < 0 || idx >= list->AllocatedItemRendererListLength) return string.Empty;
         try
         {
-            var rendererSlot = &list->ItemRendererList[idx];
-            if (!IsReadable(rendererSlot)) return string.Empty;
-            var renderer = (*rendererSlot).AtkComponentListItemRenderer;
-            if (renderer == null || !IsReadable(renderer)) return string.Empty;
+            var renderer = NativeListRows.Renderer(list, idx);
+            if (renderer == null) return string.Empty;
             var comp = (AtkComponentBase*)renderer;
 
             var name = TolkService.Sanitize(ReadComponentTextById(comp, 4));
@@ -12741,7 +12684,7 @@ public sealed partial class UIReaderService : IDisposable
             {
                 var node = nodeList[i];
                 if (node == null) continue;
-                if (node->Type == NodeType.Text && node->NodeId == 2 && node->IsVisible())
+                if (node->Type == NodeType.Text && node->NodeId == 2 && IsVisibleFlag(node))
                 {
                     label = AtkText.Read((AtkTextNode*)node);
                 }
@@ -12870,7 +12813,7 @@ public sealed partial class UIReaderService : IDisposable
         {
             var node = comp->UldManager.NodeList[i];
             if (node == null || node->Type != NodeType.Text || node->NodeId != textNodeId) continue;
-            if (!node->IsVisible()) continue;
+            if (!IsVisibleFlag(node)) continue;
             var text = AtkText.Read((AtkTextNode*)node);
             if (!string.IsNullOrEmpty(text)) return text;
         }
@@ -12885,13 +12828,15 @@ public sealed partial class UIReaderService : IDisposable
         // ilspycmd 2026-07-11). AllocatedItemRendererListLength bounds the
         // real allocation - virtual lists allocate fewer slots than ListLength.
         var hl = new StringBuilder();
-        var n = Math.Min(list->AllocatedItemRendererListLength, 64);
+        var n = IsReadable(list->ItemRendererList) ? Math.Min(list->AllocatedItemRendererListLength, 64) : 0;
         for (var i = 0; i < n; i++)
         {
             if (list->ItemRendererList[i].IsHighlighted)
             {
+                var index = NativeListRows.IndexAtSlot(list, i);
+                if (index < 0) continue;
                 if (hl.Length > 0) hl.Append(' ');
-                hl.Append(i);
+                hl.Append(index);
             }
         }
         return (list->SelectedItemIndex, list->HoveredItemIndex,
