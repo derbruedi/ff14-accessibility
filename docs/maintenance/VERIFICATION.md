@@ -33,11 +33,25 @@
   78100DB00C1F2F658E7F1B80ACBFA078A23F816A2F2F6414CD70AD4520027BFF.
   DLL 6.8.124.0:
   E8DC83D32AC8942CFFD389E9C31A97C093EC4A4FFE7477745B5A4712AC8DC9B3.
-  Все записи ZIP и DLL сверяются перед публикацией через Publish-Release -CheckOnly.
+  Все записи ZIP и DLL сверены перед публикацией через Publish-Release -CheckOnly.
 - Implemented=true; AutomatedTestsPassed=true; CompiledWithGameLibraries=true;
   InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
-  Публикация дописывается после проверки файлов с сервера. Игра не запускалась,
-  установленный плагин и файлы vnavmesh не менялись.
+  Игра не запускалась, установленный плагин и файлы vnavmesh не менялись.
+- После успешной проверки перед публикацией в 15:02:59 (+07:00)
+  опубликован последний стабильный
+  [v6.08.124](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.124).
+  Коммит выпуска, удалённая метка и отправленное исправление:
+  466369ee7de946fbd8ad5546e345b50b3c1e628e.
+  Проверены draft=false, prerelease=false, latest, метка, цель и описание.
+  Пока большой установщик загружался, запрос выпуска по метке вернул 404;
+  после завершения публикации выполнена полная успешная проверка.
+- Все четыре файла скачаны обратно: размеры, SHA-256 GitHub и локальных
+  файлов совпали. Проверены все 141 запись игрового ZIP, 36 записей архива
+  исходников установщика и четыре строки SHA256SUMS. Настоящий
+  ReleaseClient.Latest без входа в GitHub выбрал 6.08.124 с правильной суммой.
+  Отчёт: artifacts/publication-verified/608124-20261017-150308-761/verified-assets.json.
+  Выбор установщика: .local/dzemael-608124/latest-client.json.
+  InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
 
 ## Дземаль по журналу игрока — 6.08.123, 17 октября 2026
 
