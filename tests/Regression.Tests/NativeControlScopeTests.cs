@@ -83,6 +83,44 @@ public sealed unsafe class NativeControlScopeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void HundredsOfSelfReferencesAreVisitedOnceInsteadOfExpandingEveryPath(bool present)
+    {
+        var window = Window(); var control = Component(); var focus = Node();
+        var children = Enumerable.Repeat((nint)control, 512).ToArray();
+        children[^1] = present ? (nint)focus : (nint)control;
+        Add(control, children); Add(window, Enumerable.Repeat((nint)control, 512).ToArray());
+        Assert.Equal(present, NativeDialogButtons.ContainsAny(window->UldManager.NodeList,
+            window->UldManager.NodeListCount, focus, out var inspected));
+        Assert.Equal(present ? 2 : 1, inspected);
+        Assert.Equal(present ? (nint)control : 0, (nint)NativeControlScope.Control(window, focus));
+    }
+
+    [Fact]
+    public void FlattenedNestedListsResolveTheInnerControlWithoutItsParentChain()
+    {
+        var window = Window(); var wrapper = Component(); var control = Component(); var focus = Node();
+        Add(control, (nint)focus); Add(wrapper, (nint)control, (nint)focus);
+        Add(window, (nint)wrapper, (nint)control, (nint)focus);
+        Assert.Equal((nint)control, (nint)NativeControlScope.Control(window, focus));
+    }
+
+    [Fact]
+    public void WideComponentGraphStopsAtTheSharedWorkLimit()
+    {
+        var window = Window(); var roots = new List<nint>();
+        for (var i = 0; i < 32; i++)
+        {
+            var component = Component(); roots.Add((nint)component);
+            Add(component, Enumerable.Range(0, 512).Select(_ => (nint)Node()).ToArray());
+        }
+        Add(window, roots.ToArray());
+        Assert.False(NativeDialogButtons.ContainsAny(window->UldManager.NodeList,
+            window->UldManager.NodeListCount, Node(), out var inspected));
+        Assert.InRange(inspected, 1, 2049);
+    }
+
+    [Theory]
     [InlineData("W", true, "W")]
     [InlineData("1", true, "1")]
     [InlineData("Скрытая подпись", false, "")]

@@ -222,7 +222,7 @@ public sealed partial class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.121";
+    private const string PluginVersion    = "6.08.122";
     // Der Tag nennt, was diese Fassung MITBRINGT, nicht woher sie stammt: die
     // russische Schicht auf dem Stand des Autors 6.08.35 (Auftragstext im
     // Quest-Tracker des Autors, siehe package-Schritt).
@@ -1566,6 +1566,9 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private readonly bool[] _keyWasDown     = new bool[256];
     private readonly bool[] _keyJustPressed = new bool[256];
+    private readonly Func<int, bool> _physicalConfirmKeyDown = DialogueConfirmGuard.PhysicallyDown;
+    private readonly DialogueConfirmGuard _dialogueConfirmGuard = new();
+    private bool[]? _physicalConfirmTracked;
 
     // Parsed key specs ("Strg+Umschalt+N" -> VK + modifiers); Vk=-1 caches invalid specs
     // so a broken config entry logs only once instead of every frame.
@@ -1593,6 +1596,14 @@ public sealed partial class Plugin : IDalamudPlugin
                 continue;
             }
             var down = KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk];
+            // Clearing Dalamud's key state must not look like physical key-up.
+            // Retain an already observed confirm until Windows reports release.
+            if (vk is 0x60 or 0x2D or 0x0D && _physicalConfirmKeyDown != null)
+            {
+                _physicalConfirmTracked ??= new bool[256];
+                down = DialogueConfirmGuard.ReadKey(down, _physicalConfirmKeyDown(vk),
+                    ref _physicalConfirmTracked[vk]);
+            }
             _keyJustPressed[vk] = down && !_keyWasDown[vk];
             _keyWasDown[vk] = down;
         }
@@ -1652,6 +1663,28 @@ public sealed partial class Plugin : IDalamudPlugin
         foreach (var vk in NativeButtonConfirmVks)
             if (_nativeButtonKeys.Suppress(vk, _keyWasDown[vk]))
                 KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk] = false;
+    }
+
+    private void SuppressRepeatedDialogueConfirm()
+    {
+        var down = NativeButtonConfirmVks.Any(vk => _keyWasDown[vk]);
+        var plain = !KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL]
+            && !KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT]
+            && !KeyState[Dalamud.Game.ClientState.Keys.VirtualKey.MENU];
+        var manualDialog = down && plain && GameWindowFocus.IsActive && !_textInputActive
+            && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen && _uiReader.IsManualDialogueOpen;
+        var nativeHold = manualDialog && _uiReader.FocusedYesNoIsHold();
+        ApplyDialogueConfirmGuard(manualDialog, nativeHold);
+    }
+
+    internal void ApplyDialogueConfirmGuard(bool manualDialog, bool nativeHold)
+    {
+        foreach (var vk in NativeButtonConfirmVks)
+        {
+            if (!_dialogueConfirmGuard.Update(vk, _keyWasDown[vk], manualDialog, nativeHold)) continue;
+            KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)vk] = false;
+            _keyJustPressed[vk] = false;
+        }
     }
 
     private void ClaimNativeButtonConfirmKeys()
@@ -2637,6 +2670,7 @@ public sealed partial class Plugin : IDalamudPlugin
             _textInputActive = textInputActive;
             Log.Info($"[TextInput] active={_textInputActive} - mod hotkeys {(_textInputActive ? "suppressed" : "live")}");
         }
+        SuppressRepeatedDialogueConfirm();
 
         _armouryList.Update(GameWindowFocus.IsActive, textInputActive,
             _menu.IsOpen || _hotbar.IsSkillMenuOpen || _uiReader.IsTableReading
@@ -2918,7 +2952,8 @@ public sealed partial class Plugin : IDalamudPlugin
         // am Ankreuzfeld und wird dort gesprochen.
         // Ok or Cancel is the game's own Numpad0. One press is enough.
         // Returning keeps later handlers off this edge without clearing the key.
-        if (_uiReader.CanConfirmYesNo && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen
+        if ((IsJustPressed("Numpad0") || IsJustPressed("Einfg"))
+            && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen && _uiReader.CanConfirmYesNo
             && (_uiReader.FocusedYesNoIsHold() ? TakeYesNoConfirmKey(true) : LeaveGameOkOnYesNo()))
             return;
         if (IsJustPressed(_config.KeyTakeHqMaterials)) _uiReader.TakeHqMaterials();
@@ -3167,11 +3202,11 @@ public sealed partial class Plugin : IDalamudPlugin
             if (right) _uiReader.Navigate(+1, true);
         }
 
-        var ownsEnterButton = _uiReader.OwnsEnterButton;
+        var ownsEnterButton = _keyWasDown[0x0D] && _uiReader.OwnsEnterButton;
         // The second call swallows Enter on every held frame. It must not run
         // while the game is timing a hold button.
         if (!TryLeaveEnterForYesNoHold(ownsEnterButton, _menu.IsOpen, _hotbar.IsSkillMenuOpen,
-                _uiReader.FocusedYesNoIsHold())
+                ownsEnterButton && _uiReader.FocusedYesNoIsHold())
             && ConsumeOrdinaryEnter(ownsEnterButton))
         {
             _uiReader.HandleConfirmKey();

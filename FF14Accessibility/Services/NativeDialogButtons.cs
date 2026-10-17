@@ -12,17 +12,39 @@ internal static unsafe class NativeDialogButtons
 
     internal static bool Contains(AtkResNode* owner, AtkResNode* focus, int depth = 0)
     {
-        if (!AtkText.IsReadable(owner) || !AtkText.IsReadable(focus) || depth > 4) return false;
-        if (owner == focus) return true;
-        var parent = focus;
-        for (var i = 0; i < 32 && AtkText.IsReadable(parent); i++, parent = parent->ParentNode)
-            if (parent == owner) return true;
-        if ((int)owner->Type < 1000) return false;
-        var comp = ((AtkComponentNode*)owner)->Component;
-        if (!AtkText.IsReadable(comp) || comp->UldManager.NodeListCount > 512
-            || !AtkText.IsReadable(comp->UldManager.NodeList)) return false;
-        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
-            if (Contains(comp->UldManager.NodeList[i], focus, depth + 1)) return true;
+        if (depth > 8) return false;
+        return ContainsAny(&owner, 1, focus, out _, depth);
+    }
+
+    // Node lists overlap, and can include their own component. A depth limit
+    // alone still visits 512^depth paths. Bound the whole search instead.
+    internal static bool ContainsAny(AtkResNode** nodes, int count, AtkResNode* focus,
+        out int inspected, int startDepth = 0)
+    {
+        inspected = 0;
+        if (count is < 0 or > 512 || !AtkText.IsReadable(nodes) || !AtkText.IsReadable(focus)) return false;
+        var ancestors = new HashSet<nint>();
+        for (var node = focus; ancestors.Count < 32 && AtkText.IsReadable(node); node = node->ParentNode)
+            if (!ancestors.Add((nint)node)) break;
+        var pending = new Queue<(nint Node, int Depth)>();
+        var visited = new HashSet<nint>();
+        var slots = count;
+        for (var i = 0; i < count; i++) pending.Enqueue(((nint)nodes[i], startDepth));
+        while (pending.TryDequeue(out var next))
+        {
+            if (next.Node == 0 || !visited.Add(next.Node)) continue;
+            if (++inspected > 2048) return false;
+            if (ancestors.Contains(next.Node)) return true;
+            var node = (AtkResNode*)next.Node;
+            if (next.Depth >= 8 || !AtkText.IsReadable(node) || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (!AtkText.IsReadable(comp) || comp->UldManager.NodeListCount > 512
+                || !AtkText.IsReadable(comp->UldManager.NodeList)) continue;
+            slots += comp->UldManager.NodeListCount;
+            if (slots > 8192) return false;
+            for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+                pending.Enqueue(((nint)comp->UldManager.NodeList[i], next.Depth + 1));
+        }
         return false;
     }
 

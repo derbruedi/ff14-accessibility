@@ -3465,7 +3465,20 @@ public sealed partial class UIReaderService : IDisposable
     private long _settingHelpTick;       // Stopwatch timestamp the focus reached it
     private bool _settingHelpSpoken;     // help already queued for this dwell?
 
+    private bool _cacheFocusOwners;
+    private readonly Dictionary<nint, nint> _focusOwners = [];
+
     public unsafe void UpdateGlobalFocus(bool navKeyHeld = false)
+    {
+        // Only within this synchronous read: never retain native owners across
+        // frames, window destruction or callbacks that can replace a dialog.
+        _focusOwners.Clear();
+        _cacheFocusOwners = true;
+        try { UpdateGlobalFocusCore(navKeyHeld); }
+        finally { _cacheFocusOwners = false; _focusOwners.Clear(); }
+    }
+
+    private unsafe void UpdateGlobalFocusCore(bool navKeyHeld)
     {
         if (IsShopQuantityEditing || IsTableReading) return;
         // While the HUD builds after login the game moves focus across freshly
@@ -3827,7 +3840,7 @@ public sealed partial class UIReaderService : IDisposable
             // never borrow a sibling's text by climbing into the shared window.
             var focusAddon = FindAddonForNode(node);
             var focusControl = NativeControlScope.Control(focusAddon, node);
-            text = NativeControlScope.Text(focusAddon, node, p => GetVisibleTextFromNodeTree((AtkResNode*)p));
+            text = GetVisibleTextFromNodeTree(focusControl != null ? focusControl : node);
 
             // LAST resort only. V5.16 had this BEFORE the generic reader, which
             // made the position win even where a real label existed - it replaced
@@ -14589,6 +14602,15 @@ public sealed partial class UIReaderService : IDisposable
     /// <summary>The addon a node belongs to (root-node identity), null if none.</summary>
     private unsafe AtkUnitBase* FindAddonForNode(AtkResNode* node)
     {
+        if (_cacheFocusOwners && _focusOwners.TryGetValue((nint)node, out var cached))
+            return (AtkUnitBase*)cached;
+        var owner = ResolveAddonForNode(node);
+        if (_cacheFocusOwners) _focusOwners[(nint)node] = (nint)owner;
+        return owner;
+    }
+
+    private unsafe AtkUnitBase* ResolveAddonForNode(AtkResNode* node)
+    {
         if (node == null) return null;
 
         var root = node;
@@ -14820,7 +14842,14 @@ public sealed partial class UIReaderService : IDisposable
     /// </summary>
     private unsafe string GetVisibleTextFromNodeTree(AtkResNode* node, int depth = 0)
     {
-        if (node == null || depth > 6) return string.Empty;
+        var slots = 0;
+        return ReadVisibleNodeTree(node, depth, new HashSet<nint>(), ref slots);
+    }
+
+    private unsafe string ReadVisibleNodeTree(AtkResNode* node, int depth, HashSet<nint> visited, ref int slots)
+    {
+        if (node == null || depth > 6 || visited.Count >= 2048 || !visited.Add((nint)node)
+            || !IsReadable(node)) return string.Empty;
 
         // Text-Node: Inhalt direkt zurueckgeben, aber nur wenn er gezeichnet wird
         if (node->Type == NodeType.Text)
@@ -14835,7 +14864,7 @@ public sealed partial class UIReaderService : IDisposable
 
         var compNode = (AtkComponentNode*)node;
         var comp     = compNode->Component;
-        if (comp == null) return string.Empty;
+        if (!IsReadable(comp) || comp->UldManager.NodeListCount > 512) return string.Empty;
 
         var compType = comp->GetComponentType();
 
@@ -14859,12 +14888,15 @@ public sealed partial class UIReaderService : IDisposable
 
         // CheckBox, RadioButton, ListItemRenderer und alle weiteren:
         // Kind-Nodes rekursiv durchsuchen - ergibt automatisch Label + Wert/Status.
+        if (!IsReadable(comp->UldManager.NodeList)) return string.Empty;
+        slots += comp->UldManager.NodeListCount;
+        if (slots > 8192) return string.Empty;
         var parts = new List<string>();
         for (var j = 0; j < comp->UldManager.NodeListCount; j++)
         {
             var child = comp->UldManager.NodeList[j];
             if (child == null) continue;
-            var childText = GetVisibleTextFromNodeTree(child, depth + 1);
+            var childText = ReadVisibleNodeTree(child, depth + 1, visited, ref slots);
             if (!string.IsNullOrWhiteSpace(childText)) parts.Add(childText);
         }
         return JoinDistinctParts(parts);

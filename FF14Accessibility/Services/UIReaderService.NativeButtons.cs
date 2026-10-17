@@ -16,6 +16,19 @@ public sealed partial class UIReaderService
     public unsafe bool CanConfirmYesNo => TrySelectYesNo(out _, out _);
     public unsafe bool FocusedYesNoIsHold() => TrySelectYesNo(out _, out var choice) && choice.Held;
 
+    public unsafe bool IsManualDialogueOpen
+    {
+        get
+        {
+            foreach (var name in new[] { "Talk", "SelectYesno", "SelectString", "SelectIconString" })
+            {
+                var ptr = _gameGui.GetAddonByName(name);
+                if (!ptr.IsNull && ((AtkUnitBase*)(nint)ptr)->IsVisible) return true;
+            }
+            return false;
+        }
+    }
+
     public unsafe bool OwnsEnterButton => CanConfirmYesNo || FindFocusedButton() != null || OwnsContentsTutorialConfirm;
 
     private unsafe bool TrySelectYesNo(out nint address, out NativeDialogButtons.Choice choice)

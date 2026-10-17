@@ -14,45 +14,67 @@ internal static unsafe class NativeControlScope
 
     internal static bool Owns(AtkUnitBase* addon, AtkResNode* focus)
     {
-        if (!AtkText.IsReadable(addon) || !AtkText.IsReadable(focus)
-            || addon->UldManager.NodeListCount > 512 || !AtkText.IsReadable(addon->UldManager.NodeList)) return false;
-        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
-            if (NativeDialogButtons.Contains(addon->UldManager.NodeList[i], focus)) return true;
-        return false;
+        if (!AtkText.IsReadable(addon) || !AtkText.IsReadable(focus)) return false;
+        var ancestors = new HashSet<nint>();
+        for (var node = focus; ancestors.Count < 32 && AtkText.IsReadable(node); node = node->ParentNode)
+        {
+            if (!ancestors.Add((nint)node)) break;
+            if (node == addon->RootNode) return true;
+        }
+        return NativeDialogButtons.ContainsAny(addon->UldManager.NodeList,
+            addon->UldManager.NodeListCount, focus, out _);
     }
 
     internal static AtkResNode* Control(AtkUnitBase* addon, AtkResNode* focus)
     {
         if (!Owns(addon, focus)) return null;
         var current = focus;
-        for (var up = 0; up < 8 && AtkText.IsReadable(current); up++, current = current->ParentNode)
+        for (var up = 0; up < 32 && AtkText.IsReadable(current); up++, current = current->ParentNode)
             if ((int)current->Type >= 1000) return current;
-        var candidates = new List<nint>();
+        // One index for all overlapping lists, including components without
+        // a parent chain. Reverse edges identify the innermost owning control.
+        var parents = new Dictionary<nint, HashSet<nint>>();
         var visited = new HashSet<nint>();
-        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
-            Collect(addon->UldManager.NodeList[i], focus, candidates, visited, 0);
-        AtkResNode* result = null;
-        foreach (var address in candidates)
+        var pending = new Queue<(nint Node, int Depth)>();
+        var count = addon->UldManager.NodeListCount;
+        if (count > 512 || !AtkText.IsReadable(addon->UldManager.NodeList)) return null;
+        var slots = (int)count;
+        for (var i = 0; i < count; i++) pending.Enqueue(((nint)addon->UldManager.NodeList[i], 0));
+        while (pending.TryDequeue(out var next))
         {
-            var candidate = (AtkResNode*)address;
-            // The innermost owner wins; unrelated owners mean malformed/ambiguous UI.
-            if (result == null || NativeDialogButtons.Contains(result, candidate)) result = candidate;
-            else if (!NativeDialogButtons.Contains(candidate, result)) return null;
+            if (next.Node == 0 || !visited.Add(next.Node)) continue;
+            if (visited.Count > 2048) return null;
+            var node = (AtkResNode*)next.Node;
+            if (!AtkText.IsReadable(node) || (int)node->Type < 1000) continue;
+            var comp = ((AtkComponentNode*)node)->Component;
+            if (!AtkText.IsReadable(comp) || comp->UldManager.NodeListCount > 512
+                || !AtkText.IsReadable(comp->UldManager.NodeList)) continue;
+            if (next.Depth >= 8) return null;
+            slots += comp->UldManager.NodeListCount;
+            if (slots > 8192) return null;
+            for (var i = 0; i < comp->UldManager.NodeListCount; i++)
+            {
+                var child = (nint)comp->UldManager.NodeList[i];
+                if (child == 0 || child == next.Node) continue;
+                if (!parents.TryGetValue(child, out var owners)) parents[child] = owners = [];
+                owners.Add(next.Node);
+                pending.Enqueue((child, next.Depth + 1));
+            }
         }
-        return result;
-    }
-
-    private static void Collect(AtkResNode* node, AtkResNode* focus, List<nint> candidates,
-        HashSet<nint> visited, int depth)
-    {
-        if (depth > 8 || visited.Count >= 2048 || !AtkText.IsReadable(node)
-            || !visited.Add((nint)node) || (int)node->Type < 1000
-            || !NativeDialogButtons.Contains(node, focus)) return;
-        candidates.Add((nint)node);
-        var comp = ((AtkComponentNode*)node)->Component;
-        if (!AtkText.IsReadable(comp) || comp->UldManager.NodeListCount > 512
-            || !AtkText.IsReadable(comp->UldManager.NodeList)) return;
-        for (var i = 0; i < comp->UldManager.NodeListCount; i++)
-            Collect(comp->UldManager.NodeList[i], focus, candidates, visited, depth + 1);
+        var candidates = new HashSet<nint>();
+        var outer = new HashSet<nint>();
+        var search = new Queue<nint>();
+        search.Enqueue((nint)focus);
+        while (search.TryDequeue(out var child))
+        {
+            if (!parents.TryGetValue(child, out var owners)) continue;
+            foreach (var owner in owners)
+            {
+                if (child != (nint)focus) outer.Add(owner);
+                if (candidates.Add(owner)) search.Enqueue(owner);
+            }
+        }
+        candidates.ExceptWith(outer);
+        return candidates.Count == 1 ? (AtkResNode*)candidates.Single() : null;
     }
 }
