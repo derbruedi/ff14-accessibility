@@ -1,6 +1,9 @@
 using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
+using System.Reflection.PortableExecutable;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using FF14Accessibility;
@@ -10,6 +13,30 @@ using FF14Accessibility.Services;
 // speech and game state are substitutes and no game or dependency files change.
 internal static class DungeonCompatibilityCheck
 {
+    internal static bool RejectChangedCode(string path, List<string> errors)
+    {
+        var bytes = File.ReadAllBytes(path);
+        using var pe = new PEReader(new MemoryStream(bytes));
+        var reader = pe.GetMetadataReader();
+        var type = reader.TypeDefinitions.Select(reader.GetTypeDefinition)
+            .Single(t => reader.GetString(t.Name) == "Z0171DzemaelDarkhold");
+        var method = type.GetMethods().Select(reader.GetMethodDefinition)
+            .Single(m => reader.GetString(m.Name) == "get_Version");
+        var rva = method.RelativeVirtualAddress;
+        var section = pe.PEHeaders.SectionHeaders.Single(s => rva >= s.VirtualAddress && rva < s.VirtualAddress + s.SizeOfRawData);
+        var header = section.PointerToRawData + rva - section.VirtualAddress;
+        if ((bytes[header] & 3) != 2 || bytes[header + 1] != 0x18)
+            throw new InvalidOperationException("Unexpected verified Version getter.");
+        bytes[header + 1] = 0x19; // return 3 instead of 2; metadata/version/MVID unchanged
+        var changed = Assembly.Load(bytes);
+        var result = DungeonMeshCompatibility.Apply(changed);
+        var registry = (IDictionary)changed.GetType("Navmesh.NavmeshCustomizationRegistry")!
+            .GetField("PerTerritory")!.GetValue(null)!;
+        var rejected = result == DungeonMeshCompatibility.Result.Unsupported && !registry.Contains(1330u);
+        if (!rejected) errors.Add("Changed vnavmesh code was accepted or its registry changed.");
+        return rejected;
+    }
+
     internal static object Run(Assembly vnav, IPluginLog log, List<string> errors)
     {
         var registryType = vnav.GetType("Navmesh.NavmeshCustomizationRegistry")!;

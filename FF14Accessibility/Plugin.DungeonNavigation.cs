@@ -36,7 +36,8 @@ public sealed partial class Plugin
             var result = DungeonMeshCompatibility.Apply(assembly);
             if (!_dzemaelCompatibilityReported)
             {
-                Log.Info($"[DungeonNav] Dzemael compatibility={result} vnav={assembly.GetName().Version}");
+                Log.Info($"[DungeonNav] Dzemael compatibility={result} vnav={assembly.GetName().Version} "
+                    + $"loadedFromMemory={string.IsNullOrEmpty(assembly.Location)} mvid={assembly.ManifestModule.ModuleVersionId}");
                 _dzemaelCompatibilityReported = true;
             }
             if (result == DungeonMeshCompatibility.Result.Applied) _dzemaelMeshNeedsRebuild = true;

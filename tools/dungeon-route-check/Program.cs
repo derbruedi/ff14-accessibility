@@ -8,7 +8,8 @@ using FF14Accessibility.Services;
 using Lumina;
 using Lumina.Excel.Sheets;
 
-if (args.Length != 3) throw new ArgumentException("DungeonRouteCheck <sqpack> <plugin-config-directory> <report.json>");
+if (args.Length is < 3 or > 4 || (args.Length == 4 && args[3] != "memory"))
+    throw new ArgumentException("DungeonRouteCheck <sqpack> <plugin-config-directory> <report.json> [memory]");
 using var game = new GameData(args[0]);
 var data = new GameDataReader(game);
 uint territory = 0;
@@ -48,7 +49,10 @@ AssemblyLoadContext.Default.Resolving += (context, name) =>
     var path = Path.Combine(vnavDir, name.Name + ".dll");
     return File.Exists(path) ? context.LoadFromAssemblyPath(path) : null;
 };
-var vnav = Assembly.LoadFrom(Path.Combine(vnavDir, "vnavmesh.dll"));
+var vnavPath = Path.Combine(vnavDir, "vnavmesh.dll");
+var vnav = args.Length == 4
+    ? AssemblyLoadContext.Default.LoadFromStream(new MemoryStream(File.ReadAllBytes(vnavPath)))
+    : Assembly.LoadFrom(vnavPath);
 var service = vnav.GetType("Navmesh.Service")!;
 service.GetProperty("Log", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, log);
 var rebuildCheck = DungeonCompatibilityCheck.Run(vnav, log, errors);
@@ -57,10 +61,17 @@ if (compatibility is not (DungeonMeshCompatibility.Result.Applied or DungeonMesh
     errors.Add("Installed vnavmesh cannot receive the verified Dzemael compatibility.");
 var repeated = DungeonMeshCompatibility.Apply(vnav);
 if (repeated != DungeonMeshCompatibility.Result.AlreadySupported) errors.Add("Compatibility did not remain idempotent.");
+var loadedFingerprint = LoadedAssemblyFingerprint.Read(vnav);
+if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(vnavPath))) != DungeonMeshCompatibility.VerifiedSha256
+    || loadedFingerprint != DungeonMeshCompatibility.VerifiedLoadedFingerprint)
+    errors.Add("Loaded fingerprint differs from the exact verified vnavmesh DLL.");
+var changedCodeCheck = DungeonCompatibilityCheck.RejectChangedCode(vnavPath, errors);
 File.WriteAllText(args[2], JsonSerializer.Serialize(new { Passed = errors.Count == 0, Errors = errors, Zones = rows,
     NonPositionalRoutes = noStations, VnavVersion = vnav.GetName().Version?.ToString(), Compatibility = compatibility.ToString(),
     CompatibilityRepeated = repeated.ToString(),
     RebuildCheck = rebuildCheck,
+    LoadedFromMemory = string.IsNullOrEmpty(vnav.Location), LoadedFingerprint = loadedFingerprint,
+    ChangedCodeRejected = changedCodeCheck,
     InGameVerified = false, MeshTraversalVerified = false }, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine($"Checked {rows.Count} dungeon territories; errors: {errors.Count}. Report: {args[2]}");
 if (errors.Count != 0) Environment.ExitCode = 1;

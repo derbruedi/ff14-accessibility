@@ -1,5 +1,44 @@
 # Проверки и границы результата
 
+## Дземаль и загрузка DLL в память — 6.08.124, 17 октября 2026
+
+- Новый журнал: 343 565 байт, SHA-256
+  72E304C064B9B0D416CB78D45957FBFC658D62D3095BB093422521F9F5E6AF70.
+  Подтверждены мод 6.08.123, `compatibility=Unsupported`, территория 1330,
+  первый сундук и повторный обрыв за 62,1 м до All-seeing Eye.
+  Основание и ограничения: DZEMAEL_MEMORY_608124.md.
+- На точной DLL vnavmesh 1.2.3.14 прежний код с Assembly.Load(bytes)
+  вернул `LocationEmpty=True; result=Unsupported`. После исправления —
+  `Applied`. Полный отпечаток загруженных метаданных и кода совпал с DLL
+  SHA-256 889EBFF40D92DB2DF4B4C190F1D81B3971E538908E459F6297F53FEA017E3723.
+- Первая целевая проверка: 23 теста LoadedAssemblyFingerprintTests,
+  DungeonNavigationTests и DungeonRebuildTests прошли без пропусков.
+- tools/dungeon-route-check прошёл с настоящей DLL с диска и через
+  LoadFromStream: по 235 территорий, ошибок 0. В обоих случаях регистрация
+  предшествует единственному принятому запросу перестроения, повтор безопасен,
+  фильтр удаляет двери искусственной сцены и сохраняет стену. Изменённый
+  get_Version при прежних версии/MVID/метаданных отклонён без регистрации 1330.
+  Отчёты: .local/dzemael-608124/memory-report.json и disk-report.json.
+  Живой IPC заменён; реальной сетки r1r1 в кэше нет.
+- Полная `Verify-Local.ps1` прошла: плагин и установщик Release собраны
+  без ошибок и предупреждений, 1 341 тест в семи проектах без пропусков;
+  защита авторской навигации и 12 проверок защиты упаковки прошли.
+  Использованы Dalamud 15.0.3.7 / FFXIVClientStructs 7.57.0.9378.
+  Вывод: .local/dzemael-608124/verify.txt.
+  Сборка: artifacts/build/20261017-145930-760/.
+  Тесты: artifacts/test-results/20261017-145942-540/.
+- Итоговый ZIP: artifacts/releases/FF14Accessibility-6.08.124-RU-no-source.zip,
+  141 файл, 9 007 424 байта; исходников, PDB, EXE и установочных скриптов нет.
+  SHA-256 ZIP:
+  78100DB00C1F2F658E7F1B80ACBFA078A23F816A2F2F6414CD70AD4520027BFF.
+  DLL 6.8.124.0:
+  E8DC83D32AC8942CFFD389E9C31A97C093EC4A4FFE7477745B5A4712AC8DC9B3.
+  Все записи ZIP и DLL сверяются перед публикацией через Publish-Release -CheckOnly.
+- Implemented=true; AutomatedTestsPassed=true; CompiledWithGameLibraries=true;
+  InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
+  Публикация дописывается после проверки файлов с сервера. Игра не запускалась,
+  установленный плагин и файлы vnavmesh не менялись.
+
 ## Дземаль по журналу игрока — 6.08.123, 17 октября 2026
 
 - Основание: D:\Downloads\dalamud.log, SHA-256
