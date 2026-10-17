@@ -63,6 +63,13 @@ internal static unsafe class NativeDialogButtons
         return null;
     }
 
+    internal static bool UsesHoldConfirm(AddonSelectYesno* addon)
+    {
+        if (!AtkText.IsReadable(addon)) return false;
+        var button = ButtonForSide(addon, 0);
+        return AtkText.IsReadable(button) && button == (AtkComponentButton*)addon->AtkComponentHoldButton278;
+    }
+
     private static AtkComponentButton* ButtonAt(AddonSelectYesno* addon, int index) => index switch
     {
         0 => addon->YesButton, 1 => addon->NoButton, 2 => addon->AtkComponentButton238,

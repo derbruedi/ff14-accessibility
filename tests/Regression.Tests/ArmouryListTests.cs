@@ -19,8 +19,9 @@ public sealed class ArmouryListTests
     }
 
     private static ArmouryListItem Item(InventoryType type = InventoryType.ArmoryHead,
-        int slot = 0, uint id = 100, bool hq = false, string instance = "AA", string label = "Hat")
-        => new(type, slot, id, 1, hq, instance, label);
+        int slot = 0, uint id = 100, bool hq = false, string instance = "AA", string label = "Hat",
+        uint classId = 0, string className = "")
+        => new(type, slot, id, 1, hq, instance, label, ClassId: classId, ClassName: className);
 
     [Fact]
     public void CategoryNavigationSkipsEmptySectionsAndWrapsInTheNativeOrder()
@@ -160,4 +161,69 @@ public sealed class ArmouryListTests
         model.Replace([Item(slot: 8, label: "А"), Item(slot: 4, label: "Я")]);
         Assert.Equal([8, 4], model.Items.Select(i => i.Slot));
     }
+
+    [Fact]
+    public void OneClassKeepsTheCollectorsOrderAndCannotReachAnotherClass()
+    {
+        var model = new ArmouryListModel();
+        model.Replace([
+            Item(InventoryType.ArmoryMainHand, 8, label: "Axe", classId: 19, className: "Paladin"),
+            Item(InventoryType.ArmoryBody, 4, label: "Robe", classId: 24, className: "Weissmagier"),
+            Item(InventoryType.ArmoryHead, 2, label: "Helm", classId: 19, className: "Paladin"),
+        ]);
+        Assert.Equal(["Paladin", "Weissmagier"], model.Classes.Select(group => group.Name));
+        Assert.Equal(2, model.Classes[0].Count);
+        model.EnterClass();
+        Assert.Equal(8, model.Selected!.Slot);
+        model.Move(1);
+        Assert.Equal(2, model.Selected!.Slot);
+        model.Move(1);
+        Assert.Equal(8, model.Selected!.Slot);
+        model.MoveCategory(1);
+        Assert.Equal(InventoryType.ArmoryHead, model.Selected!.Container);
+        model.MoveCategory(1);
+        Assert.Equal(InventoryType.ArmoryMainHand, model.Selected!.Container);
+        model.Move(1);
+        Assert.False(model.Replace([
+            Item(InventoryType.ArmoryBody, 4, label: "Robe", classId: 24, className: "Weissmagier"),
+            Item(InventoryType.ArmoryHead, 2, label: "Helm", classId: 19, className: "Paladin"),
+            Item(InventoryType.ArmoryRings, 1, label: "Ring", classId: 19, className: "Paladin"),
+        ]));
+        Assert.True(model.InsideClass);
+        Assert.Equal(2, model.Selected!.Slot);
+        model.LeaveClass();
+        Assert.Equal("Paladin", model.Classes[model.ClassCursor].Name);
+        model.MoveClass(1);
+        model.EnterClass();
+        Assert.Equal(4, model.Selected!.Slot);
+        model.Move(1);
+        Assert.Equal(4, model.Selected!.Slot);
+        Assert.True(model.Replace([
+            Item(InventoryType.ArmoryHead, 2, label: "Helm", classId: 19, className: "Paladin"),
+        ]));
+        Assert.False(model.InsideClass);
+        Assert.Equal("Paladin", model.Classes[model.ClassCursor].Name);
+    }
+
+    [Fact]
+    public void UnknownClassSortsAfterANamedClass()
+    {
+        var model = new ArmouryListModel();
+        model.Replace([Item(classId: 0), Item(slot: 1, classId: 19, className: "Paladin")]);
+        Assert.Equal("Paladin", model.Classes[0].Name);
+        Assert.Equal(0u, model.Classes[1].Id);
+        Assert.Equal(string.Empty, model.Classes[1].Name);
+    }
+
+    [Theory]
+    [InlineData("GLA MRD PLD WAR DRK GNB", true)]
+    [InlineData("BSM, ARM, GSM", true)]
+    [InlineData("PLD", true)]
+    [InlineData("All Classes", false)]
+    [InlineData("Disciple of War", false)]
+    [InlineData("Tank (excluding limited jobs)", false)]
+    [InlineData("Alle Klassen", false)]
+    [InlineData("", false)]
+    public void AbbreviationListsAreDetectedAndNotUsedAsSpeech(string name, bool list)
+        => Assert.Equal(list, ArmouryClassSpeech.IsAbbreviationList(name));
 }

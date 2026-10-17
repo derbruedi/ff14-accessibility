@@ -64,6 +64,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly JobGaugeService    _jobGauge;
     private readonly DutyActionService  _dutyActions;
     private readonly NocturneWarpService _nocturneWarp;
+    private readonly BlundervilleGuideService _blunderville;
     private readonly HotbarService      _hotbar;
     private readonly InventoryService   _inventoryReader;
     private readonly ArmouryTransferService _armouryTransfer;
@@ -97,6 +98,10 @@ public sealed partial class Plugin : IDalamudPlugin
     // eine ein Leser ohne jeden Netzzugriff ist und das andere ein Netzzugriff
     // ohne jedes Spielwissen.
     private readonly DungeonPathDownloadService _dungeonPaths;
+    // Jagdstandorte. Die Datei liegt nur auf diesem Rechner. Ohne sie bleibt
+    // die Gebietssuche.
+    private readonly HuntSpawnCatalog _huntSpawns;
+    private readonly HuntSpawnDownloadService _huntSpawnDownload;
     // [Aktualisierung] Holt eine neue Fassung aus dem GitHub-Release und schreibt
     // sie in den eigenen Ordner. Braucht den Pfad der eigenen DLL, weil er ueber
     // beides entscheidet: wohin geschrieben wird und ob ueberhaupt (nur ein
@@ -217,7 +222,7 @@ public sealed partial class Plugin : IDalamudPlugin
     // 6.08.18 lokal: Chat-Absender Kontextmenü (Strg+Umschalt+BildAuf) + Numpad3-Ziel.
     // 6.08.19: Charakterauswahl — eine Ansage (Name, Job, Ort) statt Scan-Sturm.
     // 6.08.20: Mitstreiter-Taste (PR 27 Port) — Strg+Umschalt+C öffnet/vorliest.
-    private const string PluginVersion    = "6.08.120";
+    private const string PluginVersion    = "6.08.121";
     // Der Tag nennt, was diese Fassung MITBRINGT, nicht woher sie stammt: die
     // russische Schicht auf dem Stand des Autors 6.08.35 (Auftragstext im
     // Quest-Tracker des Autors, siehe package-Schritt).
@@ -431,10 +436,12 @@ public sealed partial class Plugin : IDalamudPlugin
         _keybinds     = new KeybindService(_tolk, Log);
         // Inventory first: the hotbar menu reads the carried items from it.
         var descriptions = new GameDescriptionService(DataManager, SeStringEval, Log);
-        _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log, descriptions);
+        _inventoryReader = new InventoryService(GameInventory, DataManager, ClientState, _config, _tolk, Log, descriptions, _gearInfo);
+        _inventoryReader.UseGameGui(GameGui);
+        _inventoryReader.ConfirmKeyIsDown = vk => vk is >= 0 and < 256 && _keyWasDown[vk];
         // Braucht nur das Item-Sheet: die Antwort kommt aus dem Detail-Agenten
         // des Spiels, den Fokus-Knoten holt er sich selbst (siehe ItemSlotService).
-        _itemSlots       = new ItemSlotService(DataManager);
+        _itemSlots       = new ItemSlotService(DataManager, Interop, Log);
         _hotbar       = new HotbarService(DataManager, ClientState, Framework, _gearInfo, _keybinds, _inventoryReader, _tolk, Log, descriptions, SeStringEval);
         _lootRolls    = new LootRollService(DataManager, ClientState, GameGui, _config, _gearInfo, _tolk, Log);
         _equipment    = new EquipmentService(GameInventory, _inventoryReader, DataManager, _gearInfo, _tolk, Log);
@@ -450,7 +457,7 @@ public sealed partial class Plugin : IDalamudPlugin
         _fishing      = new FishingService(ObjectTable, ClientState, DataManager, _places, _tolk, _config, PluginInterface, Log);
         _fates        = new FateService(ClientState);
         _gathering    = new GatheringService(ObjectTable, ClientState, DataManager, _places, _tolk, Log);
-        _eventAreas   = new EventAreaService(ClientState, DataManager, _places, _inventoryReader, Log);
+        _eventAreas   = new EventAreaService(ClientState, DataManager, _places, Log);
         _bestiary     = new BestiaryService(DataManager, Log);
         _huntingLog   = new HuntingLogService(DataManager, ObjectTable, ClientState, _places, Log);
         // Die echten Umrisse der benannten Gebiete aus dem Zonen-Layout: die
@@ -505,6 +512,8 @@ public sealed partial class Plugin : IDalamudPlugin
         // eine Station nur ihre DataId mitbringt und der Name aus dem Sheet kommt.
         _dungeonRoute = new DungeonRouteService(PluginInterface, ClientState, _objectNames, Log);
         _dungeonPaths = new DungeonPathDownloadService(Log);
+        _huntSpawns = new HuntSpawnCatalog();
+        _huntSpawnDownload = new HuntSpawnDownloadService(Log);
         _updates = new UpdateService(Log, PluginInterface.AssemblyLocation.FullName);
         // Tells apart several objects sharing one name and remembers where the
         // player has been - a dungeon's four "Truhe" (user wish 2026-08-08).
@@ -513,6 +522,7 @@ public sealed partial class Plugin : IDalamudPlugin
         // Zielansage die Farbe vor den Namen setzt (siehe EnemyMarkerService).
         _enemyMarkers = new EnemyMarkerService(ObjectTable, DataManager, _config, Log);
         _navigation   = new NavigationService(ClientState, ObjectTable, TargetManager, _tolk, _beacon, _escape, _cue, _questMarkers, _places, _fishing, _gathering, _fates, _eventAreas, _routes, _shops, _huntingLog, _areaRanges, _aozSources, _xbmSources, _dutyEntrances, _dungeonRoute, _leveEnemies, _objectNames, _objectMemory, _enemyMarkers, _config, DataManager, GameConfig, Log);
+        _navigation.HuntSpawns = _huntSpawns;
         _gatherLog    = new GatherLogService(DataManager, ClientState, _places, Log);
         // Selbst abgelaufene Spuren über Lücken im Wegenetz - der Auto-Lauf
         // greift darauf zurück, wo das Netz endet (siehe TrailService).
@@ -680,6 +690,8 @@ public sealed partial class Plugin : IDalamudPlugin
         _dutyActions = new DutyActionService(DataManager, _tolk, _cue, _config, Log);
         _nocturneWarp = new NocturneWarpService(
             ClientState, ObjectTable, TargetManager, _cue, _config, Log);
+        _blunderville = new BlundervilleGuideService(
+            ClientState, ObjectTable, _tolk, _beacon, _config, Log);
         _vitals     = new VitalsService(ObjectTable, _config, Log);
         // Die Zahlwoerter des Heilmonitors liegen als fertige Klangdateien neben
         // der Plugin-DLL (assets\partymonitor), uebernommen aus Sku.
@@ -774,6 +786,23 @@ public sealed partial class Plugin : IDalamudPlugin
         // die Kategorie genau so lautlos verschwinden wie in v5.94.
         if (_config.DungeonPathsAutoDownload && _dungeonRoute.CountPathFiles() == 0)
             BeginDungeonPathFetch(announceStart: false);
+
+        // [Jagdstandorte] Einmal, und nur wenn die Datei fehlt. Eine vorhandene
+        // Datei wird gelesen, auch wenn das Netz aus ist. Erfolg bleibt im Log.
+        var huntFile = Path.Combine(PluginInterface.GetPluginConfigDirectory(),
+                                    HuntSpawnCatalog.FolderName, HuntSpawnCatalog.FileName);
+        if (File.Exists(huntFile))
+        {
+            if (_huntSpawns.TryLoad(huntFile, out var huntPoints, out var huntError))
+                Log.Info($"[Jagd] {huntPoints} Standorte aus der gespeicherten Liste.");
+            else
+            {
+                Log.Error($"[Jagd] Standortliste unlesbar: {huntError}");
+                _tolk.Speak(AccessibilityStrings.HuntSpawnsFailed);
+            }
+        }
+        else
+            BeginHuntSpawnFetch();
     }
 
     // ── [Dungeon-Wege] ────────────────────────────────────────────────
@@ -842,6 +871,49 @@ public sealed partial class Plugin : IDalamudPlugin
                 // Ausnahme nicht bleiben - sie beendete sonst irgendwann den
                 // Finalizer-Thread.
                 Log.Error($"[Dungeon] Ergebnis des Downloads nicht zustellbar: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Fetches the hunt spawn list when the cache file is missing. Success is
+    /// logged. Failure is spoken once, and hunts keep the area search.
+    /// </summary>
+    private void BeginHuntSpawnFetch()
+    {
+        if (_huntSpawnDownload.IsRunning) return;
+        var file = Path.Combine(PluginInterface.GetPluginConfigDirectory(),
+                                HuntSpawnCatalog.FolderName, HuntSpawnCatalog.FileName);
+
+        _ = Task.Run(async () =>
+        {
+            var result = await _huntSpawnDownload.FetchAsync(file, _shutdown.Token).ConfigureAwait(false);
+            if (_shutdown.IsCancellationRequested) return;
+
+            try
+            {
+                await Framework.RunOnFrameworkThread(() =>
+                {
+                    if (!result.Ok)
+                    {
+                        if (result.Error != "abgebrochen")
+                            _tolk.Speak(AccessibilityStrings.HuntSpawnsFailed);
+                        return;
+                    }
+
+                    if (!_huntSpawns.TryLoad(file, out var count, out var error))
+                    {
+                        Log.Error($"[Jagd] Standortliste nach dem Laden unbrauchbar: {error}");
+                        _tolk.Speak(AccessibilityStrings.HuntSpawnsFailed);
+                        return;
+                    }
+
+                    Log.Info($"[Jagd] {count} Standorte geladen.");
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[Jagd] Ergebnis des Standort-Downloads nicht zustellbar: {ex.Message}");
             }
         });
     }
@@ -1204,6 +1276,12 @@ public sealed partial class Plugin : IDalamudPlugin
                 break;
             // Mitgliedschaft vs. Agent-Tab vs. RankData-Slots — wenn Kategorie
             // und Bestiarium verschiedene Gesellschaften nennen (User 2026-09-20).
+            case "navstatus":
+                ReadNavigationMeshStatus();
+                break;
+            case "navrebuild":
+                RebuildNavigationMesh();
+                break;
             case "huntprobe":
             case "jagdsond":
                 _tolk.SpeakInterrupt(_huntingLog.ProbeHuntingLog());
@@ -1586,6 +1664,92 @@ public sealed partial class Plugin : IDalamudPlugin
             }
     }
 
+    private bool _yesNoNativeHold;
+    private int _yesNoNativeHoldVk;
+    private bool _yesNoHoldNeedsReleaseSpeech;
+    internal bool YesNoHoldNeedsReleaseSpeech => _yesNoHoldNeedsReleaseSpeech;
+
+    private void PollYesNoNativeHold()
+    {
+        if (!_yesNoNativeHold) return;
+        if (!ApplyYesNoHoldPoll(_uiReader.YesNoHoldWatchStillOpen())) return;
+        _tolk.SpeakInterrupt(AccessibilityStrings.YesNoKeepHolding);
+        Log.Info("[NativeButton] SelectYesno hold released early; the window stayed open.");
+    }
+
+    /// <summary>True when the key came up and the same dialog is still open.
+    /// A closed dialog claims the key until it is released.</summary>
+    internal bool ApplyYesNoHoldPoll(bool dialogOpen)
+    {
+        if (!_yesNoNativeHold) return false;
+        var down = _keyWasDown[_yesNoNativeHoldVk];
+        if (dialogOpen && down) return false;
+        _yesNoNativeHold = false;
+        if (dialogOpen)
+        {
+            _yesNoHoldNeedsReleaseSpeech = true;
+            return true;
+        }
+        if (!down) return false;
+        _nativeButtonKeys.Claim(_yesNoNativeHoldVk);
+        KeyState[(Dalamud.Game.ClientState.Keys.VirtualKey)_yesNoNativeHoldVk] = false;
+        return false;
+    }
+
+    internal void BeginYesNoNativeHold(int vk)
+    {
+        _yesNoNativeHold = true;
+        _yesNoNativeHoldVk = vk;
+        _yesNoHoldNeedsReleaseSpeech = false;
+        if (_uiReader != null) _uiReader.ArmYesNoHoldWatch();
+        if (Log != null) Log.Info("[NativeButton] SelectYesno hold left for the game");
+    }
+
+    /// <summary>Hold focus leaves Num0 or Insert down. Any other focused
+    /// answer consumes the tap and claims it until release.</summary>
+    internal bool TakeYesNoConfirmKey(bool holdFocused)
+    {
+        var num = IsJustPressed("Numpad0");
+        var insert = IsJustPressed("Einfg");
+        if (!num && !insert) return false;
+        if (holdFocused)
+        {
+            BeginYesNoNativeHold(num ? 0x60 : 0x2D);
+            return true;
+        }
+        if (num) IsJustPressed("Numpad0", consume: true);
+        if (insert) IsJustPressed("Einfg", consume: true);
+        ClaimNativeButtonConfirmKeys();
+        return true;
+    }
+
+    /// <summary>True while Enter must stay down for the game's hold timer.
+    /// The caller must not evaluate the consuming Enter check in that case.</summary>
+    internal bool TryLeaveEnterForYesNoHold(bool ownsEnter, bool menuOpen, bool skillMenuOpen, bool holdFocused)
+    {
+        if (_yesNoNativeHold && _yesNoNativeHoldVk == 0x0D) return true;
+        if (!ownsEnter || menuOpen || skillMenuOpen || !holdFocused) return false;
+        if (!IsJustPressed("Return")) return false;
+        BeginYesNoNativeHold(0x0D);
+        return true;
+    }
+
+    /// <summary>Ok or Cancel is the game's own choice. Numpad0 is the game's
+    /// OK, so one press stays with the game.</summary>
+    internal bool LeaveGameOkOnYesNo()
+    {
+        if (!IsJustPressed("Numpad0") && !IsJustPressed("Einfg")) return false;
+        if (Log != null) Log.Info("[NativeButton] SelectYesno Ok left for the game");
+        return true;
+    }
+
+    internal bool ConsumeOrdinaryEnter(bool ownsEnter)
+    {
+        var pressed = IsJustPressed("Return", consume: ownsEnter);
+        if (pressed && ownsEnter) ClaimNativeButtonConfirmKeys();
+        return pressed;
+    }
+
     private bool IsJustPressed(string keySpec, bool allowTextInput = false, bool consume = false)
     {
         // While a game text field has focus (chat, search box, name entry, ...)
@@ -1654,8 +1818,9 @@ public sealed partial class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Turns the player towards the walk guide's next waypoint. Without a guide,
-    /// only reads the selected target. Takes the key away from the game in both cases.
+    /// On a Stolperville course, turns onto the locked line. Otherwise turns
+    /// towards the walk guide's next waypoint. Without either, only reads the
+    /// selected target. Takes the key away from the game in every case.
     /// <para>
     /// Bare NUMPAD5 is CAMERA_FOCUS in the keybind dump. The user chose to give
     /// that up (it is purely visual) because NUMPAD5 carries the raised dot and
@@ -1670,7 +1835,12 @@ public sealed partial class Plugin : IDalamudPlugin
         if (_hotbar.IsSkillMenuOpen) return;
         if (!IsJustPressed(_config.KeyFaceWaypoint)) return;
 
-        if (_navigation.IsWalkGuideActive)
+        if (_blunderville.Align())
+        {
+            // The course owns the key for the whole stretch. Do not fall through
+            // to a hunt destination or the game target.
+        }
+        else if (_navigation.IsWalkGuideActive)
         {
             _navigation.FaceGuideDirection();
         }
@@ -2427,8 +2597,11 @@ public sealed partial class Plugin : IDalamudPlugin
         }
 
         UpdateKeyEdges();
+        PollYesNoNativeHold();
         SuppressOwnedWorldConfirmHold();
         SuppressOwnedNativeButtonHold();
+        _inventoryReader.SuppressOpenContextHold(KeyState);
+        _inventoryReader.PollPendingItemMenu();
         _shopQuantityInput.Poll();
         _systemVolumeInput.Poll();
         _tableInput.Poll();
@@ -2699,9 +2872,19 @@ public sealed partial class Plugin : IDalamudPlugin
         }
         if (IsJustPressed(_config.KeyReadInventory))
         {
-            // In a hand-over (Request) window Strg+F3 reads the eligible items
-            // from the grid; otherwise it reads the whole carried inventory.
-            if (!_uiReader.TryAnnounceHandOver()) _inventoryReader.ReadInventory();
+            // In a hand-over (Request) window Strg+F3 still reads the eligible
+            // items from the grid. Otherwise the carried inventory opens as a
+            // category menu. Num0 on an item opens the game's context menu for
+            // that slot. A closed bag is shown first by the inventory main
+            // command, then the visible window owns the menu. At a gil shop
+            // the shop window owns it, so Sell is one of the game's own rows.
+            // Num4 returns to the categories.
+            if (!_uiReader.TryAnnounceHandOver())
+            {
+                var menu = _inventoryReader.BuildBrowseMenu();
+                if (menu == null) _tolk.SpeakInterrupt(AccessibilityStrings.InventoryEmpty);
+                else _menu.Open(menu);
+            }
         }
         if (IsJustPressed(_config.KeyReadGil))       _inventoryReader.AnnounceGil();
         if (IsJustPressed(_config.KeyMoveToArmoury)) _armouryTransfer.Start();
@@ -2733,18 +2916,11 @@ public sealed partial class Plugin : IDalamudPlugin
         // offen laesst (Spielerhinweis 2026-09-12: "дак на инсерте же уже hq").
         // Die Filter haben seit 6.08.18 gar keine Taste mehr: ihr Zustand steht
         // am Ankreuzfeld und wird dort gesprochen.
-        // A focused native confirmation has priority over Insert/HQ and Num0
-        // world interaction. Consume exactly one press; unrelated menus keep
-        // their native confirmation path (notably JournalAccept/JournalResult).
+        // Ok or Cancel is the game's own Numpad0. One press is enough.
+        // Returning keeps later handlers off this edge without clearing the key.
         if (_uiReader.CanConfirmYesNo && !_menu.IsOpen && !_hotbar.IsSkillMenuOpen
-            && (IsJustPressed("Numpad0", consume: true) || IsJustPressed("Insert", consume: true)))
-        {
-            ClaimNativeButtonConfirmKeys();
-            _uiReader.ConfirmYesNo();
-            // Key edges are a frame snapshot. Consumption alone would still
-            // let Insert/HQ or world interaction see this same press below.
+            && (_uiReader.FocusedYesNoIsHold() ? TakeYesNoConfirmKey(true) : LeaveGameOkOnYesNo()))
             return;
-        }
         if (IsJustPressed(_config.KeyTakeHqMaterials)) _uiReader.TakeHqMaterials();
         if (IsJustPressed(_config.KeyPluginsNext))   _dalamudPlugins.CycleNext();
         if (IsJustPressed(_config.KeyPluginsPrev))   _dalamudPlugins.CyclePrev();
@@ -2907,7 +3083,11 @@ public sealed partial class Plugin : IDalamudPlugin
         // next to RIGHT NOW, and the target announcement that follows should be
         // able to say "schon besucht" for the very object just walked up to.
         _objectMemory.Update();
+        _navigation.HoldBeacon = _blunderville.WantsBeacon
+            && !_navigation.IsWalkGuideActive
+            && !_autoWalk.IsWalking;
         _navigation.Update(_config.AnnounceTargetChanges && !_autoWalk.IsActive && !_autoWalk.IsFollowing);
+        _blunderville.Update(_navigation.IsWalkGuideActive || _autoWalk.IsWalking || _navigation.EscapeBeaconActive);
         // Records the player's own line while a trail recording runs (see TrailService).
         _trails.Update();
         // Speaks "Angelbereit" when the player faces castable water and "Biss"
@@ -2988,9 +3168,12 @@ public sealed partial class Plugin : IDalamudPlugin
         }
 
         var ownsEnterButton = _uiReader.OwnsEnterButton;
-        if (IsJustPressed("Return", consume: ownsEnterButton))
+        // The second call swallows Enter on every held frame. It must not run
+        // while the game is timing a hold button.
+        if (!TryLeaveEnterForYesNoHold(ownsEnterButton, _menu.IsOpen, _hotbar.IsSkillMenuOpen,
+                _uiReader.FocusedYesNoIsHold())
+            && ConsumeOrdinaryEnter(ownsEnterButton))
         {
-            if (ownsEnterButton) ClaimNativeButtonConfirmKeys();
             _uiReader.HandleConfirmKey();
             // [Chat-Puffer] HIER STAND ChatChannelService.TrySwitchToBrowsedChannel -
             // Enter stellte den SENDEKANAL auf den Puffer um, in dem der Spieler gerade
@@ -3070,6 +3253,123 @@ public sealed partial class Plugin : IDalamudPlugin
         Resolved,
         /// <summary>A marker is selected but unusable; the reason was announced.</summary>
         Failed,
+    }
+
+    /// <summary>Outcome of picking a hunt or beast search point on the mesh.</summary>
+    private enum HuntFloorPick
+    {
+        /// <summary>A reachable floor was found. The out position is valid.</summary>
+        Found,
+        /// <summary>vnavmesh is missing or still building. The player was told.</summary>
+        NotReady,
+        /// <summary>The target has no search point and no map position.</summary>
+        NoPoint,
+        /// <summary>Every search point was asked and none has a reachable floor.</summary>
+        NoFloor,
+    }
+
+    /// <summary>
+    /// Says why the mesh cannot be asked, the same split auto-walk uses:
+    /// the plugin is absent, a build is in progress, or the mesh is simply
+    /// not ready yet. Returns true when the caller must stop.
+    /// </summary>
+    private bool SpeakMeshUnavailable()
+    {
+        var nav = _autoWalk.Navmesh;
+        if (nav.IsReady) return false;
+
+        var progress = nav.BuildProgress;
+        if (nav.LastCallFailed)
+            _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
+        else
+            _tolk.SpeakInterrupt(progress >= 0
+                ? AccessibilityStrings.MeshStillLoading(progress * 100)
+                : AccessibilityStrings.MeshNotReady);
+        return true;
+    }
+
+    /// <summary>
+    /// Nearest reachable mesh point for a hunt seed. A short box first, then a
+    /// tall column. Measured 2026-10-08 at the Lead Coblyn camp: player height
+    /// sits next to an unreachable ledge, and the walkable floor is 21 m below.
+    /// <see cref="AutoWalkService.ResolveFloorPoint"/> would take that ledge.
+    /// Returns null when the query itself failed; the caller treats that as
+    /// the mesh being absent.
+    /// </summary>
+    private Vector3? ReachableHuntFloor(Vector3 seed)
+    {
+        var nav = _autoWalk.Navmesh;
+        var hit = nav.NearestPointReachable(seed, 10f, 10f)
+               ?? nav.NearestPointReachable(seed, 10f, 100f);
+        if (nav.LastCallFailed) return null;
+
+        if (hit is { } found)
+            Log.Info($"[Jagd] Erreichbar ({seed.X:F0}|{seed.Y:F0}|{seed.Z:F0}) -> ({found.X:F0}|{found.Y:F0}|{found.Z:F0})");
+        return hit;
+    }
+
+    /// <summary>
+    /// Walk target for one hunt or beast search. Layout pieces keep the height
+    /// stored in the zone file. Spawn points have none, so the player's height
+    /// is the search origin. A point with no reachable floor is skipped. The
+    /// map label of Tal der Spuren is such a point: no mesh within 10 m
+    /// (log 2026-10-08 10:09, world −304 | 0 | −378).
+    /// </summary>
+    private HuntFloorPick TryPickHuntFloor(Vector3 playerPos, Vector3? bareMarker,
+                                            out Vector3 floor,
+                                            out (Vector3 Position, string Name, int Index, int Count)? part)
+    {
+        floor = default;
+        part = null;
+        if (SpeakMeshUnavailable()) return HuntFloorPick.NotReady;
+
+        var fromSpawns = _navigation.HuntSearchFromSpawns;
+        var areaY = playerPos.Y;
+        var advance = true;
+        for (var n = 0; n < 64; n++)
+        {
+            var next = _navigation.NextHuntSearchPart(playerPos, advance);
+            advance = false;
+            if (next == null)
+            {
+                if (n != 0 || bareMarker is not { } marker)
+                    return n == 0 ? HuntFloorPick.NoPoint : HuntFloorPick.NoFloor;
+
+                if (ReachableHuntFloor(marker with { Y = areaY }) is not { } bare)
+                {
+                    if (_autoWalk.Navmesh.LastCallFailed)
+                    {
+                        _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
+                        return HuntFloorPick.NotReady;
+                    }
+
+                    return HuntFloorPick.NoFloor;
+                }
+                floor = bare;
+                return HuntFloorPick.Found;
+            }
+
+            // Spawn rows are flat map coordinates. A layout piece, including a
+            // map label inserted as a piece, keeps the height it was stored with.
+            var seed = fromSpawns ? next.Value.Position with { Y = areaY } : next.Value.Position;
+            if (ReachableHuntFloor(seed) is { } found)
+            {
+                floor = found;
+                part = next;
+                return HuntFloorPick.Found;
+            }
+
+            if (_autoWalk.Navmesh.LastCallFailed)
+            {
+                _tolk.SpeakInterrupt(AccessibilityStrings.AutoWalkUnavailable);
+                return HuntFloorPick.NotReady;
+            }
+
+            Log.Info($"[Jagd] Punkt {next.Value.Index} von {next.Value.Count} '{next.Value.Name}' ohne erreichbaren Boden.");
+            if (!_navigation.SkipUnwalkableHuntPart()) return HuntFloorPick.NoFloor;
+        }
+
+        return HuntFloorPick.NoFloor;
     }
 
     /// <summary>
@@ -3351,32 +3651,27 @@ public sealed partial class Plugin : IDalamudPlugin
             if (beast.MapId != 0 && beast.MapId == ClientState.MapId)
             {
                 var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-                var searchPart = _navigation.NextHuntSearchPart(playerPos);
-                var area = searchPart?.Position ?? beast.Position;
-                if (area is not { } areaPos)
+                switch (TryPickHuntFloor(playerPos, beast.Position, out var areaWalk, out var searchPart))
                 {
-                    if (beast.AreaName.Length > 0)
-                    {
-                        _tolk.SpeakInterrupt(
+                    case HuntFloorPick.NotReady:
+                        return MarkerResolve.Failed;
+                    case HuntFloorPick.NoPoint:
+                        if (beast.AreaName.Length > 0)
+                        {
+                            _tolk.SpeakInterrupt(
                             AccessibilityStrings.BeastmasterAreaUnknown(beast.Name, beast.AreaName));
                         return MarkerResolve.Failed;
                     }
 
-                    _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterHere);
-                    return MarkerResolve.Failed;
+                        _tolk.SpeakInterrupt(AccessibilityStrings.BeastmasterHere);
+                        return MarkerResolve.Failed;
+                    case HuntFloorPick.NoFloor:
+                        _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(
+                            beast.AreaName.Length > 0 ? beast.AreaName : beast.ZoneName));
+                        return MarkerResolve.Failed;
                 }
 
-                var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-                var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
-                var areaWalk = _autoWalk.ResolveFloorPoint(areaSeed);
-                if (areaWalk == null)
-                {
-                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(
-                        beast.AreaName.Length > 0 ? beast.AreaName : beast.ZoneName));
-                    return MarkerResolve.Failed;
-                }
-
-                position = areaWalk.Value;
+                position = areaWalk;
                 name = searchPart is { Name.Length: > 0 }
                     ? searchPart.Value.Name
                     : beast.AreaName.Length > 0 ? beast.AreaName : beast.Name;
@@ -3455,41 +3750,45 @@ public sealed partial class Plugin : IDalamudPlugin
             // naechsten, sobald der Spieler am aktuellen war. Siehe
             // AreaRangeService und NavigationService.NextHuntSearchPart.
             var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-            var searchPart = _navigation.NextHuntSearchPart(playerPos);
-
+            _navigation.EnsureHuntSearch(hunt, playerPos);
             // 40 of the 647 habitats are dungeon areas the map never marks, and
             // for some of those the layout has no named range either. Say so
-            // instead of walking somewhere arbitrary.
-            var area = searchPart?.Position ?? hunt.Position;
-            if (area is not { } areaPos)
+            // instead of walking somewhere arbitrary. A point that exists but
+            // has no reachable floor is a different answer: the mesh was asked.
+            switch (TryPickHuntFloor(playerPos, hunt.Position, out var areaWalk, out var searchPart))
             {
-                _tolk.SpeakInterrupt(AccessibilityStrings.HuntingAreaUnknown(hunt.MonsterName, hunt.AreaName));
-                return MarkerResolve.Failed;
+                case HuntFloorPick.NotReady:
+                    return MarkerResolve.Failed;
+                case HuntFloorPick.NoPoint:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.HuntingAreaUnknown(hunt.MonsterName, hunt.AreaName));
+                    return MarkerResolve.Failed;
+                case HuntFloorPick.NoFloor:
+                    _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(hunt.AreaName));
+                    return MarkerResolve.Failed;
             }
 
-            var areaY    = ObjectTable.LocalPlayer?.Position.Y ?? 0f;
-            // Ein Teilstueck aus dem Zonen-Layout traegt eine ECHTE Hoehe, ein
-            // Kartenmarker nicht (Kartendaten sind flach). Die eigene Hoehe
-            // unterzuschieben waere dort also schlechter als das, was die Datei
-            // sagt - deshalb nur beim Marker.
-            var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
-            var areaWalk = _autoWalk.ResolveFloorPoint(areaSeed);
-            if (areaWalk == null)
-            {
-                _tolk.SpeakInterrupt(AccessibilityStrings.NoWalkablePointNear(hunt.AreaName));
-                return MarkerResolve.Failed;
-            }
-            position = areaWalk.Value;
+            position = areaWalk;
             // Both parts are spoken: the monster is what the player picked, the
             // area is where they are actually being taken - the marker is the
-            // centre of the area, not the monster.
-            var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
-            name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
+            // centre of the area, not the monster. A spawn point is the monster's
+            // camp, so the area label would name the wrong place.
+            var fromSpawns = _navigation.HuntSearchFromSpawns;
+            if (fromSpawns)
+                name = hunt.MonsterName;
+            else
+            {
+                var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
+                name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
+            }
             heightIsGuess = true;
             stopRange = _config.AutoWalkPlaceStopRange;
             if (searchPart is { } sp)
-                Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' " +
-                         $"({sp.Position.X:F0}|{sp.Position.Y:F0}|{sp.Position.Z:F0}) fuer '{hunt.MonsterName}'.");
+            {
+                if (fromSpawns)
+                    Log.Info($"[Jagd] Standort {sp.Index}/{sp.Count} fuer '{hunt.MonsterName}'.");
+                else
+                    Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' fuer '{hunt.MonsterName}'.");
+            }
             return MarkerResolve.Resolved;
         }
 
@@ -3979,6 +4278,7 @@ public sealed partial class Plugin : IDalamudPlugin
             // naechsten, sobald der Spieler am aktuellen war. Siehe
             // AreaRangeService und NavigationService.NextHuntSearchPart.
             var playerPos = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+            _navigation.EnsureHuntSearch(hunt, playerPos);
             var searchPart = _navigation.NextHuntSearchPart(playerPos, advance: !forReadout);
 
             // 40 of the 647 habitats are dungeon areas the map never marks, and
@@ -3995,8 +4295,10 @@ public sealed partial class Plugin : IDalamudPlugin
             // Ein Teilstueck aus dem Zonen-Layout traegt eine ECHTE Hoehe, ein
             // Kartenmarker nicht (Kartendaten sind flach). Die eigene Hoehe
             // unterzuschieben waere dort also schlechter als das, was die Datei
-            // sagt - deshalb nur beim Marker.
-            var areaSeed = searchPart != null ? areaPos : areaPos with { Y = areaY };
+            // sagt - deshalb nur beim Marker. Standorte aus der Liste haben
+            // ebenfalls keine Hoehe.
+            var fromSpawns = _navigation.HuntSearchFromSpawns;
+            var areaSeed = searchPart != null && !fromSpawns ? areaPos : areaPos with { Y = areaY };
             var areaWalk = FloorPoint(areaSeed);
             if (areaWalk == null)
             {
@@ -4006,14 +4308,26 @@ public sealed partial class Plugin : IDalamudPlugin
             position = areaWalk.Value;
             // Both parts are spoken: the monster is what the player picked, the
             // area is where they are actually being taken - the marker is the
-            // centre of the area, not the monster.
-            var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
-            name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
-            heightIsGuess = searchPart == null;
+            // centre of the area, not the monster. A spawn point is the monster's
+            // camp, so the area label would name the wrong place.
+            if (fromSpawns)
+                name = hunt.MonsterName;
+            else
+            {
+                var areaLabel = searchPart is { Name.Length: > 0 } ? searchPart.Value.Name : hunt.AreaName;
+                name = areaLabel.Length > 0 ? $"{hunt.MonsterName}, {areaLabel}" : hunt.MonsterName;
+            }
+            heightIsGuess = searchPart == null || fromSpawns;
             stopRange = _config.AutoWalkPlaceStopRange;
             if (searchPart is { } sp)
-                Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' " +
-                         $"({sp.Position.X:F0}|{sp.Position.Y:F0}|{sp.Position.Z:F0}) fuer '{hunt.MonsterName}'.");
+            {
+                if (fromSpawns)
+                    Log.Info($"[Jagd] Standort {sp.Index}/{sp.Count} " +
+                             $"({areaSeed.X:F0}|{areaSeed.Y:F0}|{areaSeed.Z:F0}) fuer '{hunt.MonsterName}'.");
+                else
+                    Log.Info($"[Jagd] Suchpunkt {sp.Index}/{sp.Count} '{sp.Name}' " +
+                             $"({sp.Position.X:F0}|{sp.Position.Y:F0}|{sp.Position.Z:F0}) fuer '{hunt.MonsterName}'.");
+            }
             return MarkerResolve.Resolved;
         }
 
@@ -4274,9 +4588,11 @@ public sealed partial class Plugin : IDalamudPlugin
         // bevor ihm der HttpClient unter den Haenden wegfaellt.
         _shutdown.Cancel();
         _dungeonPaths.Dispose();
+        _huntSpawnDownload.Dispose();
         _updates.Dispose();
         _shutdown.Dispose();
         _tooltips.Dispose();
+        _itemSlots.Dispose();
         _toasts.Dispose();
         _chatReader.Dispose();
         _legacyChatReader.Dispose();

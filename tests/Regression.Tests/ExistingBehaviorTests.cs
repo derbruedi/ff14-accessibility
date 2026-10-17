@@ -78,6 +78,7 @@ public class ExistingBehaviorTests
         "get_ObjectKind" => ObjectKind.BattleNpc,
         "get_BattleNpcKind" => kind,
         "get_StatusFlags" => flags,
+        "get_Address" => (nint)0,
         _ => throw new InvalidOperationException(m.Name)
     });
 

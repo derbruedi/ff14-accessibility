@@ -26,6 +26,8 @@ namespace FF14Accessibility.Services;
 /// <see cref="AreaRangeService"/>.</param>
 /// <param name="TerritoryId">Territory of the habitat's map, for the same
 /// lookup. 0 when unknown.</param>
+/// <param name="BNpcNameId">BNpcName row of this monster. The spawn list is
+/// indexed by this id plus <paramref name="TerritoryId"/>.</param>
 public sealed record HuntingTarget(
     string MonsterName,
     int Killed,
@@ -36,7 +38,8 @@ public sealed record HuntingTarget(
     bool InCurrentZone,
     Vector3? Position,
     uint AreaPlaceNameId = 0,
-    uint TerritoryId = 0);
+    uint TerritoryId = 0,
+    uint BNpcNameId = 0);
 
 /// <summary>
 /// The hunting log ("Bestiarium") as a source of PLACES to go, not just a window
@@ -594,7 +597,8 @@ public sealed partial class HuntingLogService
                     best.MapId != 0 && best.MapId == currentMap,
                     best.Position,
                     best.AreaId,
-                    GetTerritoryOfMap(best.MapId)));
+                    GetTerritoryOfMap(best.MapId),
+                    nameRow.Value.RowId));
             }
         }
 

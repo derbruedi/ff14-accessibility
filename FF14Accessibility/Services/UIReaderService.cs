@@ -211,6 +211,10 @@ public sealed partial class UIReaderService : IDisposable
         // Mini-Glueckskaktor: generischer Open scrapte Auszahlungstabelle
         // ("MGP. Summe. Auszahlung…") statt Titel+Hinweis (Log 2026-09-26).
         "LotteryDaily",
+        // Spielerhandel: die Gegenstaende stehen nicht im Text (Dump 2026-10-08).
+        // OnTradeUpdate liest InventoryManager. Der generische Scanner sagte
+        // sonst nur Titel, Knoepfe und "Ok".
+        "Trade",
     ];
 
     // Addons, bei denen Universal-Update/ReceiveEvent nicht l�uft
@@ -320,6 +324,8 @@ public sealed partial class UIReaderService : IDisposable
         XbmNotebookService.AddonName,
         // Detail-Kind: nur „SEITE AN SEITE“; User will Namen im Raster, nicht hier.
         "XBMMonsterBookDetail",
+        // Spielerhandel: siehe SpecialSetupAddons. PostUpdate spricht das Angebot.
+        "Trade",
     ];
 
     // HUD-Anzeigen, deren Text/Fokus sich im normalen Spiel laufend aendert -
@@ -635,6 +641,11 @@ public sealed partial class UIReaderService : IDisposable
         // read on PostUpdate with dedup (like Talk/Gathering). Suppressed in the
         // generic path via SpecialSetup/UpdateAddons.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
+
+        // Player trade. PostUpdate, not PostSetup: the offer fills after the
+        // window opens, and a reload must read a trade that is already open.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "Trade", OnTradeUpdate);
+        _addonLifecycle.RegisterListener(AddonEvent.PreFinalize, "Trade", OnTradeClose);
 
         // -- [Tiefes Gewoelbe] Ergebnisschirm --------------------------
         // Der Schirm am Ende eines Laufs zaehlt die entdeckten Truhen nach FARBE. Er
@@ -3238,10 +3249,13 @@ public sealed partial class UIReaderService : IDisposable
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
+        _yesNoHoldWatch = false;
         (_ynConfirmLabel, _ynCancelLabel) = ReadYesNoLabels(addon);
         _lastYesNoText = string.Empty;
         var question = ReadYesNoQuestion(addon);
-        var buttons  = AccessibilityStrings.DialogButtons(_ynConfirmLabel, _ynCancelLabel);
+        var buttons  = NativeDialogButtons.UsesHoldConfirm((AddonSelectYesno*)addon)
+            ? AccessibilityStrings.DialogHoldButtons(_ynConfirmLabel, _ynCancelLabel)
+            : AccessibilityStrings.DialogButtons(_ynConfirmLabel, _ynCancelLabel);
         _log.Info($"[Accessibility] SelectYesno offen: Frage='{question}' Buttons=[{_ynConfirmLabel}|{_ynCancelLabel}]");
         _tolk.SpeakInterrupt(string.IsNullOrWhiteSpace(question) ? buttons : $"{question} {buttons}");
         _dialogOpenedAt = DateTime.UtcNow;
@@ -4828,7 +4842,16 @@ public sealed partial class UIReaderService : IDisposable
             if (itemId != 0)
             {
                 parts[i] = _inventory.ResolveItemLabel(itemId);
-                if (info.Length == 0) info = _gearInfo.DescribeGear(itemId);
+                if (info.Length == 0)
+                {
+                    // Category first. For armour that is the slot ("Kopf"),
+                    // which the row text does not say.
+                    var basics = _gearInfo.DescribeItemBasics(itemId);
+                    var gear = _gearInfo.DescribeGear(itemId);
+                    info = basics.Length == 0 ? gear
+                        : gear.Length == 0 ? basics
+                        : $"{basics}, {gear}";
+                }
             }
             else parts[i] = _gearInfo.TranslateClassLabel(parts[i]);
         }
@@ -4861,6 +4884,18 @@ public sealed partial class UIReaderService : IDisposable
             {
                 var comp = ((AtkComponentNode*)cur)->Component;
                 if (comp == null) return string.Empty;
+
+                // Character window: the slot's own name comes first ("Kopf, ..."),
+                // and an empty slot says so instead of falling silent. Its icon
+                // is a silhouette (uint.MaxValue), which the empty check below
+                // never matched. See CharacterEquipSlot.
+                var isCharacterSlot = CharacterEquipSlot.TryDescribe(cur, FindAddonNameForNode(cur), _data, _log,
+                    out var characterSlotName, out var characterEmpty, out var characterWear);
+                if (isCharacterSlot && characterEmpty.Length > 0)
+                {
+                    _log.Info($"[CharSlot] '{characterSlotName}' leer");
+                    return $"{characterSlotName}, {characterEmpty}";
+                }
 
                 var icon = FindSlotIcon(comp);
                 if (icon == null) return string.Empty; // a real control, but not an item slot
@@ -4947,7 +4982,7 @@ public sealed partial class UIReaderService : IDisposable
                 {
                     (name, itemId) = _inventory.ResolveIconItem(icon->IconId);
                 }
-                if (string.IsNullOrEmpty(name)) return string.Empty;
+                if (string.IsNullOrEmpty(name)) return isCharacterSlot ? characterSlotName : string.Empty;
                 _lastFocusedItemId = itemId; // remembered for the description dwell
                 // Survives the deferral frames, unlike _lastFocusedItemId, which is
                 // cleared at the top of every call: a stale agent is recognised by
@@ -4958,7 +4993,9 @@ public sealed partial class UIReaderService : IDisposable
                 // Category and item level for EVERY item ("Baustein,
                 // Gegenstandsstufe 1") - the tooltip lines a sighted player
                 // reads while the cursor sits on the slot.
-                var basics = _gearInfo.DescribeItemBasics(itemId);
+                // Not in the Character window: there the slot name already says
+                // the category, and "Kopf, Leinenturban, Kopf" would say it twice.
+                var basics = isCharacterSlot ? string.Empty : _gearInfo.DescribeItemBasics(itemId);
 
                 // Equipment gets level + wearability appended ("Bronzegladius,
                 // Stufe 5, tragbar") - the info a blind player needs when
@@ -4975,31 +5012,36 @@ public sealed partial class UIReaderService : IDisposable
                 // Prepend the stack count so the user hears "10 mal Eichenholz".
                 var qty = ReadIconQuantity(icon);
 
-                // Durability - the one line of the tooltip that cannot be worked
-                // out from anything else on the slot (user 2026-09-12, armoury
-                // chest). The game's own tooltip text comes first; where the game
-                // does not open that window (measured 2026-09-05: it opens on
-                // hover only, never on keyboard focus), the single owned copy of
-                // the item answers instead - and stays silent when there are
-                // several, because the item id cannot say which copy the cursor
-                // is on. Both sources read the game's value; neither recomputes it.
+                // Condition and spiritbond come from the item instance, never from
+                // the tooltip text, which trails the cursor. See ItemWearText.
+                // The worn slot, the sort-mapped owned slot, then the hover hook,
+                // then the single owned copy. Several copies and no resolved
+                // instance stay silent: the item id cannot say which copy it is.
                 var condition       = string.Empty;
                 var conditionSource = "-";
-                if (agentItemId != 0)
+                if (isCharacterSlot)
                 {
-                    condition       = owned.Status == ItemSlotService.OwnedSlotStatus.Ready
-                        ? string.Empty : ReadTooltipCondition();
-                    conditionSource = "tooltip";
-                    if (condition.Length == 0)
+                    condition       = characterWear;
+                    conditionSource = "worn";
+                }
+                else if (agentItemId != 0)
+                {
+                    var instance = ItemSlotService.InstanceAt(owned);
+                    conditionSource = instance != null ? "owned" : "hover";
+                    if (instance == null)
+                        instance = _itemSlots.TryGetHoveredInstance(itemId);
+                    if (instance == null)
                     {
-                        condition = _inventory.DescribeOwnedCondition(
+                        instance = _inventory.FindSingleOwnedInstance(
                             itemId, ItemSlotService.IsHighQuality(icon->IconId));
-                        conditionSource = condition.Length > 0 ? "inventory" : "none";
+                        conditionSource = instance != null ? "inventory" : "none";
                     }
+                    condition = ItemWearText.Describe(instance, _data, _log);
                 }
 
                 _log.Info($"[Focus] Item-Slot iconId={icon->IconId} qty='{qty}' name='{name}' basics='{basics}' gear='{gear}' klassen='{owners}' set={set.Length > 0} cond='{condition}' via={conditionSource}");
                 var spoken = qty.Length > 0 ? AccessibilityStrings.ItemQuantity(qty, name) : name;
+                if (isCharacterSlot) spoken = $"{characterSlotName}, {spoken}";
                 // HQ, which a sighted player reads off the symbol drawn on the slot.
                 // Without it the two Honey stacks in the bag were the SAME sentence
                 // apart from the count (user 2026-09-05, log 00:11: "Honey, Ingredient,
@@ -10870,7 +10912,11 @@ public sealed partial class UIReaderService : IDisposable
 
     public void AnnounceContextHelp()
     {
-        if (IsAddonVisible("SelectYesno")) { _tolk.SpeakInterrupt(AccessibilityStrings.DialogHelp); return; }
+        if (IsAddonVisible("SelectYesno"))
+        {
+            _tolk.SpeakInterrupt(FocusedYesNoIsHold() ? AccessibilityStrings.DialogHoldHelp : AccessibilityStrings.DialogHelp);
+            return;
+        }
         if (IsAddonVisible("SystemMenu")) { _tolk.SpeakInterrupt(AccessibilityStrings.SystemMenuHelp); return; }
         if (IsAddonVisible(ContentsTutorialText.AddonName))
         {
@@ -15569,6 +15615,8 @@ public sealed partial class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "BeginnersMansionProblem", OnBeginnersArenaUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ContentsFinderConfirm", OnContentsFinderConfirmUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Bank", OnBankUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Trade", OnTradeUpdate);
+        _addonLifecycle.UnregisterListener(AddonEvent.PreFinalize, "Trade", OnTradeClose);
         _addonLifecycle.UnregisterListener(OnSelectStringOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Request", OnRequestOpen);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup, "Title", OnTitleScreenOpen);

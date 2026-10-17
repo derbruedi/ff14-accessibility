@@ -6,16 +6,29 @@ public static partial class AccessibilityStrings
         "Grundwerte ohne HQ- und Materia-Boni",
         "Base values without high-quality or materia bonuses",
         "Базовые параметры без бонусов высокого качества и материи");
+
     public static string ArmouryListTitle(int count) => L(
         $"Arsenaltruhe, alle Gegenstände: {count}", $"Armoury Chest, all items: {count}",
         $"Арсенал, все предметы: {count}");
+    public static string ArmouryClassTitle(int count) => L(
+        $"Arsenaltruhe, Klassen: {count}", $"Armoury Chest, classes: {count}",
+        $"Арсенал, классы: {count}");
+    public static string ArmouryClassHelp => L(
+        "0 öffnet die Klasse. Plus zurück zu den Klassen. Entf schließt.",
+        "0 opens the class. Plus returns to the classes. Delete closes.",
+        "0 открывает класс. Плюс возвращает к классам. Delete закрывает.");
+    public static string ArmouryClassRow(string name, int count) => L(
+        $"{name}, {count} Gegenstände", $"{name}, {count} items", $"{name}, {count} предметов");
+    public static string ArmouryUnknownClass => L(
+        "Unbekannte Klasse", "Unknown class", "Неизвестный класс");
     public static string ArmouryListHelp => L(
-        "2 und 8: eine Reihe nach unten oder oben. 4 und 6: vorheriger oder nächster Gegenstand. 7 und 9: vorherige oder nächste nicht leere Kategorie, auch ohne NumLock über Pos1 und Bild auf. 5: Beschreibung. 0: Spielmenü des Gegenstands. Escape oder Entf: schließen. Ende: letzter Gegenstand.",
-        "2 and 8: move a row down or up. 4 and 6: previous or next item. 7 and 9: previous or next nonempty category, also with NumLock off via Home and Page Up. 5: description. 0: game item menu. Escape or Delete: close. End: last item.",
-        "2 и 8: на строку вниз или вверх. 4 и 6: предыдущий или следующий предмет. 7 и 9: предыдущая или следующая непустая категория, также при выключенном NumLock через Home и Page Up. 5: описание. 0: игровое меню предмета. Escape или Delete: закрыть. End: последний предмет.");
-    public static string ArmouryListCategory(string category, string selection) => L(
-        $"Kategorie: {category}. {selection}", $"Category: {category}. {selection}",
-        $"Категория: {category}. {selection}");
+        "Zuerst die Klassen. 0 öffnet die Klasse. Plus zurück zu den Klassen. In der Klasse: 2 und 8 eine Reihe, 4 und 6 der vorige oder nächste Gegenstand, 7 und 9 die vorige oder nächste Ausrüstungsart, 5 die Beschreibung, 0 das Spielmenü, Ende der letzte Gegenstand. Entf schließt.",
+        "Classes come first. 0 opens the class. Plus returns to the classes. Inside a class: 2 and 8 move a row, 4 and 6 the previous or next item, 7 and 9 the previous or next equipment slot, 5 the description, 0 the game menu, End the last item. Delete closes.",
+        "Сначала классы. 0 открывает класс. Плюс возвращает к классам. Внутри класса: 2 и 8 на строку, 4 и 6 предыдущий или следующий предмет, 7 и 9 предыдущий или следующий слот, 5 описание, 0 игровое меню, End последний предмет. Delete закрывает.");
+    public static string ArmouryListCategory(string category, int count, string selection) => L(
+        $"Kategorie: {category}, {count}. {selection}",
+        $"Category: {category}, {count}. {selection}",
+        $"Категория: {category}, {count}. {selection}");
     public static string ArmouryListUpdating => L(
         "Die Arsenaltruhe wird geladen. Bitte warten.", "The Armoury Chest is loading. Please wait.",
         "Арсенал загружается. Подожди.");

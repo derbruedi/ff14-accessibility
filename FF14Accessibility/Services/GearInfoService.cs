@@ -223,9 +223,15 @@ public sealed class GearInfoService
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
         RefreshGearNames();
-        return _gearNames.TryGetValue(text.Trim().ToLowerInvariant(), out var id)
-            ? DescribeGear(id)
-            : string.Empty;
+        if (!_gearNames.TryGetValue(text.Trim().ToLowerInvariant(), out var id)) return string.Empty;
+
+        // Category first. For armour that is the slot ("Kopf"), which a shop row
+        // does not put in the item name. Same order as an inventory slot:
+        // DescribeItemBasics, then DescribeGear.
+        var basics = DescribeItemBasics(id);
+        var gear = DescribeGear(id);
+        if (basics.Length == 0) return gear;
+        return gear.Length > 0 ? $"{basics}, {gear}" : basics;
     }
 
     /// <summary>Known equipment label with slots, resolved before translating.</summary>
@@ -288,6 +294,60 @@ public sealed class GearInfoService
             if (names.Count > 3) return string.Empty;
         }
         return string.Join(", ", names);
+    }
+
+    private readonly Dictionary<(uint CategoryId, LanguageMode Mode, int Revision), string> _armouryClassNames = new();
+
+    /// <summary>
+    /// The armoury class menu puts each item in its one ClassJobCategory.
+    /// A phrase such as "All Classes" is the localized sheet name. An
+    /// abbreviation list is spoken as full job names, never as the letters.
+    /// (0, "") when the item has no class category.
+    /// </summary>
+    public (uint Id, string Name) ArmouryClass(uint baseItemId)
+    {
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return (0, "");
+        if (row.ClassJobCategory.RowId == 0 || row.ClassJobCategory.ValueNullable is not { } category)
+            return (0, "");
+        var id = category.RowId;
+        var key = (id, Loc.Mode, GameDisplayText.Revision);
+        if (_armouryClassNames.TryGetValue(key, out var cached)) return (id, cached);
+        var name = SpeakArmouryClass(category);
+        _armouryClassNames[key] = name;
+        return (id, name);
+    }
+
+    private string SpeakArmouryClass(ClassJobCategory category)
+    {
+        if (!_data.GetExcelSheet<ClassJobCategory>(ClientLanguage.English)
+            .TryGetRow(category.RowId, out var english))
+            return "";
+        var source = english.Name.ExtractText().Trim();
+        if (Loc.IsRussian)
+        {
+            var russian = EquipmentSpeech.ClassCategory(_data, category);
+            return russian.Length > 0 ? russian : source;
+        }
+        if (!ArmouryClassSpeech.IsAbbreviationList(source))
+        {
+            var language = Loc.IsGerman ? ClientLanguage.German : ClientLanguage.English;
+            if (_data.GetExcelSheet<ClassJobCategory>(language).TryGetRow(category.RowId, out var spoken))
+            {
+                var text = spoken.Name.ExtractText().Trim();
+                if (text.Length > 0) return text;
+            }
+            return source;
+        }
+        var names = new List<string>();
+        var jobs = _data.GetExcelSheet<ClassJob>(Loc.IsGerman ? ClientLanguage.German : ClientLanguage.English);
+        foreach (var job in jobs)
+        {
+            if (job.RowId == 0 || job.RowId > byte.MaxValue) continue;
+            if (AllowsJob(category, (byte)job.RowId) != true) continue;
+            var name = job.Name.ExtractText().Trim();
+            if (name.Length > 0) names.Add(name);
+        }
+        return names.Count == 0 ? source : string.Join(", ", names);
     }
 
     /// <summary>

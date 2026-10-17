@@ -9,6 +9,19 @@ If you redistribute FF14Accessibility, this file must travel with it.
 
 ---
 
+### Optional hunt-spawn data and dungeon mesh compatibility
+
+- Hunt-spawn coordinates are downloaded on the player's machine from
+  Critical-Impact/LuminaSupplemental, commit
+  `2a04329e5fb3ca6f22bc8d1915fe0d1382d59519`, `MobSpawn.csv` (GPL-3.0).
+  This data file is not embedded in the plugin or included in the release ZIP.
+- The Dzemael compatibility registration follows the original vnavmesh author's
+  commit `6fc80725eb8290472eee433fc4be7ee06ec79357` in
+  <https://github.com/awgil/ffxiv_navmesh>. It reuses the installed plugin's own
+  customization instance; no vnavmesh binaries or collider implementation are
+  distributed in this archive. The exact supported binary is documented in
+  `docs/maintenance/DUNGEONS_UPSTREAM_608121.md`.
+
 ## Shipped inside the plugin archive
 
 ### XIV Rus game descriptions

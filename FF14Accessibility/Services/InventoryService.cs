@@ -20,7 +20,7 @@ namespace FF14Accessibility.Services;
 /// Quantity/IsHq/IsEmpty; key items live in the KeyItems container and index
 /// the EventItem sheet.
 /// </summary>
-public sealed class InventoryService
+public sealed partial class InventoryService
 {
     private readonly IGameInventory _inventory;
     private readonly IDataManager _data;
@@ -29,6 +29,7 @@ public sealed class InventoryService
     private readonly TolkService _tolk;
     private readonly IPluginLog _log;
     private readonly GameDescriptionService _descriptions;
+    private readonly GearInfoService _gear;
 
     // The four 35-slot pages that make up the normal carried inventory.
     private static readonly GameInventoryType[] BagPages =
@@ -38,7 +39,8 @@ public sealed class InventoryService
     };
 
     public InventoryService(IGameInventory inventory, IDataManager data, IClientState clientState,
-                            Configuration config, TolkService tolk, IPluginLog log, GameDescriptionService descriptions)
+                            Configuration config, TolkService tolk, IPluginLog log, GameDescriptionService descriptions,
+                            GearInfoService gear = null!)
     {
         _inventory = inventory;
         _data = data;
@@ -47,12 +49,14 @@ public sealed class InventoryService
         _tolk = tolk;
         _log = log;
         _descriptions = descriptions;
+        _gear = gear;
     }
 
     /// <summary>
-    /// Announces the whole inventory: key items first (quests usually need
-    /// those), then the bag contents, then the crystals. Stacks read as
-    /// "name mal count".
+    /// Announces the whole inventory as one sentence: key items first, then
+    /// the bag contents, then the crystals. Ctrl+F3 opens
+    /// <see cref="BuildBrowseMenu"/> instead; this dump remains for callers
+    /// that want the old full readout.
     /// </summary>
     public void ReadInventory()
     {
@@ -349,6 +353,32 @@ public sealed class InventoryService
         if (found != 1) return string.Empty;
         _log.Info($"[Inventory] Zustand aus dem Bestand: item={baseItemId} hq={isHq} -> {percent}%");
         return AccessibilityStrings.ItemCondition(percent);
+    }
+
+    /// <summary>
+    /// The ONE copy of this item the player owns, so its condition and spiritbond
+    /// can be read. Null when more than one copy exists: the item id alone cannot
+    /// say which copy the cursor is on, and a wrong percentage is worse than none.
+    /// </summary>
+    public unsafe InventoryItem* FindSingleOwnedInstance(uint baseItemId, bool isHq)
+    {
+        if (baseItemId == 0) return null;
+        if (!_data.GetExcelSheet<LuminaItem>().TryGetRow(baseItemId, out var row)) return null;
+        if (row.EquipSlotCategory.RowId == 0) return null;
+
+        InventoryItem* single = null;
+        foreach (var container in BagPages.Concat(GearContainers))
+            foreach (var item in _inventory.GetInventoryItems(container))
+            {
+                if (item.IsEmpty || item.BaseItemId != baseItemId || item.IsHq != isHq) continue;
+                if (item.Address == 0) continue;
+                if (single != null) return null;
+                single = (InventoryItem*)item.Address;
+            }
+
+        if (single != null)
+            _log.Info($"[Inventory] Einziges Exemplar im Bestand: item={baseItemId} hq={isHq}");
+        return single;
     }
 
     /// <summary>

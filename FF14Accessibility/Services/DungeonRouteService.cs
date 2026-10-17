@@ -205,9 +205,9 @@ public sealed class DungeonRouteService
             // A place step without a place is a broken row, not a station at the
             // world origin. Walking a player to (0|0|0) is the worst possible
             // reading of a missing value.
-            if (position == Vector3.Zero) continue;
+            if (position == Vector3.Zero || !DungeonNavigationPoint.Finite(position)) continue;
 
-            steps.Add(new DungeonStep(steps.Count + 1, kind, position, ResolveName(action, kind)));
+            steps.Add(new DungeonStep(steps.Count + 1, kind, position, ResolveName(action, kind), DungeonNavigationPoint.DataId(action.Arguments)));
         }
 
         _log.Info($"[Dungeon] '{Path.GetFileName(file)}' gelesen: {steps.Count} Stationen " +
@@ -385,4 +385,4 @@ public enum DungeonStepKind
 /// height matters here more than anywhere else.</param>
 /// <param name="Name">Resolved name, or empty when the station is named by its
 /// kind alone.</param>
-public sealed record DungeonStep(int Number, DungeonStepKind Kind, Vector3 Position, string Name);
+public sealed record DungeonStep(int Number, DungeonStepKind Kind, Vector3 Position, string Name, uint DataId = 0);

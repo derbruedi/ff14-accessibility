@@ -45,7 +45,7 @@ public sealed class MenuEntry
     /// show/hide-hotbars list, where you want to flip several in a row and hear
     /// the new state each time).
     /// </summary>
-    public bool StayOpen { get; init; }
+    public bool StayOpen { get; set; }
 }
 
 /// <summary>A titled list of entries, plus the builder that produced it.</summary>

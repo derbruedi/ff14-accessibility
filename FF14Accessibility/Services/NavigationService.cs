@@ -46,7 +46,8 @@ internal enum NavCategory
     QuestEnemies,
     GatheringNodes,
     Fates,
-    // Events: Yo-kai-Zonen + Collab-Event-FATEs. Siehe EventAreaService.
+    // Events: gerade laufende Festivals, ein Startort je Gebiet plus die
+    // FATE-Orte, die ein Quest-Skript dieser Phase nennt. Siehe EventAreaService.
     EventAreas,
     // Jagdziele: die noch offenen Monster des aktuellen Jagdtagebuch-Rangs.
     // Kommt weder aus der Objekttabelle noch aus der Zone - Quelle sind
@@ -216,6 +217,16 @@ public sealed class NavigationService
     private ulong _ownSelectionId;     // CycleObject announced this id itself already
 
     /// <summary>
+    /// Set by the plugin before <see cref="Update"/>. While true, and while no
+    /// walk or auto-walk owns the tone, <see cref="UpdateTargetBeacon"/> leaves
+    /// the beacon open so the Blunderville guide can feed it afterwards.
+    /// </summary>
+    public bool HoldBeacon { get; set; }
+
+    /// <summary>True on a frame where an AoE escape owns the beacon.</summary>
+    public bool EscapeBeaconActive { get; private set; }
+
+    /// <summary>
     /// Announces the game target whenever it changes: name, kind, distance,
     /// direction. This makes the game's own targeting keys (Tab, F1-F12, F)
     /// usable without sight. Called every frame from Plugin.OnFrameworkUpdate.
@@ -223,6 +234,7 @@ public sealed class NavigationService
     /// </summary>
     public void Update(bool announceTargetChanges)
     {
+        EscapeBeaconActive = false;
         // Route preview runs independently of the walk guide (async pathfind).
         PollPreviewTask();
 
@@ -357,6 +369,7 @@ public sealed class NavigationService
         // Brummen und deshalb bewusst nicht mit dem Peil-Ton zu verwechseln.
         if (TryDriveEscapeBeacon(player))
         {
+            EscapeBeaconActive = true;
             BeaconProbe(player, "Flucht");
             return;
         }
@@ -512,6 +525,7 @@ public sealed class NavigationService
         // ohnehin mit einer gesprochenen Ansage, hinter der das Geraet aufgeht.
         if (AutoWalk is not { IsWalking: true })
         {
+            if (HoldBeacon) return;
             if (_beacon.IsRunning) _beacon.Stop();
             return;
         }
@@ -995,17 +1009,22 @@ public sealed class NavigationService
     // Meter vom Amalj'aa-Feldlager entfernt, das zum selben Gebiet gehoert. Wer
     // zur Beschriftung laeuft, steht im richtigen Gebiet und trotzdem nirgends.
     //
-    // Spawnpunkte gibt es im Spielclient nicht (nachgesehen: das Level-Sheet
-    // fuehrt Kampf-NPCs nur fuer Quests). Die einzige Wahrheit ueber ein
-    // lebendes Monster ist die Objekttabelle, und die reicht nur so weit wie
-    // das Spiel laedt. Also faehrt die Mod die Teilstuecke des Gebiets der
-    // Reihe nach an und meldet, sobald ein Exemplar auftaucht - dasselbe, was
-    // ein sehender Spieler tut, nur dass er dabei schauen kann.
+    // Spawnpunkte legt der Spielclient nicht ab (Feldlayouts 141 und 145,
+    // 2026-10-07: null Kampf-NPCs; das Level-Blatt verbindet Typ 9 mit der
+    // falschen Tabelle). Steht das Monster in der Standortliste, faehrt die
+    // Mod dorthin. Sonst bleiben die Teilstuecke des Gebiets, und ein lebendes
+    // Exemplar in der Objekttabelle gewinnt, sobald das Spiel es geladen hat.
     private sealed class HuntSearch
     {
         public required string MonsterName { get; init; }
         public required uint TerritoryId { get; init; }
         public required List<AreaPart> Parts { get; init; }
+        /// <summary>True when <see cref="Parts"/> came from the spawn list.
+        /// Those points have no height and are spoken as Standorte.</summary>
+        public bool FromSpawns { get; init; }
+        /// <summary>How many list rows were known when this search was built.
+        /// A later download with a different count rebuilds the search.</summary>
+        public int SpawnRowsSeen { get; init; }
         public int Index { get; set; }
         /// <summary>Ob fuer dieses Monster schon gemeldet wurde, dass eines in
         /// Reichweite steht - sonst wiederholt sich die Meldung im Sekundentakt.</summary>
@@ -1025,6 +1044,13 @@ public sealed class NavigationService
     /// centre onto the live monster. Null until the plugin finishes wiring.
     /// </summary>
     public Action<IGameObject, string>? OnHuntSpecimenFound { get; set; }
+
+    /// <summary>Community spawn list. Null leaves every hunt on the area search.</summary>
+    public HuntSpawnCatalog? HuntSpawns { get; set; }
+
+    /// <summary>True while the selected hunt is walking spawn points rather than
+    /// area centres. The points carry no height.</summary>
+    public bool HuntSearchFromSpawns => _huntSearch?.FromSpawns == true;
 
     /// <summary>Wie nah man einem Teilstueck gewesen sein muss, damit der
     /// naechste Tastendruck zum naechsten weitergeht. Bewusst grosszuegig: es
@@ -1063,19 +1089,105 @@ public sealed class NavigationService
     }
 
     /// <summary>
-    /// Baut den Suchlauf fuer ein Jagdziel auf: die Teilstuecke seines
-    /// Lebensraums, vom Kartenmarker aus (sonst vom Spieler), dazu der Marker
-    /// selbst wenn er noch fehlt. Sortierung am Marker statt am Spieler, damit
-    /// man nicht an einem nahen Nebenort (Bahnhof) haengen bleibt, waehrend das
-    /// Jagdtagebuch den Block-Mittelpunkt meint (gemessen Kohlenstaub 2026-09-19).
+    /// Leaves the current search point behind because it has no reachable floor.
+    /// The next <see cref="NextHuntSearchPart"/> call returns the following point.
+    /// Returns false on the last point, so one key press cannot wrap back onto
+    /// the point that just failed.
+    /// </summary>
+    public bool SkipUnwalkableHuntPart()
+    {
+        var search = _huntSearch;
+        if (search == null || search.Parts.Count == 0) return false;
+        if (search.Index < 0 || search.Index + 1 >= search.Parts.Count) return false;
+
+        search.Index++;
+        _log.Info($"[Jagd] Punkt ohne Boden, weiter zu {search.Index + 1} von {search.Parts.Count}.");
+        return true;
+    }
+
+    /// <summary>
+    /// Baut den Suchlauf fuer ein Jagdziel auf. Steht das Monster in der
+    /// Standortliste, sind das die Punkte, der naechste zum Spieler zuerst.
+    /// Sonst die Teilstuecke des Lebensraums, vom Kartenmarker aus, dazu der
+    /// Marker selbst wenn er noch fehlt. Die Markersortierung gilt nur fuer
+    /// das Gebiet, damit ein naher Bahnhof nicht den Block verdeckt
+    /// (gemessen Kohlenstaub 2026-09-19).
     /// </summary>
     private void BuildHuntSearch(HuntingTarget target, Vector3 playerPosition)
     {
         _huntSearch = null;
-        if (!target.InCurrentZone || target.TerritoryId == 0) return;
+        if (!HuntTargetInZone(target) || target.TerritoryId == 0) return;
 
-        // Marker first: that is the point the game itself labels for the habitat.
-        // Player-distance order preferred Bahnhof when the player stood there.
+        var spawns = target.MapId != 0
+            ? HuntSpawns?.Find(target.BNpcNameId, target.TerritoryId) ?? []
+            : [];
+        if (!HuntSpawnCatalog.TrySelectParts(
+                spawns,
+                (x, y) => _places.MapCoordToWorldOnMap(target.MapId, x, y),
+                playerPosition,
+                () => AreaParts(target, playerPosition),
+                out var parts,
+                out var fromSpawns,
+                NoteSpawn))
+            return;
+
+        _huntSearch = new HuntSearch
+        {
+            MonsterName = target.MonsterName,
+            TerritoryId = target.TerritoryId,
+            Parts = parts,
+            FromSpawns = fromSpawns,
+            SpawnRowsSeen = spawns.Count,
+        };
+        if (fromSpawns)
+        {
+            _log.Info($"[Jagd] '{target.MonsterName}' {parts.Count} Standorte, " +
+                      $"naechster {Distance2D(playerPosition, parts[0].Centre):F0} m.");
+            return;
+        }
+
+        _log.Info($"[Jagd] '{target.MonsterName}' in '{target.AreaName}': {parts.Count} Teilstuecke, " +
+                  $"naechstes '{parts[0].SpotName}' {Distance2D(playerPosition, parts[0].Centre):F0} m " +
+                  $"(Sortierung {(target.Position != null ? "Kartenmarker" : "Spieler")}).");
+
+        void NoteSpawn(HuntSpawnPoint spawn, Vector3 world)
+        {
+            if (MathF.Abs(world.Z - spawn.WorldZ) <= 5f) return;
+            _log.Info($"[Jagd] Standort-Kontrolle '{target.MonsterName}' " +
+                      $"Karte {spawn.MapX:0.0}/{spawn.MapY:0.0}: Welt-Z {world.Z:F1}, Liste {spawn.WorldZ:F1}.");
+        }
+    }
+
+    /// <summary>Rebuilds the hunt search once the player is in the habitat zone,
+    /// or once the spawn list arrives after the target was chosen. A search for
+    /// the same monster and the same row count is left alone, so walking on
+    /// does not jump back to the first point.</summary>
+    public void EnsureHuntSearch(HuntingTarget target, Vector3 playerPosition)
+    {
+        if (!HuntTargetInZone(target) || target.TerritoryId == 0) return;
+        var rows = target.MapId != 0
+            ? HuntSpawns?.Find(target.BNpcNameId, target.TerritoryId).Count ?? 0
+            : 0;
+        var current = _huntSearch;
+        if (current != null
+            && current.MonsterName == target.MonsterName
+            && current.TerritoryId == target.TerritoryId
+            && current.SpawnRowsSeen == rows)
+            return;
+        BuildHuntSearch(target, playerPosition);
+    }
+
+    private bool HuntTargetInZone(HuntingTarget target)
+    {
+        if (target.MapId != 0 && _clientState.MapId != 0)
+            return target.MapId == _clientState.MapId;
+        return target.InCurrentZone;
+    }
+
+    /// <summary>Area centres for a hunt that has no spawn-list row. Marker
+    /// first, so a nearby station does not outrank the habitat the log named.</summary>
+    private List<AreaPart> AreaParts(HuntingTarget target, Vector3 playerPosition)
+    {
         var sortFrom = target.Position ?? playerPosition;
         var parts = _areaRanges.GetParts(target.TerritoryId, target.AreaPlaceNameId,
                                          target.AreaName, sortFrom);
@@ -1093,17 +1205,8 @@ public sealed class NavigationService
                 return Distance2D(sortFrom, a.Centre).CompareTo(Distance2D(sortFrom, b.Centre));
             });
         }
-        if (parts.Count == 0) return;
 
-        _huntSearch = new HuntSearch
-        {
-            MonsterName = target.MonsterName,
-            TerritoryId = target.TerritoryId,
-            Parts = parts,
-        };
-        _log.Info($"[Jagd] '{target.MonsterName}' in '{target.AreaName}': {parts.Count} Teilstuecke, " +
-                  $"naechstes '{parts[0].SpotName}' {Distance2D(playerPosition, parts[0].Centre):F0} m " +
-                  $"(Sortierung {(target.Position != null ? "Kartenmarker" : "Spieler")}).");
+        return parts;
     }
 
     /// <summary>
@@ -1233,7 +1336,7 @@ public sealed class NavigationService
     /// effect), so 10 m is generous enough for the recording's coarseness and
     /// short enough not to reach the next interactive thing in the same room.
     /// </summary>
-    private const float DungeonStepMatchRange = 10f;
+
 
     /// <summary>
     /// The gathering spot the "Sammelpunkte" category is steering to, as its own
@@ -1949,7 +2052,7 @@ public sealed class NavigationService
         _tolk.SpeakInterrupt(text);
     }
 
-    // ── Events: Yo-kai-Zonen + Collab-Event-FATE-Spawns ──
+    // ── Events: Start der laufenden Festivals und ihre benannten FATE-Orte ──
     private void CycleEventAreaDestination(int direction, IGameObject player)
     {
         var areas = _eventAreas.GetAreasSorted();
@@ -1985,7 +2088,8 @@ public sealed class NavigationService
                 text += $", {FormatDistance(Distance2D(player.Position, dest.Position))}, " +
                         $"{CalculateDirection(player, dest.Position)}";
             }
-            text += $". {dest.Hint}";
+            text += ".";
+            if (dest.Hint.Length > 0) text += $" {dest.Hint}";
         }
         else
         {
@@ -2005,7 +2109,7 @@ public sealed class NavigationService
                     hops - 1);
                 text += AccessibilityStrings.NumpadWalksToTransition;
             }
-            text += $" {dest.Hint}";
+            if (dest.Hint.Length > 0) text += $" {dest.Hint}";
         }
 
         text += $" {AccessibilityStrings.Counter(_cycleIndex + 1, count)}.";
@@ -2823,18 +2927,22 @@ public sealed class NavigationService
             if (_huntSearch != null) _huntSearch.Announced = true;   // schon gesagt
         }
         else if (target.InCurrentZone && NextHuntSearchPart(player.Position) is { } part
-                 && part.Count > 1)
+                 && (part.Count > 1 || HuntSearchFromSpawns))
         {
             // Das Gebiet besteht aus mehreren Stuecken. Die Zahl gehoert in die
             // Ansage, denn sie ist der Unterschied zwischen "dort ist es" und
             // "dort faengt die Suche an" - und ohne sie klingt eine
             // Entfernungsangabe wie die zum Monster (User 2026-09-02).
+            // Ein einzelner Standort aus der Liste ist derselbe Fall: die
+            // Kartenbeschriftung waere wieder das falsche Ziel.
             var habitat = AccessibilityStrings.HuntingArea(target.AreaName);
-            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) +
-                    AccessibilityStrings.HuntingSearchPart(
-                        part.Name, part.Index, part.Count,
-                        FormatDistance(Distance2D(player.Position, part.Position)),
-                        CalculateDirection(player, part.Position));
+            var distance = FormatDistance(Distance2D(player.Position, part.Position));
+            var facing = CalculateDirection(player, part.Position);
+            var piece = HuntSearchFromSpawns
+                ? AccessibilityStrings.HuntingSpawnSite(part.Index, part.Count, distance, facing)
+                : AccessibilityStrings.HuntingSearchPart(
+                    part.Name, part.Index, part.Count, distance, facing);
+            text += ", " + (habitat.Length > 0 ? habitat + ", " : string.Empty) + piece;
         }
         else if (target.InCurrentZone && target.Position is { } pos)
         {
@@ -3283,16 +3391,7 @@ public sealed class NavigationService
         // naechste Hebel im selben Raum kommt man an die Zuordnung nicht heran.
         if (SelectedDungeonStep is { } step)
         {
-            var kind = step.Kind switch
-            {
-                DungeonStepKind.Interact  => ObjectKind.EventObj,
-                DungeonStepKind.Treasure  => ObjectKind.Treasure,
-                _                         => (ObjectKind?)null,
-            };
-            if (kind == null) return null;
-            return NearestObject(step.Position, DungeonStepMatchRange,
-                obj => obj.ObjectKind == kind.Value,
-                prefer: o => o.IsTargetable);
+            return DungeonNavigationPoint.FindObject(_objectTable, step);
         }
 
         // A quest inside an interaction-only interior first targets its exact
@@ -3515,8 +3614,9 @@ public sealed class NavigationService
         if (Categories[index].Cat == NavCategory.Fates)
             return _fates.GetActiveFates().Count > 0;
 
-        // Events nur, solange ein zeitliches Event fuer den Charakter greift
-        // (Yo-kai-Uhr vorhanden). Sonst nur Rauschen im Durchblaettern.
+        // Events nur, solange das Spiel ein Festival eingeschaltet hat und dazu
+        // ein Startquest mit Ort existiert. Abgelaufene Festivals fallen aus
+        // GameMain.ActiveFestivals und damit aus der Liste.
         if (Categories[index].Cat == NavCategory.EventAreas)
             return _eventAreas.Count > 0;
 
@@ -3862,13 +3962,26 @@ public sealed class NavigationService
             var dist = Vector3.Distance(player.Position, o.Position);
             // Nameplate icon + event id straight from the game struct
             // (GameObject.NamePlateIconId @272, EventId @244 - ilspycmd 2026-08-02).
-            var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)o.Address;
+            var native = (CSGameObject*)o.Address;
             var icon   = native != null ? native->NamePlateIconId : 0;
             var evt    = native != null ? native->EventId.Id : 0;
+            // Friend/foe probe fields (2026-10): SubKind, StatusFlags bits the
+            // browser cares about, NamePlateColorType, and CombatSide result.
+            var subKind = o is IBattleNpc bn ? bn.BattleNpcKind.ToString() : "-";
+            var flags = o is ICharacter ch ? ch.StatusFlags : (StatusFlags)0;
+            var plate = CombatSide.NamePlateColorType(o);
+            var ally = CombatSide.IsAlly(o);
+            var enemy = CombatSide.IsEnemy(o);
             _log.Info(
                 $"[ObjProbe] {dist,6:0.0}m {o.ObjectKind,-14} " +
                 $"DataId={o.BaseId} name='{name}' zielbar={o.IsTargetable} " +
                 $"icon={icon} event={evt} " +
+                $"sub={subKind} plate={plate} " +
+                $"hostile={flags.HasFlag(StatusFlags.Hostile)} " +
+                $"combat={flags.HasFlag(StatusFlags.InCombat)} " +
+                $"party={flags.HasFlag(StatusFlags.PartyMember)} " +
+                $"alliance={flags.HasFlag(StatusFlags.AllianceMember)} " +
+                $"ally={ally} enemy={enemy} " +
                 $"pos={o.Position} id={o.GameObjectId:X}");
         }
 
@@ -3876,7 +3989,7 @@ public sealed class NavigationService
 
         DumpHousingPlot();
         DumpMapMarkers();
-        _eventAreas.DumpFateEventProbe();
+        _eventAreas.DumpActiveEvents();
     }
 
     /// <summary>

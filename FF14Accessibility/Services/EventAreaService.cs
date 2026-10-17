@@ -1,21 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Game;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Layer;
 using Lumina.Excel.Sheets;
 
 namespace FF14Accessibility.Services;
 
-/// <summary>One destination for a timed/seasonal event (e.g. Yo-kai zone or collab FATE).</summary>
-/// <param name="EventName">Spoken event or FATE name ("Yo-kai", "Die mechanischen Krieger").</param>
+/// <summary>One destination for a timed event the game currently has switched on.</summary>
+/// <param name="EventName">Spoken quest name of that event's starting quest in the zone.</param>
 /// <param name="ZoneName">Localised territory place name.</param>
 /// <param name="TerritoryId">Destination TerritoryType RowId.</param>
 /// <param name="MapId">Map used for hop routing.</param>
-/// <param name="Position">World point to walk to (aetheryte or FATE EventRange).</param>
-/// <param name="Hint">Short spoken hint after the line (may be empty).</param>
+/// <param name="Position">World position of the quest issuer.</param>
+/// <param name="Hint">Short spoken hint after the line. Empty when the name already says where to go.</param>
 public sealed record TimedEventDestination(
     string EventName,
     string ZoneName,
@@ -25,95 +28,201 @@ public sealed record TimedEventDestination(
     string Hint);
 
 /// <summary>
-/// Browser catalogue for <b>timed</b> collaboration events: Yo-kai medal zones
-/// and collab Event-FATE spawn points, so the player can travel with Numpad3.
+/// One festival quest that can become a walk target. Built from the Quest sheet;
+/// whether it is listed depends on the live festival phase.
+/// </summary>
+/// <param name="FestivalId">Quest.Festival row.</param>
+/// <param name="FestivalBegin">Inclusive phase start (Quest.FestivalBegin).</param>
+/// <param name="FestivalEnd">Inclusive phase end (Quest.FestivalEnd).</param>
+/// <param name="QuestId">Quest row id. The lowest id in a territory is the start.</param>
+/// <param name="Name">Spoken quest name.</param>
+/// <param name="TerritoryId">Issuer Level territory. Zero is not a place.</param>
+/// <param name="MapId">Issuer map, for the hop graph.</param>
+/// <param name="ZoneName">Spoken place name.</param>
+/// <param name="Position">Issuer world position.</param>
+internal readonly record struct TimedEventQuest(
+    uint FestivalId,
+    byte FestivalBegin,
+    byte FestivalEnd,
+    uint QuestId,
+    string Name,
+    uint TerritoryId,
+    uint MapId,
+    string ZoneName,
+    Vector3 Position);
+
+/// <summary>
+/// One FATE a festival quest names as something to do. The position is the
+/// FATE's own EventRange, not the quest issuer.
+/// </summary>
+/// <param name="FestivalId">Festival of the quest whose script names this FATE.</param>
+/// <param name="FestivalBegin">Inclusive phase start of that quest.</param>
+/// <param name="FestivalEnd">Inclusive phase end of that quest.</param>
+/// <param name="FateId">Fate sheet row. The lowest id wins when two share a spot.</param>
+/// <param name="Name">Spoken FATE name.</param>
+/// <param name="TerritoryId">Open-world territory of the EventRange.</param>
+/// <param name="MapId">That territory's map, for the hop graph.</param>
+/// <param name="ZoneName">Spoken place name.</param>
+/// <param name="Position">World position of the EventRange.</param>
+/// <param name="Hint">Spoken after the line. Empty in tests that do not care.</param>
+internal readonly record struct TimedEventFate(
+    uint FestivalId,
+    byte FestivalBegin,
+    byte FestivalEnd,
+    uint FateId,
+    string Name,
+    uint TerritoryId,
+    uint MapId,
+    string ZoneName,
+    Vector3 Position,
+    string Hint);
+
+/// <summary>
+/// Picks the walk targets for the festivals the client currently has active.
+/// One quest start per festival and territory: the earliest quest whose phase
+/// range contains the live phase. Later quests in the same city stay off that
+/// part of the list because they start at the same event. FATE spots named by
+/// a quest script in the live phase are extra places and stay on the list.
+/// </summary>
+internal static class TimedEventSelection
+{
+    /// <summary>True when <paramref name="phase"/> lies in the quest's inclusive range.</summary>
+    public static bool PhaseMatches(byte begin, byte end, ushort phase)
+        => phase >= begin && phase <= end;
+
+    /// <summary>
+    /// A quest script slot that names a FATE row, such as <c>FATE0</c>.
+    /// Other slots can carry a number that happens to equal a FATE row
+    /// (<c>LOC_MOTION0</c>) and are not places to walk to.
+    /// </summary>
+    public static bool IsFateScript(string instruction)
+    {
+        if (instruction.Length <= 4 || !instruction.StartsWith("FATE", StringComparison.Ordinal))
+            return false;
+        for (var i = 4; i < instruction.Length; i++)
+        {
+            if (instruction[i] is < '0' or > '9') return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Destinations for <paramref name="active"/> festivals. Festival id 0 and
+    /// repeated ids are ignored. Quests and FATEs outside the phase, without a
+    /// territory, or without a name are ignored. Two FATEs of one festival at
+    /// the same rounded spot become one line, the lower FATE id.
+    /// </summary>
+    public static List<TimedEventDestination> Pick(
+        IReadOnlyList<(ushort Id, ushort Phase)> active,
+        IReadOnlyList<TimedEventQuest> quests,
+        IReadOnlyList<TimedEventFate>? fates = null)
+    {
+        var chosen = new List<TimedEventDestination>();
+        var seen = new HashSet<ushort>();
+        foreach (var (id, phase) in active)
+        {
+            if (id == 0 || !seen.Add(id)) continue;
+
+            var bestByTerritory = new Dictionary<uint, TimedEventQuest>();
+            foreach (var quest in quests)
+            {
+                if (quest.FestivalId != id) continue;
+                if (!PhaseMatches(quest.FestivalBegin, quest.FestivalEnd, phase)) continue;
+                if (quest.TerritoryId == 0 || quest.Name.Length == 0) continue;
+                if (!bestByTerritory.TryGetValue(quest.TerritoryId, out var current)
+                    || quest.QuestId < current.QuestId)
+                    bestByTerritory[quest.TerritoryId] = quest;
+            }
+
+            foreach (var quest in bestByTerritory.Values.OrderBy(q => q.QuestId))
+            {
+                chosen.Add(new TimedEventDestination(
+                    quest.Name, quest.ZoneName, quest.TerritoryId, quest.MapId, quest.Position,
+                    string.Empty));
+            }
+
+            if (fates == null) continue;
+            var seenSpot = new HashSet<(uint Territory, int X, int Z)>();
+            foreach (var fate in fates.Where(f => f.FestivalId == id).OrderBy(f => f.FateId))
+            {
+                if (!PhaseMatches(fate.FestivalBegin, fate.FestivalEnd, phase)) continue;
+                if (fate.TerritoryId == 0 || fate.Name.Length == 0) continue;
+                if (fate.Position == Vector3.Zero) continue;
+                var spot = (
+                    fate.TerritoryId,
+                    (int)MathF.Round(fate.Position.X),
+                    (int)MathF.Round(fate.Position.Z));
+                if (!seenSpot.Add(spot)) continue;
+                chosen.Add(new TimedEventDestination(
+                    fate.Name, fate.ZoneName, fate.TerritoryId, fate.MapId, fate.Position, fate.Hint));
+            }
+        }
+
+        return chosen;
+    }
+}
+
+/// <summary>
+/// Browser catalogue for seasonal events that are on right now.
 ///
-/// Yo-kai does NOT set Fate.AdventEvent / MoonFaireEvent / SpecialFate (offline
-/// sheet check 2026-09-06). Medals drop from normal FATEs in fixed zone lists.
-/// WORKAROUND: territory ids below from the official Yo-kai guide; shown only
-/// with the Yo-kai Watch (Item 15222 or EventItem 2001948).
+/// The client keeps the running festivals in <c>GameMain.ActiveFestivals</c>
+/// (id + phase, unused slots are id 0). A festival drops out of that array when
+/// the event ends and a new id appears when the next one starts. The Quest sheet
+/// links the starting quests to that id (<c>Festival</c>, <c>FestivalBegin</c>,
+/// <c>FestivalEnd</c>) and gives the issuer position (<c>IssuerLocation</c>).
+/// The Festival sheet itself has no names (offline 2026-10-06: 264 rows, all
+/// empty), so the spoken name is the quest name.
 ///
-/// Collab Event-FATEs (e.g. FFXV "Like Clockwork") also lack those flags
-/// (offline 2026-09-24: Fate 1409 A=M=S=false). AdventEvent/MoonFaire/SpecialFate
-/// are a different set (Moon Faire rice-pounding etc.), not Nocturne.
-/// WORKAROUND: Fate RowIds in <see cref="CollabEventFateIds"/>; name and spawn
-/// position come from the Fate sheet + planevent.lgb EventRange (Location field).
+/// A quest script slot <c>FATE0</c>, <c>FATE1</c>, … names a Fate row that
+/// belongs to that festival phase. <c>Fate.Location</c> is the instance id of
+/// an EventRange in <c>planevent.lgb</c>. The open-world copy of that layout
+/// (TerritoryIntendedUse 0 or 1) is the place to walk to. Measured 2026-10-06:
+/// 52 such slots, 44 distinct ranges, all of them in those layouts, read from
+/// 67 files in about a tenth of a second.
 /// </summary>
 public sealed class EventAreaService
 {
-    // Item sheet: equippable Yo-kai Watch. EventItem sheet: key-item copy.
-    private const uint YokaiWatchItemId = 15222;
-    private const uint YokaiWatchEventItemId = 2001948;
-
-    // WORKAROUND: no TerritoryType join exists for Yo-kai eligible zones.
-    // Source: official 2026 Yo-kai Watch event (standard + legendary medal zones).
-    private static readonly uint[] YokaiTerritoryIds =
-    {
-        // La Noscea
-        134, 135, 138, 139, 180,
-        // Black Shroud
-        148, 152, 153, 154,
-        // Thanalan
-        140, 141, 145, 146,
-        // Heavensward (legendary medals)
-        397, 398, 399, 400, 401, 402,
-        // Stormblood (legendary medals)
-        612, 613, 614, 620, 621, 622,
-    };
-
-    // WORKAROUND: collab Event-FATEs are not marked AdventEvent/MoonFaire/SpecialFate.
-    // Fate 1409 = EN "Like Clockwork" / DE "Die mechanischen Krieger" (A Nocturne for
-    // Heroes / FFXV). Location→planevent EventRange = terr 141 (verified 2026-09-24).
-    private static readonly uint[] CollabEventFateIds =
-    {
-        1409,
-    };
-
     private readonly IClientState _clientState;
     private readonly IDataManager _data;
     private readonly PlacesService _places;
-    private readonly InventoryService _inventory;
     private readonly IPluginLog _log;
 
-    // Aetheryte positions per territory: sheet data, built once.
-    private Dictionary<uint, (Vector3 Pos, uint MapId)>? _aetheryteByTerritory;
+    private TimedEventCatalogue? _catalogue;
+    private (bool Russian, bool German, ClientLanguage Language) _catalogueLanguage;
+    private string _lastLogged = string.Empty;
 
-    // EventRange InstanceId → territory + world position for collab Fate.Location ids.
-    private Dictionary<uint, (uint TerritoryId, Vector3 Pos)>? _eventRangeByInstanceId;
-
-    // Resolved collab FATE destinations, built once from sheet + EventRange lookup.
-    private List<TimedEventDestination>? _collabFateDestinations;
-    private (bool Russian, bool German) _collabLanguage;
+    private readonly record struct TimedEventCatalogue(
+        List<TimedEventQuest> Quests,
+        List<TimedEventFate> Fates);
 
     public EventAreaService(
         IClientState clientState,
         IDataManager data,
         PlacesService places,
-        InventoryService inventory,
         IPluginLog log)
     {
         _clientState = clientState;
         _data = data;
         _places = places;
-        _inventory = inventory;
         _log = log;
     }
 
     /// <summary>
-    /// Timed-event destinations, current zone first then fewest hops. Empty when
-    /// neither Yo-kai (no Watch) nor any collab Event-FATE entry is available.
+    /// Starting places and named FATE spots of the festivals that are active
+    /// this frame, current zone first, then fewest hops. Empty when none are
+    /// on or the player is logged out.
     /// </summary>
     public List<(TimedEventDestination Dest, bool InCurrentZone)> GetAreasSorted()
     {
-        var result = new List<(TimedEventDestination Dest, bool InCurrentZone)>();
+        var active = ReadActiveFestivals();
+        var catalogue = EnsureCatalogue();
+        var picked = TimedEventSelection.Pick(active, catalogue.Quests, catalogue.Fates);
         var currentTerritory = (uint)_clientState.TerritoryType;
         var hopsByMap = _places.GetHopDistances();
 
-        if (HasYokaiWatch())
-            AddYokaiDestinations(result, currentTerritory);
-
-        foreach (var dest in EnsureCollabFateDestinations())
-            result.Add((dest, dest.TerritoryId == currentTerritory));
+        var result = picked
+            .Select(dest => (Dest: dest, InCurrentZone: dest.TerritoryId == currentTerritory))
+            .ToList();
 
         int HopsTo(uint mapId, bool here)
         {
@@ -122,222 +231,179 @@ public sealed class EventAreaService
             return int.MaxValue / 4;
         }
 
-        return result
+        result = result
             .OrderByDescending(x => x.InCurrentZone)
             .ThenBy(x => HopsTo(x.Dest.MapId, x.InCurrentZone))
             .ThenBy(x => x.Dest.ZoneName, StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
 
-    /// <summary>How many destinations the timed-event list currently holds.</summary>
-    public int Count => GetAreasSorted().Count;
-
-    /// <summary>True when the Yo-kai Watch is in bags/equipped or as key item.</summary>
-    public bool HasYokaiWatch()
-    {
-        var bag = _inventory.CountOf(YokaiWatchItemId);
-        if (bag > 0) return true;
-        return _inventory.HasKeyItem(YokaiWatchEventItemId);
-    }
-
-    /// <summary>
-    /// Debug dump for Strg+F5: Yo-kai access, collab FATE rows, live Fate flags.
-    /// </summary>
-    public unsafe void DumpFateEventProbe()
-    {
-        var collab = EnsureCollabFateDestinations();
-        _log.Info(
-            $"[FateEventProbe] === Yo-kaiWatch bag={_inventory.CountOf(YokaiWatchItemId)} " +
-            $"key={_inventory.HasKeyItem(YokaiWatchEventItemId)} destinations={Count} " +
-            $"collabFates={collab.Count} terr={_clientState.TerritoryType} ===");
-
-        foreach (var d in collab)
+        var signature = string.Join(";", result.Select(x =>
+            $"{x.Dest.TerritoryId}:{x.Dest.EventName}:{x.Dest.Position.X:F0}:{x.Dest.Position.Z:F0}"));
+        if (signature != _lastLogged)
         {
-            _log.Info(
-                $"[FateEventProbe] Collab '{d.EventName}' terr={d.TerritoryId} '{d.ZoneName}' " +
-                $"pos=({d.Position.X:F1}|{d.Position.Y:F1}|{d.Position.Z:F1})");
-        }
-
-        var fateSheet = _data.GetExcelSheet<Fate>();
-        if (fateSheet == null) return;
-
-        var mgr = FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager.Instance();
-        if (mgr == null)
-        {
-            _log.Info("[FateEventProbe] FateManager.Instance() ist null.");
-            return;
-        }
-
-        for (var i = 0; i < mgr->Fates.Count; i++)
-        {
-            var fate = mgr->Fates[i].Value;
-            if (fate == null) continue;
-            var id = fate->FateId;
-            var flags = "(kein Sheet)";
-            if (fateSheet.TryGetRow(id, out var row))
-                flags = $"A={row.AdventEvent} M={row.MoonFaireEvent} S={row.SpecialFate}";
-            _log.Info(
-                $"[FateEventProbe] Live id={id} '{fate->Name}' {flags} " +
-                $"welt=({fate->Location.X:F1}|{fate->Location.Y:F1}|{fate->Location.Z:F1})");
-        }
-    }
-
-    private void AddYokaiDestinations(
-        List<(TimedEventDestination Dest, bool InCurrentZone)> result,
-        uint currentTerritory)
-    {
-        var terrSheet = _data.GetExcelSheet<TerritoryType>();
-        if (terrSheet == null) return;
-
-        var aetherytes = EnsureAetheryteIndex();
-        var eventName = AccessibilityStrings.TimedEventYokaiName;
-        var hint = AccessibilityStrings.TimedEventYokaiHint;
-
-        foreach (var tid in YokaiTerritoryIds)
-        {
-            if (!terrSheet.TryGetRow(tid, out var terr)) continue;
-            var zone = RussianAuthorText.PlaceName(terr.PlaceName.RowId,
-                terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty);
-            if (string.IsNullOrWhiteSpace(zone)) continue;
-
-            Vector3 pos;
-            uint mapId;
-            if (aetherytes.TryGetValue(tid, out var aeth))
-            {
-                pos = aeth.Pos;
-                mapId = aeth.MapId != 0 ? aeth.MapId : terr.Map.RowId;
-            }
-            else
-            {
-                mapId = terr.Map.RowId;
-                pos = Vector3.Zero;
-                _log.Info($"[Events] Yo-kai-Zone {tid} '{zone}' ohne Ätheryt-Position.");
-            }
-
-            result.Add((
-                new TimedEventDestination(eventName, zone, tid, mapId, pos, hint),
-                tid == currentTerritory));
-        }
-    }
-
-    private List<TimedEventDestination> EnsureCollabFateDestinations()
-    {
-        var language = (Loc.IsRussian, Loc.IsGerman);
-        if (_collabFateDestinations != null && _collabLanguage == language) return _collabFateDestinations;
-        _collabLanguage = language;
-        _collabFateDestinations = BuildCollabFateDestinations();
-        return _collabFateDestinations;
-    }
-
-    private List<TimedEventDestination> BuildCollabFateDestinations()
-    {
-        var result = new List<TimedEventDestination>();
-        var fateSheet = _data.GetExcelSheet<Fate>();
-        var terrSheet = _data.GetExcelSheet<TerritoryType>();
-        if (fateSheet == null || terrSheet == null) return result;
-
-        var ranges = EnsureEventRangesForCollabFates(fateSheet);
-        var hint = AccessibilityStrings.TimedEventFateHint;
-
-        foreach (var fateId in CollabEventFateIds)
-        {
-            if (!fateSheet.TryGetRow(fateId, out var fate))
-            {
-                _log.Info($"[Events] Collab-FATE id={fateId} fehlt im Sheet.");
-                continue;
-            }
-
-            var name = fate.Name.ExtractText().Trim();
-            if (Loc.IsRussian)
-            {
-                try
-                {
-                    var english = _data.GetExcelSheet<Fate>(Dalamud.Game.ClientLanguage.English).GetRow(fateId);
-                    name = RussianAuthorText.Translate("FateName", fateId, english.Name.Data.Span, name);
-                }
-                catch { /* A missing source keeps the actual game name. */ }
-            }
-            if (string.IsNullOrEmpty(name))
-            {
-                _log.Info($"[Events] Collab-FATE id={fateId} hat keinen Namen.");
-                continue;
-            }
-
-            if (!ranges.TryGetValue(fate.Location, out var range))
-            {
-                _log.Info(
-                    $"[Events] Collab-FATE id={fateId} '{name}' Location={fate.Location} " +
-                    "ohne EventRange in planevent.lgb.");
-                continue;
-            }
-
-            if (!terrSheet.TryGetRow(range.TerritoryId, out var terr))
-            {
-                _log.Info(
-                    $"[Events] Collab-FATE id={fateId} Territory {range.TerritoryId} fehlt.");
-                continue;
-            }
-
-            var zone = RussianAuthorText.PlaceName(terr.PlaceName.RowId,
-                terr.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty);
-            if (string.IsNullOrWhiteSpace(zone)) continue;
-
-            var mapId = terr.Map.RowId;
-            result.Add(new TimedEventDestination(
-                name, zone, range.TerritoryId, mapId, range.Pos, hint));
-            _log.Info(
-                $"[Events] Collab-FATE id={fateId} '{name}' → terr={range.TerritoryId} '{zone}' " +
-                $"pos=({range.Pos.X:F1}|{range.Pos.Y:F1}|{range.Pos.Z:F1}).");
+            _lastLogged = signature;
+            var ids = string.Join(",", active.Select(f => $"{f.Id}/{f.Phase}"));
+            _log.Info($"[Events] Festivals [{ids}] → {result.Count} Orte.");
         }
 
         return result;
     }
 
-    /// <summary>
-    /// Resolves Fate.Location EventRange ids for the collab allowlist only —
-    /// scans planevent.lgb until every needed InstanceId is found.
-    /// </summary>
-    private Dictionary<uint, (uint TerritoryId, Vector3 Pos)> EnsureEventRangesForCollabFates(
-        Lumina.Excel.ExcelSheet<Fate> fateSheet)
-    {
-        if (_eventRangeByInstanceId != null) return _eventRangeByInstanceId;
+    /// <summary>How many destinations the timed-event list currently holds.</summary>
+    public int Count => GetAreasSorted().Count;
 
-        var needed = new HashSet<uint>();
-        foreach (var fateId in CollabEventFateIds)
+    /// <summary>
+    /// Debug dump for the object probe: live festival ids and the places chosen
+    /// from them. Reads the same source as the list.
+    /// </summary>
+    public void DumpActiveEvents()
+    {
+        var active = ReadActiveFestivals();
+        _log.Info(
+            $"[Events] === Festivals {active.Count} terr={_clientState.TerritoryType} ===");
+        foreach (var (id, phase) in active)
+            _log.Info($"[Events] Festival id={id} phase={phase}");
+
+        foreach (var (dest, here) in GetAreasSorted())
         {
-            if (!fateSheet.TryGetRow(fateId, out var fate)) continue;
-            if (fate.Location != 0) needed.Add(fate.Location);
+            _log.Info(
+                $"[Events] '{dest.EventName}' terr={dest.TerritoryId} '{dest.ZoneName}' " +
+                $"hier={here} pos=({dest.Position.X:F1}|{dest.Position.Y:F1}|{dest.Position.Z:F1})");
+        }
+    }
+
+    private unsafe List<(ushort Id, ushort Phase)> ReadActiveFestivals()
+    {
+        var result = new List<(ushort Id, ushort Phase)>();
+        if (!_clientState.IsLoggedIn) return result;
+
+        var main = GameMain.Instance();
+        if (main == null) return result;
+
+        var active = main->ActiveFestivals;
+        for (var i = 0; i < active.Length; i++)
+        {
+            var festival = active[i];
+            if (festival.Id == 0) continue;
+            result.Add((festival.Id, festival.Phase));
         }
 
-        _eventRangeByInstanceId = needed.Count == 0
-            ? new Dictionary<uint, (uint, Vector3)>()
-            : BuildEventRangeIndex(needed);
-        return _eventRangeByInstanceId;
+        return result;
+    }
+
+    private TimedEventCatalogue EnsureCatalogue()
+    {
+        var language = (Loc.IsRussian, Loc.IsGerman, _data.Language);
+        if (_catalogue != null && _catalogueLanguage == language) return _catalogue.Value;
+        _catalogueLanguage = language;
+        _catalogue = BuildCatalogue();
+        return _catalogue.Value;
+    }
+
+    private TimedEventCatalogue BuildCatalogue()
+    {
+        var questsResult = new List<TimedEventQuest>();
+        var links = new List<(uint FestivalId, byte Begin, byte End, uint FateId, uint Location, string Name)>();
+        var quests = _data.GetExcelSheet<Quest>();
+        var territories = _data.GetExcelSheet<TerritoryType>();
+        var fates = _data.GetExcelSheet<Fate>();
+        if (quests == null || territories == null || fates == null)
+            return new TimedEventCatalogue(questsResult, new List<TimedEventFate>());
+
+        foreach (var quest in quests)
+        {
+            var festivalId = quest.Festival.RowId;
+            if (festivalId == 0) continue;
+            CollectFateLinks(quest, fates, links);
+
+            var level = quest.IssuerLocation.ValueNullable;
+            if (level == null) continue;
+            var territoryId = level.Value.Territory.RowId;
+            if (territoryId == 0) continue;
+            if (level.Value.X == 0f && level.Value.Y == 0f && level.Value.Z == 0f) continue;
+            if (!territories.TryGetRow(territoryId, out var territory)) continue;
+
+            var name = SpeakableQuestName(quest);
+            if (name.Length == 0) continue;
+
+            var zone = PlaceName(territory);
+            if (zone.Length == 0) continue;
+
+            var mapId = level.Value.Map.RowId;
+            if (mapId == 0) mapId = territory.Map.RowId;
+
+            questsResult.Add(new TimedEventQuest(
+                festivalId,
+                quest.FestivalBegin,
+                quest.FestivalEnd,
+                quest.RowId,
+                name,
+                territoryId,
+                mapId,
+                zone,
+                new Vector3(level.Value.X, level.Value.Y, level.Value.Z)));
+        }
+
+        var fateResult = ResolveFateSpots(links, territories);
+        _log.Info($"[Events] Quest-Katalog: {questsResult.Count} Event-Starts, {fateResult.Count} FATE-Orte.");
+        return new TimedEventCatalogue(questsResult, fateResult);
+    }
+
+    private static void CollectFateLinks(
+        Quest quest,
+        Lumina.Excel.ExcelSheet<Fate> fates,
+        List<(uint FestivalId, byte Begin, byte End, uint FateId, uint Location, string Name)> links)
+    {
+        for (var i = 0; i < quest.QuestParams.Count; i++)
+        {
+            var instruction = quest.QuestParams[i].ScriptInstruction.ExtractText();
+            if (!TimedEventSelection.IsFateScript(instruction)) continue;
+            var fateId = quest.QuestParams[i].ScriptArg;
+            if (fateId == 0 || !fates.TryGetRow(fateId, out var fate) || fate.Location == 0) continue;
+            var name = SpeakableFateName(fate);
+            if (name.Length == 0) continue;
+            links.Add((quest.Festival.RowId, quest.FestivalBegin, quest.FestivalEnd, fate.RowId, fate.Location, name));
+        }
     }
 
     /// <summary>
-    /// Finds the given EventRange InstanceIds in planevent.lgb. Stops when all
-    /// needed ids are resolved. Fate.Location is that InstanceId (game-api.md).
+    /// World position of each named FATE. Several territories share one layout
+    /// file; the row with the lowest intended use, then the lowest row id, is
+    /// the city or field the player can walk. Instance copies stay out.
     /// </summary>
-    private Dictionary<uint, (uint TerritoryId, Vector3 Pos)> BuildEventRangeIndex(
-        HashSet<uint> needed)
+    private List<TimedEventFate> ResolveFateSpots(
+        List<(uint FestivalId, byte Begin, byte End, uint FateId, uint Location, string Name)> links,
+        Lumina.Excel.ExcelSheet<TerritoryType> territories)
     {
-        var result = new Dictionary<uint, (uint TerritoryId, Vector3 Pos)>();
-        var terrSheet = _data.GetExcelSheet<TerritoryType>();
-        if (terrSheet == null || needed.Count == 0) return result;
+        var result = new List<TimedEventFate>();
+        if (links.Count == 0) return result;
 
-        var territories = 0;
-        foreach (var terr in terrSheet)
+        var wanted = new HashSet<uint>(links.Select(link => link.Location));
+        var layouts = new Dictionary<string, (uint TerritoryId, uint IntendedUse, uint MapId, string Zone)>(StringComparer.Ordinal);
+        foreach (var territory in territories)
         {
-            if (result.Count >= needed.Count) break;
-
-            var bg = terr.Bg.ExtractText();
-            if (string.IsNullOrEmpty(bg) || !bg.Contains("/level/", StringComparison.Ordinal))
-                continue;
-
+            var use = territory.TerritoryIntendedUse.RowId;
+            if (use is not (0 or 1)) continue;
+            var bg = territory.Bg.ExtractText();
             var cut = bg.LastIndexOf("/level/", StringComparison.Ordinal);
-            var path = "bg/" + bg[..(cut + 7)] + "planevent.lgb";
+            if (cut < 0) continue;
+            var path = "bg/" + bg.Substring(0, cut + 7) + "planevent.lgb";
+            var zone = PlaceName(territory);
+            if (zone.Length == 0) continue;
+            if (!layouts.TryGetValue(path, out var current)
+                || use < current.IntendedUse
+                || (use == current.IntendedUse && territory.RowId < current.TerritoryId))
+            {
+                layouts[path] = (territory.RowId, use, territory.Map.RowId, zone);
+            }
+        }
 
+        var spots = new Dictionary<uint, (uint TerritoryId, uint MapId, string Zone, Vector3 Position)>();
+        var watch = Stopwatch.StartNew();
+        var files = 0;
+        foreach (var (path, place) in layouts)
+        {
+            if (wanted.Count == 0) break;
             LgbFile? lgb;
             try
             {
@@ -345,60 +411,63 @@ public sealed class EventAreaService
             }
             catch (Exception ex)
             {
-                // External layout file: missing/renamed on patch must not break Events.
+                // External layout file. A missing or unreadable zone must not
+                // take the event list down; the quest start is still there.
                 _log.Warning($"[Events] {path} nicht lesbar: {ex.Message}");
                 continue;
             }
             if (lgb == null) continue;
-
-            territories++;
+            files++;
             foreach (var layer in lgb.Layers)
             {
-                foreach (var instance in layer.InstanceObjects)
+                foreach (var obj in layer.InstanceObjects)
                 {
-                    if (instance.AssetType != LayerEntryType.EventRange) continue;
-                    var id = instance.InstanceId;
-                    if (id == 0 || !needed.Contains(id) || result.ContainsKey(id)) continue;
-                    var t = instance.Transform;
-                    result[id] = (
-                        terr.RowId,
-                        new Vector3(t.Translation.X, t.Translation.Y, t.Translation.Z));
+                    if (obj.AssetType != LayerEntryType.EventRange || !wanted.Contains(obj.InstanceId))
+                        continue;
+                    var raw = obj.Transform.Translation;
+                    var pos = new Vector3(raw.X, raw.Y, raw.Z);
+                    if (pos == Vector3.Zero) continue;
+                    spots[obj.InstanceId] = (place.TerritoryId, place.MapId, place.Zone, pos);
+                    wanted.Remove(obj.InstanceId);
                 }
             }
         }
+        watch.Stop();
 
-        _log.Info(
-            $"[Events] EventRange-Lookup: {result.Count}/{needed.Count} Treffer " +
-            $"nach {territories} Zonen mit planevent.lgb.");
-        return result;
-    }
-
-    private Dictionary<uint, (Vector3 Pos, uint MapId)> EnsureAetheryteIndex()
-    {
-        if (_aetheryteByTerritory != null) return _aetheryteByTerritory;
-        _aetheryteByTerritory = BuildAetheryteIndex();
-        return _aetheryteByTerritory;
-    }
-
-    private Dictionary<uint, (Vector3 Pos, uint MapId)> BuildAetheryteIndex()
-    {
-        var result = new Dictionary<uint, (Vector3 Pos, uint MapId)>();
-        var sheet = _data.GetExcelSheet<Aetheryte>();
-        if (sheet == null) return result;
-
-        foreach (var a in sheet)
+        var hint = AccessibilityStrings.TimedEventFateHint;
+        foreach (var link in links)
         {
-            if (!a.IsAetheryte || a.Invisible) continue;
-            var tid = a.Territory.RowId;
-            if (tid == 0 || result.ContainsKey(tid)) continue;
-
-            var levelRef = a.Level[0];
-            if (levelRef.RowId == 0 || levelRef.ValueNullable is not { } level) continue;
-
-            result[tid] = (new Vector3(level.X, level.Y, level.Z), a.Map.RowId);
+            if (!spots.TryGetValue(link.Location, out var spot)) continue;
+            result.Add(new TimedEventFate(
+                link.FestivalId, link.Begin, link.End, link.FateId, link.Name,
+                spot.TerritoryId, spot.MapId, spot.Zone, spot.Position, hint));
         }
 
-        _log.Info($"[Events] Ätheryt-Index: {result.Count} Zonen mit Position.");
+        if (wanted.Count > 0)
+            _log.Info($"[Events] FATE-Position fehlt: {string.Join(",", wanted)}.");
+        _log.Info($"[Events] FATE-Dateien: {files}, {spots.Count} Orte, {watch.ElapsedMilliseconds} ms.");
         return result;
+    }
+
+    private static string PlaceName(TerritoryType territory)
+        => RussianAuthorText.PlaceName(territory.PlaceName.RowId,
+            territory.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty).Trim();
+
+    /// <summary>Same name order as an event object that points at a quest.</summary>
+    private static string SpeakableQuestName(Quest quest)
+    {
+        if (GameDisplayText.Name<Quest>(quest.RowId, static x => x.Name) is { Length: > 0 } displayed)
+            return displayed.Trim();
+        if (Loc.IsRussian && RussianQuestNames.QuestName(quest.RowId) is { Length: > 0 } russian)
+            return russian.Trim();
+        return quest.Name.ExtractText().Trim();
+    }
+
+    /// <summary>Displayed FATE name, then the sheet text.</summary>
+    private static string SpeakableFateName(Fate fate)
+    {
+        if (GameDisplayText.Name<Fate>(fate.RowId, static x => x.Name) is { Length: > 0 } displayed)
+            return displayed.Trim();
+        return fate.Name.ExtractText().Trim();
     }
 }

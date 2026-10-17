@@ -11,6 +11,18 @@ namespace FF14Accessibility.Services;
 // groß und ändert sich in fast jeder Version. Das ist die einzige Änderung an ihr.
 public static partial class AccessibilityStrings
 {
+    public static string InteriorEntranceName(string name) => L($"Eingang nach {name}", $"Entrance to {name}", $"Вход в {name}");
+
+    public static string TutorialUnderstood => L("Ich weiß, was zu tun ist.", "I understand what to do.", "Я понимаю, что нужно делать.");
+
+    public static string PreviousPage => L("Vorherige Seite", "Previous page", "Предыдущая страница");
+
+    public static string TutorialLoading => L("Die Seite wird geladen.", "The page is loading.", "Страница загружается.");
+
+    public static string ContentsTutorialHelp(string repeatKey) =>
+        L($"Mit den Spieltasten eine Schaltfläche wählen, Enter betätigt die gewählte Schaltfläche. {repeatKey} liest diese Seite erneut.",
+          $"Use the game's navigation keys to choose a button; Enter activates the selected button. {repeatKey} reads this page again.",
+          $"Клавишами навигации игры выберите кнопку; Enter нажимает выбранную кнопку. {repeatKey} повторяет эту страницу.");
     // Language is driven by the config-backed Loc provider ("/acc lang"),
     // NOT the OS culture directly. Auto still falls back to the OS culture.
     private static bool IsGerman => Loc.IsGerman;
@@ -509,6 +521,11 @@ public static partial class AccessibilityStrings
     public static string DialogButtons(string confirm, string cancel) =>
         L($"{confirm} oder {cancel}? Num4/6 wechseln, Num0 oder Enter bestätigt, Escape bricht ab.", $"{confirm} or {cancel}? Num4/6 changes the selection, Num0 or Enter confirms, Escape cancels.", $"{confirm} или {cancel}? Num4 и Num6 выбирают кнопку, Num0 или Enter нажимает выбранную кнопку, Escape отменяет.");
 
+    public static string DialogHoldButtons(string confirm, string cancel) =>
+        L($"{confirm} oder {cancel}? Num4/6 wechseln. Num0 oder Enter gedrückt halten. Escape bricht ab.",
+            $"{confirm} or {cancel}? Num4/6 changes the selection. Hold Num0 or Enter. Escape cancels.",
+            $"{confirm} или {cancel}? Num4 и Num6 выбирают кнопку. Удерживайте Num0 или Enter. Escape отменяет.");
+
     // ── Navigation: Himmelsrichtungen, relative Richtung, Distanz ─────
     // Sprachabhängige Kompass-Wörter (0 = Norden .. 7 = Nordwesten). Property,
     // KEIN static readonly Array: "/acc lang" schaltet zur Laufzeit um, ein
@@ -705,11 +722,11 @@ public static partial class AccessibilityStrings
     public static string NoFatesInZone =>
         L("Keine FATEs in diesem Gebiet.", "No FATEs in this area.", "В этой местности нет фейтов.");
 
-    // ── Events: zeitliche Kollab-Events (Yo-kai-Zonen + Event-FATEs) ──
+    // ── Events: gerade laufende Festivals, ein Startort je Gebiet ──
     public static string CategoryTimedEventCount(int total, int here) =>
         here > 0
-            ? (L($"Events: {total} Gebiete, {here} hier.", $"Events: {total} zones, {here} here.", $"События: {total} местностей, здесь {here}."))
-            : (L($"Events: {total} Gebiete, keines hier.", $"Events: {total} zones, none here.", $"События: {total} местностей, здесь ни одного."));
+            ? (L($"Events: {total}, {here} hier.", $"Events: {total}, {here} here.", $"События: {total}, здесь {here}."))
+            : (L($"Events: {total}, keines hier.", $"Events: {total}, none here.", $"События: {total}, здесь ни одного."));
 
     /// <summary>One timed-event line: event name and zone.</summary>
     public static string TimedEventEntry(string eventName, string zone) =>
@@ -728,6 +745,114 @@ public static partial class AccessibilityStrings
 
     public static string NoTimedEvents =>
         L("Keine zeitlichen Events.", "No timed events.", "Временных событий нет.");
+
+    // ── Stolperville (Fall Guys, territory 1165). Names are PlaceName 4470–4475. ──
+
+    /// <summary>Spoken once when the player enters a Blunderville area.</summary>
+    internal static string BlundervilleEntered(BlundervillePlace place) => place switch
+    {
+        BlundervillePlace.Lobby => L(
+            "Lobbyville. Wenn die Strecke beginnt, sage ich, wohin.",
+            "Lobbyville. When the course starts, I will say which way.",
+            "Лоббивиль. Когда трасса начнётся, скажу, куда идти."),
+        BlundervillePlace.Parcours => L(
+            "Manderville-Parcours. Der Ton zeigt den nächsten Abschnitt nach Norden. Unterwegs Windstöße, Schwünge und bewegliche Brücken.",
+            "Gentlebean's Fever. The tone points at the next stretch north. Along the way: gusts, swings, and moving bridges.",
+            "Паркур Мандевиля. Тон показывает следующий участок на север. По пути порывы ветра, махи и подвижные мосты."),
+        BlundervillePlace.Race => L(
+            "Manderville-Rennen. Der Ton zeigt den nächsten Abschnitt nach Norden. Unterwegs rollende Stangen und Pendel.",
+            "Manderville-can Parade. The tone points at the next stretch north. Along the way: rolling bars and pendulums.",
+            "Гонка Мандевиля. Тон показывает следующий участок на север. По пути катящиеся жерди и маятники."),
+        BlundervillePlace.Whirl => L(
+            "Manderville-Wirbel. Bleib in der Mitte. Der Ton zeigt zur Mitte. Der Wind schiebt nach außen.",
+            "The Gold Swiveller. Stay in the middle. The tone points at the middle. The wind pushes outward.",
+            "Вихрь Мандевиля. Держись середины. Тон показывает на середину. Ветер сдувает наружу."),
+        BlundervillePlace.Siege => L(
+            "Manderville-Burgwacht. Hol den Kristall in der Mitte und trag ihn zum passenden Feld. Die Farbe steht nicht in der Karte.",
+            "Saucery Siege. Pick up the crystal in the middle and carry it to the matching field. The color is not in the map data.",
+            "Осада Мандевиля. Возьми кристалл в середине и отнеси на подходящее поле. Цвета в карте нет."),
+        BlundervillePlace.Peak => L(
+            "Manderville-Spitze. Der Ton zeigt bergauf zur Krone. Unterwegs Wippen und rollende Kugeln.",
+            "Manderville Mountain. The tone points uphill to the crown. Along the way: seesaws and rolling balls.",
+            "Вершина Мандевиля. Тон ведёт вверх к короне. По пути качели и катящиеся шары."),
+        _ => L("Stolperville.", "Blunderville.", "Бландервиль."),
+    };
+
+    /// <summary>Distance and compass to the next point. A hazard is added only when it changes.</summary>
+    internal static string BlundervilleAhead(float distance, string compass, BlundervilleNote note)
+    {
+        var metres = FormatDistance(distance);
+        var hazard = BlundervilleHazard(note);
+        return hazard == null
+            ? L($"{metres} {compass}.", $"{metres} {compass}.", $"{metres} {compass}.")
+            : L($"{metres} {compass}. {hazard}", $"{metres} {compass}. {hazard}", $"{metres} {compass}. {hazard}");
+    }
+
+    /// <summary>Spoken once on arrival at the current point.</summary>
+    internal static string BlundervilleReached(BlundervillePlace place, BlundervilleNote note) => note switch
+    {
+        BlundervilleNote.Middle when place == BlundervillePlace.Whirl => L(
+            "Mitte. Bleib hier.", "Middle. Stay here.", "Середина. Останься здесь."),
+        BlundervilleNote.Middle => L("Mitte.", "Middle.", "Середина."),
+        BlundervilleNote.EastField => L(
+            "Östliches Feld. Zurück zur Mitte.", "Eastern field. Back to the middle.", "Восточное поле. Назад в середину."),
+        BlundervilleNote.WestField => L(
+            "Westliches Feld. Zurück zur Mitte.", "Western field. Back to the middle.", "Западное поле. Назад в середину."),
+        BlundervilleNote.SouthField => L(
+            "Südliches Feld. Zurück zur Mitte.", "Southern field. Back to the middle.", "Южное поле. Назад в середину."),
+        _ => L("Ziel.", "Goal.", "Цель."),
+    };
+
+    /// <summary>The three Siege drop-off fields, each already a distance plus compass.</summary>
+    internal static string BlundervilleFields(string east, string west, string south) => L(
+        $"Östliches Feld {east}. Westliches Feld {west}. Südliches Feld {south}.",
+        $"Eastern field {east}. Western field {west}. Southern field {south}.",
+        $"Восточное поле {east}. Западное поле {west}. Южное поле {south}.");
+
+    /// <summary>Numpad 5 locked the measured course. The distance is the real next mark, not the near tone.</summary>
+    internal static string BlundervilleLocked(float distance, BlundervilleNote note)
+    {
+        var metres = FormatDistance(distance);
+        var hazard = BlundervilleHazard(note);
+        if (hazard != null)
+            return L($"Strecke fixiert. {hazard} {metres} geradeaus.",
+                $"Course locked. {hazard} {metres} straight ahead.",
+                $"Трасса зафиксирована. {hazard} {metres} прямо.");
+
+        var where = note switch
+        {
+            BlundervilleNote.Middle => L("zur Mitte", "toward the middle", "к середине"),
+            BlundervilleNote.EastField => L("zum östlichen Feld", "toward the eastern field", "к восточному полю"),
+            BlundervilleNote.WestField => L("zum westlichen Feld", "toward the western field", "к западному полю"),
+            BlundervilleNote.SouthField => L("zum südlichen Feld", "toward the southern field", "к южному полю"),
+            _ => null,
+        };
+        return where == null
+            ? L($"Strecke fixiert. {metres} geradeaus.",
+                $"Course locked. {metres} straight ahead.",
+                $"Трасса зафиксирована. {metres} прямо.")
+            : L($"Strecke fixiert. {metres} {where}.",
+                $"Course locked. {metres} {where}.",
+                $"Трасса зафиксирована. {metres} {where}.");
+    }
+
+    /// <summary>Numpad 5 on a course, but the player is already standing on the locked point.</summary>
+    internal static string BlundervilleOnPoint =>
+        L("Du stehst auf dem Streckenpunkt.",
+            "You are standing on the course point.",
+            "Ты стоишь на точке трассы.");
+
+    private static string? BlundervilleHazard(BlundervilleNote note) => note switch
+    {
+        BlundervilleNote.Wind => L("Windstöße. Warte eine Lücke ab.", "Gusts. Wait for a gap.", "Порывы ветра. Жди просвет."),
+        BlundervilleNote.Swing => L("Schwung von links nach rechts.", "A swing from left to right.", "Мах слева направо."),
+        BlundervilleNote.Bridge => L("Bewegliche Brücken.", "Moving bridges.", "Подвижные мосты."),
+        BlundervilleNote.RollingBar => L("Rollende Stangen.", "Rolling bars.", "Катящиеся жерди."),
+        BlundervilleNote.Pendulum => L("Pendel.", "Pendulums.", "Маятники."),
+        BlundervilleNote.Seesaw => L("Wippen.", "Seesaws.", "Качели."),
+        BlundervilleNote.RollingBall => L("Rollende Kugeln.", "Rolling balls.", "Катящиеся шары."),
+        _ => null,
+    };
 
     // ── Jagdziele: offene Monster des aktuellen Jagdtagebuch-Rangs ──
     public static string CategoryHuntingCount(int rank, int total, int here) =>
@@ -777,6 +902,19 @@ public static partial class AccessibilityStrings
         spotName.Length > 0
             ? (L($"Suchpunkt {index} von {count}, {spotName}, {distance}, {direction}.", $"search point {index} of {count}, {spotName}, {distance}, {direction}.", $"Точка поиска {index} из {count}, {spotName}, {distance}, {direction}."))
             : (L($"Suchpunkt {index} von {count}, {distance}, {direction}.", $"search point {index} of {count}, {distance}, {direction}.", $"Точка поиска {index} из {count}, {distance}, {direction}."));
+
+    /// <summary>One known spawn from the community list. Spoken even when it is
+    /// the only point, so it cannot be heard as the area label.</summary>
+    public static string HuntingSpawnSite(int index, int count, string distance, string direction) =>
+        L($"Standort {index} von {count}, {distance}, {direction}.",
+          $"spawn point {index} of {count}, {distance}, {direction}.",
+          $"Место появления {index} из {count}, {distance}, {direction}.");
+
+    /// <summary>The spawn list could not be fetched or read. Area search continues.</summary>
+    public static string HuntSpawnsFailed =>
+        L("Jagdstandorte konnten nicht geladen werden. Die Gebietssuche bleibt.",
+          "Hunt locations could not be loaded. Area search stays.",
+          "Места охоты загрузить не удалось. Поиск по району остаётся.");
 
     /// <summary>Said the moment a specimen of the selected hunting target turns
     /// up in the object table - the point of the whole search.</summary>
@@ -1400,11 +1538,6 @@ public static partial class AccessibilityStrings
     public static string InArea(string zone)    => L($"im Gebiet {zone}.", $"in the area {zone}.", $"в зоне {zone}.");
     public static string InAnotherArea       => L("in einem anderen Gebiet.", "in another area.", "в другой зоне.");
     public static string NumpadWalksToTransition => L(" Nummernblock 3 läuft zum Übergang.", " Numpad 3 walks to the transition.", " Numpad 3 ведёт к переходу.");
-    public static string InteriorEntranceName(string name) => L($"Eingang nach {name}", $"Entrance to {name}", $"Вход в {name}");
-    public static string InteriorEntranceConfirmHint => L(
-        " Am Eingang Nummernblock 0 drücken und den Eintritt im Spiel bestätigen.",
-        " At the entrance press Numpad 0 and confirm entry in the game.",
-        " У входа нажмите Num0 и подтвердите вход в игре.");
 
     /// <summary>
     /// Whether the player stands inside the marker's goal circle. A sighted
@@ -1546,6 +1679,8 @@ public static partial class AccessibilityStrings
     public static string NotificationNotResponding => L("Benachrichtigung reagiert nicht.", "Notification not responding.", "Уведомление не отвечает.");
 
     // ── ContentsTutorial-Popup (Freischaltungen) ─────────────────────
+    // NOTE: The actual close-button match ("Schließen") lives in the service and
+    // stays in the game-client language (Teil 2), these are the spoken frames.
     public static string PageOf(int current, int total) =>
         L($" Seite {current} von {total}.", $" Page {current} of {total}.", $" Страница {current} из {total}.");
 
@@ -1558,13 +1693,6 @@ public static partial class AccessibilityStrings
 
     /// <summary>Next page, for windows whose paging button carries no text.</summary>
     public static string NextPage => L("Weiter", "Next", "Дальше");
-    public static string PreviousPage => L("Vorherige Seite", "Previous page", "Предыдущая страница");
-    public static string TutorialUnderstood => L("Ich weiß, was zu tun ist.", "I understand what to do.", "Я понимаю, что нужно делать.");
-    public static string ContentsTutorialHelp(string repeatKey) =>
-        L($"Mit den Spieltasten eine Schaltfläche wählen, Enter betätigt die gewählte Schaltfläche. {repeatKey} liest diese Seite erneut.",
-          $"Use the game's navigation keys to choose a button; Enter activates the selected button. {repeatKey} reads this page again.",
-          $"Клавишами навигации игры выберите кнопку; Enter нажимает выбранную кнопку. {repeatKey} повторяет эту страницу.");
-    public static string TutorialLoading => L("Die Seite wird geladen.", "The page is loading.", "Страница загружается.");
 
     /// <summary>
     /// A control that exists but is switched off right now - a paging button on
@@ -1611,6 +1739,54 @@ public static partial class AccessibilityStrings
                $"{items.Count} matching items: {string.Join(", ", items)}. Select one, then press Hand Over.",
                $"{items.Count} подходящих предметов: {string.Join(", ", items)}. Выбери один и нажми Сдать."),
     };
+
+    // ── Handel zwischen Spielern (Addon Trade) ───────────────────────
+    public static string TradeYou => L("Du", "You", "Ты");
+    public static string TradeOther => L("Die Gegenseite", "The other side", "Другая сторона");
+    public static string TradeNothing => L("nichts, 0 Gil", "nothing, 0 Gil", "ничего, 0 гил");
+    public static string TradeGil(int amount) =>
+        AmountWithLabel(amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Loc.IsRussian ? "гил" : "Gil");
+    public static string TradeUnknownItem(uint id) =>
+        L($"Gegenstand {id}", $"item {id}", $"предмет {id}");
+    public static string TradeOpened(string partner, string theirs, string mine) =>
+        string.IsNullOrWhiteSpace(partner)
+            ? L($"Handel. Die Gegenseite bietet {theirs}. Du bietest {mine}.",
+                $"Trade. The other side offers {theirs}. You offer {mine}.",
+                $"Обмен. Другая сторона предлагает {theirs}. Ты предлагаешь {mine}.")
+            : L($"Handel mit {partner}. {partner} bietet {theirs}. Du bietest {mine}.",
+                $"Trade with {partner}. {partner} offers {theirs}. You offer {mine}.",
+                $"Обмен с {partner}. {partner} предлагает {theirs}. Ты предлагаешь {mine}.");
+    public static string TradeTheirOffer(string partner, string offer) =>
+        string.IsNullOrWhiteSpace(partner)
+            ? L($"Die Gegenseite bietet jetzt {offer}.",
+                $"The other side now offers {offer}.",
+                $"Другая сторона теперь предлагает {offer}.")
+            : L($"{partner} bietet jetzt {offer}.",
+                $"{partner} now offers {offer}.",
+                $"{partner} теперь предлагает {offer}.");
+    public static string TradeMyOffer(string offer) =>
+        L($"Dein Angebot: {offer}.", $"Your offer: {offer}.", $"Твоё предложение: {offer}.");
+    public static string TradeLocked(string who, bool self) =>
+        self
+            ? L("Du hast bestätigt.", "You have confirmed.", "Ты подтвердил.")
+            : L($"{who} hat bestätigt.", $"{who} has confirmed.", $"{who} подтвердил.");
+    public static string TradeWaiting(string who, bool self) =>
+        self
+            ? L("Du wartest auf die Bestätigung.", "You are waiting for confirmation.", "Ты ждёшь подтверждения.")
+            : L($"{who} wartet auf die Bestätigung.", $"{who} is waiting for confirmation.", $"{who} ждёт подтверждения.");
+    public static string TradeFinal(string who, bool self) =>
+        self
+            ? L("Du hast den Handel abgeschlossen.", "You have finished the trade.", "Ты завершил обмен.")
+            : L($"{who} hat den Handel abgeschlossen.", $"{who} has finished the trade.", $"{who} завершил обмен.");
+    public static string TradeUnlocked(string who, bool self) =>
+        self
+            ? L("Du hast die Bestätigung aufgehoben.", "You took the confirmation back.", "Ты снял подтверждение.")
+            : L($"{who} hat die Bestätigung aufgehoben.", $"{who} took the confirmation back.", $"{who} снял подтверждение.");
+    public static string TradeRequestPending =>
+        L("Die Handelsanfrage läuft noch.", "The trade request is still pending.", "Запрос на обмен ещё ждёт ответа.");
+    public static string TradeEnded =>
+        L("Der Handel ist zu Ende.", "The trade has ended.", "Обмен закончился.");
 
     // ── Zufaelliges Aussehen (CharaMake RandomLook) ──────────────────
     public static string NoAppearanceWindow => L("Kein Aussehen-Fenster offen. Nur im Schritt Aussehen der Charaktererschaffung.", "No appearance window open. Only during the Appearance step of character creation.", "Окно внешности не открыто. Только на шаге внешности при создании персонажа.");
@@ -2586,6 +2762,7 @@ public static partial class AccessibilityStrings
           "Ctrl+Shift+F7, read the task list of whatever is running: levequest, duty or FATE. " +
           "Ctrl+F4, read the bestiary out; while the crafting log is open instead what the bag can make right now, with the first-craft bonus named. " +
           "Commands: " +
+          "/acc craftable, same list, for typing. " +
           "/acc nav, direction to the target. " +
           "/acc set, track the current target. " +
           "/acc clear, clear the target. " +

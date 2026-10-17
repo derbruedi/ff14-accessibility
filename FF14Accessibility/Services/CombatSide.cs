@@ -1,6 +1,7 @@
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace FF14Accessibility.Services;
 
@@ -13,8 +14,13 @@ namespace FF14Accessibility.Services;
 /// als <c>ObjectKind.BattleNpc</c>, und das ist im Spiel auch der Trust-Trupp, der
 /// Duty-Support-NPC, der Karfunkel, die Fee und das Begleitchocobo.
 ///
-/// JEDES SIGNAL HIER IST DAS DES SPIELS SELBST (ilspycmd-geprueft gegen das
-/// installierte Dalamud / FFXIVClientStructs):
+/// Spaeter (2026-10): freundliche Story-/FATE-/Wach-NPCs mit SubKind
+/// <c>Combatant</c> landeten ebenfalls unter Gegner, weil nur Begleiter-SubKinds
+/// und Gruppe/Allianz herausgenommen wurden. Die sichtbare Spiel-UI trennt das
+/// ueber die Nameplate-Farbe (<see cref="CSGameObject.GetNamePlateColorType"/>).
+///
+/// JEDES SIGNAL HIER IST DAS DES SPIELS SELBST (ilspycmd / ClientStructs-Doku /
+/// Kawari-Spawn-Flag):
 /// <list type="bullet">
 /// <item><see cref="IBattleNpc.BattleNpcKind"/> ist <c>GameObject.SubKind</c>
 ///   direkt aus dem Objekt-Struct. Pet(2), Buddy(3), Player(4), RaceChocobo(6),
@@ -24,20 +30,16 @@ namespace FF14Accessibility.Services;
 ///   AllianceMember, von Dalamud aus <c>Character.IsPartyMember /
 ///   IsAllianceMember</c> gebaut. Wer in der Gruppe oder Allianz ist, steht per
 ///   Definition auf der eigenen Seite, egal welche SubKind er hat.</item>
+/// <item><c>GetNamePlateColorType</c> liefert denselben Farbindex, den ein
+///   sehender Spieler ueber dem Kopf sieht. Feind-Indizes 4-6 (PvP Lim/Gri/Uld),
+///   7 (UnengagedEnemy, auch ungepulled), 9-11 (Engaged/Claimed/Unclaimed).
+///   Freundliche Kampf-NPCs: 12 und 13 (<c>NamePlateColorNpc</c>).</item>
+/// <item><c>StatusFlags.Hostile</c> (= <c>CharacterData.Flags</c> Bit 0) ist das
+///   Spawn-Flag "hostile" und AENDERT die Nameplate - es bedeutet NICHT "gerade
+///   aggro". Aggro ist Bit 1 (<c>InCombat</c>) bzw. Nameplate 9-11. Fuer die
+///   Entscheidung reicht die Nameplate; Hostile bleibt nur in der ObjProbe zum
+///   Abgleich sichtbar.</item>
 /// </list>
-///
-/// WAS HIER BEWUSST NICHT BENUTZT WIRD, UND WARUM. <c>StatusFlags.Hostile</c>
-/// (= <c>CharacterData.Flags</c> Bit 0, <c>IsHostile</c>) sieht nach der exakten
-/// Antwort aus und ist trotzdem NICHT der Filter: die Quelle belegt nur, dass das
-/// Bit existiert - nicht, ob das Spiel es auch auf einem Mob setzt, der noch nicht
-/// aggro hat. Heisst es "kaempft gerade gegen mich", wuerde ein Filter darauf jede
-/// noch nicht gepullte Gruppe im Dungeon verstecken, und ein blinder Spieler kann
-/// nicht sehen, dass die Liste kuerzer geworden ist.
-///
-/// Der Filter unten kann deshalb immer nur in EINE Richtung wirken: er nimmt etwas
-/// aus Gegner heraus, wenn das Spiel es selbst als Begleiter oder Gruppenmitglied
-/// fuehrt. Ein Mob, ueber den das Spiel nichts sagt, bleibt Gegner. Etwas kann also
-/// nicht aus der Liste fallen.
 /// </summary>
 internal static class CombatSide
 {
@@ -45,7 +47,8 @@ internal static class CombatSide
     /// SubKinds, die das Spiel selbst als Begleiter statt als Kaempfer fuehrt.
     /// <see cref="BattleNpcSubKind.Combatant"/> (5) und
     /// <see cref="BattleNpcSubKind.BNpcPart"/> (1, die einzeln anvisierbaren
-    /// Gliedmassen grosser Bosse) fehlen mit Absicht: das SIND Gegner.
+    /// Gliedmassen grosser Bosse) fehlen mit Absicht: die werden ueber die
+    /// Nameplate als Feind oder Freund sortiert, nicht pauschal als Begleiter.
     /// </summary>
     private static readonly BattleNpcSubKind[] CompanionSubKinds =
     {
@@ -58,16 +61,34 @@ internal static class CombatSide
     };
 
     /// <summary>
+    /// Nameplate-Farbindizes fuer Feinde (ClientStructs-Remarks an
+    /// <c>GameObject.GetNamePlateColorType</c>; dieselbe Menge wie ECommons
+    /// <c>ObjectFunctions.IsHostile</c>). Typ 7 = UnengagedEnemy bleibt drin,
+    /// damit ungepulled Packs im Browser nicht verschwinden.
+    /// </summary>
+    private static readonly byte[] EnemyNamePlateTypes = { 4, 5, 6, 7, 9, 10, 11 };
+
+    /// <summary>
+    /// Nameplate-Farbindizes fuer freundliche Kampf-NPCs
+    /// (<c>NamePlateEdgeNpc</c> / <c>NamePlateColorNpc</c>).
+    /// </summary>
+    private static readonly byte[] FriendlyNpcNamePlateTypes = { 12, 13 };
+
+    /// <summary>
     /// True, wenn das Spiel positiv sagt, dass dieses Objekt auf der Seite des
-    /// Spielers kaempft: eine Begleiter-SubKind, oder Gruppe/Allianz. Nie geraten -
-    /// ein Objekt, ueber das das Spiel nichts sagt, ist kein Verbuendeter.
+    /// Spielers kaempft: Begleiter-SubKind, Gruppe/Allianz, oder Nameplate-Farbe
+    /// eines freundlichen Kampf-NPCs. Nie geraten.
     /// </summary>
     internal static bool IsAlly(IGameObject obj)
     {
         if (obj is IBattleNpc npc && CompanionSubKinds.Contains(npc.BattleNpcKind))
             return true;
 
-        return IsGroupMember(obj);
+        if (IsGroupMember(obj))
+            return true;
+
+        return obj.ObjectKind == ObjectKind.BattleNpc
+               && IsFriendlyNpcNamePlate(NamePlateColorType(obj));
     }
 
     /// <summary>
@@ -89,10 +110,26 @@ internal static class CombatSide
     }
 
     /// <summary>
-    /// True fuer einen Kampf-NPC, der kein Verbuendeter ist. Was hier NICHT
-    /// verlangt wird: das Hostile-Flag. Ein friedlicher Mob im Nebenraum muss
-    /// auffindbar bleiben - siehe die Anmerkungen an der Klasse.
+    /// True fuer einen Kampf-NPC, dessen Nameplate das Spiel als Feind faerbt
+    /// und der kein Verbuendeter ist. Ungepulled bleibt sichtbar (Typ 7).
     /// </summary>
     internal static bool IsEnemy(IGameObject obj)
-        => obj.ObjectKind == ObjectKind.BattleNpc && !IsAlly(obj);
+        => obj.ObjectKind == ObjectKind.BattleNpc
+           && !IsAlly(obj);
+
+    /// <summary>True for the enemy nameplate indexes, including unpulled (7).</summary>
+    internal static bool IsEnemyNamePlate(byte plate) => EnemyNamePlateTypes.Contains(plate);
+
+    /// <summary>True for friendly battle-NPC nameplate indexes 12 and 13.</summary>
+    internal static bool IsFriendlyNpcNamePlate(byte plate) => FriendlyNpcNamePlateTypes.Contains(plate);
+
+    /// <summary>
+    /// Nameplate-Farbindex aus dem Spiel-Struct, oder 0 wenn das Objekt keine
+    /// gueltige Adresse hat. 0 ist kein Feind- und kein Freund-Npc-Index.
+    /// </summary>
+    internal static unsafe byte NamePlateColorType(IGameObject obj)
+    {
+        if (obj.Address == 0) return 0;
+        return ((CSGameObject*)obj.Address)->GetNamePlateColorType();
+    }
 }

@@ -295,6 +295,12 @@ public sealed class SelectionObjectResolverTests
         Field(walk, "_nav", mesh); Field(walk, "_log", log);
         Field(plugin, "_navigation", navigation); Field(plugin, "_autoWalk", walk);
         Field(plugin, "_config", new Configuration());
+        typeof(Plugin).GetProperty("ClientState", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin,
+            QuestAreaPointTests.Proxy.Of<IClientState>((method, _) => method.Name switch
+            {
+                "get_TerritoryType" => 128u, "get_MapId" => 11u,
+                _ => throw new NotSupportedException(method.Name)
+            }));
         var player = QuestAreaPointTests.Proxy.Of<IPlayerCharacter>((m, _) => m.Name == "get_Position"
             ? Vector3.Zero : throw new NotSupportedException(m.Name));
         var table = QuestAreaPointTests.Proxy.Of<IObjectTable>((m, _) => m.Name switch

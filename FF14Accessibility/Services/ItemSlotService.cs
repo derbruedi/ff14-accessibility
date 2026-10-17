@@ -69,7 +69,7 @@ public enum SlotWait
     AgentOpening,
 }
 
-public sealed unsafe partial class ItemSlotService
+public sealed unsafe partial class ItemSlotService : IDisposable
 {
     private readonly IDataManager _data;
 
@@ -93,7 +93,16 @@ public sealed unsafe partial class ItemSlotService
     /// </summary>
     public static bool IsHighQuality(uint iconId) => iconId >= HqIconOffset;
 
+    public ItemSlotService(IDataManager data, IGameInteropProvider interop, IPluginLog log)
+    {
+        _data = data;
+        _log = log;
+        EnableHoverHook(interop);
+    }
+
     public ItemSlotService(IDataManager data) => _data = data;
+
+    public void Dispose() => DisposeHoverHook();
 
     /// <summary>
     /// The Item sheet row of the slot the given component belongs to, or 0 when

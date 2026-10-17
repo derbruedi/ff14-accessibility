@@ -55,7 +55,9 @@
   "Resolver": {
     "Path": "FF14Accessibility/Plugin.cs",
     "Signature": "    private MarkerResolve TryResolveMarkerDestination(",
-    "Sha256": "b60d3ed65b59b808a39ce27fe016c0eec8da10f38c0cda816376d10901e6263c"
+    "Sha256": "10728e107ed2fc46cf60595fed825e1579433a543b8894da4c59c84d77fb21e8",
+    "PreviousSha256": "b60d3ed65b59b808a39ce27fe016c0eec8da10f38c0cda816376d10901e6263c",
+    "Reason": "6.08.121: transferred author hunt-spawn lookup and reachable floor selection from 55b17bc; preserved local quest and object routing."
   },
   "RemovedFiles": [
     "FF14Accessibility/Services/AutoWalkService.Context.cs",
@@ -92,13 +94,20 @@
   "HuntSearch": {
     "Path": "FF14Accessibility/Services/NavigationService.cs",
     "Signature": "    private void BuildHuntSearch(",
-    "Sha256": "dd4084cde78432ed4620f4da8da6930cf8fd739398e8da76afe186f95e5be9a2"
+    "Sha256": "b41e3cffecf1eb4ac6da53072e1094f6093a1dfefe9c714f1652b1defedee9ec",
+    "PreviousSha256": "dd4084cde78432ed4620f4da8da6930cf8fd739398e8da76afe186f95e5be9a2",
+    "Reason": "6.08.121: transferred author spawn-first hunt search from 55b17bc with existing area fallback."
   },
   "LocalOverrides": [
     {
       "Path": "FF14Accessibility/Services/AutoWalkService.cs",
       "Sha256": "b4e627a2070e24ed6d04847f05c016a7b47cc81909357e37c6f669daa49048fc",
       "Reason": "6.08.116: по запросу пользователя цель передана в первый запуск; подхват NPC сохраняет этап перехода автора; автоматическое перечисление длины пути убрано. Алгоритмы движения сохранены."
+    },
+    {
+      "Path": "FF14Accessibility/Services/DungeonRouteService.cs",
+      "Sha256": "b5d5b2b76437564c330dc1a7700bd358002052488bb6865f8d9e02eec0ff72fa",
+      "Reason": "6.08.121: retain numeric dungeon object identity and reject non-finite recorded points; movement algorithm unchanged."
     }
   ]
 }

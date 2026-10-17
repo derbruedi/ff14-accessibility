@@ -64,6 +64,26 @@ public sealed class PlacesService
     /// display = 2*pixel/scale + 1 (checked: pixel 0 -> 1.0, pixel 2048 ->
     /// 42.0 at SizeFactor 100) => world = (pixel - 1024) * 100/scale - offset.
     /// </summary>
+    public static Vector3? ConvertMapCoord(float mapX, float mapY, ushort sizeFactor, short offsetX, short offsetY)
+    {
+        if (sizeFactor == 0) return null;
+        var pixelX = (mapX - 1f) * sizeFactor / 2f;
+        var pixelY = (mapY - 1f) * sizeFactor / 2f;
+        return new Vector3(PixelToWorld(pixelX, sizeFactor, offsetX), 0f, PixelToWorld(pixelY, sizeFactor, offsetY));
+    }
+
+    public Vector3? MapCoordToWorldOnMap(uint mapId, float mapX, float mapY)
+    {
+        if (mapId == 0) return null;
+        if (!_data.GetExcelSheet<Map>().TryGetRow(mapId, out var map))
+        {
+            _log.Info($"[Goto] Map {mapId} nicht im Sheet - keine Kartenkoordinate.");
+            return null;
+        }
+
+        return ConvertMapCoord(mapX, mapY, map.SizeFactor, map.OffsetX, map.OffsetY);
+    }
+
     private static float PixelToWorld(float pixel, ushort sizeFactor, short offset)
         => (pixel - 1024f) * 100f / sizeFactor - offset;
 

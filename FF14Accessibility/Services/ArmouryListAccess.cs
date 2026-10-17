@@ -90,7 +90,8 @@ internal sealed unsafe class ArmouryListAccess(IGameGui gui, InventoryService in
         // Includes materia, condition, glamour and binding. Replacing the same
         // ID in the same slot cannot pass the native action's instance check.
         var instance = Convert.ToHexString(new ReadOnlySpan<byte>(item, sizeof(InventoryItem)));
-        return new(type, slot, id, (uint)item->Quantity, hq, instance, label, detail.Trim());
+        var (classId, className) = gear.ArmouryClass(baseId);
+        return new(type, slot, id, (uint)item->Quantity, hq, instance, label, detail.Trim(), classId, className);
     }
 
     // The short mode belongs to the overview of worn gear, not to browsing

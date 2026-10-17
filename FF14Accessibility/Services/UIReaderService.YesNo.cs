@@ -15,6 +15,31 @@ public sealed partial class UIReaderService
     private nint _holdConfirmAddon;
     private nint _holdConfirmNode;
     private string _holdConfirmQuestion = string.Empty;
+    private bool _yesNoHoldWatch;
+    private nint _yesNoHoldWatchAddon;
+    private string _yesNoHoldWatchQuestion = string.Empty;
+
+    internal unsafe void ArmYesNoHoldWatch()
+    {
+        _yesNoHoldWatch = false;
+        var ptr = _gameGui.GetAddonByName("SelectYesno");
+        if (ptr.IsNull) return;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible) return;
+        _yesNoHoldWatchAddon = (nint)addon;
+        _yesNoHoldWatchQuestion = ReadYesNoQuestion(addon);
+        _yesNoHoldWatch = true;
+    }
+
+    internal unsafe bool YesNoHoldWatchStillOpen()
+    {
+        if (!_yesNoHoldWatch) return false;
+        var ptr = _gameGui.GetAddonByName("SelectYesno");
+        if (ptr.IsNull) return false;
+        var addon = (AtkUnitBase*)(nint)ptr;
+        if (!addon->IsVisible || (nint)addon != _yesNoHoldWatchAddon) return false;
+        return ReadYesNoQuestion(addon) == _yesNoHoldWatchQuestion;
+    }
 
     public unsafe void YesNoPressTick()
     {

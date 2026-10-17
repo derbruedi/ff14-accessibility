@@ -13,6 +13,37 @@ public sealed partial class Plugin
     {
         _resolvedNavigationObject = null;
         _resolvedCanTrackObject = false;
+        if (!readout && !PrepareDungeonNavigation())
+        {
+            position = default; name = string.Empty; stopRange = 0;
+            heightIsGuess = false; isZoneTransition = false;
+            return MarkerResolve.Failed;
+        }
+        if (_navigation.SelectedDungeonStep is { } station)
+        {
+            heightIsGuess = false; isZoneTransition = false;
+            var kind = AccessibilityStrings.DungeonStepKindWord(station.Kind);
+            name = station.Name.Length > 0 ? station.Name
+                : kind.Length > 0 ? kind : AccessibilityStrings.DungeonWaypointWord;
+            stopRange = station.Kind == DungeonStepKind.Waypoint ? 1f : AutoWalkService.StopRange;
+            var live = _navigation.GetSelectedNavigationObject();
+            position = live?.Position ?? station.Position;
+            if (readout) return MarkerResolve.Resolved;
+            var nav = _autoWalk.Navmesh;
+            var ready = nav.IsReady;
+            Log.Info($"[DungeonNav] territory={ClientState.TerritoryType} map={ClientState.MapId} "
+                + $"station={station.Number} data={station.DataId} object={live?.GameObjectId:X} "
+                + $"player={ObjectTable.LocalPlayer?.Position} destination={position} meshReady={ready}");
+            if (!ready)
+            {
+                _tolk.SpeakInterrupt(QuestMeshUnavailableMessage() ?? AccessibilityStrings.MeshNotReady);
+                return MarkerResolve.Failed;
+            }
+            _resolvedNavigationObject = live;
+            _resolvedCanTrackObject = live != null;
+            if (live == null) position = DungeonNavigationPoint.Resolve(position, nav.NearestPoint);
+            return MarkerResolve.Resolved;
+        }
         if (_navigation.SelectedObjectDestination is { Kind: not Dalamud.Game.ClientState.Objects.Enums.ObjectKind.None } selected)
         {
             position = default; name = selected.Name; stopRange = AutoWalkService.StopRange;

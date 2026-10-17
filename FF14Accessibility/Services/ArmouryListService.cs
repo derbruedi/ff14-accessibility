@@ -7,7 +7,7 @@ namespace FF14Accessibility.Services;
 public sealed class ArmouryListService
 {
     internal static readonly int[] Keys = [0x68, 0x26, 0x62, 0x28, 0x65, 0x0C, 0x66, 0x27,
-        0x60, 0x64, 0x25, 0x6E, 0x2E, 0x67, 0x24, 0x69, 0x21, 0x23];
+        0x60, 0x64, 0x25, 0x6E, 0x2E, 0x67, 0x24, 0x69, 0x21, 0x23, 0x6B];
     private readonly IArmouryListAccess _access;
     private readonly Func<bool> _loggedIn;
     private readonly Func<uint> _territoryId;
@@ -35,7 +35,7 @@ public sealed class ArmouryListService
         InventoryService inventory, GearInfoService gear, TolkService tolk, IPluginLog log)
         : this(new ArmouryListAccess(gui, inventory, gear), keys, log, () => client.IsLoggedIn,
             () => client.TerritoryType, id => string.Join(". ", new[] { gear.DescribeItemBasics(id),
-                gear.DescribeOwnClasses(id), inventory.ResolveItemDescription(id) }
+                gear.DescribeGear(id), gear.DescribeOwnClasses(id), inventory.ResolveItemDescription(id) }
                 .Where(text => !string.IsNullOrWhiteSpace(text))),
             text => tolk.SpeakInterrupt(text), () => DateTime.UtcNow) { }
 
@@ -91,7 +91,12 @@ public sealed class ArmouryListService
             _refreshAt = now.AddMilliseconds(250);
             var previous = _model.Selected;
             var wasReady = _ready;
-            if (_access.TryCollect(out var items)) { changed = _model.Replace(items); _ready = true; }
+            if (_access.TryCollect(out var items))
+            {
+                changed = _model.Replace(items); _ready = true;
+                // Unknown class data must still leave the original item list usable.
+                if (!_announced && items.All(i => i.ClassId == 0)) _model.EnterClass();
+            }
             else _ready = false;
             // A temporary sort/load must not erase the physical selection or
             // silently send the next Num0 to the first item after recovery.
@@ -103,8 +108,7 @@ public sealed class ArmouryListService
             if (!_announced && _ready)
             {
                 _announced = true;
-                _speak(AccessibilityStrings.ArmouryListTitle(_model.Items.Count) + ". "
-                    + SelectionText());
+                _speak(ClassOpened());
             }
             else if (!_wasBrowsing || changed) ReadSelected();
         }
@@ -122,6 +126,32 @@ public sealed class ArmouryListService
             _access.Close(_owner); Reset(); _speak(AccessibilityStrings.MenuClosed);
         }
         else if (!_ready) { if (_input.JustAny(Keys)) ReadSelected(); }
+        else if (!_model.InsideClass) HandleClassKeys();
+        else HandleItemKeys();
+        return true;
+    }
+
+    private void HandleClassKeys()
+    {
+        if (_input.JustAny(0x68, 0x26, 0x64, 0x25, 0x67, 0x24)) { _model.MoveClass(-1); _speak(ClassText()); }
+        else if (_input.JustAny(0x62, 0x28, 0x66, 0x27, 0x69, 0x21)) { _model.MoveClass(1); _speak(ClassText()); }
+        else if (_input.Just(0x23)) { _model.EndClass(true); _speak(ClassText()); }
+        else if (_input.JustAny(0x65, 0x0C)) _speak(ClassText());
+        else if (_input.Just(0x60))
+        {
+            _confirmHeld = true;
+            if (_model.Classes.Count == 0) { ReadSelected(); return; }
+            _model.EnterClass();
+            var group = _model.Classes[_model.ClassCursor];
+            var name = ClassLabel(group);
+            _log.Info($"[ArmouryList] Class {group.Id} '{name}', {group.Count} items.");
+            _speak(name + ". " + SelectionText());
+        }
+    }
+
+    private void HandleItemKeys()
+    {
+        if (_input.Just(0x6B)) { _model.LeaveClass(); _speak(ClassText()); }
         else if (_input.JustAny(0x68, 0x26)) { _model.MoveRow(-1); ReadSelected(); }
         else if (_input.JustAny(0x62, 0x28)) { _model.MoveRow(1); ReadSelected(); }
         else if (_input.JustAny(0x64, 0x25)) { _model.Move(-1); ReadSelected(); }
@@ -131,12 +161,11 @@ public sealed class ArmouryListService
         else if (_input.Just(0x23)) { _model.End(true); ReadSelected(); }
         else if (_input.JustAny(0x65, 0x0C)) ReadSelected(description: true);
         else if (_input.Just(0x60)) { _confirmHeld = true; OpenSelectedMenu(); }
-        return true;
     }
 
     public void ReadSelected(bool description = false)
     {
-        if (description)
+        if (description && _model.InsideClass)
         {
             // A manual read can happen between periodic refreshes. Read the
             // live item again rather than describing the row that disappeared.
@@ -144,26 +173,48 @@ public sealed class ArmouryListService
             else _ready = false;
         }
         var text = SelectionText();
-        if (description && _ready && _model.Selected is { } item)
+        if (description && _ready && _model.InsideClass && _model.Selected is { } item)
         {
             var detail = _description(item.BaseItemId);
             if (!string.IsNullOrWhiteSpace(detail)) text += ". " + detail;
             if (!string.IsNullOrWhiteSpace(item.Detail)) text += ". " + item.Detail;
-            _log.Info($"[ArmouryList] Description: {item.Container}/{item.Slot}, item={item.ItemId}, base={item.BaseItemId}, HQ={item.HighQuality}; {text}");
         }
         _speak(text);
     }
 
     private string SelectionText() => !_ready ? AccessibilityStrings.ArmouryListUpdating
+        : !_model.InsideClass ? ClassText()
         : _model.Selected is not { } item ? AccessibilityStrings.MenuEmpty
-        : AccessibilityStrings.MenuEntry(item.Label, _model.Cursor + 1, _model.Items.Count);
+        : AccessibilityStrings.MenuEntry(item.Label, _model.VisibleIndex + 1, _model.VisibleCount);
+
+    private string ClassOpened()
+        => _model.InsideClass ? AccessibilityStrings.ArmouryListTitle(_model.Items.Count) + ". " + SelectionText()
+            : AccessibilityStrings.MenuOpened(AccessibilityStrings.ArmouryClassTitle(_model.Classes.Count))
+            + " " + AccessibilityStrings.ArmouryClassHelp + " " + ClassText();
+
+    private string ClassText()
+    {
+        if (_model.Classes.Count == 0) return AccessibilityStrings.MenuEmpty;
+        var group = _model.Classes[_model.ClassCursor];
+        return AccessibilityStrings.MenuEntry(AccessibilityStrings.ArmouryClassRow(
+            ClassLabel(group), group.Count), _model.ClassCursor + 1, _model.Classes.Count);
+    }
+
+    private static string ClassLabel(ArmouryClassGroup group)
+        => group.Name.Length > 0 ? group.Name : AccessibilityStrings.ArmouryUnknownClass;
 
     private void SwitchCategory(int direction)
     {
         _model.MoveCategory(direction);
         var text = SelectionText();
         if (_model.Selected is { } item)
-            text = AccessibilityStrings.ArmouryListCategory(ArmouryListModel.CategoryName(item.Container), text);
+        {
+            var count = 0;
+            foreach (var entry in _model.Items)
+                if (entry.Container == item.Container && entry.ClassId == item.ClassId) count++;
+            text = AccessibilityStrings.ArmouryListCategory(
+                ArmouryListModel.CategoryName(item.Container), count, text);
+        }
         _speak(text);
     }
 
