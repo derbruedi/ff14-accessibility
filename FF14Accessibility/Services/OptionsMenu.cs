@@ -1622,6 +1622,10 @@ public sealed class OptionsMenu
             Toggle(AccessibilityStrings.OptMapFlag,       () => _config.AnnounceMapFlag,       v => _config.AnnounceMapFlag = v),
             Toggle(AccessibilityStrings.OptErrorToasts,   () => _config.AnnounceErrorToasts,   v => _config.AnnounceErrorToasts = v),
             Toggle(AccessibilityStrings.OptInfoToasts,    () => _config.AnnounceInfoToasts,    v => _config.AnnounceInfoToasts = v),
+            // Off = the game's own Armoury Chest window. ArmouryListService and
+            // UIReaderService both read the flag every frame, so it takes
+            // effect with the window open.
+            Toggle(AccessibilityStrings.OptArmouryClassList, () => _config.ArmouryClassList, v => _config.ArmouryClassList = v),
             // Writes the static the string formatters read as well
             // as the config field, in that order, so the very next announcement -
             // including this row's own confirmation - already obeys the new setting.

@@ -3,13 +3,16 @@ using Dalamud.Plugin.Services;
 namespace FF14Accessibility.Services;
 
 /// <summary>Owns browsing keys while the Armoury Chest is focused.
-/// Context commands and their confirmations remain native game interactions.</summary>
+/// Context commands and their confirmations remain native game interactions.
+/// Switched off by <see cref="Configuration.ArmouryClassList"/>: the window is
+/// then left to the game and the generic focus reader.</summary>
 public sealed class ArmouryListService
 {
     internal static readonly int[] Keys = [0x68, 0x26, 0x62, 0x28, 0x65, 0x0C, 0x66, 0x27,
         0x60, 0x64, 0x25, 0x6E, 0x2E, 0x67, 0x24, 0x69, 0x21, 0x23, 0x6B];
     private readonly IArmouryListAccess _access;
     private readonly Func<bool> _loggedIn;
+    private readonly Func<bool> _enabled;
     private readonly Func<uint> _territoryId;
     private readonly Func<uint, string> _description;
     private readonly Action<string> _speak;
@@ -32,19 +35,20 @@ public sealed class ArmouryListService
     private bool _selectionInvalidated;
 
     public ArmouryListService(IGameGui gui, IClientState client, IKeyState keys,
-        InventoryService inventory, GearInfoService gear, TolkService tolk, IPluginLog log)
+        InventoryService inventory, GearInfoService gear, TolkService tolk, Configuration config, IPluginLog log)
         : this(new ArmouryListAccess(gui, inventory, gear), keys, log, () => client.IsLoggedIn,
             () => client.TerritoryType, id => string.Join(". ", new[] { gear.DescribeItemBasics(id),
                 gear.DescribeGear(id), gear.DescribeOwnClasses(id), inventory.ResolveItemDescription(id) }
                 .Where(text => !string.IsNullOrWhiteSpace(text))),
-            text => tolk.SpeakInterrupt(text), () => DateTime.UtcNow) { }
+            text => tolk.SpeakInterrupt(text), () => DateTime.UtcNow, () => config.ArmouryClassList) { }
 
     internal ArmouryListService(IArmouryListAccess access, IKeyState keys, IPluginLog log,
         Func<bool> loggedIn, Func<uint> territory, Func<uint, string> description,
-        Action<string> speak, Func<DateTime> clock)
+        Action<string> speak, Func<DateTime> clock, Func<bool>? enabled = null)
     {
         _access = access; _keys = keys; _log = log; _loggedIn = loggedIn; _territoryId = territory;
         _description = description; _speak = speak; _clock = clock;
+        _enabled = enabled ?? (() => true);
         _input = new MenuInput(keys, log, Keys);
     }
 
@@ -63,7 +67,9 @@ public sealed class ArmouryListService
             else _keys[0x60] = false;
         }
         var board = _access.Window;
-        if (!_loggedIn() || board.Address == 0) { Reset(); return; }
+        // Switched off: the same as no window, so a list opened before the
+        // switch closes its pending game menu and gives the keys back at once.
+        if (!_loggedIn() || board.Address == 0 || !_enabled()) { Reset(); return; }
         if (_owner != board || _territory != _territoryId())
         {
             Reset(); _owner = board; _territory = _territoryId();

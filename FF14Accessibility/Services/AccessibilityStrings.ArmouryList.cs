@@ -5,6 +5,8 @@ public static partial class AccessibilityStrings
     public static string ArmouryListTitle(int count) => L(
         $"Arsenaltruhe, alle Gegenstände: {count}", $"Armoury Chest, all items: {count}",
         $"Арсенал, все предметы: {count}");
+    public static string OptArmouryClassList => L(
+        "Arsenal als Klassenliste", "Armoury Chest as class list", "Арсенал списком по классам");
     public static string ArmouryClassTitle(int count) => L(
         $"Arsenaltruhe, Klassen: {count}", $"Armoury Chest, classes: {count}",
         $"Арсенал, классы: {count}");

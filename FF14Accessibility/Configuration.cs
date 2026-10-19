@@ -636,6 +636,11 @@ public sealed class Configuration : IPluginConfiguration
     public bool WarnStrongerEnemies = true;
     public bool AnnounceQuestObjectiveChanges = true;
 
+    // Armoury Chest: true = ArmouryListService's class list owns the window's
+    // keys; false = the game's own window with the generic focus reader, as
+    // before 6.08.128 (user wish 2026-10-19).
+    public bool ArmouryClassList = true;
+
     // Welche Penumbra-Mods vor /acc mods aus eingeschaltet waren.
     public bool ModsSwitchMemoryValid;
     public List<string> ModsSwitchMemory = new();

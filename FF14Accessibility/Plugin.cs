@@ -628,7 +628,7 @@ public sealed partial class Plugin : IDalamudPlugin
         _uiReader   = new UIReaderService(AddonLifecycle, GameGui, _tolk, Log, ObjectTable, _inventoryReader, _gearInfo, _bestiary, _huntingLog, _history, _config, DataManager, _tooltips, _charaMake, _lootRolls, _itemSlots, _gatherLog, descriptions);
         _navigation.AetherWalks = territory => _uiReader.MissingAetherWalks(territory);
         _armouryTransfer = new ArmouryTransferService(DataManager, ClientState, GameGui, _uiReader, _tolk, Log);
-        _armouryList = new ArmouryListService(GameGui, ClientState, KeyState, _inventoryReader, _gearInfo, _tolk, Log);
+        _armouryList = new ArmouryListService(GameGui, ClientState, KeyState, _inventoryReader, _gearInfo, _tolk, _config, Log);
         _chatPlayer = new ChatPlayerService(ObjectTable, DataManager, GameGui, _navigation, _tolk, Log);
         _synthesis   = new SynthesisService(GameGui, _tolk, Log, ObjectTable);
         // [Handwerker-Notizbuch] Die Frage, die das Spiel nur fuer das ausgewaehlte

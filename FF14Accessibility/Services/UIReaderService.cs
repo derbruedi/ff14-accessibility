@@ -472,12 +472,18 @@ public sealed partial class UIReaderService : IDisposable
     /// SuppressFlyTextSpam).
     /// </summary>
     private bool IsSuppressedAddon(string name) =>
-        name == "ArmouryBoard" // ArmouryListService owns the unified item list.
+        IsOwnedByArmouryClassList(name)
         || HudNoiseAddons.Contains(name)
         || (_config.SuppressStatusBarSpam && StatusBarSpamAddons.Contains(name))
         || IsSuppressedCombatHud(name)
         || IsSuppressedCharaMakeCity(name)
         || IsSuppressedCharaSelect(name);
+
+    // ArmouryListService owns the Armoury Chest while its class list is on.
+    // Off, the window is read like any other again (focus reader, category
+    // buttons, the category title in OnArmouryBoardUpdate).
+    private bool IsOwnedByArmouryClassList(string name) =>
+        name == "ArmouryBoard" && _config.ArmouryClassList;
 
     // The city pane changes alongside class selection and must not interrupt
     // the selected class. Outside that step its normal reading remains available.
@@ -743,6 +749,13 @@ public sealed partial class UIReaderService : IDisposable
         // der nur "0/10, NEU" (Fortschritt ohne Rang-Namen) wiederholte.
         _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "MonsterNote", OnMonsterNoteUpdate);
 
+
+        // Armoury chest: the current category ("Kopf", "Waffe" ...) lives in
+        // its title text node - announce it on every tab change, because the
+        // category tabs themselves are icon-only (dump 2026-07-16: id=121
+        // Text, tabs = Base-wrapped icons without text). Silent while the
+        // class list owns the window.
+        _addonLifecycle.RegisterListener(AddonEvent.PostUpdate, "ArmouryBoard", OnArmouryBoardUpdate);
 
         // GrandCompanyExchange (Staatstaler-Shop): the 5 category tabs
         // (Waffen/Ruestung/... ) are RadioButtons without a shared title node,
@@ -2542,7 +2555,9 @@ public sealed partial class UIReaderService : IDisposable
     {
         var addon = (AtkUnitBase*)(nint)args.Addon;
         if (addon == null) return;
-        if (!addon->IsVisible)
+        // Hidden or owned by the class list: forget the category, so the
+        // window speaks it again once it is read natively.
+        if (!addon->IsVisible || IsOwnedByArmouryClassList("ArmouryBoard"))
         {
             _lastArmouryCategory = string.Empty;
             return;
@@ -3809,7 +3824,7 @@ public sealed partial class UIReaderService : IDisposable
         // moving focus onto a cast bar cannot reintroduce the announcements.
         // Do not use the whole HudNoiseAddons set: it also contains quest and
         // character windows whose deliberate keyboard focus is read here.
-        if (FindAddonNameForNode(node) == "ArmouryBoard"
+        if (IsOwnedByArmouryClassList(FindAddonNameForNode(node))
             || IsSuppressedCombatHud(FindAddonNameForNode(node))
             || IsSuppressedCharaMakeCity(FindAddonNameForNode(node))
             || IsSuppressedCharaSelect(FindAddonNameForNode(node)))
@@ -17822,6 +17837,7 @@ public sealed partial class UIReaderService : IDisposable
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectOk", OnSelectOkUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "SelectYesno",   OnDialogButtonProbe);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "JournalResult", OnDialogButtonProbe);
+        _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "ArmouryBoard",  OnArmouryBoardUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "GrandCompanyExchange", OnGrandCompanyUpdate);
         _addonLifecycle.UnregisterListener(AddonEvent.PostSetup,  "Shop", OnShopSetup);
         _addonLifecycle.UnregisterListener(AddonEvent.PostUpdate, "Shop", OnShopUpdate);

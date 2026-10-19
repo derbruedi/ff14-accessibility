@@ -76,6 +76,29 @@ public sealed class ArmouryListSessionTests : IDisposable
     }
 
     [Fact]
+    public void SwitchedOffLeavesTheWindowAndItsKeysToTheGame()
+    {
+        var f = new Fixture { Enabled = false };
+        f.Tick(); f.Keys.Down[0x62] = true; f.Tick();
+        Assert.Empty(f.Speech);
+        Assert.False(f.Service.IsOpen);
+        Assert.False(f.Service.OwnsInput);
+        Assert.False(f.Service.HandleKeys(false)); Assert.True(f.Keys.Down[0x62]);
+    }
+
+    [Fact]
+    public void SwitchingOffWithAPendingItemMenuClosesItAndReturnsTheKeys()
+    {
+        var f = new Fixture(); f.Tick(); f.Enter(); f.Press(0x60);
+        Assert.NotNull(f.Access.Requested);
+        f.Enabled = false; f.Release();
+        Assert.Equal(1, f.Access.CancelCount);
+        Assert.False(f.Service.OwnsInput);
+        f.Keys.Down[0x62] = true; f.Tick();
+        Assert.False(f.Service.HandleKeys(false)); Assert.True(f.Keys.Down[0x62]);
+    }
+
+    [Fact]
     public void ModifiersAndEscapeStayWithTheGame()
     {
         var f = new Fixture(); f.Tick(); f.Keys.Down[0x62] = true; f.Keys.Down[0x1B] = true; f.Tick();
@@ -349,6 +372,7 @@ public sealed class ArmouryListSessionTests : IDisposable
         internal readonly ArmouryListService Service;
         internal DateTime Now = new(2026, 10, 5, 0, 0, 0, DateTimeKind.Utc);
         internal bool LoggedIn = true;
+        internal bool Enabled = true;
         internal uint Territory = 133;
         internal Fixture()
         {
@@ -356,7 +380,7 @@ public sealed class ArmouryListSessionTests : IDisposable
             Keys = (ShopQuantityTests.KeyStateProxy)(object)keys;
             var log = NavigationStopTests.Proxy.Of<IPluginLog>(_ => null);
             Service = new(Access, keys, log, () => LoggedIn, () => Territory,
-                id => "description " + id, Speech.Add, () => Now);
+                id => "description " + id, Speech.Add, () => Now, () => Enabled);
         }
         internal void Tick(bool active = true, bool typing = false, bool menu = false, string? focus = "ArmouryBoard")
             => Service.Update(active, typing, menu, focus);
