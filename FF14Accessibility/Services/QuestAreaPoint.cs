@@ -28,22 +28,20 @@ internal static class QuestAreaPoint
         if (usable <= 0) yield break;
         var accepted = new List<Vector3>();
         var xz = MathF.Min(6f, usable);
+        foreach (var height in new[] { 10f, 100f })
         foreach (var probe in Candidates(centre, usable))
         {
             if (!TravelLayout.Finite(probe)) continue;
-            foreach (var height in new[] { 10f, 100f })
-            {
-                if (reachable(probe, xz, height) is not { } point || !TravelLayout.Finite(point)) continue;
-                // Check the returned coordinate, not only the query box. vnavmesh
-                // can project a polygon at a height beyond that box's centre.
-                if (MathF.Abs(point.Y - centre.Y) > 100f
-                    || MathF.Abs(point.X - probe.X) > xz || MathF.Abs(point.Z - probe.Z) > xz
-                    || Vector2.Distance(new(centre.X, centre.Z), new(point.X, point.Z)) > usable
-                    || !matchesMap(point)) continue;
-                if (accepted.Any(p => Vector3.Distance(p, point) < 0.5f)) continue;
-                accepted.Add(point);
-                yield return point;
-            }
+            if (reachable(probe, xz, height) is not { } point || !TravelLayout.Finite(point)) continue;
+            // Check the returned coordinate, not only the query box. vnavmesh
+            // can project a polygon at a height beyond that box's centre.
+            if (MathF.Abs(point.Y - centre.Y) > height
+                || MathF.Abs(point.X - probe.X) > xz || MathF.Abs(point.Z - probe.Z) > xz
+                || Vector2.Distance(new(centre.X, centre.Z), new(point.X, point.Z)) > usable
+                || !matchesMap(point)) continue;
+            if (accepted.Any(p => Vector3.Distance(p, point) < 0.5f)) continue;
+            accepted.Add(point);
+            yield return point;
         }
     }
 

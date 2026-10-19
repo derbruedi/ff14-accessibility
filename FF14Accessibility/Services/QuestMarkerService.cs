@@ -121,7 +121,8 @@ public sealed record QuestDestination(
     string Unlock = "",
     uint QuestId = 0,
     uint ObjectiveLevelId = 0,
-    uint NativeMarkerId = 0);
+    uint NativeMarkerId = 0,
+    uint AreaTargetLevelId = 0);
 
 /// <summary>
 /// Reads the objective markers of ACCEPTED quests from the game's map
@@ -130,6 +131,13 @@ public sealed record QuestDestination(
 /// </summary>
 public sealed class QuestMarkerService
 {
+    private QuestObjectiveTarget? _objectiveTargets;
+
+    private static unsafe byte? CurrentQuestSequence(uint questId)
+    {
+        if (FFXIVClientStructs.FFXIV.Client.Game.QuestManager.Instance() == null) return null;
+        return FFXIVClientStructs.FFXIV.Client.Game.QuestManager.GetQuestSequence(questId);
+    }
     /// <summary>Lumina <c>Level.Type</c> / ClientStructs <c>InstanceType.EventRange</c>.
     /// Sheet dump: Type 49 rows carry <c>Object</c> 5000000 and an <c>EventId</c>
     /// pointing at the Quest row â€” the walk-in volumes inside a map goal circle.</summary>
@@ -268,7 +276,7 @@ public sealed class QuestMarkerService
     /// steps of the same quest do not flood the list. Listed under the Quest
     /// objects browser â€” these are not ObjectTable entries.
     /// </summary>
-    public unsafe List<QuestDestination> GetEventRangeDestinations()
+    public unsafe List<QuestDestination> GetEventRangeDestinations(bool log = true)
     {
         var result = new List<QuestDestination>();
         var map = Map.Instance();
@@ -284,7 +292,7 @@ public sealed class QuestMarkerService
             var questName = marker.Label.ToString();
             if (string.IsNullOrWhiteSpace(questName)) continue;
             var quests = QuestRows(questName);
-            if (quests.Count == 0) continue;
+            if (quests.Count != 1) continue;
 
             var circles = new List<(Vector3 Centre, float Radius)>();
             var locations = marker.MarkerData.Count;
@@ -339,7 +347,8 @@ public sealed class QuestMarkerService
                         InCurrentZone: true,
                         kind,
                         level,
-                        QuestMarkerRole.QuestTrigger));
+                        QuestMarkerRole.QuestTrigger, TargetLevelType: LevelTypeEventRange,
+                        QuestId: quest.RowId, ObjectiveLevelId: range.LevelId));
 
                     trace.Add($"'{questName}' QuestId={quest.RowId} LevelId={range.LevelId} " +
                               $"pos=({range.Position.X:F0}|{range.Position.Z:F0}) r={range.Radius:F1}");
@@ -347,7 +356,7 @@ public sealed class QuestMarkerService
             }
         }
 
-        _log.Info($"[Quest] EventRange-AuslÃ¶ser in Zone ({result.Count}): " +
+        if (log) _log.Info($"[Quest] EventRange-AuslÃ¶ser in Zone ({result.Count}): " +
                   (trace.Count > 0 ? string.Join(" | ", trace) : "keine"));
         return result;
     }
@@ -885,11 +894,20 @@ public sealed class QuestMarkerService
                 }
             }
 
-            result.Add(new QuestDestination(questName, tooltip, data.Position,
+            var destination = new QuestDestination(questName, tooltip, data.Position,
                 data.Radius, data.TerritoryTypeId, data.MapId, inZone, kind, level, role,
                 targetBaseId, targetType, unlock,
                 role == QuestMarkerRole.Quest && QuestRows(questName) is { Count: 1 } rows ? rows[0].RowId : 0, data.LevelId,
-                role == QuestMarkerRole.Quest ? marker.ObjectiveId : 0));
+                role == QuestMarkerRole.Quest ? marker.ObjectiveId : 0);
+            if (tag == "Quest" && QuestAreaPoint.IsSearchArea(destination) && destination.QuestId != 0)
+            {
+                _objectiveTargets ??= new QuestObjectiveTarget(_data);
+                destination = _objectiveTargets.Resolve(destination, CurrentQuestSequence(destination.QuestId));
+                if (log && destination.AreaTargetLevelId != 0)
+                    _log.Info($"[QuestRoute] Exact area target quest={destination.QuestId}, markerLevel={data.LevelId}, "
+                        + $"targetLevel={destination.AreaTargetLevelId}, type={destination.TargetLevelType}, position={destination.Position}");
+            }
+            result.Add(destination);
         }
     }
 }

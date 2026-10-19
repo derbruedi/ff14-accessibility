@@ -8,3 +8,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("HarmoniaTextCheck")]
 [assembly: InternalsVisibleTo("CrossZoneCheck")]
 [assembly: InternalsVisibleTo("DungeonRouteCheck")]
+[assembly: InternalsVisibleTo("QuestGoalCheck")]

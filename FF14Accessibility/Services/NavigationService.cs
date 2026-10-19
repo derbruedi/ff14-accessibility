@@ -948,7 +948,8 @@ public sealed class NavigationService
         if (previous == null || previous.QuestId == 0 && previous.NativeMarkerId == 0) return true;
         var player = _objectTable.LocalPlayer;
         if (player == null) { _questObjectiveAvailable = false; return false; }
-        var current = IsUnacceptedQuestCategory ? _questMarkers.GetUnacceptedDestinations(log: false) : _questMarkers.GetDestinations(log: false);
+        var current = previous.Role == QuestMarkerRole.QuestTrigger ? _questMarkers.GetEventRangeDestinations(log: false)
+            : IsUnacceptedQuestCategory ? _questMarkers.GetUnacceptedDestinations(log: false) : _questMarkers.GetDestinations(log: false);
         var next = QuestNavigationPlan.Refresh(previous, current, _clientState.TerritoryType,
             _clientState.MapId, player.Position);
         // Accepting the selected quest moves it from the nearby offer list to

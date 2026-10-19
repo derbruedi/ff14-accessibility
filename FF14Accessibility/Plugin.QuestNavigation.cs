@@ -162,7 +162,8 @@ public sealed partial class Plugin
         isZoneTransition = plan.IsBorder;
         stopRange = plan.IsBorder ? _config.AutoWalkTransitionStopRange
             : plan.Entrance != null ? _config.AutoWalkPlaceStopRange
-            : quest.Role == QuestMarkerRole.QuestTrigger ? _config.AutoWalkPlaceStopRange
+            : quest.TargetLevelType == 49 || quest.Role == QuestMarkerRole.QuestTrigger
+                ? MathF.Min(_config.AutoWalkPlaceStopRange, quest.Radius * 0.25f)
             : MathF.Max(_config.AutoWalkPlaceStopRange, MathF.Min(5f, quest.Radius));
         _resolvedCanTrackObject = plan.Entrance != null || plan.NextMapId == 0 && quest.TargetLevelType is 8 or 9 or 45;
         var liveObject = _resolvedCanTrackObject ? _navigation.GetSelectedNavigationObject() : null;
@@ -227,6 +228,13 @@ public sealed partial class Plugin
     private Vector3? ResolveQuestGroundPoint(QuestDestination quest, QuestNavigationPlan plan,
         Vector3 point, ref float stopRange)
     {
+        if (plan.NextMapId == 0 && quest.TargetLevelType == 49)
+        {
+            var trigger = QuestObjectiveTarget.TriggerPoint(quest, stopRange, _autoWalk.ProbeReachable);
+            Log.Info($"[QuestRoute] Trigger quest={quest.QuestId}, level={quest.AreaTargetLevelId}, "
+                + $"centre={quest.Position}, radius={quest.Radius}, stop={stopRange}, floor={trigger?.ToString() ?? "unresolved"}");
+            return trigger;
+        }
         if (plan.NextMapId == 0 && QuestAreaPoint.IsSearchArea(quest))
         {
             stopRange = MathF.Min(stopRange, quest.Radius * 0.25f);
@@ -285,7 +293,7 @@ public sealed partial class Plugin
         var current = _navigation.SelectedQuestDestination;
         if (!refreshed || current?.ObjectiveLevelId != previous.ObjectiveLevelId || current?.MapId != previous.MapId
             || current?.Position != previous.Position || current?.TargetBaseId != previous.TargetBaseId
-            || current?.TargetLevelType != previous.TargetLevelType)
+            || current?.TargetLevelType != previous.TargetLevelType || current?.AreaTargetLevelId != previous.AreaTargetLevelId)
         {
             _autoWalk.StopQuiet();
             _navigation.StopWalkGuideQuiet();

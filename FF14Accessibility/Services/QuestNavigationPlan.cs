@@ -26,6 +26,9 @@ internal sealed record QuestNavigationPlan(Vector3 Position, string Name, bool I
             : d.QuestName == previous.QuestName).ToArray();
         // The same objective wins while it exists; don't jump between parallel
         // objectives just because the player crossed a border or moved closer.
+        if (previous.Role == QuestMarkerRole.QuestTrigger)
+            return matches.FirstOrDefault(d => d.Role == QuestMarkerRole.QuestTrigger
+                && previous.ObjectiveLevelId != 0 && d.ObjectiveLevelId == previous.ObjectiveLevelId);
         return matches.FirstOrDefault(d => previous.ObjectiveLevelId != 0 && d.ObjectiveLevelId == previous.ObjectiveLevelId)
             ?? matches.FirstOrDefault(d => d.MapId == previous.MapId && d.TargetBaseId == previous.TargetBaseId
                 && d.TargetLevelType == previous.TargetLevelType && Vector3.Distance(d.Position, previous.Position) < 0.1f)
