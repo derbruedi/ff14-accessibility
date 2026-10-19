@@ -155,6 +155,50 @@ public sealed class CueService : IDisposable
         _provider!.Trigger(_config.MovementCueVolume, 400f, 260f);
     }
 
+    /// <summary>
+    /// Position relative to the target changed (front / flank / rear). Queued,
+    /// not triggered: a position tone must not cut off a skill-ready or gauge
+    /// cue that is still playing.
+    /// </summary>
+    public void PlayPositionalTone(PositionalZone zone)
+    {
+        if (!GameWindowFocus.IsActive) return;
+        if (_config.PositionalToneVolume <= 0f) return;
+        if (!EnsureOutput()) return;
+        var (n1, n2, pan) = PositionalNotes(zone);
+        _provider!.Enqueue(_config.PositionalToneVolume, n1, n2, pan);
+    }
+
+    /// <summary>
+    /// Preview one position tone from the options menu. Uses a quiet floor when
+    /// the volume is off so the mapping can still be learned. Returns false when
+    /// audio could not start.
+    /// </summary>
+    public bool PlayPositionalPreview(PositionalZone zone)
+    {
+        if (!GameWindowFocus.IsActive) return false;
+        if (!EnsureOutput()) return false;
+        var vol = _config.PositionalToneVolume > 0f ? _config.PositionalToneVolume : 0.35f;
+        var (n1, n2, pan) = PositionalNotes(zone);
+        _provider!.Trigger(vol, n1, n2, pan);
+        return true;
+    }
+
+    /// <summary>
+    /// Notes per zone, kept in the low register (196-440 Hz) that none of the
+    /// other cues use as a pair: front a steady G4, flanks a rising fourth on
+    /// the enemy's side of the stereo field, rear a falling C4 -> G3, "no
+    /// positionals" a steady C4.
+    /// </summary>
+    private static (float Note1, float Note2, float Pan) PositionalNotes(PositionalZone zone) => zone switch
+    {
+        PositionalZone.Front      => (392f, 392f, 0f),
+        PositionalZone.FlankLeft  => (330f, 440f, -0.8f),
+        PositionalZone.FlankRight => (330f, 440f, 0.8f),
+        PositionalZone.Rear       => (262f, 196f, 0f),
+        _                         => (262f, 262f, 0f),
+    };
+
     /// <summary>Opens the audio output once and keeps it. Returns false if unavailable.</summary>
     private bool EnsureOutput()
     {
@@ -212,46 +256,50 @@ internal sealed class CueSampleProvider : ISampleProvider
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(Rate, 2);
 
     private readonly object _gate = new();
-    private readonly Queue<(float Volume, float Note1, float Note2)> _queue = new();
+    private readonly Queue<(float Volume, float Note1, float Note2, float Pan)> _queue = new();
 
     private volatile float _volume;
     private volatile float _note1 = 988f;
     private volatile float _note2 = 1319f;
+    private volatile float _pan;       // -1 = left only, 0 = centre, 1 = right only
     private volatile int _remaining;   // samples left to play; 0 = silent
     private double _phase;
 
     /// <summary>Queues a single two-note cue at the given volume (0..1) and note
-    /// frequencies. Clears any pending queue and restarts immediately.</summary>
-    public void Trigger(float volume, float note1, float note2)
+    /// frequencies. Clears any pending queue and restarts immediately.
+    /// <paramref name="pan"/> places the cue in the stereo field (-1 left,
+    /// 0 centre, 1 right); every cue before positionals was centred.</summary>
+    public void Trigger(float volume, float note1, float note2, float pan = 0f)
     {
         lock (_gate)
         {
             _queue.Clear();
-            StartCue(volume, note1, note2);
+            StartCue(volume, note1, note2, pan);
         }
     }
 
     /// <summary>Append a cue. Starts immediately when idle; otherwise plays after
     /// the current cue (and any already queued) finishes.</summary>
-    public void Enqueue(float volume, float note1, float note2)
+    public void Enqueue(float volume, float note1, float note2, float pan = 0f)
     {
         lock (_gate)
         {
             if (_remaining <= 0 && _queue.Count == 0)
             {
-                StartCue(volume, note1, note2);
+                StartCue(volume, note1, note2, pan);
                 return;
             }
 
-            _queue.Enqueue((Math.Clamp(volume, 0f, 1f), note1, note2));
+            _queue.Enqueue((Math.Clamp(volume, 0f, 1f), note1, note2, pan));
         }
     }
 
-    private void StartCue(float volume, float note1, float note2)
+    private void StartCue(float volume, float note1, float note2, float pan)
     {
         _volume = Math.Clamp(volume, 0f, 1f);
         _note1 = note1;
         _note2 = note2;
+        _pan = Math.Clamp(pan, -1f, 1f);
         _phase = 0;
         _remaining = TotalSamples;
     }
@@ -263,7 +311,7 @@ internal sealed class CueSampleProvider : ISampleProvider
             if (_remaining > 0) return;
             if (_queue.Count == 0) return;
             var next = _queue.Dequeue();
-            StartCue(next.Volume, next.Note1, next.Note2);
+            StartCue(next.Volume, next.Note1, next.Note2, next.Pan);
         }
     }
 
@@ -293,8 +341,11 @@ internal sealed class CueSampleProvider : ISampleProvider
                 _remaining = remaining - 1;
             }
 
-            buffer[offset + 2 * i]     = sample;
-            buffer[offset + 2 * i + 1] = sample;
+            // Linear pan: the far side fades, the near side stays at full level,
+            // so a centred cue (pan 0) is exactly what it was before.
+            var pan = _pan;
+            buffer[offset + 2 * i]     = sample * (pan > 0f ? 1f - pan : 1f);
+            buffer[offset + 2 * i + 1] = sample * (pan < 0f ? 1f + pan : 1f);
         }
         return frames * 2;
     }

@@ -190,6 +190,9 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly AoeAutoTurnService _aoeAutoTurn;
     // [Warnstimme] Zweiter Sprachkanal fuer die vier Kampfwarnungen.
     private readonly WarningVoiceService _warnVoice;
+    // Position to the targeted enemy (front / flank / rear), own SAPI voice.
+    private readonly PositionalVoiceService _positionalVoice;
+    private readonly PositionalService _positional;
     // [Chatstimme] Eigener Sprachkanal fuer den Chat, je Kanal mit eigener Stimme.
     private readonly ChatVoiceService _chatVoice;
     private readonly VitalsService      _vitals;
@@ -709,6 +712,8 @@ public sealed partial class Plugin : IDalamudPlugin
         _aoeWarn    = new AoeWarningService(_config, Log);
         _warnVoice  = new WarningVoiceService(_config, Log);
         _combat     = new CombatService(ObjectTable, TargetManager, GameGui, DataManager, _tolk, _config, _history, _aoeWarn, _escape, _warnVoice, _leveEnemies, Log, descriptions);
+        _positionalVoice = new PositionalVoiceService(_config, Log);
+        _positional = new PositionalService(ObjectTable, TargetManager, DataManager, _positionalVoice, _cue, _tolk, _config, Log);
         _ground     = new GroundTargetService(TargetManager, descriptions, _tolk, Log);
         _aoeAutoTurn = new AoeAutoTurnService(_config, ObjectTable, ClientState, Condition, _combat, Log, _warnVoice, _tolk);
         _cooldown   = new CooldownService(ClientState, DataManager, _cue, _config, Log, ObjectTable);
@@ -747,7 +752,7 @@ public sealed partial class Plugin : IDalamudPlugin
         _systemVolumeInput = new MenuInput(KeyState, Log, UIReaderService.ShopQuantityKeys);
         _tableInput = new MenuInput(KeyState, Log, UIReaderService.TableKeys);
         _options    = new OptionsMenu(_config, () => PluginInterface.SavePluginConfig(_config),
-                                      _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice, _chatVoice, _cue,
+                                      _tolk, Log, _heading, _chatFilters, _aoeWarn, _warnVoice, _positionalVoice, _chatVoice, _cue,
                                       // [Reihenfolge] Die drei Dienste, die die
                                       // sortierbaren Listen fuehren. Alle drei sind
                                       // hier oben schon gebaut.
@@ -1492,6 +1497,7 @@ public sealed partial class Plugin : IDalamudPlugin
             ("Sprache stopp",  _config.KeySilence),
             ("Kampfstatus",    _config.KeyCombatStatus),
             ("Ziel-HP",        _config.KeyTargetStatus),
+            ("Lage zum Gegner", _config.KeyPositional),
             ("SP-Stand",       _config.KeySpStatus),
             ("Wirkungen",      _config.KeyStatusEffects),
             ("Spielermenue",   _config.KeyPlayerMenu),
@@ -2650,6 +2656,7 @@ public sealed partial class Plugin : IDalamudPlugin
         if (GameWindowFocus.JustBecameInactive)
         {
             _warnVoice.Silence();
+            _positionalVoice.Silence();
             _chatVoice.Silence();
             _beacon.ApplyFocusMute();
             _aoeWarn.ApplyFocusMute();
@@ -2935,6 +2942,7 @@ public sealed partial class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeySilence))       { _tolk.Silence(); _chatVoice.Silence(); }
         if (IsJustPressed(_config.KeyCombatStatus))  _combat.AnnounceStatus();
         if (IsJustPressed(_config.KeyTargetStatus))  _combat.AnnounceTargetStatus();
+        if (IsJustPressed(_config.KeyPositional))    _positional.AnnounceCurrent();
         if (IsJustPressed(_config.KeyDeepFloor))     AnnounceDeepFloor();
         if (IsJustPressed(_config.KeySpStatus))      _combat.AnnounceGatheringPoints();
         if (IsJustPressed(_config.KeyStatusEffects)) AnnounceStatusEffects();
@@ -3129,6 +3137,8 @@ public sealed partial class Plugin : IDalamudPlugin
         if (IsJustPressed(_config.KeyWhereAmI))      _uiReader.AnnounceActiveWindow();
 
         _combat.Update();
+        // Front / flank / rear of the targeted enemy, on every zone change.
+        _positional.Update();
         // Vergibt die Farb-Rufnamen der Gegner. VOR allem, was Ziele ansagt: die
         // Zielansage fragt gleich danach, welche Farbe der Gegner traegt.
         _enemyMarkers.Update();
@@ -4694,6 +4704,7 @@ public sealed partial class Plugin : IDalamudPlugin
         _beacon.Dispose();
         _aoeWarn.Dispose();
         _warnVoice.Dispose();
+        _positionalVoice.Dispose();
         _chatVoice.Dispose();
         _cue.Dispose();
         _vitals.Dispose();

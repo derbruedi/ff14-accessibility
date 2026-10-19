@@ -1834,6 +1834,40 @@ Quelle: Desktop-Dump `FFXIV_UI_Dump.txt` + dalamud.log 10:31; ClientStructs
   `IDataManager.GetExcelSheet<Action>().TryGetRow(CastActionId, out row)`.
   Namespace-Kollision mit System.Action → `using LuminaAction = ...`.
 
+### Positionals: vorne / Flanke / hinten (recherchiert 2026-10-14)
+Für `PositionalService` (Lage zum anvisierten Gegner).
+- **Richtung egal, fest:** Lumina `BNpcBase.IsOmnidirectional` (bool, packed
+  bool @35 Bit 0; ilspycmd gegen `Hooks\dev\Lumina.Excel.dll`, 13.10.2026).
+  Zeile = `IGameObject.BaseId` des Gegners. Gleicher Weg wie WrathCombo
+  (`TargetNeedsPositionals`), RotationSolverReborn, Splatoon (`Generic/TargetCircle.cs`).
+  XIVAPI-Suche `IsOmnidirectional=true` liefert Zeilen (237, 240, 243, …),
+  Gesamtzahl nicht gezählt.
+- **Richtung egal, zeitweise:** Status **3808 „Directional Disregard“**,
+  Beschreibung „All action direction requirements are nullified.“ (XIVAPI
+  Status/3808). Laut consolegameswiki seit 7.01 bei manchen Bossen.
+- **Kein fertiger Spielwert für die Lage:** ClientStructs, Dalamud und
+  Lumina durchsucht — alle „Positional“-Treffer sind Audio (`SoundData`).
+  `ActionManager` hat keinen Positional-Check. Die Lage wird aus
+  `Position`/`Rotation` berechnet: `NavigationService.RelativeAngle(gegner,
+  spieler.Position)` (Konvention siehe Rotations-Abschnitt; positiv =
+  rechte Seite des Gegners).
+- **Winkel NICHT offiziell:** vorne ≤45°, Flanke 45–135°, hinten >135° von
+  der Blickrichtung des Gegners. Quelle sind nur Plugins, alle gleich:
+  WrathCombo (`Target.cs`, Regionen 315–45/45–135/135–225/225–315),
+  RotationSolverReborn (`ObjectHelper.cs`, PI/4 und 3PI/4). Keine Square-Enix-Angabe gefunden.
+  Grenzen im Mod exakt, ohne Puffer (User-Wahl 2026-10-14).
+- **Zielkreis für Sehende** (Wiki/Forum, Stand 2017, nicht im Spiel geprüft):
+  hinten eine Lücke, Wechsel einfache/doppelte Linie an der Grenze
+  Flanke/hinten; Grenze vorne/Flanke wird nicht gezeigt. Richtungslose
+  Gegner haben einen geschlossenen Kreis. Gilt für alle Gegner, nicht nur
+  Bosse.
+- **Faustkämpfer/Mönch** (offizieller Jobguide, Action-Sheet via XIVAPI):
+  Peitschenhieb (Snap Punch, 56, Stufe 6) Flanke; Demolieren (Demolish, 66,
+  Stufe 30) Rücken; Tigerpeitschenhieb (Pouncing Coeurl, 36947, Stufe 92)
+  Flanke. Das Action-Sheet hat (soweit bekannt) kein Positional-Feld.
+- **Offen:** ob das Spiel einen Treffer an der richtigen Stelle irgendwo
+  meldet (damit liessen sich die ±45° messen) — nicht gefunden.
+
 ### AoE-Form/Radius (Action-Sheet, ilspycmd-verifiziert 2026-07-26)
 Für das AoE-Ausweich-Feature nötig. Lumina `Action`-Sheet-Felder (Offsets aus
 Lumina.Excel.Sheets.Action dekompiliert):

@@ -54,6 +54,7 @@ public sealed class OptionsMenu
     // [Warnstimme] Nur zum Vorhoeren einer Stimme und um zu wissen, ob das
     // System ueberhaupt eine anbietet - gesprochen wird von hier aus nichts.
     private readonly WarningVoiceService _warnVoice;
+    private readonly PositionalVoiceService _positionalVoice;
     // [Chatstimme] Stimmenliste und Probe fuer die Kanalzeilen.
     private readonly ChatVoiceService _chatVoice;
     // [Job-Anzeige-Toene] Nur zum Nachhoeren der Ressourcen-Toene.
@@ -83,6 +84,7 @@ public sealed class OptionsMenu
     public OptionsMenu(Configuration config, Action save, TolkService tolk, IPluginLog log,
                        HeadingService heading, GameChatFilters chatFilters,
                        AoeWarningService aoeWarning, WarningVoiceService warnVoice,
+                       PositionalVoiceService positionalVoice,
                        ChatVoiceService chatVoice, CueService cue,
                        NavigationService nav, LegacyChatHistoryService legacyHistory,
                        MessageHistoryService history,
@@ -102,6 +104,7 @@ public sealed class OptionsMenu
         _chatFilters = chatFilters;
         _aoeWarning = aoeWarning;
         _warnVoice  = warnVoice;
+        _positionalVoice = positionalVoice;
         _chatVoice  = chatVoice;
         _cue = cue;
         _nav = nav;
@@ -1277,6 +1280,17 @@ public sealed class OptionsMenu
             Volume(AccessibilityStrings.OptWarningVoiceVolume, () => _config.WarningVoiceVolume,  v => _config.WarningVoiceVolume = v),
             WarningVoiceRate(),
             WarningVoiceChoice(),
+
+            // Position to enemy (front / flank / rear): mode first, then what each
+            // mode needs. Voice and tone rows stay visible in every mode, so the
+            // player can set both up before choosing one.
+            PositionalModeChoice(),
+            Volume(AccessibilityStrings.OptPositionalVoiceVolume, () => _config.PositionalVoiceVolume, v => _config.PositionalVoiceVolume = v),
+            PositionalVoiceRate(),
+            PositionalVoiceChoice(german: true),
+            PositionalVoiceChoice(german: false),
+            Volume(AccessibilityStrings.OptPositionalToneVolume, () => _config.PositionalToneVolume, v => _config.PositionalToneVolume = v),
+            PositionalTonePreview(),
         },
     };
 
@@ -1467,6 +1481,209 @@ public sealed class OptionsMenu
         }
 
         level.Cursor = Math.Max(0, names.IndexOf(_config.WarningVoiceName));
+        return level;
+    }
+
+    // ── Position to enemy (front / flank / rear) ──────────────────
+
+    private static readonly PositionalOutput[] PositionalModes =
+        { PositionalOutput.Off, PositionalOutput.Voice, PositionalOutput.Tone };
+
+    /// <summary>The row choosing how position changes are reported: off, voice
+    /// or tone.</summary>
+    private MenuEntry PositionalModeChoice() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptPositionalMode,
+                      AccessibilityStrings.PositionalModeName(_config.PositionalMode)),
+        Submenu = BuildPositionalModes,
+    };
+
+    private MenuLevel BuildPositionalModes()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptPositionalMode,
+            Rebuild = BuildPositionalModes,
+        };
+
+        foreach (var mode in PositionalModes)
+        {
+            var value = mode;                       // captured per iteration
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.PositionalModeName(value),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.PositionalMode = value;
+                    Persist();
+                    _tolk.SpeakInterrupt(AccessibilityStrings.PositionalModeSet(
+                        AccessibilityStrings.PositionalModeName(value)));
+                    _log.Info($"[Einstellungen] Lage zum Gegner -> {value}");
+                },
+            });
+        }
+
+        level.Cursor = Math.Max(0, Array.IndexOf(PositionalModes, _config.PositionalMode));
+        return level;
+    }
+
+    /// <summary>Speed of the positional voice, same steps as the warning voice.
+    /// The preview is the confirmation.</summary>
+    private MenuEntry PositionalVoiceRate() => new()
+    {
+        Label   = AccessibilityStrings.OptionChoice(
+                      AccessibilityStrings.OptPositionalVoiceRate,
+                      AccessibilityStrings.VoiceRateName(_config.PositionalVoiceRate)),
+        Submenu = BuildPositionalVoiceRates,
+    };
+
+    private MenuLevel BuildPositionalVoiceRates()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptPositionalVoiceRate,
+            Rebuild = BuildPositionalVoiceRates,
+        };
+
+        foreach (var step in AccessibilityStrings.VoiceRateSteps)
+        {
+            var value = step;                       // captured per iteration
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.VoiceRateName(value),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    _config.PositionalVoiceRate = value;
+                    Persist();
+
+                    // A silent preview must still answer, or the choice could
+                    // not be told apart from a failure.
+                    if (!_positionalVoice.PlayPreview(Loc.IsGerman, string.Empty))
+                        _tolk.SpeakInterrupt(AccessibilityStrings.VoiceRateSet(
+                            AccessibilityStrings.VoiceRateName(value)));
+
+                    _log.Info($"[Einstellungen] Tempo Lage-Stimme -> {value}");
+                },
+            });
+        }
+
+        level.Cursor = Array.IndexOf(AccessibilityStrings.VoiceRateSteps, _config.PositionalVoiceRate);
+        if (level.Cursor < 0) level.Cursor = 0;
+        return level;
+    }
+
+    /// <summary>
+    /// Voice for one language. "Automatic" (empty name) is the default: the
+    /// first male voice of that language, else its first voice. Each choice is
+    /// previewed with a sentence in that language.
+    /// </summary>
+    private MenuEntry PositionalVoiceChoice(bool german)
+    {
+        var name = german ? _config.PositionalVoiceNameDe : _config.PositionalVoiceNameEn;
+        var title = german ? AccessibilityStrings.OptPositionalVoiceNameDe
+                           : AccessibilityStrings.OptPositionalVoiceNameEn;
+        return new MenuEntry
+        {
+            Label   = AccessibilityStrings.OptionChoice(
+                          title, name.Length > 0 ? name : AccessibilityStrings.WarningVoiceAutomatic),
+            Submenu = () => BuildPositionalVoiceChoices(german),
+        };
+    }
+
+    private MenuLevel BuildPositionalVoiceChoices(bool german)
+    {
+        var level = new MenuLevel
+        {
+            Title   = german ? AccessibilityStrings.OptPositionalVoiceNameDe
+                             : AccessibilityStrings.OptPositionalVoiceNameEn,
+            Rebuild = () => BuildPositionalVoiceChoices(german),
+        };
+
+        if (!_positionalVoice.IsAvailable || _positionalVoice.InstalledVoices.Count == 0)
+        {
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.PositionalVoiceUnavailable,
+                StayOpen = true,
+                Activate = () => _tolk.SpeakInterrupt(AccessibilityStrings.PositionalVoiceUnavailable),
+            });
+            return level;
+        }
+
+        // Empty name = automatic, so the choice keeps following the rule if
+        // voices are installed or removed later.
+        var names = new List<string> { string.Empty };
+        names.AddRange(_positionalVoice.InstalledVoices);
+
+        foreach (var voiceName in names)
+        {
+            var value = voiceName;                  // captured per iteration
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = value.Length > 0 ? value : AccessibilityStrings.WarningVoiceAutomatic,
+                StayOpen = true,
+                Activate = () =>
+                {
+                    if (german) _config.PositionalVoiceNameDe = value;
+                    else        _config.PositionalVoiceNameEn = value;
+                    Persist();
+
+                    if (!_positionalVoice.PlayPreview(german, value))
+                        _tolk.SpeakInterrupt(AccessibilityStrings.PositionalVoiceSet(
+                            value.Length > 0 ? value : AccessibilityStrings.WarningVoiceAutomatic));
+
+                    _log.Info($"[Einstellungen] Lage-Stimme {(german ? "de" : "en")} -> " +
+                              $"'{(value.Length > 0 ? value : "automatisch")}'");
+                },
+            });
+        }
+
+        var current = german ? _config.PositionalVoiceNameDe : _config.PositionalVoiceNameEn;
+        level.Cursor = Math.Max(0, names.IndexOf(current));
+        return level;
+    }
+
+    private static readonly PositionalZone[] PositionalZones =
+    {
+        PositionalZone.Front, PositionalZone.FlankLeft, PositionalZone.FlankRight,
+        PositionalZone.Rear, PositionalZone.Omni,
+    };
+
+    /// <summary>Plays each position tone on demand, so the mapping can be
+    /// learned before a fight. Tone only, no name over it (the row already said
+    /// it) - same pattern as the AoE warning sounds.</summary>
+    private MenuEntry PositionalTonePreview() => new()
+    {
+        Label   = AccessibilityStrings.OptPositionalTonePreview,
+        Submenu = BuildPositionalTonePreview,
+    };
+
+    private MenuLevel BuildPositionalTonePreview()
+    {
+        var level = new MenuLevel
+        {
+            Title   = AccessibilityStrings.OptPositionalTonePreview,
+            Rebuild = BuildPositionalTonePreview,
+        };
+
+        foreach (var zone in PositionalZones)
+        {
+            var value = zone;                       // captured per iteration
+            level.Entries.Add(new MenuEntry
+            {
+                Label    = AccessibilityStrings.PositionalZoneName(value),
+                StayOpen = true,
+                Activate = () =>
+                {
+                    if (!_cue.PlayPositionalPreview(value))
+                        _tolk.SpeakInterrupt(AccessibilityStrings.PositionalZoneName(value));
+                },
+            });
+        }
+
         return level;
     }
 

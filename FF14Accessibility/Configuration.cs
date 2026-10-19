@@ -678,6 +678,29 @@ public sealed class Configuration : IPluginConfiguration
     // nicht kennt, fällt auf dieselbe Automatik zurück.
     public string WarningVoiceName = string.Empty;
 
+    // ── Position relative to the target (front / flank / rear) ────────────────
+    //
+    // User request 2026-10-14: Pugilist/Monk need to know whether they stand in
+    // front of, beside or behind the enemy. A sighted player reads it off the
+    // target ring. See PositionalService. DEFAULT OFF: the arcs (±45°) come from
+    // other plugins, not from an official source.
+    public PositionalOutput PositionalMode = PositionalOutput.Off;
+
+    // Own SAPI voice, separate from the warning voice so the two never cut each
+    // other off. Empty = automatic: the first MALE voice of the plugin language,
+    // else the first voice of that language. One name per language because the
+    // user switches with "/acc lang" and wants a fitting voice for both.
+    public string PositionalVoiceNameDe = string.Empty;
+    public string PositionalVoiceNameEn = string.Empty;
+    public int PositionalVoiceRate = 2;          // SAPI -10..10, same start as the warning voice
+    public float PositionalVoiceVolume = 1.0f;   // 0 = goes through the screen reader instead
+    public float PositionalToneVolume = 0.5f;    // 0 = mute
+
+    // Says the current position on demand. Shift+Del: the game binds nothing
+    // to Del at all (keybind dump 2026-10-14 15:55), and Del is already the
+    // target-HP key - both are questions about the current target.
+    public string KeyPositional = "Umschalt+Entf";
+
     // ── Chatstimme (dritter Sprachkanal, SAPI) ────────────────────────────────
     //
     // Spielerwunsch 2026-09-14: "chatt optionen wie bei dem skuaddon, dass der
