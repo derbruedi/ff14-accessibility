@@ -864,6 +864,11 @@ public sealed partial class UIReaderService : IDisposable
         _log.Info($"[Accessibility] Addon: {name}");
         // Still logged above, so the HUD build-up stays diagnosable.
         if (InLoginQuiet) return;
+        if (SquadronReader.Supports(name))
+        {
+            ResetSquadron(name);
+            return; // Dedicated reader waits for the game's visible fields.
+        }
         if (name == "PerformanceMode")
         {
             var performance = (AtkUnitBase*)(nint)args.Addon;
@@ -1018,6 +1023,7 @@ public sealed partial class UIReaderService : IDisposable
     private void OnAnyAddonClose(AddonEvent type, AddonArgs args)
     {
         var name = args.AddonName;
+        if (SquadronReader.Supports(name)) ResetSquadron(name);
         if (name == ContentsTutorialText.AddonName)
             _tutorialAnnouncement.Update(string.Empty, false, Environment.TickCount64);
         if (name == "SelectOk") _selectOkAnnouncement.Update(string.Empty, false, Environment.TickCount64);
@@ -1516,6 +1522,11 @@ public sealed partial class UIReaderService : IDisposable
         if (IsTableReading) return;
         if (InLoginQuiet) return;
         var name = args.AddonName;
+        if (SquadronReader.Supports(name))
+        {
+            UpdateSquadron(name, (AtkUnitBase*)(nint)args.Addon);
+            return;
+        }
         if (IsShopQuantityEditing && name == "Shop") return;
         if (IsSuppressedCharaSelect(name)) return;
         // SpecialUpdateAddons �berspringen, au�er ConfigSystem und TitleDCWorldMap (die wir jetzt universell behandeln)
@@ -1660,6 +1671,7 @@ public sealed partial class UIReaderService : IDisposable
     {
         if (IsTableReading) return;
         var name = args.AddonName;
+        if (SquadronReader.Supports(name)) return;
         if (IsShopQuantityEditing && name == "Shop") return;
         if (SpecialUpdateAddons.Contains(name)) return;
         if (IsSuppressedAddon(name)) return;
@@ -3602,13 +3614,19 @@ public sealed partial class UIReaderService : IDisposable
         // per-frame operation); cache it so same-node frames reuse the name.
         if ((nint)node != _lastFocusedNodePtr)
         {
+            // Squadron icons represent attributes/classes, not inventory slots.
+            // Do not let the item resolver defer or misname their focus first.
+            var squadronAddon = FindAddonForNode(node);
+            var squadronFocus = squadronAddon != null && SquadronReader.Supports(squadronAddon->NameString)
+                && !SquadronReader.IsItemReward(squadronAddon->NameString, squadronAddon, node);
 #if DEBUG
             // Vermoegen / Sozialliste / Suchmaske vermessen - siehe
             // ProbeFocusContext. Vor der Item-Aufloesung, damit sie auch dann
             // laeuft, wenn eine spezialisierte Leseregel weiter unten aussteigt.
             ProbeFocusContext(node);
 #endif
-            _lastFocusedItemName = ResolveFocusedItemName(node);
+            _lastFocusedItemName = squadronFocus ? string.Empty : ResolveFocusedItemName(node);
+            if (squadronFocus) { _lastFocusedItemId = 0; _itemSlotDeferring = false; }
             // The item detail agent is live but still a frame behind the cursor.
             // Leaving _lastFocusedNodePtr untouched makes the next frame resolve
             // this same node again, by which time the agent is right.
@@ -3642,6 +3660,10 @@ public sealed partial class UIReaderService : IDisposable
         if (TryReadContentsTutorialFocus(node, out var tutorialControl))
         {
             text = tutorialControl;
+        }
+        else if (TryReadSquadronFocus(node, out var squadronControl))
+        {
+            text = squadronControl;
         }
         else if (TryReadArmouryFilterFocus(node, out var armouryFilter))
         {
@@ -3970,7 +3992,8 @@ public sealed partial class UIReaderService : IDisposable
         // announcing it here would interrupt the opening question. Stay silent
         // during the guard window (state is already updated, so the user's next
         // navigation is still detected and announced).
-        if (InDialogOpenGuard && !(navKeyHeld && tutorialControl.Length > 0)) return;
+        if (InDialogOpenGuard && !(navKeyHeld && (tutorialControl.Length > 0
+            || SquadronReader.Supports(FindAddonNameForNode(node))))) return;
 
         // Online window: the tab announcement is the context for everything the
         // player is about to hear. This frame-driven focus path is NOT covered
@@ -11830,6 +11853,7 @@ public sealed partial class UIReaderService : IDisposable
         if (TryReadContentsTutorial()) return;
         if (TryReadYesNoDialog()) return;
         if (TryReadSelectOk()) return;
+        if (TryReadSquadron()) return;
         if (_charaMake.TryReadClass()) return;
         if (TryReadSelectedActionDescription()) return;
         if (TryReadSupplyPaneDetail()) return;

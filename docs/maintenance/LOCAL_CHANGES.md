@@ -1,5 +1,19 @@
 # Карта наших изменений
 
+## Отряды Великой компании — 6.08.127
+
+SquadronReader связывает числа и подписи GcArmyExpedition,
+GcArmyMemberList и GcArmyMenberProfile по настоящим ULD игры.
+Все GcArmy-окна получают чтение видимого текста, включая числа 0–9;
+повтор Ctrl+F10 не ограничивается только первым списком.
+SquadronAnnouncement ждёт заполнения полей и игнорирует одни тики таймера.
+Списки используют NativeListRows и фактический ListItemIndex,
+предметная награда — собственный видимый слот. UIReaderService.Squadron
+заменяет только общие речевые обработчики этих окон, без вызова действий.
+Снимок девяти ULD проверяет tools/squadron-layout-check; SquadronTests
+защищают 27 случаев. Основание и ограничения:
+[SQUADRONS_608127.md](SQUADRONS_608127.md).
+
 ## Точные цели в поисковых областях — 6.08.126
 
 QuestObjectiveTarget уточняет Type51 по QuestListenerParams текущего этапа

@@ -1,5 +1,29 @@
 # Проверки и границы результата
 
+## Отряды Великой компании — 6.08.127, 23 октября 2026
+
+- Журнал 6.08.126 подтвердил неполное чтение GcArmyExpedition,
+  GcArmyMemberList и GcArmyMenberProfile. Разбор, SHA-256 журнала
+  и непроверенные игровые сценарии: [SQUADRONS_608127.md](SQUADRONS_608127.md).
+- 27 целевых SquadronTests прошли, ошибок и пропусков 0;
+  вывод .local/squadron-tests.txt. tools/squadron-layout-check сравнил
+  все девять ULD установленной игры с тестовым снимком, без расхождений.
+- Полная scripts/Verify-Local.ps1 прошла: Release плагина и установщика,
+  ошибок и предупреждений 0, 1 421 тест в семи проектах без пропусков,
+  защита 12 авторских файлов и двух методов, 12 проверок запрета упаковки.
+  Вывод: .local/squadron-verify.txt.
+  Сборка и её точное время: artifacts/build-info.json.
+  Тесты: artifacts/test-results/20261023-171103-016/.
+- ZIP: artifacts/releases/FF14Accessibility-6.08.127-RU-no-source-20261023-171143-924.zip,
+  141 файл, 9 019 124 байт, исходников/PDB/EXE/установочных скриптов нет.
+  Все записи и DLL проверены упаковщиком по SHA-256.
+  ZIP: 0D6539106F2F8919206A2F09F2501F5CB6F9CF430B672EE06D412ADE23BC4453.
+  DLL 6.8.127.0: B25A24BE18DAD1E402DC2AD7210683B67509C783A9D6760AAFF26C6B3FD60FDE.
+- Implemented=true; AutomatedTestsPassed=true; CompiledWithGameLibraries=true;
+  InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
+  Проверка файлов не доказывает живую речь, состояния графических значков
+  и фактическое подтверждение действий в игре.
+
 ## Два квеста в Коэртасе — 6.08.126, 19 октября 2026
 
 - Журнал 6.08.125: ошибочное прибытие к нижнему уступу в обоих квестах;
