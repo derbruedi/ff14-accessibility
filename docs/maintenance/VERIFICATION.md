@@ -29,6 +29,23 @@
   Новая речь NVDA/Tolk, соответствие наведению в живом окне, поведение
   у предела характеристик и устранение зависаний требуют проверки в FFXIV.
 
+- После успешной Publish-Release -CheckOnly в 19:22:27 (+07:00)
+  опубликован последний стабильный
+  [v6.08.128](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.128).
+  Target и удалённая метка: ad95645126c915f36b9af142b35f875a1e826fed;
+  draft=false, prerelease=false, latest=true; описание совпало
+  с docs/releases/6.08.128.md.
+- Все четыре файла скачаны обратно; размеры, SHA-256 GitHub и суммы
+  локальных проверенных файлов совпали. Проверены 141 запись игрового ZIP,
+  DLL, четыре строки SHA256SUMS и 36 записей отдельного архива исходников
+  установщика. Настоящий ReleaseClient.Latest сделал живой HTTP-запрос
+  без входа в GitHub и выбрал 6.08.128 с правильной суммой.
+  Подтверждения: artifacts/publication-verified/608128-20261023-192243-848/verified-assets.json,
+  .local/training-608128/latest-client.json и published-check.txt.
+  ReleasePublished=true; PublishedAssetsVerified=true;
+  ActualReleaseClientVerified=true; AnonymousReleaseClientVerified=true.
+  InGameVerified=false; BlindUserAccepted=false; LocalPluginInstalled=false.
+
 ## Отряды Великой компании — 6.08.127, 23 октября 2026
 
 - Журнал 6.08.126 подтвердил неполное чтение GcArmyExpedition,
