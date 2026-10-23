@@ -1,4 +1,5 @@
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System.Globalization;
 
 namespace FF14Accessibility.Services;
 
@@ -18,6 +19,9 @@ internal static unsafe class SquadronReader
     {
         if (!Supports(name) || addon == null || !addon->IsVisible || addon->NumBlockingAddons != 0 || !Visible(focus)
             || !NativeControlScope.Owns(addon, focus)) return string.Empty;
+        // Browsing training reads only its name. Live preview numbers and the
+        // longer tooltip belong to the deliberate read command, not each frame.
+        if (name == "GcArmyTraining") return TrainingFocus(addon, focus, read, tooltip);
         var control = NativeControlScope.Control(addon, focus);
         var parts = Parts(name, addon, read, readItem);
         // A stale renderer may retain focus/parent pointers after losing its
@@ -128,7 +132,9 @@ internal static unsafe class SquadronReader
                 Field(7, AccessibilityStrings.SquadronTactics);
                 break;
             case "GcArmyTraining":
-                for (uint id = 24; id <= 26; id++) Field(id, AttributeName((int)id - 24));
+                for (uint id = 24; id <= 26; id++)
+                    Add(TrainingAttribute((int)id - 24, Read(Child(Child(Node(&addon->UldManager, id), 2), 2), read),
+                        Read(Child(Child(Node(&addon->UldManager, id), 2), 4), read)), Address(id));
                 Pair(18, 19, "");
                 break;
             case "GcArmyChangeClass":
@@ -157,6 +163,70 @@ internal static unsafe class SquadronReader
         1 => AccessibilityStrings.SquadronMental,
         _ => AccessibilityStrings.SquadronTactical,
     };
+
+    internal static string TrainingAttribute(int index, string current, string change)
+    {
+        if (current.Length == 0 && change.Length == 0) return "";
+        var normalized = change.Trim().Replace('−', '-').Replace('＋', '+');
+        string delta;
+        if (long.TryParse(normalized, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)
+            && number != long.MinValue && (number == 0 || normalized.StartsWith('+') || normalized.StartsWith('-')))
+            delta = number == 0 ? AccessibilityStrings.SquadronTrainingUnchanged
+                : number > 0 ? AccessibilityStrings.SquadronTrainingIncrease(number.ToString(CultureInfo.InvariantCulture))
+                : AccessibilityStrings.SquadronTrainingDecrease((-number).ToString(CultureInfo.InvariantCulture));
+        else delta = change.Length == 0 ? AccessibilityStrings.SquadronTrainingChangeUnknown
+            : AccessibilityStrings.SquadronTrainingChange(change);
+        return Label(AttributeName(index), Join([current.Length > 0 ? AccessibilityStrings.SquadronTrainingNow(current) : "", delta]));
+    }
+
+    private static string TrainingFocus(AtkUnitBase* addon, AtkResNode* focus, Func<nint, string> read,
+        Func<nint, string?> tooltip)
+    {
+        for (uint id = 6; id <= 12; id++)
+        {
+            var option = Node(&addon->UldManager, id);
+            if (!NativeDialogButtons.Contains(option, focus)) continue;
+            var hint = tooltip((nint)focus) ?? tooltip((nint)option) ?? "";
+            var firstLine = hint.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+            return firstLine.Length > 0 ? firstLine : AccessibilityStrings.SquadronTrainingOption((int)id - 5);
+        }
+        for (uint id = 24; id <= 26; id++)
+            if (NativeDialogButtons.Contains(Node(&addon->UldManager, id), focus)) return AttributeName((int)id - 24);
+        var control = NativeControlScope.Control(addon, focus);
+        return Read(control != null ? control : focus, read) is { Length: > 0 } text ? text
+            : tooltip((nint)focus) ?? (control == null ? null : tooltip((nint)control)) ?? "";
+    }
+
+    internal static string TrainingDetails(AtkUnitBase* addon, AtkResNode* focus, Func<nint, string> read,
+        Func<nint, string?> tooltip)
+    {
+        if (addon == null || !addon->IsVisible || addon->NumBlockingAddons != 0 || !Valid(&addon->UldManager)
+            || (focus != null && (!Visible(focus) || !NativeControlScope.Owns(addon, focus)))) return "";
+        // These are the actual visible preview fields, including the game's
+        // cap-adjusted losses. Never derive them from a sheet bonus or hovered id.
+        var selected = Read(Node(&addon->UldManager, 15), read);
+        var focused = focus == null ? "" : TrainingFocus(addon, focus, read, tooltip);
+        List<string> parts = [];
+        if (selected.Length > 0) parts.Add(Label(AccessibilityStrings.SquadronTrainingPreview, selected));
+        else parts.Add(AccessibilityStrings.SquadronTrainingPreview);
+        if (focused.Length > 0 && selected.Length > 0 && focused != selected
+            && Enumerable.Range(6, 7).Any(id => NativeDialogButtons.Contains(Node(&addon->UldManager, (uint)id), focus)))
+            parts.Add(AccessibilityStrings.SquadronTrainingPreviewDiffers);
+        var hasValues = false;
+        for (uint id = 24; id <= 26; id++)
+        {
+            var values = Child(Node(&addon->UldManager, id), 2);
+            var attribute = TrainingAttribute((int)id - 24, Read(Child(values, 2), read), Read(Child(values, 4), read));
+            if (attribute.Length > 0) hasValues = true;
+            parts.Add(attribute);
+        }
+        if (!hasValues) parts.Add(AccessibilityStrings.SquadronLoading);
+        parts.Add(Read(Node(&addon->UldManager, 23), read));
+        parts.Add(Read(Node(&addon->UldManager, 13), read));
+        var time = Read(Node(&addon->UldManager, 19), read);
+        parts.Add(Label(Read(Node(&addon->UldManager, 18), read), time));
+        return Join(parts);
+    }
 
     private static string Attributes(AtkResNode* node, Func<nint, string> read)
         => Join(Enumerable.Range(0, 3).Select(i => Label(AttributeName(i), AttributeValue(node, (uint)i, read))));

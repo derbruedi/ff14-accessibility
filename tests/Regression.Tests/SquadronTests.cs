@@ -188,7 +188,124 @@ public sealed unsafe class SquadronTests : IDisposable
     {
         using var ui = new Layout("GcArmyTrainingList");
         ui.Text("80", 24, 2, 2); ui.Text("+0", 24, 2, 4);
-        Assert.Contains("Физические навыки: 80. +0", ui.Page("GcArmyTraining"));
+        Assert.Contains("Физические навыки: сейчас 80. без изменений", ui.Page("GcArmyTraining"));
+    }
+
+    [Theory]
+    [InlineData("+40", "увеличится на 40")]
+    [InlineData("-20", "уменьшится на 20")]
+    [InlineData("−20", "уменьшится на 20")]
+    [InlineData("＋40", "увеличится на 40")]
+    [InlineData("+0", "без изменений")]
+    [InlineData("0", "без изменений")]
+    [InlineData("", "изменение не показано")]
+    [InlineData("40", "изменение по данным окна: 40")]
+    public void TrainingExplainsVisibleSignsWithoutInventingMissingChanges(string change, string expected)
+    {
+        Assert.Equal("Физические навыки: сейчас 80. " + expected, SquadronReader.TrainingAttribute(0, "80", change));
+    }
+
+    [Fact]
+    public void TrainingHoverStaysBriefWhileManualReadHasFreshGainsLossesAndZero()
+    {
+        using var ui = new Layout("GcArmyTrainingList");
+        ui.Text("Физическая подготовка", 15);
+        ui.Text("80", 24, 2, 2); ui.Text("+40", 24, 2, 4);
+        ui.Text("14", 25, 2, 2); ui.Text("-20", 25, 2, 4);
+        ui.Text("0", 26, 2, 2); ui.Text("0", 26, 2, 4);
+        string? Tooltip(nint address) => address == (nint)ui.Node(6) ? "Физическая подготовка\nДлинное описание" : null;
+        var focus = ui.Node(6, 8); // collision child, tooltip belongs to its button
+        Assert.Equal("Физическая подготовка", SquadronReader.Focus("GcArmyTraining", ui.Addon, focus, ui.Read, Tooltip));
+        var details = SquadronReader.TrainingDetails(ui.Addon, focus, ui.Read, Tooltip);
+        Assert.Contains("Предпросмотр тренировки: Физическая подготовка", details);
+        Assert.Contains("Физические навыки: сейчас 80. увеличится на 40", details);
+        Assert.Contains("Ментальные навыки: сейчас 14. уменьшится на 20", details);
+        Assert.Contains("Тактические навыки: сейчас 0. без изменений", details);
+        Assert.DoesNotContain("Длинное описание", details);
+        ui.Text("100", 24, 2, 2); ui.Text("+20", 24, 2, 4);
+        Assert.Equal("Физическая подготовка", SquadronReader.Focus("GcArmyTraining", ui.Addon, focus, ui.Read, Tooltip));
+        details = SquadronReader.TrainingDetails(ui.Addon, focus, ui.Read, Tooltip);
+        Assert.Contains("сейчас 100. увеличится на 20", details);
+        Assert.DoesNotContain("сейчас 80", details);
+        Assert.Equal("Физические навыки", ui.Focus("GcArmyTraining", 24, 2, 2));
+    }
+
+    [Fact]
+    public void TrainingReadDoesNotAssignPreviousPreviewToAnotherHoveredExercise()
+    {
+        using var ui = new Layout("GcArmyTrainingList");
+        ui.Text("Физическая подготовка", 15);
+        ui.Text("80", 24, 2, 2); ui.Text("+40", 24, 2, 4);
+        var details = SquadronReader.TrainingDetails(ui.Addon, ui.Node(7), ui.Read, _ => "Ментальная подготовка");
+        Assert.Contains("Предпросмотр тренировки: Физическая подготовка", details);
+        Assert.Contains(AccessibilityStrings.SquadronTrainingPreviewDiffers, details);
+        Assert.DoesNotContain("Предпросмотр тренировки: Ментальная подготовка", details);
+    }
+
+    [Fact]
+    public void EmptyTrainingPreviewReportsLoadingInsteadOfInventingZeroChanges()
+    {
+        using var ui = new Layout("GcArmyTrainingList");
+        var text = SquadronReader.TrainingDetails(ui.Addon, ui.Node(6), ui.Read, _ => null);
+        Assert.Contains(AccessibilityStrings.SquadronLoading, text);
+        Assert.DoesNotContain("без изменений", text);
+    }
+
+    [Theory]
+    [InlineData(0)] // hidden value
+    [InlineData(1)] // blocking confirmation
+    [InlineData(2)] // another window
+    [InlineData(3)] // invisible window
+    public void TrainingReadRejectsHiddenBlockedAndForeignValues(int condition)
+    {
+        using var ui = new Layout("GcArmyTrainingList");
+        using var other = new Layout("GcArmyTrainingList");
+        ui.Text("80", 24, 2, 2); ui.Text("+40", 24, 2, 4);
+        if (condition == 0) ui.Node(24)->NodeFlags = 0;
+        if (condition == 1) ui.Addon->NumBlockingAddons = 1;
+        if (condition == 3) ui.Addon->IsVisible = false;
+        var details = SquadronReader.TrainingDetails(ui.Addon, condition == 2 ? other.Node(6) : ui.Node(6), ui.Read, _ => null);
+        Assert.DoesNotContain("80", details); Assert.DoesNotContain("40", details);
+        if (condition > 0) Assert.Empty(details);
+    }
+
+    [Theory]
+    [InlineData(LanguageMode.Russian, "Физические навыки: сейчас 80. уменьшится на 20")]
+    [InlineData(LanguageMode.English, "Physical: current 80. decreases by 20")]
+    [InlineData(LanguageMode.German, "Körperlich: aktuell 80. sinkt um 20")]
+    public void TrainingChangeUsesSelectedLanguage(LanguageMode mode, string expected)
+    {
+        Loc.Mode = mode;
+        Assert.Equal(expected, SquadronReader.TrainingAttribute(0, "80", "-20"));
+    }
+
+    [Fact]
+    public void RewardTranslatesOnlyMatchingIconsAndReusesNamesUntilLanguageOrPackChanges()
+    {
+        var state = new SquadronReward();
+        var rows = Enumerable.Range(1, 50000).ToArray();
+        var translated = new List<int>();
+        string Name(int row) { translated.Add(row); return "Награда " + row; }
+        Assert.Equal("Награда 123", state.Resolve(123, LanguageMode.Russian, 1, rows, row => (uint)row, Name));
+        Assert.Equal([123], translated);
+        Assert.Equal("Награда 123", state.Resolve(123, LanguageMode.Russian, 1, rows, row => (uint)row, Name));
+        Assert.Equal([123], translated);
+        state.Resolve(123, LanguageMode.English, 1, rows, row => (uint)row, Name);
+        state.Resolve(123, LanguageMode.English, 2, rows, row => (uint)row, Name);
+        Assert.Equal([123, 123, 123], translated);
+        Assert.Empty(state.Resolve(0, LanguageMode.English, 2, rows, row => (uint)row, Name));
+        Assert.Empty(state.Resolve(60000, LanguageMode.English, 2, rows, row => (uint)row, Name));
+        Assert.Equal([123, 123, 123], translated);
+    }
+
+    [Fact]
+    public void RewardKeepsLastNonemptyMatchingItemAsBeforeAndDoesNotTranslateUnrelatedRows()
+    {
+        var state = new SquadronReward();
+        var rows = new[] { (Icon: 5u, Name: "Первая"), (Icon: 5u, Name: "Вторая"), (Icon: 5u, Name: ""), (Icon: 9u, Name: "Чужая") };
+        var calls = 0;
+        Assert.Equal("Вторая", state.Resolve(5, LanguageMode.Russian, 1, rows, row => row.Icon, row => { calls++; return row.Name; }));
+        Assert.Equal(3, calls);
     }
 
     [Fact]

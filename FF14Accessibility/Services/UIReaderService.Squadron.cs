@@ -6,6 +6,7 @@ public sealed partial class UIReaderService
 {
     private readonly Dictionary<string, SquadronAnnouncement> _squadronAnnouncements = [];
     private readonly Dictionary<string, long> _squadronPollAt = [];
+    private readonly SquadronReward _squadronReward = new();
     private string _lastSquadronName = "";
 
     private void ResetSquadron(string name)
@@ -23,7 +24,9 @@ public sealed partial class UIReaderService
         if (node == null || node->Component == null) return "";
         var icon = FindSlotIcon(node->Component);
         if (icon == null || icon->IconId == 0) return "";
-        var (name, _) = _inventory.ResolveIconItem(icon->IconId);
+        var name = _squadronReward.Resolve(icon->IconId, Loc.Mode, GameDisplayText.Revision,
+            _data.GetExcelSheet<Lumina.Excel.Sheets.Item>(), row => row.Icon,
+            row => RussianGameText.Name(_data, row, x => x.Name));
         if (name.Length == 0) return "";
         var quantity = ReadIconQuantity(icon);
         return quantity.Length > 0 ? AccessibilityStrings.RewardItemQuantity(quantity, name) : name;
@@ -41,14 +44,19 @@ public sealed partial class UIReaderService
         _lastSquadronName = name;
         if (!_squadronAnnouncements.TryGetValue(name, out var state))
             _squadronAnnouncements[name] = state = new SquadronAnnouncement();
-        var text = state.Update(SquadronReader.Page(name, addon, ReadSquadronNode, ReadSquadronReward), true, now);
+        var training = name == "GcArmyTraining";
+        // Training preview changes while browsing. Announce only the opening
+        // hint automatically; all numeric details are read on demand.
+        var text = state.Update(training ? AccessibilityStrings.SquadronTraining
+            : SquadronReader.Page(name, addon, ReadSquadronNode, ReadSquadronReward), true, now);
         if (text.Length == 0) return;
         _log.Info($"[Squadron] {name}: {text}");
         // Initial/default focus must not cut the details off with a bare button
         // label. No action or selection is changed by this announcement.
         _dialogOpenedAt = DateTime.UtcNow;
-        _tolk.SpeakInterrupt(text + " " + AccessibilityStrings.SquadronReadHelp(
-            AccessibilityStrings.SpokenKeyLabel(_config.KeyReadUI)));
+        var key = AccessibilityStrings.SpokenKeyLabel(_config.KeyReadUI);
+        _tolk.SpeakInterrupt(text + " " + (training ? AccessibilityStrings.SquadronTrainingReadHelp(key)
+            : AccessibilityStrings.SquadronReadHelp(key)));
     }
 
     private unsafe bool TryReadSquadronFocus(AtkResNode* focus, out string text)
@@ -76,7 +84,15 @@ public sealed partial class UIReaderService
         }
         if (addon == null || !SquadronReader.Supports(addon->NameString)
             || !addon->IsVisible || addon->NumBlockingAddons != 0) return false;
-        var text = SquadronReader.Page(addon->NameString, addon, ReadSquadronNode, ReadSquadronReward);
+        var training = addon->NameString == "GcArmyTraining";
+        var text = training ? SquadronReader.TrainingDetails(addon, focus, ReadSquadronNode,
+            p => _tooltips.TryGetTooltip((AtkResNode*)p))
+            : SquadronReader.Page(addon->NameString, addon, ReadSquadronNode, ReadSquadronReward);
+        if (!_squadronAnnouncements.TryGetValue(addon->NameString, out var state))
+            _squadronAnnouncements[addon->NameString] = state = new SquadronAnnouncement();
+        // Consume a pending automatic read, so it cannot interrupt this command.
+        state.Update(training ? AccessibilityStrings.SquadronTraining : text, true, Environment.TickCount64, repeat: true);
+        _dialogOpenedAt = DateTime.UtcNow;
         _log.Info($"[Squadron] Repeat {addon->NameString}: {text}");
         _tolk.SpeakInterrupt(text.Length > 0 ? text : AccessibilityStrings.SquadronLoading);
         return true;
