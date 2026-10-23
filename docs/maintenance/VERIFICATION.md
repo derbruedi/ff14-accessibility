@@ -24,6 +24,23 @@
   Проверка файлов не доказывает живую речь, состояния графических значков
   и фактическое подтверждение действий в игре.
 
+- После успешной Publish-Release -CheckOnly в 17:14:15 (+07:00)
+  опубликован последний стабильный
+  [v6.08.127](https://github.com/pitpamyati-netizen/ff14-accessibility/releases/tag/v6.08.127).
+  Target и удалённая метка: d5de352aad7d24bb417a22469013b14733925017;
+  draft=false, prerelease=false, latest=true; описание совпало
+  с docs/releases/6.08.127.md.
+- Все четыре файла скачаны обратно: размеры, SHA-256 GitHub и суммы
+  локальных проверенных файлов совпали. Сверены все 141 запись игрового
+  ZIP, DLL, четыре строки SHA256SUMS и 36 записей отдельного архива
+  исходников установщика. Настоящий ReleaseClient.Latest сделал живой
+  HTTP-запрос и выбрал 6.08.127 с правильной суммой через существующий
+  вход GitHub. Анонимный запрос ограничен сервером; токен не сохранён.
+  Подтверждения: artifacts/publication-verified/608127-20261023-171423-365/verified-assets.json,
+  .local/squadron-release/latest-client.json и published-check.txt.
+  ReleasePublished=true; PublishedAssetsVerified=true;
+  ActualReleaseClientVerified=true. InGameVerified=false; BlindUserAccepted=false.
+
 ## Два квеста в Коэртасе — 6.08.126, 19 октября 2026
 
 - Журнал 6.08.125: ошибочное прибытие к нижнему уступу в обоих квестах;
